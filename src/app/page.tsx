@@ -47,19 +47,6 @@ function HomePageInner() {
 
         .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
-        /* ASU BAR */
-        .asu-bar { background: #8C1D40; border-bottom: 3px solid #FFC627; padding: 0 24px; }
-        .asu-bar-inner { max-width: 1080px; margin: 0 auto; height: 38px; display: flex; align-items: center; justify-content: space-between; }
-        .asu-bar-left { display: flex; align-items: center; gap: 8px; }
-        .asu-pitchfork { color: #FFC627; font-size: 14px; }
-        .asu-bar-label { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #fff; }
-        .asu-bar-sep { width: 1px; height: 14px; background: rgba(255,255,255,0.25); margin: 0 8px; }
-        .asu-bar-sub { font-size: 11px; color: rgba(255,255,255,0.7); }
-        .asu-bar-right { display: flex; align-items: center; gap: 16px; }
-        .asu-bar-link { font-size: 11px; color: rgba(255,255,255,0.75); text-decoration: none; font-weight: 500; }
-        .asu-bar-link:hover { color: #FFC627; }
-        .asu-bar-badge { background: #FFC627; color: #8C1D40; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.4px; }
-
         /* PERSONAL BAR */
         .personal-bar { background: #1a1a1a; padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: #c5c1b8; }
         .personal-bar strong { color: #FFC627; font-weight: 500; }
@@ -169,52 +156,73 @@ function HomePageInner() {
             </div>
           </div>
           <div className="homes-grid">
-            {homes.map(home => (
-              <a href={`/homes/${home.slug}`} className="home-card" key={home.slug}>
-                <div className="card-img">
-                  <img src={home.heroImage} alt={home.name} />
-                  <div className={`card-avail ${home.available === 1 ? 'amber' : 'green'}`}>
-                    {home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
-                  </div>
-                  <div className="card-price">${home.price}<span>/mo</span></div>
-                </div>
-                <div className="card-body">
-                  <div className="card-name">{home.name}</div>
-                  <div className="card-addr">📍 {home.address}</div>
-                  <div className="card-stats">
-                    <span className="card-stat">{home.beds} bed</span>
-                    <span className="card-sep" />
-                    <span className="card-stat">{home.baths} bath</span>
-                    <span className="card-sep" />
-                    <span className="card-stat">{home.sqft} sqft</span>
-                    <span className="card-sep" />
-                    <span className="card-stat">{home.asuDistance} to ASU</span>
-                  </div>
-                  <div className="card-tags">
-                    <span className="card-tag maroon">✓ Verified landlord</span>
-                    <span className="card-tag maroon">$0 broker fee</span>
-                    {home.tags.slice(0, 2).map(t => (
-                      <span className="card-tag" key={t}>{t}</span>
-                    ))}
-                  </div>
-                  <div className="card-footer">
-                    <div className="card-score-lbl">ASU fit score</div>
-                    <ScoreBar score={home.asuScore} />
-                    <div className="card-reasons">
-                      {home.asuScoreReasons.slice(0, 2).map(r => (
-                        <div className="card-reason" key={r}>
-                          <span className="reason-chk">✓</span>{r}
+            {homes
+              .slice()
+              .sort((a, b) => a.price - b.price)
+              .map((home, index) => {
+                const isCheapest = index === 0
+                const avgTempeRent = 950
+                const savings = avgTempeRent - home.price
+                const isWholeHouse = home.available === home.totalRooms
+                return (
+                  <a href={`/homes/${home.slug}`} className="home-card" key={home.slug}>
+
+                    {/* Cheapest benchmark banner */}
+                    {isCheapest && (
+                      <div style={{ background: 'linear-gradient(90deg,#8C1D40,#a82050)', padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                          <span style={{ fontSize: '13px' }}>🏆</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#FFC627', letterSpacing: '0.3px' }}>Cheapest per room near ASU</span>
                         </div>
-                      ))}
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)' }}>Save ~${savings}/mo vs avg Tempe rent</span>
+                      </div>
+                    )}
+
+                    <div className="card-img">
+                      <img src={home.heroImage} alt={home.name} />
+                      <div className={`card-avail ${isWholeHouse ? 'green' : home.available === 1 ? 'amber' : 'green'}`}>
+                        {isWholeHouse ? '🏠 Whole house available' : home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
+                      </div>
+                      <div className="card-price">
+                        {isCheapest && (
+                          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', textDecoration: 'line-through', lineHeight: 1, marginBottom: '2px', fontFamily: "'DM Sans',sans-serif", fontWeight: 400 }}>
+                            avg ${avgTempeRent}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px' }}>
+                          <span style={{ fontFamily: "'Fraunces',serif", fontSize: '20px', fontWeight: 300, letterSpacing: '-0.3px' }}>${home.price}</span>
+                          <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '11px', opacity: 0.7, fontWeight: 400 }}>/mo</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="card-cta">
-                      <span className="card-cta-hint">No commitment to view</span>
-                      <span className="card-cta-btn">See this home →</span>
+
+                    <div className="card-body">
+                      <div className="card-name">{home.name}</div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#8C1D40' }}>📍 {home.asuDistance} mi to ASU</span>
+                        <span className="card-sep" />
+                        <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{home.beds} bed · {home.baths} bath</span>
+                        <span className="card-sep" />
+                        <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{home.sqft} sqft</span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '11px', background: '#fdf2f5', border: '1px solid #f5c6d0', color: '#8C1D40', padding: '2px 9px', borderRadius: '20px', fontWeight: 600 }}>✓ Verified landlord</span>
+                        <span style={{ fontSize: '11px', background: '#fdf2f5', border: '1px solid #f5c6d0', color: '#8C1D40', padding: '2px 9px', borderRadius: '20px', fontWeight: 600 }}>$0 broker fee</span>
+                        {home.tags[0] && (
+                          <span style={{ fontSize: '11px', background: '#faf9f6', border: '1px solid #e8e4db', color: '#6b6b6b', padding: '2px 9px', borderRadius: '20px' }}>{home.tags[0]}</span>
+                        )}
+                      </div>
+
+                      <div className="card-cta">
+                        <span style={{ fontSize: '12px', color: '#9b9b9b' }}>No commitment to view</span>
+                        <span className="card-cta-btn">Explore home →</span>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </a>
-            ))}
+                  </a>
+                )
+              })}
           </div>
         </div>
 
