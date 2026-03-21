@@ -14,6 +14,15 @@ export default function RoommatesPage() {
     unit_type: '', move_in_date: '', budget: '', lifestyle: '',
     group_size: '', group_name: '', notes: '',
   })
+  const perks: { icon: string; title: string; body: string }[] = mode === 'solo' ? [
+    { icon: '🔍', title: 'We find your matches', body: 'Tell us your vibe and schedule — we pair you with people who actually fit.' },
+    { icon: '👋', title: 'Meet before you sign', body: "We introduce you to potential roommates before anyone commits to anything." },
+    { icon: '🏠', title: 'Solo options too', body: 'Need a studio or 1-bed? We have options for people who want their own space.' },
+  ] : [
+    { icon: '🏡', title: 'Homes built for groups', body: 'Our 3 and 4-bedroom homes are perfect for groups who want to live together.' },
+    { icon: '📋', title: 'One easy process', body: 'Register your group once. We handle matching you to the right home.' },
+    { icon: '🔒', title: 'Group feature coming soon', body: 'A dedicated group dashboard where your crew can browse and apply together is on the way.' },
+  ]
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -190,19 +199,15 @@ export default function RoommatesPage() {
               {/* PERKS */}
               <div className="perks-section">
                 <div className="perks-grid">
-                  {mode === 'solo' ? [
-                    { icon: '🔍', title: 'We find your matches', body: 'Tell us your vibe and schedule — we pair you with people who actually fit.' },
-                    { icon: '👋', title: 'Meet before you sign', body: "We introduce you to potential roommates before anyone commits to anything." },
-                    { icon: '🏠', title: 'Solo options too', body: 'Need a studio or 1-bed? We have options for people who want their own space.' },
-                  ] : [
-                    { icon: '🏡', title: 'Homes built for groups', body: 'Our 3 and 4-bedroom homes are perfect for groups who want to live together.' },
-                    { icon: '📋', title: 'One easy process', body: 'Register your group once. We handle matching you to the right home — no back and forth.' },
-                    { icon: '🔒', title: 'Group feature coming soon', body: 'A dedicated group dashboard where your crew can browse and apply together is on the way.' },
-                  ].map(p => (
-                    <div className="perk-card" key={p.title}>
-                      <div className="perk-icon">{p.icon}</div>
-                      <div className="perk-title">{p.title}</div>
-                      <p className="perk-body">{p.body}</p>
+                  {perks.map(p => (
+                    <div className="perks-grid">
+                      {perks.map(p => (
+                        <div className="perk-card" key={p.title}>
+                          <div className="perk-icon">{p.icon}</div>
+                          <div className="perk-title">{p.title}</div>
+                          <p className="perk-body">{p.body}</p>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

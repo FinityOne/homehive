@@ -6,340 +6,329 @@ import { useSearchParams } from 'next/navigation'
 function ScoreBar({ score }: { score: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div style={{ flex: 1, height: '4px', background: '#e8e5de', borderRadius: '10px', overflow: 'hidden' }}>
-        <div style={{ width: `${score * 10}%`, height: '100%', background: score >= 8 ? '#d4a843' : '#6b9e6b', borderRadius: '10px' }} />
+      <div style={{ flex: 1, height: '3px', background: '#e8e4db', borderRadius: '10px', overflow: 'hidden' }}>
+        <div style={{ width: `${score * 10}%`, height: '100%', background: score >= 8 ? '#c9973a' : '#6b9e6b', borderRadius: '10px' }} />
       </div>
-      <span style={{ fontSize: '12px', fontWeight: 600, color: score >= 8 ? '#d4a843' : '#6b9e6b', minWidth: '28px' }}>{score}/10</span>
+      <span style={{ fontSize: '11px', fontWeight: 600, color: score >= 8 ? '#c9973a' : '#6b9e6b', minWidth: '32px' }}>{score}/10</span>
     </div>
   )
 }
 
-const PAIN_POINTS = [
-  { icon: '😤', headline: 'Zillow listings are already gone', body: 'You find something great, fill out a form, and hear nothing. We respond within hours — not days.' },
-  { icon: '💸', headline: 'Hidden fees at signing', body: 'Broker fees, admin fees, "processing" fees. With HomeHive, the price you see is exactly what you pay.' },
-  { icon: '📱', headline: 'Facebook group chaos', body: 'Cold DMs, ghosts, and zero accountability. Every HomeHive listing is managed directly by the owner.' },
-  { icon: '🤝', headline: 'No one helps with roommates', body: "You're on your own to find compatible people. We match you before you sign — by lifestyle, not just availability." },
-]
-
 export default function HomePage() {
   const searchParams = useSearchParams()
   const guestName = searchParams.get('name') || ''
-  const customMsg = searchParams.get('msg') || ''
-  const fromName = searchParams.get('from') || 'Mike'
   const isPersonalized = !!guestName
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;1,300;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'DM Sans', sans-serif; background: #faf9f6; color: #1a1a1a; }
 
-        .page { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+        .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
-        /* PERSONALIZED BANNER */
-        .personal-banner {
-          background: linear-gradient(135deg, #1a1a1a 0%, #2d2410 100%);
-          border-radius: 14px; padding: 28px 32px; margin-bottom: 0;
-          border: 1px solid #d4a843; position: relative; overflow: hidden;
-        }
-        .personal-glow {
-          position: absolute; top: -60px; right: -60px; width: 220px; height: 220px;
-          border-radius: 50%; background: radial-gradient(circle, rgba(212,168,67,0.12) 0%, transparent 70%);
-          pointer-events: none;
-        }
-        .personal-tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(212,168,67,0.15); border: 1px solid rgba(212,168,67,0.4); border-radius: 20px; padding: 4px 12px; margin-bottom: 14px; }
-        .personal-tag-text { font-size: 10px; color: #d4a843; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
-        .personal-title { font-family: 'DM Serif Display', serif; font-size: 26px; color: #fff; line-height: 1.2; margin-bottom: 10px; }
-        .personal-title em { color: #d4a843; font-style: normal; }
-        .personal-msg { font-size: 14px; color: #c5c1b8; line-height: 1.65; margin-bottom: 20px; max-width: 560px; }
-        .personal-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 18px; border-top: 1px solid rgba(212,168,67,0.2); }
-        .personal-sender { display: flex; align-items: center; gap: 10px; }
-        .personal-avatar { width: 34px; height: 34px; border-radius: 50%; background: #d4a843; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #1a1a1a; flex-shrink: 0; }
-        .personal-sender-name { font-size: 13px; color: #fff; font-weight: 500; }
-        .personal-sender-sub { font-size: 11px; color: #6b6b6b; }
-        .personal-live { display: flex; align-items: center; gap: 6px; background: rgba(220,252,231,0.1); border: 1px solid rgba(34,197,94,0.3); border-radius: 20px; padding: 6px 14px; }
-        .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
-        .live-text { font-size: 12px; color: #86efac; font-weight: 500; }
-        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+        .personal-bar { background: #1a1a1a; padding: 10px 24px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: #c5c1b8; }
+        .personal-bar strong { color: #d4a843; font-weight: 500; }
+        .pbar-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; flex-shrink: 0; }
+        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
-        /* HERO */
-        .hero { padding: 64px 0 48px; text-align: center; }
-        .hero-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #d4a843; margin-bottom: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        .hero-eyebrow::before, .hero-eyebrow::after { content: ''; width: 40px; height: 1px; background: #d4a843; opacity: 0.5; }
-        .hero-title { font-family: 'DM Serif Display', serif; font-size: 56px; color: #1a1a1a; line-height: 1.08; margin-bottom: 20px; letter-spacing: -1px; }
-        .hero-title em { font-style: italic; color: #d4a843; }
-        .hero-sub { font-size: 17px; color: #6b6b6b; line-height: 1.7; max-width: 520px; margin: 0 auto 36px; }
-        .hero-cta-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-        .btn-primary { background: #1a1a1a; color: #fff; padding: 14px 32px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; display: inline-block; transition: background 0.2s; }
-        .btn-primary:hover { background: #333; }
-        .hero-trust { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; }
-        .hero-trust-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9b9b9b; }
-        .trust-dot { width: 5px; height: 5px; border-radius: 50%; background: #d4a843; }
+        .hero { padding: 72px 0 64px; display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; border-bottom: 1px solid #e8e4db; margin-bottom: 72px; }
+        .hero-tag { display: inline-flex; align-items: center; gap: 7px; background: #f0e6cc; color: #92620a; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 22px; }
+        .hero-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: #c9973a; }
+        .hero-title { font-family: 'Fraunces', serif; font-size: 54px; font-weight: 300; line-height: 1.06; color: #1a1a1a; letter-spacing: -1.5px; margin-bottom: 20px; }
+        .hero-title em { font-style: italic; color: #c9973a; }
+        .hero-body { font-size: 16px; color: #6b6b6b; line-height: 1.75; margin-bottom: 32px; max-width: 420px; }
+        .hero-actions { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; flex-wrap: wrap; }
+        .btn-dark { background: #1a1a1a; color: #fff; padding: 13px 26px; border-radius: 7px; font-size: 14px; font-weight: 500; text-decoration: none; font-family: 'DM Sans', sans-serif; }
+        .btn-dark:hover { background: #333; }
+        .btn-ghost { color: #1a1a1a; font-size: 14px; font-weight: 500; text-decoration: none; display: flex; align-items: center; gap: 4px; }
+        .btn-ghost:hover { color: #c9973a; }
+        .hero-proof { display: flex; align-items: center; gap: 12px; }
+        .proof-avatars { display: flex; }
+        .proof-av { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #faf9f6; background: #f0e6cc; color: #92620a; font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center; margin-left: -6px; }
+        .proof-av:first-child { margin-left: 0; }
+        .proof-text { font-size: 12px; color: #6b6b6b; }
+        .proof-text strong { color: #1a1a1a; }
 
-        /* STATS STRIP */
-        .stats-strip { display: flex; justify-content: center; background: #1a1a1a; border-radius: 12px; overflow: hidden; margin-bottom: 64px; }
-        .stats-strip-item { flex: 1; padding: 20px 16px; text-align: center; border-right: 1px solid #2a2a2a; }
-        .stats-strip-item:last-child { border-right: none; }
-        .stats-num { font-family: 'DM Serif Display', serif; font-size: 26px; color: #d4a843; }
-        .stats-lbl { font-size: 11px; color: #6b6b6b; margin-top: 3px; letter-spacing: 0.3px; }
+        .answer-list { display: flex; flex-direction: column; gap: 8px; }
+        .answer-row { display: flex; align-items: flex-start; gap: 12px; background: #fff; border: 1px solid #e8e4db; border-radius: 10px; padding: 14px 16px; transition: border-color 0.2s; }
+        .answer-row:hover { border-color: #c9973a; }
+        .answer-icon { font-size: 18px; flex-shrink: 0; }
+        .answer-q { font-size: 12px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
+        .answer-a { font-size: 12px; color: #6b6b6b; line-height: 1.55; }
+        .answer-a strong { color: #16a34a; font-weight: 500; }
 
-        /* PAIN POINTS */
-        .pain-section { margin-bottom: 64px; }
-        .section-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #d4a843; margin-bottom: 10px; text-align: center; }
-        .section-title { font-family: 'DM Serif Display', serif; font-size: 36px; color: #1a1a1a; text-align: center; margin-bottom: 36px; line-height: 1.2; }
-        .pain-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-        .pain-card { background: #fff; border: 1px solid #e8e5de; border-radius: 12px; padding: 24px; display: flex; gap: 16px; align-items: flex-start; }
-        .pain-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
-        .pain-headline { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px; }
-        .pain-body { font-size: 13px; color: #6b6b6b; line-height: 1.65; }
+        .homes-section { margin-bottom: 88px; }
+        .homes-hdr { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; }
+        .homes-hdr-title { font-family: 'Fraunces', serif; font-size: 32px; font-weight: 300; color: #1a1a1a; letter-spacing: -0.5px; }
+        .homes-hdr-meta { font-size: 13px; color: #9b9b9b; }
+        .homes-hdr-meta span { color: #16a34a; font-weight: 500; }
+        .homes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
 
-        /* HOMES */
-        .homes-section { margin-bottom: 64px; }
-        .homes-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 28px; }
-        .homes-header-left {}
-        .homes-header-right { font-size: 13px; color: #9b9b9b; }
-        .homes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; }
+        .home-card { background: #fff; border: 1px solid #e8e4db; border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: block; transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s; }
+        .home-card:hover { transform: translateY(-5px); box-shadow: 0 20px 60px rgba(0,0,0,0.09); border-color: #d4c9b0; }
+        .card-img { height: 220px; overflow: hidden; position: relative; }
+        .card-img img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
+        .home-card:hover .card-img img { transform: scale(1.06); }
+        .card-avail { position: absolute; top: 12px; left: 12px; font-size: 11px; font-weight: 600; padding: 4px 11px; border-radius: 20px; backdrop-filter: blur(8px); }
+        .card-avail.green { background: rgba(220,252,231,0.92); color: #166534; border: 1px solid rgba(187,247,208,0.8); }
+        .card-avail.amber { background: rgba(254,249,195,0.92); color: #854d0e; border: 1px solid rgba(253,224,71,0.5); }
+        .card-price { position: absolute; bottom: 12px; right: 12px; background: rgba(26,26,26,0.88); color: #fff; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 300; padding: 6px 14px; border-radius: 8px; backdrop-filter: blur(6px); letter-spacing: -0.3px; }
+        .card-price span { font-family: 'DM Sans', sans-serif; font-size: 11px; opacity: 0.7; font-weight: 400; }
+        .card-body { padding: 18px 20px 20px; }
+        .card-name { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 300; color: #1a1a1a; margin-bottom: 4px; letter-spacing: -0.3px; }
+        .card-addr { font-size: 12px; color: #9b9b9b; margin-bottom: 12px; }
+        .card-stats { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+        .card-stat { font-size: 12px; color: #6b6b6b; }
+        .card-sep { width: 3px; height: 3px; border-radius: 50%; background: #e8e4db; }
+        .card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
+        .card-tag { font-size: 11px; background: #faf9f6; border: 1px solid #e8e4db; color: #6b6b6b; padding: 3px 9px; border-radius: 20px; }
+        .card-tag.gold { background: #f0e6cc; border-color: #e8d5a8; color: #92620a; }
+        .card-footer { border-top: 1px solid #f0ede6; padding-top: 14px; }
+        .card-score-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #9b9b9b; margin-bottom: 6px; }
+        .card-reasons { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+        .card-reason { font-size: 11px; color: #6b6b6b; display: flex; align-items: center; gap: 5px; }
+        .reason-chk { color: #c9973a; font-size: 10px; }
+        .card-cta { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0ede6; }
+        .card-cta-hint { font-size: 11px; color: #9b9b9b; }
+        .card-cta-btn { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+        .home-card:hover .card-cta-btn { color: #c9973a; }
 
-        /* HOME CARD */
-        .home-card { background: #fff; border: 1px solid #e8e5de; border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: block; transition: transform 0.2s, box-shadow 0.2s; }
-        .home-card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,0.1); }
-        .home-card-img { height: 210px; overflow: hidden; position: relative; }
-        .home-card-img img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
-        .home-card:hover .home-card-img img { transform: scale(1.05); }
-        .avail-badge { position: absolute; top: 12px; left: 12px; font-size: 11px; font-weight: 600; padding: 4px 11px; border-radius: 20px; }
-        .avail-badge.green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-        .avail-badge.amber { background: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
-        .price-badge { position: absolute; bottom: 12px; right: 12px; background: rgba(26,26,26,0.85); color: #fff; font-family: 'DM Serif Display', serif; font-size: 18px; padding: 6px 14px; border-radius: 8px; backdrop-filter: blur(4px); }
-        .price-badge span { font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 400; opacity: 0.75; }
-        .home-card-body { padding: 20px 22px 22px; }
-        .home-card-name { font-family: 'DM Serif Display', serif; font-size: 21px; color: #1a1a1a; margin-bottom: 4px; }
-        .home-card-addr { font-size: 12px; color: #9b9b9b; margin-bottom: 14px; display: flex; align-items: center; gap: 4px; }
-        .home-stats-row { display: flex; gap: 6px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
-        .home-stat { font-size: 12px; color: #6b6b6b; }
-        .stat-sep { width: 3px; height: 3px; border-radius: 50%; background: #d1d5db; }
-        .home-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-        .home-tag { font-size: 11px; background: #f9f8f5; border: 1px solid #e8e5de; color: #6b6b6b; padding: 3px 9px; border-radius: 20px; }
-        .home-card-footer { padding-top: 14px; border-top: 1px solid #f0ede6; }
-        .home-score-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-        .home-score-label { font-size: 11px; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; }
-        .home-score-reasons { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
-        .home-score-reason { font-size: 12px; color: #6b6b6b; display: flex; align-items: center; gap: 6px; }
-        .reason-dot { width: 5px; height: 5px; border-radius: 50%; background: #d4a843; flex-shrink: 0; }
-        .home-cta { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid #f0ede6; }
-        .home-cta-text { font-size: 13px; color: #9b9b9b; }
-        .home-cta-btn { background: #1a1a1a; color: #fff; font-size: 13px; font-weight: 600; padding: 9px 18px; border-radius: 7px; text-decoration: none; transition: background 0.2s; font-family: 'DM Sans', sans-serif; }
-        .home-cta-btn:hover { background: #333; }
+        .section-hdr { text-align: center; margin-bottom: 40px; }
+        .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #c9973a; margin-bottom: 10px; }
+        .section-title { font-family: 'Fraunces', serif; font-size: 36px; font-weight: 300; color: #1a1a1a; letter-spacing: -0.5px; line-height: 1.2; }
+        .section-title em { font-style: italic; }
 
-        /* URGENCY STRIP */
-        .urgency-strip { background: #fff; border: 1px solid #e8e5de; border-radius: 12px; padding: 20px 28px; margin-bottom: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-        .urgency-left { display: flex; align-items: center; gap: 14px; }
-        .urgency-icon { width: 42px; height: 42px; border-radius: 50%; background: #fef9c3; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-        .urgency-title { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
-        .urgency-sub { font-size: 13px; color: #6b6b6b; }
-        .urgency-btn { background: #d4a843; color: #1a1a1a; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 7px; text-decoration: none; white-space: nowrap; transition: background 0.2s; }
-        .urgency-btn:hover { background: #c49a35; }
+        .trust-section { margin-bottom: 88px; }
+        .trust-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .trust-card { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 24px; }
+        .trust-num { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 300; color: #c9973a; letter-spacing: -1px; margin-bottom: 6px; }
+        .trust-title { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px; }
+        .trust-body { font-size: 13px; color: #6b6b6b; line-height: 1.65; }
 
-        /* PROMISE SECTION */
-        .promise-section { background: #1a1a1a; border-radius: 16px; padding: 48px; margin-bottom: 64px; text-align: center; }
-        .promise-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #d4a843; margin-bottom: 12px; }
-        .promise-title { font-family: 'DM Serif Display', serif; font-size: 36px; color: #fff; margin-bottom: 14px; line-height: 1.2; }
-        .promise-sub { font-size: 15px; color: #9b9b9b; line-height: 1.7; max-width: 500px; margin: 0 auto 36px; }
-        .promise-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 700px; margin: 0 auto; }
-        .promise-item { background: rgba(255,255,255,0.05); border: 1px solid #2a2a2a; border-radius: 10px; padding: 20px; }
-        .promise-item-icon { font-size: 22px; margin-bottom: 10px; }
-        .promise-item-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 6px; }
-        .promise-item-body { font-size: 12px; color: #6b6b6b; line-height: 1.6; }
+        .process-section { margin-bottom: 88px; }
+        .process-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; position: relative; }
+        .process-steps::before { content: ''; position: absolute; top: 20px; left: 12%; right: 12%; height: 1px; background: #e8e4db; z-index: 0; }
+        .process-step { text-align: center; padding: 0 12px; position: relative; z-index: 1; }
+        .process-num { width: 40px; height: 40px; border-radius: 50%; background: #1a1a1a; color: #c9973a; font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+        .process-title { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px; }
+        .process-body { font-size: 12px; color: #6b6b6b; line-height: 1.6; }
+
+        .faq-section { margin-bottom: 88px; }
+        .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .faq-item { background: #fff; border: 1px solid #e8e4db; border-radius: 10px; padding: 20px 22px; }
+        .faq-q { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px; }
+        .faq-icon { color: #c9973a; flex-shrink: 0; }
+        .faq-a { font-size: 13px; color: #6b6b6b; line-height: 1.65; padding-left: 24px; }
+
+        .bottom-cta { background: #1a1a1a; border-radius: 16px; padding: 56px 48px; margin-bottom: 80px; text-align: center; position: relative; overflow: hidden; }
+        .bottom-cta::before { content: ''; position: absolute; top: -80px; right: -80px; width: 300px; height: 300px; border-radius: 50%; background: radial-gradient(circle, rgba(201,151,58,0.12) 0%, transparent 70%); pointer-events: none; }
+        .bottom-cta-title { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 300; color: #fff; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.15; }
+        .bottom-cta-title em { font-style: italic; color: #d4a843; }
+        .bottom-cta-sub { font-size: 15px; color: #9b9b9b; line-height: 1.7; max-width: 440px; margin: 0 auto 32px; }
+        .btn-gold { background: #d4a843; color: #1a1a1a; padding: 14px 32px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; display: inline-block; font-family: 'DM Sans', sans-serif; }
+        .btn-gold:hover { background: #c49a35; }
+        .cta-trust-row { display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+        .cta-trust-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #6b6b6b; }
+        .cta-trust-dot { width: 4px; height: 4px; border-radius: 50%; background: #d4a843; }
 
         @media (max-width: 768px) {
+          .hero { grid-template-columns: 1fr; gap: 40px; padding: 48px 0 40px; }
           .hero-title { font-size: 38px; }
-          .pain-grid { grid-template-columns: 1fr; }
-          .promise-grid { grid-template-columns: 1fr; }
-          .stats-strip { flex-wrap: wrap; }
-          .stats-strip-item { border-right: none; border-bottom: 1px solid #2a2a2a; min-width: 50%; }
-          .urgency-strip { flex-direction: column; text-align: center; }
+          .trust-grid { grid-template-columns: 1fr; }
+          .process-steps { grid-template-columns: 1fr 1fr; gap: 28px; }
+          .process-steps::before { display: none; }
+          .faq-grid { grid-template-columns: 1fr; }
+          .bottom-cta { padding: 36px 24px; }
+          .bottom-cta-title { font-size: 30px; }
         }
       `}</style>
 
-      <div style={{ fontFamily: "'DM Sans', sans-serif", background: '#f5f4f0', minHeight: '100vh' }}>
-        <div className="page">
+      {isPersonalized && (
+        <div className="personal-bar">
+          <span className="pbar-dot" />
+          <span>Hey <strong>{guestName}</strong> — we picked these homes for you near ASU. Spots go fast.</span>
+        </div>
+      )}
 
-          {/* PERSONALIZED BANNER */}
-          {isPersonalized && (
-            <div style={{ paddingTop: '32px' }}>
-              <div className="personal-banner">
-                <div className="personal-glow" />
-                <div className="personal-tag">
-                  <span className="personal-tag-text">✦ Personalized for {guestName}</span>
-                </div>
-                <div className="personal-title">
-                  Hey {guestName}, we found homes<br /><em>picked just for you.</em>
-                </div>
-                <p className="personal-msg">
-                  {customMsg || `We handpicked these listings based on what ASU students like you are actually looking for — transparent pricing, flexible move-in, and no broker fees. Ever.`}
-                </p>
-                <div className="personal-footer">
-                  <div className="personal-sender">
-                    <div className="personal-avatar">{fromName.charAt(0).toUpperCase()}</div>
-                    <div>
-                      <div className="personal-sender-name">{fromName} from HomeHive</div>
-                      <div className="personal-sender-sub">Sent this listing personally for you</div>
-                    </div>
-                  </div>
-                  <div className="personal-live">
-                    <span className="live-dot" />
-                    <span className="live-text">Rooms available now</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+      <div className="wrap" style={{ paddingTop: '48px' }}>
 
-          {/* HERO */}
-          <div className="hero">
-            <div className="hero-eyebrow">ASU Student Housing · Tempe, AZ</div>
-            <h1 className="hero-title">
-              Your home near ASU<br />shouldn't be this <em>hard</em>
-              <br />to find.
-            </h1>
-            <p className="hero-sub">
-              No broker fees. No disappearing listings. No Facebook group chaos.
-              Just real homes, transparent pricing, and a landlord who actually responds.
+        {/* HERO */}
+        <div className="hero">
+          <div>
+            <div className="hero-tag"><span className="hero-tag-dot" />Tempe, AZ · Near ASU</div>
+            <h1 className="hero-title">Real homes.<br />Real prices.<br /><em>No games.</em></h1>
+            <p className="hero-body">
+              Done scrolling Zillow listings that vanish before you can apply? HomeHive is run directly by the owner — transparent pricing, zero broker fees, and someone who actually responds.
             </p>
-            <div className="hero-cta-row">
-              <a href="#homes" className="btn-primary">See available homes →</a>
+            <div className="hero-actions">
+              <a href="#homes" className="btn-dark">See available homes →</a>
+              <a href="/roommates" className="btn-ghost">Need roommates? ↗</a>
             </div>
-            <div className="hero-trust">
-              {['No broker fees, ever', 'Response within hours', 'Transparent pricing', 'Roommate matching included'].map(t => (
-                <div className="hero-trust-item" key={t}>
-                  <span className="trust-dot" />
-                  <span>{t}</span>
-                </div>
-              ))}
+            <div className="hero-proof">
+              <div className="proof-avatars">
+                {['SO', 'MT', 'JL', 'KP'].map(i => <div className="proof-av" key={i}>{i}</div>)}
+              </div>
+              <p className="proof-text"><strong>40+ ASU students</strong> placed this year</p>
             </div>
           </div>
 
-          {/* STATS STRIP */}
-          <div className="stats-strip">
-            {[['2', 'Homes available'], ['$680', 'Starting per room/mo'], ['$0', 'Broker fees'], ['< 24hrs', 'Avg. response time'], ['100%', 'Utilities included']].map(([n, l]) => (
-              <div className="stats-strip-item" key={l}>
-                <div className="stats-num">{n}</div>
-                <div className="stats-lbl">{l}</div>
+          <div className="answer-list">
+            {[
+              { icon: '🏠', q: 'Is there a home for me near ASU?', a: <><strong>Yes.</strong> Both homes are under 1 mile from campus with rooms available now.</> },
+              { icon: '👥', q: 'Can I bring my friends?', a: <><strong>Absolutely.</strong> 3 and 4-bedroom homes. Groups welcome — we coordinate move-in together.</> },
+              { icon: '💰', q: 'Is this actually the best deal?', a: <><strong>Starting at $680/mo</strong> — all utilities included. No broker fees. No move-in charges. Ever.</> },
+              { icon: '🔒', q: "Will I get scammed?", a: <>You talk directly to the owner. <strong>What you see is what you pay.</strong> Zero hidden fees at signing.</> },
+              { icon: '📋', q: 'What happens after I apply?', a: <>Submit → <strong>hear back within hours</strong> → tour → move in. No cold calls, no runaround.</> },
+            ].map(({ icon, q, a }) => (
+              <div className="answer-row" key={q}>
+                <span className="answer-icon">{icon}</span>
+                <div>
+                  <div className="answer-q">{q}</div>
+                  <div className="answer-a">{a}</div>
+                </div>
               </div>
             ))}
           </div>
-
-          {/* PAIN POINTS */}
-          <div className="pain-section">
-            <div className="section-eyebrow">Sound familiar?</div>
-            <div className="section-title">Finding housing near ASU<br />shouldn't feel like this.</div>
-            <div className="pain-grid">
-              {PAIN_POINTS.map(p => (
-                <div className="pain-card" key={p.headline}>
-                  <div className="pain-icon">{p.icon}</div>
-                  <div>
-                    <div className="pain-headline">{p.headline}</div>
-                    <p className="pain-body">{p.body}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* HOMES GRID */}
-          <div className="homes-section" id="homes">
-            <div className="homes-header">
-              <div>
-                <div className="section-eyebrow" style={{ textAlign: 'left' }}>Available now</div>
-                <div className="section-title" style={{ textAlign: 'left', marginBottom: 0, fontSize: '32px' }}>Homes near ASU</div>
-              </div>
-              <div className="homes-header-right">{homes.filter(h => h.available > 0).length} homes · updated today</div>
-            </div>
-            <div className="homes-grid">
-              {homes.map(home => (
-                <a href={`/homes/${home.slug}`} className="home-card" key={home.slug}>
-                  <div className="home-card-img">
-                    <img src={home.heroImage} alt={home.name} />
-                    <div className={`avail-badge ${home.available === 1 ? 'amber' : 'green'}`}>
-                      {home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
-                    </div>
-                    <div className="price-badge">${home.price}<span>/mo</span></div>
-                  </div>
-                  <div className="home-card-body">
-                    <div className="home-card-name">{home.name}</div>
-                    <div className="home-card-addr">
-                      <span>📍</span>{home.address}
-                    </div>
-                    <div className="home-stats-row">
-                      <span className="home-stat">{home.beds} beds</span>
-                      <span className="stat-sep" />
-                      <span className="home-stat">{home.baths} baths</span>
-                      <span className="stat-sep" />
-                      <span className="home-stat">{home.sqft} sq ft</span>
-                      <span className="stat-sep" />
-                      <span className="home-stat">{home.asuDistance} to ASU</span>
-                    </div>
-                    <div className="home-tags">
-                      {home.tags.slice(0, 4).map(t => <span className="home-tag" key={t}>{t}</span>)}
-                    </div>
-                    <div className="home-card-footer">
-                      <div className="home-score-row">
-                        <span className="home-score-label">ASU fit score</span>
-                        <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 500 }}>All utilities included</span>
-                      </div>
-                      <ScoreBar score={home.asuScore} />
-                      <div className="home-score-reasons">
-                        {home.asuScoreReasons.slice(0, 2).map(r => (
-                          <div className="home-score-reason" key={r}>
-                            <span className="reason-dot" />
-                            {r}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="home-cta">
-                        <span className="home-cta-text">No commitment to view details</span>
-                        <span className="home-cta-btn">View home →</span>
-                      </div>
-                    </div>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-
-          {/* URGENCY STRIP */}
-          <div className="urgency-strip">
-            <div className="urgency-left">
-              <div className="urgency-icon">⏳</div>
-              <div>
-                <div className="urgency-title">Rooms go fast before semester starts</div>
-                <div className="urgency-sub">Most of our rooms are claimed 6–8 weeks before move-in. Submitting interest takes 2 minutes and holds your spot in line.</div>
-              </div>
-            </div>
-            <a href="#homes" className="urgency-btn">Check availability now</a>
-          </div>
-
-          {/* PROMISE */}
-          <div className="promise-section">
-            <div className="promise-eyebrow">The HomeHive promise</div>
-            <div className="promise-title">A different kind of landlord experience</div>
-            <p className="promise-sub">We built HomeHive because finding student housing near ASU was broken. Here's what we do differently.</p>
-            <div className="promise-grid">
-              {[
-                { icon: '💰', title: 'Price you see = price you pay', body: 'No broker fees, no move-in charges, no admin fees added at signing. Ever.' },
-                { icon: '⚡', title: 'We actually respond', body: 'Submit interest and hear back within hours. Not days. Not a week. Hours.' },
-                { icon: '🤝', title: 'Roommate matching', body: "Don't have roommates? We'll match you with compatible housemates by lifestyle — not just whoever applied first." },
-              ].map(p => (
-                <div className="promise-item" key={p.title}>
-                  <div className="promise-item-icon">{p.icon}</div>
-                  <div className="promise-item-title">{p.title}</div>
-                  <p className="promise-item-body">{p.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
         </div>
+
+        {/* HOMES */}
+        <div className="homes-section" id="homes">
+          <div className="homes-hdr">
+            <div className="homes-hdr-title">Available homes</div>
+            <div className="homes-hdr-meta">
+              <span>{homes.filter(h => h.available > 0).length} homes available</span> · updated today
+            </div>
+          </div>
+          <div className="homes-grid">
+            {homes.map(home => (
+              <a href={`/homes/${home.slug}`} className="home-card" key={home.slug}>
+                <div className="card-img">
+                  <img src={home.heroImage} alt={home.name} />
+                  <div className={`card-avail ${home.available === 1 ? 'amber' : 'green'}`}>
+                    {home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
+                  </div>
+                  <div className="card-price">${home.price}<span>/mo</span></div>
+                </div>
+                <div className="card-body">
+                  <div className="card-name">{home.name}</div>
+                  <div className="card-addr">📍 {home.address}</div>
+                  <div className="card-stats">
+                    <span className="card-stat">{home.beds} bed</span>
+                    <span className="card-sep" />
+                    <span className="card-stat">{home.baths} bath</span>
+                    <span className="card-sep" />
+                    <span className="card-stat">{home.sqft} sqft</span>
+                    <span className="card-sep" />
+                    <span className="card-stat">{home.asuDistance} to ASU</span>
+                  </div>
+                  <div className="card-tags">
+                    <span className="card-tag gold">All utilities included</span>
+                    <span className="card-tag gold">$0 broker fee</span>
+                    {home.tags.slice(0, 2).map(t => <span className="card-tag" key={t}>{t}</span>)}
+                  </div>
+                  <div className="card-footer">
+                    <div className="card-score-lbl">ASU fit score</div>
+                    <ScoreBar score={home.asuScore} />
+                    <div className="card-reasons">
+                      {home.asuScoreReasons.slice(0, 2).map(r => (
+                        <div className="card-reason" key={r}><span className="reason-chk">✓</span>{r}</div>
+                      ))}
+                    </div>
+                    <div className="card-cta">
+                      <span className="card-cta-hint">No commitment to view</span>
+                      <span className="card-cta-btn">See this home →</span>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+
+        {/* TRUST */}
+        <div className="trust-section">
+          <div className="section-hdr">
+            <div className="eyebrow">Why HomeHive</div>
+            <div className="section-title">Built because finding housing<br />near ASU was <em>broken.</em></div>
+          </div>
+          <div className="trust-grid">
+            {[
+              { num: '$0', title: 'Broker fees. Always.', body: 'Every other platform charges you to rent. We never do. The price you see is exactly what you sign for — nothing added at the table.' },
+              { num: '<2hr', title: 'Response time', body: "Submit interest and a real person follows up the same day. No bots, no automated sequences. Someone who actually knows the homes." },
+              { num: '100%', title: 'Utilities included', body: 'WiFi, electric, water, gas — all bundled into your rent. No surprise bills or awkward roommate Venmo requests at the end of the month.' },
+            ].map(t => (
+              <div className="trust-card" key={t.title}>
+                <div className="trust-num">{t.num}</div>
+                <div className="trust-title">{t.title}</div>
+                <p className="trust-body">{t.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* PROCESS */}
+        <div className="process-section">
+          <div className="section-hdr">
+            <div className="eyebrow">The process</div>
+            <div className="section-title">From browsing to moved in.<br /><em>No surprises at any step.</em></div>
+          </div>
+          <div className="process-steps">
+            {[
+              { n: '1', title: 'Browse homes', body: 'Real photos, honest pricing, ASU fit score. No bait and switch.' },
+              { n: '2', title: 'Submit interest', body: '2 minutes. No commitment, no phone call needed. Just the basics.' },
+              { n: '3', title: 'We reach out', body: 'A real person follows up within hours. Tour on your schedule.' },
+              { n: '4', title: 'Move in', body: 'Sign, pay exactly what was quoted, get your keys. Nothing hidden.' },
+            ].map(s => (
+              <div className="process-step" key={s.n}>
+                <div className="process-num">{s.n}</div>
+                <div className="process-title">{s.title}</div>
+                <p className="process-body">{s.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* FAQ */}
+        <div className="faq-section">
+          <div className="section-hdr">
+            <div className="eyebrow">Common questions</div>
+            <div className="section-title">Things students always ask.<br /><em>Answered honestly.</em></div>
+          </div>
+          <div className="faq-grid">
+            {[
+              { icon: '💸', q: 'Are there really no hidden fees?', a: "Yes, really. The rent listed is your rent. No admin fee, no broker fee, no processing charge at signing. Security deposit is the only extra — fully refunded at move-out." },
+              { icon: '👫', q: 'Can I move in with my friend group?', a: "Yes. Our homes are 3 and 4 bedrooms. Submit interest together, mention your group size, and we'll hold rooms for your crew while you sort the details." },
+              { icon: '📅', q: 'Can I move in at the start of a semester?', a: "We coordinate around the ASU academic calendar. Fall and spring move-ins are our most common, with flexibility a few weeks either direction." },
+              { icon: '🔍', q: "I don't have roommates. Can you help?", a: "That's one of the things we do. Tell us your lifestyle on the interest form and we'll match you with compatible people already in the home or also looking." },
+              { icon: '🏠', q: 'Can I see the home before committing?', a: "Of course. After you submit interest we'll set up an in-person or virtual tour — no commitment required. We want you to feel good before signing anything." },
+              { icon: '⚡', q: "What's actually included in 'utilities'?", a: "Everything: electricity, water, gas, and high-speed WiFi. You pay rent and that's your total monthly cost. No splitting bills or surprise charges." },
+            ].map(({ icon, q, a }) => (
+              <div className="faq-item" key={q}>
+                <div className="faq-q"><span className="faq-icon">{icon}</span>{q}</div>
+                <p className="faq-a">{a}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* BOTTOM CTA */}
+        <div className="bottom-cta">
+          <div className="bottom-cta-title">Stop wasting time on<br /><em>dead-end listings.</em></div>
+          <p className="bottom-cta-sub">Two great homes. Real pricing. A landlord who responds. Browse what's available and apply in under 2 minutes.</p>
+          <a href="#homes" className="btn-gold">See available homes →</a>
+          <div className="cta-trust-row">
+            {['No broker fees', 'Respond within 2hrs', 'No commitment to apply', 'Utilities included'].map(t => (
+              <div className="cta-trust-item" key={t}>
+                <span className="cta-trust-dot" />
+                <span>{t}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
       </div>
     </>
   )
