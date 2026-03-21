@@ -1,6 +1,7 @@
 'use client'
 
 import { homes } from '@/lib/homes'
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 function ScoreBar({ score }: { score: number }) {
@@ -14,7 +15,7 @@ function ScoreBar({ score }: { score: number }) {
   )
 }
 
-export default function HomePage() {
+function HomePageInner() {
   const searchParams = useSearchParams()
   const guestName = searchParams.get('name') || ''
   const isPersonalized = !!guestName
@@ -331,5 +332,13 @@ export default function HomePage() {
 
       </div>
     </>
+  )
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={null}>
+      <HomePageInner />
+    </Suspense>
   )
 }
