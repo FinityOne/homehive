@@ -1,7 +1,6 @@
 'use client'
 
 import { homes } from '@/lib/homes'
-import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 function ScoreBar({ score }: { score: number }) {
@@ -15,7 +14,7 @@ function ScoreBar({ score }: { score: number }) {
   )
 }
 
-function HomePageInner() {
+export default function HomePage() {
   const searchParams = useSearchParams()
   const guestName = searchParams.get('name') || ''
   const isPersonalized = !!guestName
@@ -29,6 +28,19 @@ function HomePageInner() {
         body { font-family: 'DM Sans', sans-serif; background: #faf9f6; color: #1a1a1a; }
 
         .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+        .asu-bar { background: #8C1D40; padding: 0 24px; display: flex; align-items: center; justify-content: center; gap: 0; border-bottom: 3px solid #FFC627; }
+        .asu-bar-inner { max-width: 1080px; width: 100%; display: flex; align-items: center; justify-content: space-between; height: 38px; }
+        .asu-bar-left { display: flex; align-items: center; gap: 10px; }
+        .asu-logo-mark { display: flex; align-items: center; gap: 7px; }
+        .asu-pitchfork { color: #FFC627; font-size: 16px; line-height: 1; }
+        .asu-bar-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #fff; }
+        .asu-bar-divider { width: 1px; height: 16px; background: rgba(255,255,255,0.25); margin: 0 10px; }
+        .asu-bar-sub { font-size: 11px; color: rgba(255,255,255,0.75); letter-spacing: 0.3px; }
+        .asu-bar-right { display: flex; align-items: center; gap: 16px; }
+        .asu-bar-link { font-size: 11px; color: rgba(255,255,255,0.8); text-decoration: none; font-weight: 500; letter-spacing: 0.3px; }
+        .asu-bar-link:hover { color: #FFC627; }
+        .asu-bar-badge { background: #FFC627; color: #8C1D40; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.5px; text-transform: uppercase; }
 
         .personal-bar { background: #1a1a1a; padding: 10px 24px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: #c5c1b8; }
         .personal-bar strong { color: #d4a843; font-weight: 500; }
@@ -136,6 +148,8 @@ function HomePageInner() {
         .cta-trust-dot { width: 4px; height: 4px; border-radius: 50%; background: #d4a843; }
 
         @media (max-width: 768px) {
+          .asu-bar-right { display: none; }
+          .asu-bar-sub { display: none; }
           .hero { grid-template-columns: 1fr; gap: 40px; padding: 48px 0 40px; }
           .hero-title { font-size: 38px; }
           .trust-grid { grid-template-columns: 1fr; }
@@ -146,6 +160,25 @@ function HomePageInner() {
           .bottom-cta-title { font-size: 30px; }
         }
       `}</style>
+
+      {/* ASU SUB-NAV */}
+      <div className="asu-bar">
+        <div className="asu-bar-inner">
+          <div className="asu-bar-left">
+            <div className="asu-logo-mark">
+              <span className="asu-pitchfork">⚡</span>
+              <span className="asu-bar-label">ASU Off-Campus Housing</span>
+            </div>
+            <span className="asu-bar-divider" />
+            <span className="asu-bar-sub">Verified homes for Sun Devils near Tempe campus</span>
+          </div>
+          <div className="asu-bar-right">
+            <a href="/roommates" className="asu-bar-link">Find roommates</a>
+            <a href="#homes" className="asu-bar-link">Browse homes</a>
+            <span className="asu-bar-badge">Fall 2026 open</span>
+          </div>
+        </div>
+      </div>
 
       {isPersonalized && (
         <div className="personal-bar">
@@ -162,7 +195,7 @@ function HomePageInner() {
             <div className="hero-tag"><span className="hero-tag-dot" />Tempe, AZ · Near ASU</div>
             <h1 className="hero-title">Real homes.<br />Real prices.<br /><em>No games.</em></h1>
             <p className="hero-body">
-              Done scrolling Zillow listings that vanish before you can apply? HomeHive is run directly by the owner — transparent pricing, zero broker fees, and someone who actually responds.
+              Done scrolling Zillow listings that vanish before you can apply? HomeHive connects ASU students with verified, available homes near campus — transparent pricing, zero broker fees, and landlords who actually respond.
             </p>
             <div className="hero-actions">
               <a href="#homes" className="btn-dark">See available homes →</a>
@@ -172,7 +205,7 @@ function HomePageInner() {
               <div className="proof-avatars">
                 {['SO', 'MT', 'JL', 'KP'].map(i => <div className="proof-av" key={i}>{i}</div>)}
               </div>
-              <p className="proof-text"><strong>40+ ASU students</strong> placed this year</p>
+              <p className="proof-text"><strong>40+ ASU students</strong> placed through HomeHive</p>
             </div>
           </div>
 
@@ -180,7 +213,7 @@ function HomePageInner() {
             {[
               { icon: '🏠', q: 'Is there a home for me near ASU?', a: <><strong>Yes.</strong> Both homes are under 1 mile from campus with rooms available now.</> },
               { icon: '👥', q: 'Can I bring my friends?', a: <><strong>Absolutely.</strong> 3 and 4-bedroom homes. Groups welcome — we coordinate move-in together.</> },
-              { icon: '💰', q: 'Is this actually the best deal?', a: <><strong>Starting at $680/mo</strong> — all utilities included. No broker fees. No move-in charges. Ever.</> },
+              { icon: '💰', q: 'Is this actually the best deal?', a: <><strong>Starting at $680/mo</strong> — no broker fees, no move-in charges, and every listing shows exactly what's included before you apply.</> },
               { icon: '🔒', q: "Will I get scammed?", a: <>You talk directly to the owner. <strong>What you see is what you pay.</strong> Zero hidden fees at signing.</> },
               { icon: '📋', q: 'What happens after I apply?', a: <>Submit → <strong>hear back within hours</strong> → tour → move in. No cold calls, no runaround.</> },
             ].map(({ icon, q, a }) => (
@@ -226,7 +259,7 @@ function HomePageInner() {
                     <span className="card-stat">{home.asuDistance} to ASU</span>
                   </div>
                   <div className="card-tags">
-                    <span className="card-tag gold">All utilities included</span>
+                    <span className="card-tag gold">✓ Verified landlord</span>
                     <span className="card-tag gold">$0 broker fee</span>
                     {home.tags.slice(0, 2).map(t => <span className="card-tag" key={t}>{t}</span>)}
                   </div>
@@ -257,9 +290,9 @@ function HomePageInner() {
           </div>
           <div className="trust-grid">
             {[
-              { num: '$0', title: 'Broker fees. Always.', body: 'Every other platform charges you to rent. We never do. The price you see is exactly what you sign for — nothing added at the table.' },
-              { num: '<2hr', title: 'Response time', body: "Submit interest and a real person follows up the same day. No bots, no automated sequences. Someone who actually knows the homes." },
-              { num: '100%', title: 'Utilities included', body: 'WiFi, electric, water, gas — all bundled into your rent. No surprise bills or awkward roommate Venmo requests at the end of the month.' },
+              { num: '$0', title: 'Broker fees. Always.', body: 'Every listing on HomeHive is fee-free. The price you see is exactly what you sign for — no admin charges, no move-in fees added at the table.' },
+              { num: '<2hr', title: 'Response time', body: 'Submit interest and a verified landlord follows up the same day. No automated bots. Real people who know their homes.' },
+              { num: '100%', title: 'Verified listings', body: 'Every home on HomeHive is owner-verified. No ghost listings, no scam posts, no properties that were rented out six months ago.' },
             ].map(t => (
               <div className="trust-card" key={t.title}>
                 <div className="trust-num">{t.num}</div>
@@ -305,7 +338,7 @@ function HomePageInner() {
               { icon: '📅', q: 'Can I move in at the start of a semester?', a: "We coordinate around the ASU academic calendar. Fall and spring move-ins are our most common, with flexibility a few weeks either direction." },
               { icon: '🔍', q: "I don't have roommates. Can you help?", a: "That's one of the things we do. Tell us your lifestyle on the interest form and we'll match you with compatible people already in the home or also looking." },
               { icon: '🏠', q: 'Can I see the home before committing?', a: "Of course. After you submit interest we'll set up an in-person or virtual tour — no commitment required. We want you to feel good before signing anything." },
-              { icon: '⚡', q: "What's actually included in 'utilities'?", a: "Everything: electricity, water, gas, and high-speed WiFi. You pay rent and that's your total monthly cost. No splitting bills or surprise charges." },
+              { icon: '⚡', q: "What's actually included in the rent?", a: "Every listing on HomeHive clearly shows what's included — some homes include WiFi, some include all utilities. Every detail is listed upfront so there are no surprises at signing." },
             ].map(({ icon, q, a }) => (
               <div className="faq-item" key={q}>
                 <div className="faq-q"><span className="faq-icon">{icon}</span>{q}</div>
@@ -318,10 +351,10 @@ function HomePageInner() {
         {/* BOTTOM CTA */}
         <div className="bottom-cta">
           <div className="bottom-cta-title">Stop wasting time on<br /><em>dead-end listings.</em></div>
-          <p className="bottom-cta-sub">Two great homes. Real pricing. A landlord who responds. Browse what's available and apply in under 2 minutes.</p>
+          <p className="bottom-cta-sub">Verified homes near ASU. Real pricing. Landlords who respond. Browse what's available and apply in under 2 minutes.</p>
           <a href="#homes" className="btn-gold">See available homes →</a>
           <div className="cta-trust-row">
-            {['No broker fees', 'Respond within 2hrs', 'No commitment to apply', 'Utilities included'].map(t => (
+            {['No broker fees', 'Verified landlords', 'No commitment to apply', 'Transparent pricing'].map(t => (
               <div className="cta-trust-item" key={t}>
                 <span className="cta-trust-dot" />
                 <span>{t}</span>
@@ -332,13 +365,5 @@ function HomePageInner() {
 
       </div>
     </>
-  )
-}
-
-export default function HomePage() {
-  return (
-    <Suspense fallback={null}>
-      <HomePageInner />
-    </Suspense>
   )
 }
