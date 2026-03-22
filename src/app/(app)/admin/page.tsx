@@ -378,16 +378,6 @@ export default function AdminDashboard() {
 
       <div className="admin-wrap">
 
-        {/* NAV */}
-        <div className="admin-nav">
-          <div className="admin-logo">Home<em>Hive</em> <span style={{ fontSize: '11px', fontWeight: 600, color: '#9b9b9b', letterSpacing: '0.5px', textTransform: 'uppercase', marginLeft: '8px' }}>Admin</span></div>
-          <div className="admin-nav-right">
-            <a href="/" target="_blank" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none' }}>View site</a>
-            <span className="admin-user">{userEmail}</span>
-            <button className="signout-btn" onClick={signOut}>Sign out</button>
-          </div>
-        </div>
-
         <div className="admin-body">
 
           {/* PAGE TITLE */}

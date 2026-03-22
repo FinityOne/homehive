@@ -9,7 +9,7 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export default function AdminSignup() {
+export default function SignupPage() {
   const router = useRouter()
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' })
   const [error, setError] = useState('')
@@ -40,7 +40,10 @@ export default function AdminSignup() {
       email: form.email,
       password: form.password,
       options: {
-        data: { full_name: form.name },
+        data: {
+          full_name: form.name,
+          role: 'tenant',
+        },
       },
     })
 
@@ -51,11 +54,9 @@ export default function AdminSignup() {
     }
 
     if (data.session) {
-      // Email confirmation off — logged in immediately
-      router.push('/admin')
+      router.push('/dashboard')
     } else {
-      // Email confirmation on — send to login with message
-      router.push('/admin/login?registered=1')
+      router.push('/login?registered=1')
     }
 
     setLoading(false)
@@ -81,7 +82,7 @@ export default function AdminSignup() {
               Home<em style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', color: '#FFC627' }}>Hive</em>
             </span>
           </a>
-          <div style={{ fontSize: '14px', color: '#9b9b9b', marginBottom: '32px' }}>Create your admin account</div>
+          <div style={{ fontSize: '14px', color: '#9b9b9b', marginBottom: '32px' }}>Find your perfect home near ASU</div>
 
           {/* Error */}
           {error && (
@@ -91,14 +92,14 @@ export default function AdminSignup() {
           )}
 
           {/* Fields */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }} className="f">
             <div className="f">
               <label>Full name</label>
               <input name="name" placeholder="Your name" value={form.name} onChange={handleChange} />
             </div>
             <div className="f">
-              <label>Email</label>
-              <input name="email" type="email" placeholder="you@homehive.live" value={form.email} onChange={handleChange} />
+              <label>ASU email</label>
+              <input name="email" type="email" placeholder="you@asu.edu" value={form.email} onChange={handleChange} />
             </div>
             <div className="f">
               <label>Password</label>
@@ -121,7 +122,7 @@ export default function AdminSignup() {
 
           <div style={{ textAlign: 'center', fontSize: '13px', color: '#9b9b9b' }}>
             Already have an account?{' '}
-            <a href="/admin/login" style={{ color: '#8C1D40', fontWeight: 500, textDecoration: 'none' }}>Sign in</a>
+            <a href="/login" style={{ color: '#8C1D40', fontWeight: 500, textDecoration: 'none' }}>Sign in</a>
           </div>
 
         </div>

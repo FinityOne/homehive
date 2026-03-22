@@ -1,12 +1,29 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
 import Loader from '@/components/Loader'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+function getInitials(email: string, fullName?: string): string {
+  if (fullName) {
+    const parts = fullName.trim().split(' ')
+    if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+    return parts[0][0].toUpperCase()
+  }
+  return email[0].toUpperCase()
+}
 
 export default function Nav() {
   const [showLoader, setShowLoader] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [user, setUser] = useState<{ email: string; fullName: string; role: string } | null>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -19,9 +36,57 @@ export default function Nav() {
     return () => { document.body.style.overflow = '' }
   }, [mobileOpen])
 
+  useEffect(() => {
+    const loadUser = async (userId: string, email: string, fullName: string) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single()
+      setUser({ email, fullName, role: profile?.role || 'tenant' })
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUser(
+          session.user.id,
+          session.user.email || '',
+          session.user.user_metadata?.full_name || '',
+        )
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        loadUser(
+          session.user.id,
+          session.user.email || '',
+          session.user.user_metadata?.full_name || '',
+        )
+      } else {
+        setUser(null)
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!profileOpen) return
+    const handler = () => setProfileOpen(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [profileOpen])
+
   const replayLoader = () => {
     sessionStorage.removeItem('hh_loader_seen')
     setShowLoader(true)
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setProfileOpen(false)
+    window.location.href = '/'
   }
 
   return (
@@ -64,6 +129,22 @@ export default function Nav() {
         .cta-dot { width:6px; height:6px; border-radius:50%; background:#FFC627; animation:blink 2s infinite; }
         @keyframes blink { 0%,100%{opacity:1}50%{opacity:.4} }
 
+        /* PROFILE AVATAR + DROPDOWN */
+        .profile-wrap { position:relative; }
+        .profile-avatar { width:34px; height:34px; border-radius:50%; background:#8C1D40; color:#FFC627; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer; border:2px solid #e8e4db; transition:border-color .15s,transform .15s; font-family:'DM Sans',sans-serif; letter-spacing:0.3px; flex-shrink:0; user-select:none; }
+        .profile-avatar:hover { border-color:#8C1D40; transform:scale(1.05); }
+        .profile-avatar.open { border-color:#8C1D40; }
+        .profile-dropdown { position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #e8e4db; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.12); min-width:220px; overflow:hidden; animation:dropIn .15s ease; z-index:300; }
+        @keyframes dropIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+        .dropdown-header { padding:14px 16px; border-bottom:1px solid #f0ede6; }
+        .dropdown-name { font-size:13px; font-weight:600; color:#1a1a1a; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .dropdown-email { font-size:11px; color:#9b9b9b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .dropdown-item { display:flex; align-items:center; gap:9px; padding:11px 16px; font-size:13px; color:#3a3a3a; text-decoration:none; cursor:pointer; transition:background .15s; border:none; background:none; width:100%; font-family:'DM Sans',sans-serif; text-align:left; }
+        .dropdown-item:hover { background:#faf9f6; color:#1a1a1a; }
+        .dropdown-item.danger { color:#8C1D40; }
+        .dropdown-item.danger:hover { background:#fdf2f5; }
+        .dropdown-divider { height:1px; background:#f0ede6; margin:4px 0; }
+
         .mob-cta { display:none; background:#8C1D40; color:#fff; font-size:13px; font-weight:600; padding:8px 16px; border-radius:7px; text-decoration:none; font-family:'DM Sans',sans-serif; }
         .ham { display:none; background:none; border:none; cursor:pointer; padding:6px; flex-direction:column; gap:5px; align-items:center; width:36px; height:36px; justify-content:center; }
         .ham-bar { width:20px; height:2px; background:#1a1a1a; border-radius:2px; transition:all .25s; transform-origin:center; }
@@ -87,6 +168,11 @@ export default function Nav() {
         .mob-replay-title { font-size:13px; font-weight:500; color:#1a1a1a; }
         .mob-replay-sub { font-size:11px; color:#9b9b9b; }
         .mob-main-cta { background:#8C1D40; color:#fff; padding:15px; border-radius:9px; text-align:center; font-size:15px; font-weight:600; text-decoration:none; font-family:'DM Sans',sans-serif; }
+        .mob-user-row { display:flex; align-items:center; gap:10px; padding:14px; background:#faf9f6; border-radius:9px; border:1px solid #e8e4db; }
+        .mob-user-avatar { width:36px; height:36px; border-radius:50%; background:#8C1D40; color:#FFC627; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .mob-user-name { font-size:13px; font-weight:500; color:#1a1a1a; }
+        .mob-user-email { font-size:11px; color:#9b9b9b; }
+        .mob-signout { background:none; border:1px solid #e8e4db; border-radius:8px; padding:12px; font-size:14px; font-weight:500; color:#8C1D40; cursor:pointer; font-family:'DM Sans',sans-serif; text-align:center; width:100%; }
         .mob-signin-link { text-align:center; font-size:14px; color:#9b9b9b; text-decoration:none; padding:10px; }
 
         @media (max-width:860px) {
@@ -103,6 +189,7 @@ export default function Nav() {
 
       {showLoader && <Loader onComplete={() => setShowLoader(false)} />}
 
+      {/* ASU RIBBON */}
       <div className="asu-ribbon">
         <div className="asu-ribbon-inner">
           <div className="asu-left">
@@ -123,8 +210,10 @@ export default function Nav() {
         </div>
       </div>
 
+      {/* PRIMARY NAV */}
       <nav className={`nav${scrolled ? ' scrolled' : ''}`}>
         <a href="/" className="nav-logo">Home<em>Hive</em></a>
+
         <div className="nav-center">
           <a href="/homes" className="nav-link">Homes <span className="pill-hot">2 open</span></a>
           <a href="/roommates" className="nav-link">Roommates <span className="pill-new">new</span></a>
@@ -133,53 +222,119 @@ export default function Nav() {
           <a href="/pricing" className="nav-link">Pricing</a>
           <a href="/student-guide" className="nav-link">Student Guide</a>
         </div>
+
         <div className="nav-right">
-          <a href="/signin" className="nav-signin">Sign in</a>
+          {user ? (
+            <div className="profile-wrap" onClick={e => { e.stopPropagation(); setProfileOpen(o => !o) }}>
+              <div className={`profile-avatar${profileOpen ? ' open' : ''}`}>
+                {getInitials(user.email, user.fullName)}
+              </div>
+              {profileOpen && (
+                <div className="profile-dropdown" onClick={e => e.stopPropagation()}>
+                  <div className="dropdown-header">
+                    <div className="dropdown-name">{user.fullName || user.email}</div>
+                    <div className="dropdown-email">{user.email}</div>
+                  </div>
+                  {user.role === 'admin' && (
+                    <>
+                      <a href="/admin" className="dropdown-item">◈ &nbsp;Lead dashboard</a>
+                      <a href="/landlord/dashboard" className="dropdown-item">⊞ &nbsp;Landlord view</a>
+                    </>
+                  )}
+                  {user.role === 'landlord' && (
+                    <a href="/landlord/dashboard" className="dropdown-item">⊞ &nbsp;My listings</a>
+                  )}
+                  {user.role === 'tenant' && (
+                    <a href="/dashboard" className="dropdown-item">◈ &nbsp;My dashboard</a>
+                  )}
+                  <div className="dropdown-divider" />
+                  <button className="dropdown-item danger" onClick={handleSignOut}>→ &nbsp;Sign out</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <a href="/login" className="nav-signin">Sign in</a>
+          )}
           <a href="/homes" className="nav-cta"><span className="cta-dot" />View homes</a>
         </div>
+
         <a href="/homes" className="mob-cta">View homes</a>
         <button className={`ham${mobileOpen ? ' open' : ''}`} onClick={() => setMobileOpen(o => !o)} aria-label="Menu">
           <span className="ham-bar" /><span className="ham-bar" /><span className="ham-bar" />
         </button>
       </nav>
 
+      {/* MOBILE DRAWER */}
       <div className={`mob-drawer${mobileOpen ? ' open' : ''}`}>
         <div className="mob-asu">
-          <div style={{display:'flex',alignItems:'center',gap:'7px'}}>
-            <span style={{color:'#FFC627',fontSize:'12px'}}>⚡</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <span style={{ color: '#FFC627', fontSize: '12px' }}>⚡</span>
             <span className="mob-asu-label">ASU Off-Campus Housing</span>
           </div>
           <span className="mob-asu-pill">Fall 2025 open</span>
         </div>
+
         <div className="mob-links">
           {[
-            {href:'/homes',     label:'Homes',        pill:'2 open', pt:'hot'},
-            {href:'/roommates',  label:'Roommates',    pill:'new',    pt:'new'},
-            {href:'/how-it-works',label:'How it works',pill:null,     pt:null },
-            {href:'/pricing',    label:'Pricing',      pill:null,     pt:null },
-            {href:'/student-guide',label:'Student Guide',pill:null,   pt:null },
-          ].map(({href,label,pill,pt}) => (
+            { href: '/homes',         label: 'Homes',         pill: '2 open', pt: 'hot' },
+            { href: '/roommates',     label: 'Roommates',     pill: 'new',    pt: 'new' },
+            { href: '/how-it-works',  label: 'How it works',  pill: null,     pt: null  },
+            { href: '/pricing',       label: 'Pricing',       pill: null,     pt: null  },
+            { href: '/student-guide', label: 'Student Guide', pill: null,     pt: null  },
+          ].map(({ href, label, pill, pt }) => (
             <a key={href} href={href} className="mob-link" onClick={() => setMobileOpen(false)}>
               <span className="mob-link-inner">
                 {label}
-                {pill && <span className={pt==='hot'?'pill-hot':'pill-new'}>{pill}</span>}
+                {pill && <span className={pt === 'hot' ? 'pill-hot' : 'pill-new'}>{pill}</span>}
               </span>
-              <span style={{color:'#ccc',fontSize:'18px'}}>›</span>
+              <span style={{ color: '#ccc', fontSize: '18px' }}>›</span>
             </a>
           ))}
         </div>
+
         <div className="mob-bottom">
           <div className="mob-replay" role="button" tabIndex={0}
             onClick={() => { setMobileOpen(false); replayLoader() }}
-            onKeyDown={e => e.key==='Enter' && replayLoader()}>
+            onKeyDown={e => e.key === 'Enter' && replayLoader()}>
             <div className="mob-replay-circle"><span className="mob-replay-tri" /></div>
             <div>
               <div className="mob-replay-title">Watch the intro</div>
               <div className="mob-replay-sub">See what HomeHive is all about</div>
             </div>
           </div>
-          <a href="/homes" className="mob-main-cta" onClick={() => setMobileOpen(false)}>View available homes →</a>
-          <a href="/signin" className="mob-signin-link" onClick={() => setMobileOpen(false)}>Already have an account? Sign in</a>
+
+          <a href="/homes" className="mob-main-cta" onClick={() => setMobileOpen(false)}>
+            View available homes →
+          </a>
+
+          {user ? (
+            <>
+              <div className="mob-user-row">
+                <div className="mob-user-avatar">{getInitials(user.email, user.fullName)}</div>
+                <div>
+                  <div className="mob-user-name">{user.fullName || user.email}</div>
+                  <div className="mob-user-email">{user.email}</div>
+                </div>
+              </div>
+              {user.role === 'admin' && (
+                <>
+                  <a href="/admin" className="mob-signin-link" onClick={() => setMobileOpen(false)}>Lead dashboard →</a>
+                  <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>Landlord view →</a>
+                </>
+              )}
+              {user.role === 'landlord' && (
+                <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>My listings →</a>
+              )}
+              {user.role === 'tenant' && (
+                <a href="/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>My dashboard →</a>
+              )}
+              <button className="mob-signout" onClick={handleSignOut}>Sign out</button>
+            </>
+          ) : (
+            <a href="/login" className="mob-signin-link" onClick={() => setMobileOpen(false)}>
+              Already have an account? Sign in
+            </a>
+          )}
         </div>
       </div>
     </>
