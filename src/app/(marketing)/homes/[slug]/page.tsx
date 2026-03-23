@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, use } from 'react'
-import { homes } from '@/lib/homes'
+import { useState, use, useEffect } from 'react'
+import { getPropertyBySlug, Property } from '@/lib/properties'
 import { notFound } from 'next/navigation'
 
 const AMENITIES = [
@@ -11,13 +11,6 @@ const AMENITIES = [
   { icon: '🚗', label: 'Parking included' },
   { icon: '🐾', label: 'Pet friendly' },
   { icon: '🛋️', label: 'Furnished option' },
-]
-
-const NEARBY = [
-  { place: 'ASU Main Campus', time: '5 min walk' },
-  { place: 'Mill Ave Dining', time: '4 min walk' },
-  { place: 'Light Rail Stop', time: '3 min walk' },
-  { place: 'Target / Groceries', time: '8 min bike' },
 ]
 
 export default function PropertyPage({
@@ -30,30 +23,45 @@ export default function PropertyPage({
   const { slug } = use(params)
   const resolvedSearch = use(searchParams)
 
-  const home = homes.find(h => h.slug === slug)
-  if (!home) return notFound()
+  const [home, setHome] = useState<Property | null | undefined>(undefined)
+  const [activePhoto, setActivePhoto] = useState(0)
+  const [formData, setFormData] = useState({
+    first_name: '',
+    email: '',
+    phone: '',
+    move_in_date: '',
+  })
+  const [submitted, setSubmitted] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const guestName = resolvedSearch?.name || ''
   const customMsg = resolvedSearch?.msg || ''
   const fromName = resolvedSearch?.from || 'Mike'
   const isPersonalized = !!guestName
 
-  const nameParts = guestName.trim().split(' ')
+  useEffect(() => {
+    getPropertyBySlug(slug).then(p => setHome(p ?? null))
+  }, [slug])
 
-  const [activePhoto, setActivePhoto] = useState(0)
-  const [formData, setFormData] = useState({
-    first_name: nameParts[0] || '',
-    last_name: nameParts[1] || '',
-    email: '',
-    phone: '',
-    move_in_date: '',
-    budget: '',
-    roommate_preference: '',
-    lifestyle: '',
-    notes: '',
-  })
-  const [submitted, setSubmitted] = useState(false)
-  const [loading, setLoading] = useState(false)
+  // Pre-populate first name from URL params once on mount
+  useEffect(() => {
+    if (guestName) {
+      const nameParts = guestName.trim().split(' ')
+      setFormData(prev => ({ ...prev, first_name: nameParts[0] || '' }))
+    }
+  }, [guestName])
+
+  if (home === undefined) {
+    return (
+      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '60px 24px', fontFamily: "'DM Sans', sans-serif" }}>
+        <style>{`@keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }`}</style>
+        <div style={{ height: '38px', width: '40%', background: '#f0ede6', borderRadius: '8px', marginBottom: '16px', animation: 'shimmer 1.4s infinite', backgroundSize: '400% 100%', backgroundImage: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)' }} />
+        <div style={{ height: '400px', background: '#f0ede6', borderRadius: '14px', animation: 'shimmer 1.4s infinite', backgroundSize: '400% 100%', backgroundImage: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)' }} />
+      </div>
+    )
+  }
+
+  if (home === null) return notFound()
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -70,7 +78,7 @@ export default function PropertyPage({
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData }),
+        body: JSON.stringify({ ...formData, property: slug }),
       })
       if (res.ok) setSubmitted(true)
     } catch (e) {
@@ -282,7 +290,7 @@ export default function PropertyPage({
             <div className="section">
               <div className="section-label">Property Overview</div>
               <div className="stats-row">
-                {[[String(home.beds), 'Bedrooms'], [String(home.baths), 'Bathrooms'], [home.sqft, 'Sq Ft'], [home.asuDistance, 'To ASU']].map(([n, l]) => (
+                {[[String(home.beds), 'Bedrooms'], [String(home.baths), 'Bathrooms'], [home.sqft, 'Sq Ft'], [`${home.asu_distance} mi`, 'To ASU']].map(([n, l]) => (
                   <div className="stat-item" key={l}>
                     <div className="stat-num">{n}</div>
                     <div className="stat-lbl">{l}</div>
@@ -302,11 +310,11 @@ export default function PropertyPage({
             <div className="section">
               <div className="section-label">Built for ASU Students</div>
               <div className="pain-list">
-                {[
+                {(home.asu_reasons.length > 0 ? home.asu_reasons : [
                   'Done with Zillow listings that vanish before you can apply? HomeHive is run directly by the homeowner — no middleman, no agency fees, ever.',
                   "Finding roommates you actually like is hard. Tell us about yourself and we'll match you with compatible housemates before you sign anything.",
                   'Move-in dates flex around the ASU academic calendar. Fall and spring availability.',
-                ].map((text, i) => (
+                ]).map((text, i) => (
                   <div className="pain-item" key={i}>
                     <div className="pain-dot" />
                     <p className="pain-text">{text}</p>
@@ -340,13 +348,13 @@ export default function PropertyPage({
             <div className="section">
               <div className="section-label">Location</div>
               <div className="map-wrap">
-                <iframe src={home.mapEmbedUrl} style={{ width: '100%', height: '220px', border: 'none', display: 'block' }} loading="lazy"></iframe>
+                <iframe src={home.map_embed_url} style={{ width: '100%', height: '220px', border: 'none', display: 'block' }} loading="lazy"></iframe>
               </div>
               <div className="nearby-grid">
-                {NEARBY.map(n => (
+                {home.nearby.map(n => (
                   <div className="nearby-item" key={n.place}>
                     <span className="nearby-place">{n.place}</span>
-                    <span className="nearby-time">{n.time}</span>
+                    <span className="nearby-time">{n.travel_time}</span>
                   </div>
                 ))}
               </div>
@@ -433,89 +441,30 @@ export default function PropertyPage({
 
               <div className="form-grid-2">
                 <div>
-                  <label className="form-label">First Name</label>
-                  <input className="form-input" name="first_name" placeholder="Jordan" value={formData.first_name} onChange={handleChange} />
+                  <label className="form-label">First Name *</label>
+                  <input className="form-input" name="first_name" placeholder="Jordan" value={formData.first_name} onChange={handleChange} required />
                 </div>
                 <div>
-                  <label className="form-label">Last Name</label>
-                  <input className="form-input" name="last_name" placeholder="Lee" value={formData.last_name} onChange={handleChange} />
-                </div>
-              </div>
-
-              <div className="form-grid-2">
-                <div>
-                  <label className="form-label">ASU Email</label>
-                  <input className="form-input" name="email" type="email" placeholder="jlee@asu.edu" value={formData.email} onChange={handleChange} />
-                </div>
-                <div>
-                  <label className="form-label">Phone Number</label>
-                  <input className="form-input" name="phone" placeholder="(480) 000-0000" value={formData.phone} onChange={handleChange} />
+                  <label className="form-label">Email *</label>
+                  <input className="form-input" name="email" type="email" placeholder="jlee@asu.edu" value={formData.email} onChange={handleChange} required />
                 </div>
               </div>
 
               <div className="form-grid-2">
                 <div>
-                  <label className="form-label">Expected Move-in</label>
+                  <label className="form-label">Phone (optional)</label>
+                  <input className="form-input" name="phone" type="tel" placeholder="(480) 000-0000" value={formData.phone} onChange={handleChange} />
+                </div>
+                <div>
+                  <label className="form-label">Desired Move-in</label>
                   <select className="form-input" name="move_in_date" value={formData.move_in_date} onChange={handleChange}>
                     <option value="">Select a date</option>
                     <option>August 2025</option>
                     <option>January 2026</option>
+                    <option>Spring 2026</option>
                     <option>Flexible</option>
                   </select>
                 </div>
-                <div>
-                  <label className="form-label">Monthly Budget (per room)</label>
-                  <select className="form-input" name="budget" value={formData.budget} onChange={handleChange}>
-                    <option value="">Select range</option>
-                    <option>Under $700</option>
-                    <option>$700 – $850</option>
-                    <option>$850 – $1,000</option>
-                    <option>$1,000+</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-field">
-                <label className="form-label">Roommate Status</label>
-                <div className="roommate-options">
-                  {[
-                    { val: 'have_roommates', icon: '👥', title: 'I have roommates', sub: "We're a group looking for a place" },
-                    { val: 'need_roommates', icon: '🔍', title: "I'm looking alone", sub: 'Help me find compatible roommates' },
-                  ].map(opt => (
-                    <div
-                      key={opt.val}
-                      className={`roommate-card${formData.roommate_preference === opt.val ? ' selected' : ''}`}
-                      onClick={() => setFormData(prev => ({ ...prev, roommate_preference: opt.val }))}
-                    >
-                      <div className="roommate-card-icon">{opt.icon}</div>
-                      <div className="roommate-card-title">{opt.title}</div>
-                      <div className="roommate-card-sub">{opt.sub}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="form-field">
-                <label className="form-label">Living Style</label>
-                <select className="form-input" name="lifestyle" value={formData.lifestyle} onChange={handleChange}>
-                  <option value="">Select your vibe</option>
-                  <option>Early riser, quiet household</option>
-                  <option>Night owl, social energy</option>
-                  <option>Balanced — work hard, chill on weekends</option>
-                  <option>Grad student, mostly working</option>
-                </select>
-              </div>
-
-              <div className="form-field">
-                <label className="form-label">Anything else? (optional)</label>
-                <textarea
-                  className="form-input"
-                  name="notes"
-                  placeholder="Pet, specific room needs, questions about the property..."
-                  value={formData.notes}
-                  onChange={handleChange}
-                  style={{ height: '80px', resize: 'none' }}
-                />
               </div>
 
               <button

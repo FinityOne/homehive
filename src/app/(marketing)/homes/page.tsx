@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { homes, Home } from '@/lib/homes'
+import { getProperties, Property } from '@/lib/properties'
 
 // ─── FILTER STATE ────────────────────────────────────────────────────────────
 type Filters = {
@@ -30,7 +30,7 @@ const LANDMARKS = [
 ]
 
 // ─── LEAFLET MAP ─────────────────────────────────────────────────────────────
-function HomesMap({ homes, hoveredId }: { homes: Home[]; hoveredId: string | null }) {
+function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string | null }) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
@@ -117,22 +117,22 @@ function HomesMap({ homes, hoveredId }: { homes: Home[]; hoveredId: string | nul
     }
   }, [])
 
-  function addMarkers(homeList: Home[], L: any, map: any) {
+  function addMarkers(homeList: Property[], L: any, map: any) {
     markersRef.current.forEach(m => m.remove())
     markersRef.current = []
 
     homeList.forEach(home => {
-      if (!home.coordinates) return
+      if (!home.lat || !home.lng) return
       const icon = L.divIcon({
         className: '',
         html: makePinHtml(home.slug, home.price, false),
         iconAnchor: [40, 38],
       })
-      const marker = L.marker(home.coordinates, { icon })
+      const marker = L.marker([home.lat, home.lng] as [number, number], { icon })
         .addTo(map)
         .bindPopup(`
           <div style="font-family:'DM Sans',sans-serif;min-width:200px;padding:4px 0;">
-            <img src="${home.heroImage}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:10px;" />
+            <img src="${home.hero_image}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:10px;" />
             <div style="font-weight:700;font-size:14px;color:#1a1a1a;margin-bottom:3px;">${home.name}</div>
             <div style="font-size:11px;color:#9b9b9b;margin-bottom:8px;">📍 ${home.address}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -155,7 +155,7 @@ function HomesMap({ homes, hoveredId }: { homes: Home[]; hoveredId: string | nul
   // Live pin highlight on card hover
   useEffect(() => {
     if (!mapInstanceRef.current) return
-    const { L, map } = mapInstanceRef.current
+    const { L } = mapInstanceRef.current
     markersRef.current.forEach(marker => {
       const el = marker.getElement()?.querySelector('.map-pin') as HTMLElement | null
       if (!el) return
@@ -191,21 +191,9 @@ function HomesMap({ homes, hoveredId }: { homes: Home[]; hoveredId: string | nul
   )
 }
 
-// ─── SCORE BAR ───────────────────────────────────────────────────────────────
-function ScoreBar({ score }: { score: number }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <div style={{ flex: 1, height: '3px', background: '#e8e4db', borderRadius: '10px', overflow: 'hidden' }}>
-        <div style={{ width: `${score * 10}%`, height: '100%', background: score >= 8 ? '#c9973a' : '#6b9e6b', borderRadius: '10px' }} />
-      </div>
-      <span style={{ fontSize: '11px', fontWeight: 600, color: score >= 8 ? '#c9973a' : '#6b9e6b' }}>{score}/10</span>
-    </div>
-  )
-}
-
 // ─── HOME CARD ───────────────────────────────────────────────────────────────
-function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) => void }) {
-  const isWholeHouseAvailable = home.available === home.totalRooms
+function HomeCard({ home, onHover }: { home: Property; onHover: (id: string | null) => void }) {
+  const isWholeHouseAvailable = home.available === home.total_rooms
   const estimatedUtilities = '~$65–$140'
 
   return (
@@ -233,7 +221,7 @@ function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) 
     >
       {/* Image */}
       <div style={{ height: '200px', overflow: 'hidden', position: 'relative' }}>
-        <img src={home.heroImage} alt={home.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <img src={home.hero_image} alt={home.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
 
         {/* Top-left: availability badge */}
         <div style={{
@@ -246,7 +234,7 @@ function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) 
             </div>
           ) : (
             <div style={{ background: home.available === 1 ? 'rgba(254,249,195,0.96)' : 'rgba(220,252,231,0.96)', color: home.available === 1 ? '#854d0e' : '#166534', fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: `1px solid ${home.available === 1 ? 'rgba(253,224,71,0.6)' : 'rgba(187,247,208,0.9)'}`, backdropFilter: 'blur(4px)' }}>
-              {home.available === 1 ? '⚡ 1 room left' : `${home.available} of ${home.totalRooms} rooms open`}
+              {home.available === 1 ? '⚡ 1 room left' : `${home.available} of ${home.total_rooms} rooms open`}
             </div>
           )}
         </div>
@@ -264,7 +252,7 @@ function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) 
 
         {/* Stats row */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
-          {[`${home.beds} bed`, `${home.baths} bath`, `${home.sqft} sqft`, `${home.asuDistance} mi to ASU`].map((s, i, arr) => (
+          {[`${home.beds} bed`, `${home.baths} bath`, `${home.sqft} sqft`, `${home.asu_distance} mi to ASU`].map((s, i, arr) => (
             <span key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '12px', color: '#6b6b6b' }}>{s}</span>
               {i < arr.length - 1 && <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: '#e8e4db', display: 'inline-block' }} />}
@@ -295,7 +283,7 @@ function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) 
           <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '9px 12px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '16px' }}>👥</span>
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: '#166534' }}>Perfect for a group of {home.totalRooms}</div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#166534' }}>Perfect for a group of {home.total_rooms}</div>
               <div style={{ fontSize: '11px', color: '#4b9e66' }}>Entire {home.beds}-bed house available — bring your squad</div>
             </div>
           </div>
@@ -304,7 +292,7 @@ function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) 
         {/* Footer CTA */}
         <div style={{ borderTop: '1px solid #f0ede6', paddingTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#c9973a' }}>{home.asuScore}/10</span>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#c9973a' }}>{home.asu_score}/10</span>
             <span style={{ fontSize: '11px', color: '#9b9b9b' }}>ASU fit score</span>
           </div>
           <span style={{ fontSize: '13px', fontWeight: 600, color: '#8C1D40' }}>View details →</span>
@@ -316,18 +304,23 @@ function HomeCard({ home, onHover }: { home: Home; onHover: (id: string | null) 
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
 export default function HomesPage() {
+  const [properties, setProperties] = useState<Property[]>([])
+  const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'price' | 'score' | 'distance'>('price')
   const [mapVisible, setMapVisible] = useState(true)
 
+  useEffect(() => {
+    getProperties().then(data => { setProperties(data); setLoading(false) })
+  }, [])
+
   const filtered = useMemo(() => {
-    return homes
+    return properties
       .filter(h => {
         if (h.price > filters.maxPrice) return false
         if (h.beds < filters.minBeds) return false
-        const dist = parseFloat(h.asuDistance)
-        if (dist > filters.maxDistance) return false
+        if (h.asu_distance > filters.maxDistance) return false
         if (filters.search) {
           const q = filters.search.toLowerCase()
           if (!h.name.toLowerCase().includes(q) && !h.address.toLowerCase().includes(q)) return false
@@ -336,11 +329,11 @@ export default function HomesPage() {
       })
       .sort((a, b) => {
         if (sortBy === 'price') return a.price - b.price
-        if (sortBy === 'score') return b.asuScore - a.asuScore
-        if (sortBy === 'distance') return parseFloat(a.asuDistance) - parseFloat(b.asuDistance)
+        if (sortBy === 'score') return b.asu_score - a.asu_score
+        if (sortBy === 'distance') return a.asu_distance - b.asu_distance
         return 0
       })
-  }, [filters, sortBy])
+  }, [properties, filters, sortBy])
 
   return (
     <>
@@ -387,6 +380,8 @@ export default function HomesPage() {
         .empty-title { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 300; color: #1a1a1a; margin-bottom: 8px; }
         .empty-sub { font-size: 14px; color: #9b9b9b; margin-bottom: 16px; }
         .reset-btn { background: #8C1D40; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+
+        @keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
 
         @media (max-width: 768px) {
           .homes-page { height: auto; overflow: visible; }
@@ -464,7 +459,7 @@ export default function HomesPage() {
           </div>
 
           <div className="toolbar-right">
-            <span className="result-count">{filtered.length} home{filtered.length !== 1 ? 's' : ''}</span>
+            <span className="result-count">{loading ? 'Loading…' : `${filtered.length} home${filtered.length !== 1 ? 's' : ''}`}</span>
             <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
               <option value="price">Price: low to high</option>
               <option value="score">Best ASU fit</option>
@@ -481,7 +476,18 @@ export default function HomesPage() {
 
           {/* LIST */}
           <div className={`homes-list${!mapVisible ? ' full' : ''}`}>
-            {filtered.length === 0 ? (
+            {loading ? (
+              [0, 1].map(i => (
+                <div key={i} style={{ background: '#fff', border: '1px solid #e8e4db', borderRadius: '14px', overflow: 'hidden' }}>
+                  <div style={{ height: '200px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+                  <div style={{ padding: '16px 18px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ height: '18px', width: '60%', background: '#f0ede6', borderRadius: '6px' }} />
+                    <div style={{ height: '12px', width: '40%', background: '#f0ede6', borderRadius: '6px' }} />
+                    <div style={{ height: '60px', background: '#f0ede6', borderRadius: '8px' }} />
+                  </div>
+                </div>
+              ))
+            ) : filtered.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-title">No homes match your filters</div>
                 <p className="empty-sub">Try widening your search — we're adding new listings regularly.</p>

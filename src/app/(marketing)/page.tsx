@@ -1,9 +1,12 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
-import { homes } from '@/lib/homes'
+
 import { useSearchParams } from 'next/navigation'
 import Loader from '@/components/Loader'
+
+import { getProperties, type Property } from '@/lib/properties'
+
 
 function ScoreBar({ score }: { score: number }) {
   return (
@@ -22,8 +25,14 @@ function HomePageInner() {
   const isPersonalized = !!guestName
 
   const [showLoader, setShowLoader] = useState(false)
+  const [properties, setProperties] = useState<Property[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    getProperties().then(data => {
+      setProperties(data)
+      setLoading(false)
+    })
     // Only show loader once per session
     const seen = sessionStorage.getItem('hh_loader_seen')
     if (!seen) {
@@ -152,78 +161,102 @@ function HomePageInner() {
           <div className="homes-hdr">
             <div className="homes-hdr-title">Homes available now</div>
             <div className="homes-hdr-meta">
-              <span>{homes.filter(h => h.available > 0).length} available</span> · updated today
+              {loading
+                ? <span>Loading…</span>
+                : <><span>{properties.filter(h => h.available > 0).length} available</span> · updated today</>
+              }
             </div>
           </div>
-          <div className="homes-grid">
-            {homes
-              .slice()
-              .sort((a, b) => a.price - b.price)
-              .map((home, index) => {
-                const isCheapest = index === 0
-                const avgTempeRent = 950
-                const savings = avgTempeRent - home.price
-                const isWholeHouse = home.available === home.totalRooms
-                return (
-                  <a href={`/homes/${home.slug}`} className="home-card" key={home.slug}>
 
-                    {/* Cheapest benchmark banner */}
-                    {isCheapest && (
-                      <div style={{ background: 'linear-gradient(90deg,#8C1D40,#a82050)', padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                          <span style={{ fontSize: '13px' }}>🏆</span>
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#FFC627', letterSpacing: '0.3px' }}>Cheapest per room near ASU</span>
-                        </div>
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)' }}>Save ~${savings}/mo vs avg Tempe rent</span>
-                      </div>
-                    )}
+          {loading ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '80px' }}>
+              {[1, 2].map(n => (
+                <div key={n} style={{ background: '#fff', border: '1px solid #e8e4db', borderRadius: '16px', overflow: 'hidden' }}>
+                  <div style={{ height: '220px', background: 'linear-gradient(90deg,#f0ede6 25%,#f9f7f3 50%,#f0ede6 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite' }} />
+                  <div style={{ padding: '18px 20px' }}>
+                    <div style={{ height: '20px', background: '#f0ede6', borderRadius: '6px', marginBottom: '10px', width: '70%' }} />
+                    <div style={{ height: '14px', background: '#f0ede6', borderRadius: '6px', width: '45%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : properties.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '80px 20px', marginBottom: '80px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '12px' }}>🏠</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: '22px', fontWeight: 300, color: '#1a1a1a', marginBottom: '8px' }}>No listings right now</div>
+              <div style={{ fontSize: '14px', color: '#9b9b9b' }}>Check back soon — new homes are added regularly.</div>
+            </div>
+          ) : (
+            <div className="homes-grid">
+              {properties
+                .slice()
+                .sort((a, b) => a.price - b.price)
+                .map((home, index) => {
+                  const isCheapest = index === 0
+                  const avgTempeRent = 950
+                  const savings = avgTempeRent - home.price
+                  const isWholeHouse = home.available === home.total_rooms
+                  return (
+                    <a href={`/homes/${home.slug}`} className="home-card" key={home.slug}>
 
-                    <div className="card-img">
-                      <img src={home.heroImage} alt={home.name} />
-                      <div className={`card-avail ${isWholeHouse ? 'green' : home.available === 1 ? 'amber' : 'green'}`}>
-                        {isWholeHouse ? '🏠 Whole house available' : home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
-                      </div>
-                      <div className="card-price">
-                        {isCheapest && (
-                          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', textDecoration: 'line-through', lineHeight: 1, marginBottom: '2px', fontFamily: "'DM Sans',sans-serif", fontWeight: 400 }}>
-                            avg ${avgTempeRent}
+                      {/* Cheapest benchmark banner */}
+                      {isCheapest && (
+                        <div style={{ background: 'linear-gradient(90deg,#8C1D40,#a82050)', padding: '8px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                            <span style={{ fontSize: '13px' }}>🏆</span>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#FFC627', letterSpacing: '0.3px' }}>Cheapest per room near ASU</span>
                           </div>
-                        )}
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px' }}>
-                          <span style={{ fontFamily: "'Fraunces',serif", fontSize: '20px', fontWeight: 300, letterSpacing: '-0.3px' }}>${home.price}</span>
-                          <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '11px', opacity: 0.7, fontWeight: 400 }}>/mo</span>
+                          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)' }}>Save ~${savings}/mo vs avg Tempe rent</span>
+                        </div>
+                      )}
+
+                      <div className="card-img">
+                        <img src={home.hero_image} alt={home.name} />
+                        <div className={`card-avail ${isWholeHouse ? 'green' : home.available === 1 ? 'amber' : 'green'}`}>
+                          {isWholeHouse ? '🏠 Whole house available' : home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
+                        </div>
+                        <div className="card-price">
+                          {isCheapest && (
+                            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', textDecoration: 'line-through', lineHeight: 1, marginBottom: '2px', fontFamily: "'DM Sans',sans-serif", fontWeight: 400 }}>
+                              avg ${avgTempeRent}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px' }}>
+                            <span style={{ fontFamily: "'Fraunces',serif", fontSize: '20px', fontWeight: 300, letterSpacing: '-0.3px' }}>${home.price}</span>
+                            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '11px', opacity: 0.7, fontWeight: 400 }}>/mo</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="card-body">
-                      <div className="card-name">{home.name}</div>
+                      <div className="card-body">
+                        <div className="card-name">{home.name}</div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#8C1D40' }}>📍 {home.asuDistance} mi to ASU</span>
-                        <span className="card-sep" />
-                        <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{home.beds} bed · {home.baths} bath</span>
-                        <span className="card-sep" />
-                        <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{home.sqft} sqft</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#8C1D40' }}>📍 {home.asu_distance} mi to ASU</span>
+                          <span className="card-sep" />
+                          <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{home.beds} bed · {home.baths} bath</span>
+                          <span className="card-sep" />
+                          <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{home.sqft} sqft</span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '11px', background: '#fdf2f5', border: '1px solid #f5c6d0', color: '#8C1D40', padding: '2px 9px', borderRadius: '20px', fontWeight: 600 }}>✓ Verified landlord</span>
+                          <span style={{ fontSize: '11px', background: '#fdf2f5', border: '1px solid #f5c6d0', color: '#8C1D40', padding: '2px 9px', borderRadius: '20px', fontWeight: 600 }}>$0 broker fee</span>
+                          {home.tags[0] && (
+                            <span style={{ fontSize: '11px', background: '#faf9f6', border: '1px solid #e8e4db', color: '#6b6b6b', padding: '2px 9px', borderRadius: '20px' }}>{home.tags[0]}</span>
+                          )}
+                        </div>
+
+                        <div className="card-cta">
+                          <span style={{ fontSize: '12px', color: '#9b9b9b' }}>No commitment to view</span>
+                          <span className="card-cta-btn">Explore home →</span>
+                        </div>
                       </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '11px', background: '#fdf2f5', border: '1px solid #f5c6d0', color: '#8C1D40', padding: '2px 9px', borderRadius: '20px', fontWeight: 600 }}>✓ Verified landlord</span>
-                        <span style={{ fontSize: '11px', background: '#fdf2f5', border: '1px solid #f5c6d0', color: '#8C1D40', padding: '2px 9px', borderRadius: '20px', fontWeight: 600 }}>$0 broker fee</span>
-                        {home.tags[0] && (
-                          <span style={{ fontSize: '11px', background: '#faf9f6', border: '1px solid #e8e4db', color: '#6b6b6b', padding: '2px 9px', borderRadius: '20px' }}>{home.tags[0]}</span>
-                        )}
-                      </div>
-
-                      <div className="card-cta">
-                        <span style={{ fontSize: '12px', color: '#9b9b9b' }}>No commitment to view</span>
-                        <span className="card-cta-btn">Explore home →</span>
-                      </div>
-                    </div>
-                  </a>
-                )
-              })}
-          </div>
+                    </a>
+                  )
+                })}
+            </div>
+          )}
         </div>
 
       </div>
