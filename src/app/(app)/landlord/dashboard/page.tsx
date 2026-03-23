@@ -189,11 +189,11 @@ export default function LandlordDashboard() {
           )}
         </div>
 
-        {/* APPLICATIONS */}
+        {/* Leads */}
         <div>
           <div className="section-header">
-            <span className="section-title">Recent Applications (coming soon)</span>
-            <a href="/landlord/applications" className="section-link">See all →</a>
+            <span className="section-title">Recent Leads (coming soon)</span>
+            <a href="/landlord/leads" className="section-link">See all →</a>
           </div>
 
           <div className="coming-soon-banner">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
+import { getProperties, type Property } from '@/lib/properties'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,83 +11,28 @@ const supabase = createBrowserClient(
 )
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-type InterestStatus = 'inquired' | 'contacted' | 'tour_scheduled' | 'touring' | 'offer_sent'
+type LeadStatus = 'new' | 'contacted' | 'engaged' | 'qualified' | 'tour_scheduled' | 'closed'
 
-const STATUS_CONFIG: Record<InterestStatus, { label: string; color: string; bg: string; border: string; icon: string }> = {
-  inquired:       { label: 'Inquired',       color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: '📩' },
-  contacted:      { label: 'Contacted',      color: '#c9973a', bg: '#fefce8', border: '#fde68a', icon: '📞' },
-  tour_scheduled: { label: 'Tour Scheduled', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe', icon: '📅' },
-  touring:        { label: 'Touring',        color: '#166534', bg: '#f0fdf4', border: '#bbf7d0', icon: '🏠' },
-  offer_sent:     { label: 'Offer Sent',     color: '#fff',    bg: '#8C1D40', border: '#8C1D40', icon: '🎉' },
+type Lead = {
+  id: string
+  first_name: string
+  email: string
+  phone: string | null
+  move_in_date: string | null
+  property: string | null
+  status: LeadStatus
+  closed_reason: 'leased' | 'lost' | null
+  created_at: string
 }
 
-type InterestedHome = {
-  slug: string
-  name: string
-  address: string
-  price: number
-  beds: number
-  image: string
-  status: InterestStatus
-  submittedDate: string
-  moveIn: string
-  nextStep: string
+const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string; bg: string; border: string; icon: string; nextStep: string }> = {
+  new:            { label: 'Inquiry Received', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: '📩', nextStep: "We received your inquiry and will be in touch shortly!" },
+  contacted:      { label: 'Contacted',        color: '#c9973a', bg: '#fefce8', border: '#fde68a', icon: '📞', nextStep: "We've reached out — check your email or phone for details." },
+  engaged:        { label: 'In Conversation',  color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe', icon: '💬', nextStep: "You're in active conversation with the team — keep an eye on your messages." },
+  qualified:      { label: 'Pre-Qualified',    color: '#166534', bg: '#f0fdf4', border: '#bbf7d0', icon: '✅', nextStep: "You've been pre-qualified! A team member will be reaching out to schedule a tour." },
+  tour_scheduled: { label: 'Tour Scheduled',   color: '#8C1D40', bg: '#fdf2f5', border: '#f4c9d5', icon: '📅', nextStep: "Your tour is scheduled — check your email for confirmation details." },
+  closed:         { label: 'Closed',           color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', icon: '🏁', nextStep: "This inquiry has been closed." },
 }
-
-// ─── FAKE DATA ────────────────────────────────────────────────────────────────
-const FAKE_INTERESTS: InterestedHome[] = [
-  {
-    slug: 'palace-jacuzzi',
-    name: 'University Dr Palace w/ Jacuzzi',
-    address: '820 W 9th Street, Tempe, AZ 85281',
-    price: 699,
-    beds: 6,
-    image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80',
-    status: 'tour_scheduled',
-    submittedDate: '2 days ago',
-    moveIn: 'Aug 2025',
-    nextStep: 'Tour on Saturday, Mar 22 at 2:00 PM',
-  },
-  {
-    slug: 'delrio-house',
-    name: 'ASU Student Castle',
-    address: '110 W Del Rio Dr, Tempe, AZ 85282',
-    price: 599,
-    beds: 5,
-    image: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800&q=80',
-    status: 'contacted',
-    submittedDate: '5 days ago',
-    moveIn: 'Aug 2025',
-    nextStep: 'We reached out — check your email for details.',
-  },
-]
-
-const AVAILABLE_HOMES = [
-  {
-    slug: 'palace-jacuzzi',
-    name: 'University Dr Palace w/ Jacuzzi',
-    address: '820 W 9th St, Tempe',
-    price: 699,
-    beds: 6,
-    baths: 4,
-    available: 6,
-    asuDistance: '0.2',
-    tags: ['Jacuzzi', 'WiFi', 'Parking', 'Washer/Dryer'],
-    image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80',
-  },
-  {
-    slug: 'delrio-house',
-    name: 'ASU Student Castle',
-    address: '110 W Del Rio Dr, Tempe',
-    price: 599,
-    beds: 5,
-    baths: 2,
-    available: 5,
-    asuDistance: '1.1',
-    tags: ['WiFi', 'Backyard', 'Pet Friendly', 'A/C'],
-    image: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800&q=80',
-  },
-]
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function getGreeting(name: string) {
@@ -96,23 +42,68 @@ function getGreeting(name: string) {
   return `Good evening, ${name}`
 }
 
-// The "most urgent" item across inquiries — drives the action strip
-const UPCOMING_TOUR = FAKE_INTERESTS.find(h => h.status === 'tour_scheduled')
+function matchProperty(lead: Lead, properties: Property[]): Property | undefined {
+  if (!lead.property) return undefined
+  const q = lead.property.toLowerCase()
+  return properties.find(p =>
+    p.slug.toLowerCase() === q ||
+    p.name.toLowerCase() === q ||
+    p.name.toLowerCase().includes(q) ||
+    q.includes(p.name.toLowerCase())
+  )
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days} days ago`
+  if (days < 30) return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? 's' : ''} ago`
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function TenantDashboard() {
   const router = useRouter()
   const [userName, setUserName] = useState('')
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push('/login'); return }
-      const name = data.user.user_metadata?.full_name?.split(' ')[0] || 'there'
-      setUserName(name)
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      // Get display name from profiles table, fall back to metadata
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single()
+
+      const fullName = profile?.full_name || user.user_metadata?.full_name || ''
+      setUserName(fullName.split(' ')[0] || 'there')
+
+      // Fetch user's leads and all properties in parallel
+      const [leadsRes, propsRes] = await Promise.all([
+        supabase
+          .from('leads')
+          .select('*')
+          .eq('email', user.email!)
+          .order('created_at', { ascending: false }),
+        getProperties(),
+      ])
+
+      setLeads((leadsRes.data as Lead[]) || [])
+      setProperties(propsRes)
       setLoading(false)
-    })
+    }
+    load()
   }, [router])
+
+  const upcomingTour = leads.find(l => l.status === 'tour_scheduled')
 
   if (loading) {
     return (
@@ -121,6 +112,12 @@ export default function TenantDashboard() {
       </div>
     )
   }
+
+  // Properties user has NOT already submitted a lead for
+  const inquiredPropertyNames = new Set(leads.map(l => l.property?.toLowerCase()).filter(Boolean))
+  const availableHomes = properties.filter(p =>
+    p.is_active && p.available > 0 && !inquiredPropertyNames.has(p.name.toLowerCase()) && !inquiredPropertyNames.has(p.slug.toLowerCase())
+  )
 
   return (
     <>
@@ -149,16 +146,18 @@ export default function TenantDashboard() {
         .section-link { font-size: 12px; color: #8C1D40; font-weight: 500; text-decoration: none; }
         .section-link:hover { text-decoration: underline; }
 
-        /* ── INTEREST CARD ── */
+        /* ── INQUIRY CARD ── */
         .icard { background: #fff; border: 1px solid #e8e4db; border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
         .icard-inner { display: flex; flex-direction: column; }
         .icard-img { width: 100%; height: 150px; object-fit: cover; display: block; }
+        .icard-img-placeholder { width: 100%; height: 150px; background: linear-gradient(135deg, #fdf2f5 0%, #f5f0eb 100%); display: flex; align-items: center; justify-content: center; font-size: 32px; }
         .icard-body { padding: 14px 16px; }
         .icard-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
         .icard-name { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
         .icard-addr { font-size: 11px; color: #9b9b9b; margin-top: 2px; }
         .icard-price { font-size: 15px; font-weight: 700; color: #8C1D40; white-space: nowrap; }
         .icard-price span { font-size: 10px; font-weight: 400; color: #9b9b9b; }
+        .icard-meta { font-size: 11px; color: #b0a898; margin-bottom: 8px; }
         .status-pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 20px; padding: 3px 9px; font-size: 11px; font-weight: 600; border: 1px solid; margin-bottom: 9px; }
         .next-step-box { background: #faf9f6; border-left: 3px solid #FFC627; border-radius: 0 7px 7px 0; padding: 9px 12px; font-size: 12px; color: #4a4a4a; line-height: 1.5; }
         .next-step-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
@@ -188,6 +187,7 @@ export default function TenantDashboard() {
         @media (min-width: 560px) {
           .icard-inner { flex-direction: row; }
           .icard-img { width: 140px; height: auto; flex-shrink: 0; }
+          .icard-img-placeholder { width: 140px; height: auto; flex-shrink: 0; min-height: 120px; }
           .icard-body { flex: 1; }
           .greeting-text { font-size: 34px; }
         }
@@ -199,23 +199,26 @@ export default function TenantDashboard() {
         <div className="greeting-row">
           <div className="greeting-text">{getGreeting(userName)} 👋</div>
           <div className="greeting-sub">
-            {FAKE_INTERESTS.length > 0
-              ? `You have ${FAKE_INTERESTS.length} active ${FAKE_INTERESTS.length === 1 ? 'inquiry' : 'inquiries'} · Fall 2025`
-              : 'Start your housing search for Fall 2025'}
+            {leads.length > 0
+              ? `You have ${leads.length} active ${leads.length === 1 ? 'inquiry' : 'inquiries'}`
+              : 'Start your housing search'}
           </div>
         </div>
 
-        {/* ── ACTION STRIP ── */}
-        {UPCOMING_TOUR && (
-          <div className="action-strip">
-            <span className="action-strip-icon">📅</span>
-            <div className="action-strip-body">
-              <div className="action-strip-title">Upcoming tour — {UPCOMING_TOUR.name.split(' ').slice(0, 3).join(' ')}</div>
-              <div className="action-strip-sub">{UPCOMING_TOUR.nextStep}</div>
+        {/* ── ACTION STRIP (only if tour scheduled) ── */}
+        {upcomingTour && (() => {
+          const prop = matchProperty(upcomingTour, properties)
+          return (
+            <div className="action-strip">
+              <span className="action-strip-icon">📅</span>
+              <div className="action-strip-body">
+                <div className="action-strip-title">Tour scheduled — {prop?.name || upcomingTour.property || 'your property'}</div>
+                <div className="action-strip-sub">Check your email for confirmation details</div>
+              </div>
+              {prop && <a href={`/homes/${prop.slug}`} className="action-strip-cta">View listing</a>}
             </div>
-            <a href={`/homes/${UPCOMING_TOUR.slug}`} className="action-strip-cta">View listing</a>
-          </div>
-        )}
+          )
+        })()}
 
         {/* ── INQUIRIES ── */}
         <div className="section-gap">
@@ -224,41 +227,60 @@ export default function TenantDashboard() {
             <a href="/homes" className="section-link">Browse more →</a>
           </div>
 
-          {FAKE_INTERESTS.length === 0 ? (
+          {leads.length === 0 ? (
             <div style={{ background: '#fff', border: '1px dashed #e8e4db', borderRadius: '14px', padding: '36px 20px', textAlign: 'center' }}>
               <div style={{ fontSize: '28px', marginBottom: '10px' }}>🏠</div>
               <div style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a', marginBottom: '6px' }}>No inquiries yet</div>
-              <div style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '16px', lineHeight: 1.5 }}>Submit an interest form on any property and it'll show up here with real-time status updates.</div>
+              <div style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '16px', lineHeight: 1.5 }}>Submit an interest form on any property and it&apos;ll show up here with real-time status updates.</div>
               <a href="/homes" className="btn-p" style={{ display: 'inline-block', width: 'auto', padding: '10px 20px' }}>Browse homes</a>
             </div>
-          ) : FAKE_INTERESTS.map(home => {
-            const cfg = STATUS_CONFIG[home.status]
+          ) : leads.map(lead => {
+            const cfg = STATUS_CONFIG[lead.status] ?? STATUS_CONFIG.new
+            const prop = matchProperty(lead, properties)
+            const heroImage = prop?.hero_image || (prop?.images?.[0] ?? null)
+
             return (
-              <div key={home.slug} className="icard">
+              <div key={lead.id} className="icard">
                 <div className="icard-inner">
-                  <img src={home.image} alt={home.name} className="icard-img" />
+                  {heroImage
+                    ? <img src={heroImage} alt={prop?.name || lead.property || 'Property'} className="icard-img" />
+                    : <div className="icard-img-placeholder">🏠</div>
+                  }
                   <div className="icard-body">
                     <div className="icard-top">
                       <div>
-                        <div className="icard-name">{home.name}</div>
-                        <div className="icard-addr">{home.address}</div>
+                        <div className="icard-name">{prop?.name || lead.property || 'Property Inquiry'}</div>
+                        <div className="icard-addr">{prop?.address || ''}</div>
                       </div>
-                      <div className="icard-price">${home.price}<span>/mo</span></div>
+                      {prop && <div className="icard-price">${prop.price}<span>/mo</span></div>}
                     </div>
+
+                    <div className="icard-meta">Submitted {timeAgo(lead.created_at)}{lead.move_in_date ? ` · Move-in: ${lead.move_in_date}` : ''}</div>
 
                     <span className="status-pill" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>
                       {cfg.icon} {cfg.label}
                     </span>
 
-                    <div>
-                      <div className="next-step-label">What&apos;s next</div>
-                      <div className="next-step-box">{home.nextStep}</div>
-                    </div>
+                    {lead.status !== 'closed' && (
+                      <div>
+                        <div className="next-step-label">What&apos;s next</div>
+                        <div className="next-step-box">
+                          {lead.status === 'closed' && lead.closed_reason === 'leased'
+                            ? '🎉 You leased this property — welcome home!'
+                            : lead.status === 'closed' && lead.closed_reason === 'lost'
+                            ? 'This inquiry was closed. Browse other available properties below.'
+                            : cfg.nextStep}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="icard-actions">
-                      <a href={`/homes/${home.slug}`} className="btn-p">View listing</a>
+                      {prop
+                        ? <a href={`/homes/${prop.slug}`} className="btn-p">View listing</a>
+                        : <a href="/homes" className="btn-p">Browse homes</a>
+                      }
                       <a
-                        href={`mailto:hp@homehive.live?subject=Question about ${home.name}`}
+                        href={`mailto:hello@homehive.live?subject=Question about ${encodeURIComponent(prop?.name || lead.property || 'my inquiry')}`}
                         className="btn-s"
                       >
                         Message us
@@ -272,40 +294,53 @@ export default function TenantDashboard() {
         </div>
 
         {/* ── AVAILABLE HOMES ── */}
-        <div>
-          <div className="section-header">
-            <span className="section-title">Available now</span>
-            <a href="/homes" className="section-link">See all →</a>
-          </div>
-
-          {AVAILABLE_HOMES.map(home => (
-            <div key={home.slug} className="hcard">
-              <img src={home.image} alt={home.name} className="hcard-img" />
-              <div className="hcard-body">
-                <div className="hcard-top">
-                  <div>
-                    <div className="hcard-name">{home.name}</div>
-                    <div className="hcard-addr">{home.address}</div>
-                  </div>
-                  <div className="hcard-price">${home.price}<span>/mo</span></div>
-                </div>
-
-                <div className="hcard-stats">
-                  <span className="hcard-stat">🛏 {home.beds} beds</span>
-                  <span className="hcard-stat">🚿 {home.baths} baths</span>
-                  <span className="hcard-stat">📍 {home.asuDistance} mi to ASU</span>
-                </div>
-
-                <div className="hcard-tags">
-                  <span className="avail-pill"><span className="avail-dot" />{home.available} room{home.available !== 1 ? 's' : ''} left</span>
-                  {home.tags.slice(0, 3).map(t => <span key={t} className="hcard-tag">{t}</span>)}
-                </div>
-
-                <a href={`/homes/${home.slug}`} className="btn-p">View details</a>
-              </div>
+        {availableHomes.length > 0 && (
+          <div>
+            <div className="section-header">
+              <span className="section-title">Available now</span>
+              <a href="/homes" className="section-link">See all →</a>
             </div>
-          ))}
-        </div>
+
+            {availableHomes.slice(0, 3).map(home => {
+              const heroImage = home.hero_image || home.images?.[0]
+              return (
+                <div key={home.slug} className="hcard">
+                  {heroImage && <img src={heroImage} alt={home.name} className="hcard-img" />}
+                  <div className="hcard-body">
+                    <div className="hcard-top">
+                      <div>
+                        <div className="hcard-name">{home.name}</div>
+                        <div className="hcard-addr">{home.address}</div>
+                      </div>
+                      <div className="hcard-price">${home.price}<span>/mo</span></div>
+                    </div>
+
+                    <div className="hcard-stats">
+                      <span className="hcard-stat">🛏 {home.beds} beds</span>
+                      <span className="hcard-stat">🚿 {home.baths} baths</span>
+                      {home.asu_distance > 0 && <span className="hcard-stat">📍 {home.asu_distance} mi to ASU</span>}
+                    </div>
+
+                    <div className="hcard-tags">
+                      <span className="avail-pill"><span className="avail-dot" />{home.available} room{home.available !== 1 ? 's' : ''} left</span>
+                      {home.tags.slice(0, 3).map(t => <span key={t} className="hcard-tag">{t}</span>)}
+                    </div>
+
+                    <a href={`/homes/${home.slug}`} className="btn-p">View details</a>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── EMPTY STATE when no homes available ── */}
+        {availableHomes.length === 0 && leads.length > 0 && (
+          <div style={{ textAlign: 'center', padding: '24px 20px', color: '#9b9b9b', fontSize: '13px' }}>
+            <div style={{ marginBottom: '6px' }}>You&apos;ve inquired about all our available properties!</div>
+            <a href="/homes" className="section-link">View all listings →</a>
+          </div>
+        )}
 
       </div>
     </>

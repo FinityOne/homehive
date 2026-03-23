@@ -134,13 +134,16 @@ export default function Nav() {
         .profile-avatar { width:34px; height:34px; border-radius:50%; background:#8C1D40; color:#FFC627; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer; border:2px solid #e8e4db; transition:border-color .15s,transform .15s; font-family:'DM Sans',sans-serif; letter-spacing:0.3px; flex-shrink:0; user-select:none; }
         .profile-avatar:hover { border-color:#8C1D40; transform:scale(1.05); }
         .profile-avatar.open { border-color:#8C1D40; }
-        .profile-dropdown { position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #e8e4db; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.12); min-width:220px; overflow:hidden; animation:dropIn .15s ease; z-index:300; }
+        .profile-dropdown { position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #e8e4db; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,0.13); min-width:240px; overflow:hidden; animation:dropIn .15s ease; z-index:300; }
         @keyframes dropIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
-        .dropdown-header { padding:14px 16px; border-bottom:1px solid #f0ede6; }
+        .dropdown-header { padding:14px 16px 12px; border-bottom:1px solid #f0ede6; }
         .dropdown-name { font-size:13px; font-weight:600; color:#1a1a1a; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .dropdown-email { font-size:11px; color:#9b9b9b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .dropdown-item { display:flex; align-items:center; gap:9px; padding:11px 16px; font-size:13px; color:#3a3a3a; text-decoration:none; cursor:pointer; transition:background .15s; border:none; background:none; width:100%; font-family:'DM Sans',sans-serif; text-align:left; }
+        .dropdown-email { font-size:11px; color:#9b9b9b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:6px; }
+        .dropdown-role-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; padding:2px 8px; border-radius:20px; }
+        .dropdown-section-label { font-size:10px; font-weight:600; letter-spacing:.7px; text-transform:uppercase; color:#c5c1b8; padding:8px 16px 4px; }
+        .dropdown-item { display:flex; align-items:center; gap:10px; padding:10px 16px; font-size:13px; color:#3a3a3a; text-decoration:none; cursor:pointer; transition:background .15s; border:none; background:none; width:100%; font-family:'DM Sans',sans-serif; text-align:left; }
         .dropdown-item:hover { background:#faf9f6; color:#1a1a1a; }
+        .dropdown-item .di-icon { width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
         .dropdown-item.danger { color:#8C1D40; }
         .dropdown-item.danger:hover { background:#fdf2f5; }
         .dropdown-divider { height:1px; background:#f0ede6; margin:4px 0; }
@@ -200,8 +203,7 @@ export default function Nav() {
           </div>
           <div className="asu-right">
             <a href="/student-guide" className="asu-rlink">Student Guide</a>
-            <a href="/roommates" className="asu-rlink">Find roommates</a>
-            <span className="asu-pill">Fall 2025 open</span>
+            <span className="asu-pill">Fall 2026 open</span>
             <button className="play-btn" onClick={replayLoader} title="Replay intro">
               <span className="play-tri" />
             </button>
@@ -231,24 +233,67 @@ export default function Nav() {
               </div>
               {profileOpen && (
                 <div className="profile-dropdown" onClick={e => e.stopPropagation()}>
+                  {/* Header */}
                   <div className="dropdown-header">
                     <div className="dropdown-name">{user.fullName || user.email}</div>
                     <div className="dropdown-email">{user.email}</div>
+                    <span className="dropdown-role-badge" style={
+                      user.role === 'admin'    ? { background:'#f3f0ff', color:'#6d28d9' } :
+                      user.role === 'landlord' ? { background:'#f0fdf4', color:'#065f46' } :
+                                                 { background:'#fdf2f5', color:'#8C1D40' }
+                    }>
+                      { user.role === 'admin' ? '◈ Admin' : user.role === 'landlord' ? '⊞ Landlord' : '🎓 Student' }
+                    </span>
                   </div>
-                  {user.role === 'admin' && (
+
+                  {/* Tenant links — every role gets these */}
+                  <div className="dropdown-section-label">For you</div>
+                  <a href="/dashboard" className="dropdown-item">
+                    <span className="di-icon" style={{ background:'#fdf2f5' }}>🏠</span> My Dashboard
+                  </a>
+                  <a href="/homes" className="dropdown-item">
+                    <span className="di-icon" style={{ background:'#faf9f6' }}>🔍</span> Browse Homes
+                  </a>
+                  <a href="/roommates" className="dropdown-item">
+                    <span className="di-icon" style={{ background:'#faf9f6' }}>👥</span> Find Roommates
+                  </a>
+
+                  {/* Landlord links */}
+                  {(user.role === 'landlord' || user.role === 'admin') && (
                     <>
-                      <a href="/admin" className="dropdown-item">◈ &nbsp;Lead dashboard</a>
-                      <a href="/landlord/dashboard" className="dropdown-item">⊞ &nbsp;Landlord view</a>
+                      <div className="dropdown-divider" />
+                      <div className="dropdown-section-label">Landlord</div>
+                      <a href="/landlord/dashboard" className="dropdown-item">
+                        <span className="di-icon" style={{ background:'#f0fdf4' }}>⊞</span> Landlord Portal
+                      </a>
+                      <a href="/landlord/listings" className="dropdown-item">
+                        <span className="di-icon" style={{ background:'#f0fdf4' }}>▣</span> My Listings
+                      </a>
+                      <a href="/landlord/leads" className="dropdown-item">
+                        <span className="di-icon" style={{ background:'#f0fdf4' }}>◉</span> Leads
+                      </a>
                     </>
                   )}
-                  {user.role === 'landlord' && (
-                    <a href="/landlord/dashboard" className="dropdown-item">⊞ &nbsp;My listings</a>
+
+                  {/* Admin links */}
+                  {user.role === 'admin' && (
+                    <>
+                      <div className="dropdown-divider" />
+                      <div className="dropdown-section-label">Admin</div>
+                      <a href="/admin" className="dropdown-item">
+                        <span className="di-icon" style={{ background:'#f3f0ff' }}>◈</span> All Leads
+                      </a>
+                    </>
                   )}
-                  {user.role === 'tenant' && (
-                    <a href="/dashboard" className="dropdown-item">◈ &nbsp;My dashboard</a>
-                  )}
+
+                  {/* Account */}
                   <div className="dropdown-divider" />
-                  <button className="dropdown-item danger" onClick={handleSignOut}>→ &nbsp;Sign out</button>
+                  <a href="/profile" className="dropdown-item">
+                    <span className="di-icon" style={{ background:'#f5f4f0' }}>👤</span> My Profile
+                  </a>
+                  <button className="dropdown-item danger" onClick={handleSignOut}>
+                    <span className="di-icon" style={{ background:'#fdf2f5' }}>→</span> Sign out
+                  </button>
                 </div>
               )}
             </div>
@@ -271,7 +316,7 @@ export default function Nav() {
             <span style={{ color: '#FFC627', fontSize: '12px' }}>⚡</span>
             <span className="mob-asu-label">ASU Off-Campus Housing</span>
           </div>
-          <span className="mob-asu-pill">Fall 2025 open</span>
+          <span className="mob-asu-pill">Fall 2026 open</span>
         </div>
 
         <div className="mob-links">
@@ -311,23 +356,38 @@ export default function Nav() {
             <>
               <div className="mob-user-row">
                 <div className="mob-user-avatar">{getInitials(user.email, user.fullName)}</div>
-                <div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="mob-user-name">{user.fullName || user.email}</div>
                   <div className="mob-user-email">{user.email}</div>
                 </div>
+                <span style={{
+                  fontSize: '10px', fontWeight: 700, letterSpacing: '.4px', textTransform: 'uppercase',
+                  padding: '2px 8px', borderRadius: '20px', flexShrink: 0,
+                  ...(user.role === 'admin'    ? { background:'#f3f0ff', color:'#6d28d9' } :
+                      user.role === 'landlord' ? { background:'#f0fdf4', color:'#065f46' } :
+                                                 { background:'#fdf2f5', color:'#8C1D40' })
+                }}>
+                  {user.role === 'admin' ? 'Admin' : user.role === 'landlord' ? 'Landlord' : 'Student'}
+                </span>
               </div>
-              {user.role === 'admin' && (
+
+              {/* Tenant — always shown */}
+              <a href="/dashboard"  className="mob-signin-link" onClick={() => setMobileOpen(false)}>🏠 My Dashboard →</a>
+
+              {/* Landlord */}
+              {(user.role === 'landlord' || user.role === 'admin') && (
                 <>
-                  <a href="/admin" className="mob-signin-link" onClick={() => setMobileOpen(false)}>Lead dashboard →</a>
-                  <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>Landlord view →</a>
+                  <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>⊞ Landlord Portal →</a>
+                  <a href="/landlord/leads"     className="mob-signin-link" onClick={() => setMobileOpen(false)}>◉ Leads →</a>
                 </>
               )}
-              {user.role === 'landlord' && (
-                <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>My listings →</a>
+
+              {/* Admin */}
+              {user.role === 'admin' && (
+                <a href="/admin" className="mob-signin-link" onClick={() => setMobileOpen(false)}>◈ All Leads →</a>
               )}
-              {user.role === 'tenant' && (
-                <a href="/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>My dashboard →</a>
-              )}
+
+              <a href="/profile" className="mob-signin-link" onClick={() => setMobileOpen(false)}>👤 My Profile →</a>
               <button className="mob-signout" onClick={handleSignOut}>Sign out</button>
             </>
           ) : (

@@ -24,13 +24,11 @@ const NAV_ITEMS = {
   tenant: [
     { href: '/dashboard',  label: 'Overview',     icon: '⊞' },
     { href: '/homes',      label: 'Browse Homes', icon: '▣' },
-    { href: '/roommates',  label: 'Roommates',    icon: '⊕' },
   ],
   landlord: [
     { href: '/landlord/dashboard',    label: 'Overview',     icon: '⊞' },
     { href: '/landlord/listings',     label: 'My Listings',  icon: '▣' },
     { href: '/landlord/leads', label: 'Leads', icon: '◉' },
-    { href: '/landlord/maintenance',  label: 'Maintenance',  icon: '◇' },
   ],
   admin: [
     { href: '/admin', label: 'Leads', icon: '◈' },
@@ -236,13 +234,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="sb-bottom">
         {user && (
           <>
-            <div className="sb-user-row">
+            {/* Clicking the user row goes to profile */}
+            <a href="/profile" className={`sb-user-row${pathname === '/profile' ? ' active' : ''}`}>
               <div className="sb-avatar">{getInitials(user.email, user.fullName)}</div>
               <div className="sb-user-info">
                 <div className="sb-user-name">{user.fullName || user.email.split('@')[0]}</div>
                 <div className="sb-user-email">{user.email}</div>
               </div>
-            </div>
+              <span className="sb-user-chevron">›</span>
+            </a>
             <button className="sb-signout" onClick={handleSignOut}>
               <span>→</span> Sign out
             </button>
@@ -333,8 +333,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
         .sb-user-row {
           display: flex; align-items: center; gap: 9px; padding: 8px 10px;
-          border-radius: 8px; margin-bottom: 2px;
+          border-radius: 8px; margin-bottom: 1px; text-decoration: none;
+          transition: background 0.15s; cursor: pointer;
         }
+        .sb-user-row:hover { background: var(--nav-hover-bg); }
+        .sb-user-row.active { background: var(--nav-active-bg); }
         .sb-avatar {
           width: 30px; height: 30px; border-radius: 50%;
           background: var(--avatar-bg); color: var(--avatar-color);
@@ -342,7 +345,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           justify-content: center; flex-shrink: 0; font-family: 'DM Sans', sans-serif;
           transition: background 0.25s, color 0.25s;
         }
-        .sb-user-info { min-width: 0; }
+        .sb-user-info { min-width: 0; flex: 1; }
         .sb-user-name {
           font-size: 12px; font-weight: 600; color: var(--user-text);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -353,12 +356,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           transition: color 0.25s;
         }
+        .sb-user-chevron {
+          font-size: 10px; color: var(--user-sub); flex-shrink: 0;
+          opacity: 0; transition: opacity 0.15s;
+        }
+        .sb-user-row:hover .sb-user-chevron { opacity: 1; }
         .sb-signout {
           display: flex; align-items: center; gap: 7px; padding: 7px 10px;
           border-radius: 8px; font-size: 13px; color: var(--so-color);
           background: none; border: none; cursor: pointer; width: 100%;
           font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s;
-          text-align: left;
+          text-align: left; margin-top: 1px;
         }
         .sb-signout:hover { background: var(--so-hover-bg); color: var(--so-hover-color); }
 
@@ -430,7 +438,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mob-topbar">
             <a href="/" className="sb-logo">Home<em>Hive</em></a>
             <div className="mob-topbar-right">
-              {user && <div className="mob-avatar">{getInitials(user.email, user.fullName)}</div>}
+              {user && <a href="/profile" className="mob-avatar" style={{ textDecoration: 'none' }}>{getInitials(user.email, user.fullName)}</a>}
               <button
                 className={`hamburger${sidebarOpen ? ' open' : ''}`}
                 onClick={() => setSidebarOpen(o => !o)}
