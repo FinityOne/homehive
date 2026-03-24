@@ -82,6 +82,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [reminding, setReminding] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
+  const [copied, setCopied] = useState(false)
+  const [editModal, setEditModal] = useState(false)
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', move_in_date: '', property: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [properties, setProperties] = useState<{ slug: string; name: string }[]>([])
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
@@ -96,7 +102,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       // Fetch lead
       const { data: leadData, error } = await supabase.from('leads').select('*').eq('id', leadId).single()
       if (error || !leadData) { setNotFound(true); setLoading(false); return }
-      setLead(leadData as Lead)
+      const ld = leadData as Lead
+      setLead(ld)
+      setEditForm({
+        first_name: ld.first_name || '',
+        last_name: ld.last_name || '',
+        email: ld.email || '',
+        phone: ld.phone || '',
+        move_in_date: ld.move_in_date || '',
+        property: ld.property || '',
+      })
+      // Fetch landlord's properties for dropdown
+      const { data: props } = await supabase.from('properties').select('slug, name').eq('owner_id', user.id)
+      if (props) setProperties(props)
 
       // Fetch prescreen + email logs via activity route (uses service role)
       const activityRes = await fetch(`/api/leads/${leadId}/activity`)
@@ -139,6 +157,31 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       }
     } catch { showToast('Failed to update status', 'error') }
     setUpdatingStatus(false)
+  }
+
+  const handleEditSave = async () => {
+    if (!lead) return
+    setEditSaving(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      })
+      if (res.ok) {
+        setLead(prev => prev ? { ...prev, ...editForm } : prev)
+        // If property changed, refresh property details
+        if (editForm.property !== lead.property) {
+          const { data: prop } = await supabase.from('properties').select('name, address, hero_image, price').eq('slug', editForm.property).single()
+          if (prop) setProperty(prop)
+        }
+        setEditModal(false)
+        showToast('Lead updated')
+      } else {
+        showToast('Failed to save changes', 'error')
+      }
+    } catch { showToast('Failed to save changes', 'error') }
+    setEditSaving(false)
   }
 
   const sendReminder = async () => {
@@ -238,6 +281,25 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         .status-card.selected { border-color: #8C1D40; background: #fdf2f5; }
         .status-card.current { border-color: currentColor; cursor: default; opacity: 0.6; }
 
+        /* Edit sheet */
+        .edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 600; display: flex; align-items: flex-end; justify-content: center; backdrop-filter: blur(4px); }
+        @media (min-width: 600px) { .edit-overlay { align-items: center; } }
+        .edit-sheet { background: #fff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 0 0 env(safe-area-inset-bottom); animation: sheetUp 0.28s cubic-bezier(0.32,0.72,0,1); max-height: 92vh; overflow-y: auto; }
+        @media (min-width: 600px) { .edit-sheet { border-radius: 20px; max-height: 88vh; } }
+        @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .edit-sheet-handle { width: 36px; height: 4px; background: #e0ddd7; border-radius: 2px; margin: 10px auto 0; }
+        @media (min-width: 600px) { .edit-sheet-handle { display: none; } }
+        .edit-sheet-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+        .edit-sheet-title { font-size: 18px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.3px; }
+        .edit-sheet-body { padding: 20px 24px; }
+        .edit-field { margin-bottom: 16px; }
+        .edit-field-label { display: block; font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+        .edit-input { width: 100%; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 11px 14px; font-size: 15px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; background: #faf9f6; outline: none; transition: border-color 0.15s, background 0.15s; }
+        .edit-input:focus { border-color: #8C1D40; background: #fff; }
+        .edit-input::placeholder { color: #b0a898; }
+        .edit-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .edit-sheet-footer { padding: 4px 24px 24px; display: flex; gap: 10px; }
+
         /* Buttons */
         .btn-primary { background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
         .btn-primary:hover { opacity: 0.88; }
@@ -330,7 +392,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
             <div className="ld-card">
               <div className="ld-card-header">
                 <span className="ld-card-title">Lead Information</span>
-                <a href={`mailto:${lead.email}`} style={{ fontSize: '12px', color: '#8C1D40', textDecoration: 'none', fontWeight: 500 }}>✉ Email →</a>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <a href={`mailto:${lead.email}`} style={{ fontSize: '12px', color: '#8C1D40', textDecoration: 'none', fontWeight: 500 }}>✉ Email →</a>
+                  <button
+                    onClick={() => setEditModal(true)}
+                    style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '7px', padding: '4px 10px', fontSize: '12px', fontWeight: 600, color: '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#8C1D40'; (e.currentTarget as HTMLButtonElement).style.color = '#8C1D40' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#e8e5de'; (e.currentTarget as HTMLButtonElement).style.color = '#3a3a3a' }}
+                  >
+                    ✎ Edit
+                  </button>
+                </div>
               </div>
               <div className="ld-card-body">
                 <div className="info-row"><span className="info-label">Full Name</span><span className="info-value">{lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}</span></div>
@@ -457,6 +529,32 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                     {reminding ? 'Sending…' : '📧 Send Pre-screen Reminder'}
                   </button>
                 )}
+                {/* Pre-screen link */}
+                {(() => {
+                  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+                  const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
+                  return (
+                    <div style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
+                        Pre-Screen Link
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#4a4a4a', wordBreak: 'break-all', lineHeight: 1.5, marginBottom: '10px', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '7px', padding: '8px 10px' }}>
+                        {prescreenUrl}
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(prescreenUrl)
+                          setCopied(true)
+                          setTimeout(() => setCopied(false), 2000)
+                        }}
+                        style={{ width: '100%', padding: '8px', background: copied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${copied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '7px', fontSize: '13px', fontWeight: 600, color: copied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' }}
+                      >
+                        {copied ? '✓ Copied!' : '⎘ Copy Link'}
+                      </button>
+                    </div>
+                  )
+                })()}
+
                 <a
                   href={`mailto:${lead.email}?subject=Regarding your interest at ${property?.name || lead.property || 'our property'}`}
                   className="btn-ghost"
@@ -535,6 +633,71 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
           </div>
         </div>
       </div>
+
+      {/* ── EDIT LEAD MODAL ── */}
+      {editModal && (
+        <div className="edit-overlay" onClick={() => setEditModal(false)}>
+          <div className="edit-sheet" onClick={e => e.stopPropagation()}>
+            <div className="edit-sheet-handle" />
+            <div className="edit-sheet-header">
+              <div>
+                <div className="edit-sheet-title">Edit Lead</div>
+                <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>Only filled fields will be updated.</div>
+              </div>
+              <button onClick={() => setEditModal(false)} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+
+            <div className="edit-sheet-body">
+              <div className="edit-field-row">
+                <div className="edit-field">
+                  <label className="edit-field-label">First Name</label>
+                  <input className="edit-input" value={editForm.first_name} onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))} placeholder="First name" />
+                </div>
+                <div className="edit-field">
+                  <label className="edit-field-label">Last Name</label>
+                  <input className="edit-input" value={editForm.last_name} onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))} placeholder="Last name" />
+                </div>
+              </div>
+
+              <div className="edit-field">
+                <label className="edit-field-label">Email</label>
+                <input className="edit-input" type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
+              </div>
+
+              <div className="edit-field">
+                <label className="edit-field-label">Phone</label>
+                <input className="edit-input" type="tel" value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+1 (555) 000-0000" />
+              </div>
+
+              <div className="edit-field">
+                <label className="edit-field-label">Move-in Date</label>
+                <input className="edit-input" value={editForm.move_in_date} onChange={e => setEditForm(f => ({ ...f, move_in_date: e.target.value }))} placeholder="e.g. August 2025" />
+              </div>
+
+              <div className="edit-field">
+                <label className="edit-field-label">Property</label>
+                {properties.length > 0 ? (
+                  <select className="edit-input" value={editForm.property} onChange={e => setEditForm(f => ({ ...f, property: e.target.value }))}>
+                    <option value="">— No property —</option>
+                    {properties.map(p => (
+                      <option key={p.slug} value={p.slug}>{p.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input className="edit-input" value={editForm.property} onChange={e => setEditForm(f => ({ ...f, property: e.target.value }))} placeholder="property-slug" />
+                )}
+              </div>
+            </div>
+
+            <div className="edit-sheet-footer">
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setEditModal(false)}>Cancel</button>
+              <button className="btn-gold" style={{ flex: 2 }} disabled={editSaving} onClick={handleEditSave}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── STATUS CHANGE MODAL ── */}
       {statusModal && (
