@@ -3,8 +3,31 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { getPropertiesByOwner } from './properties'
 
-// SQL to run in Supabase (note as comment only, do NOT execute from code):
-// ALTER TABLE leads ADD COLUMN IF NOT EXISTS closed_reason text;
+/*
+ * SQL to run once in Supabase dashboard:
+ *
+ * CREATE TABLE pre_screens (
+ *   id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+ *   lead_id       uuid REFERENCES leads(id) ON DELETE CASCADE NOT NULL UNIQUE,
+ *   created_at    timestamptz DEFAULT now(),
+ *   is_student    boolean,
+ *   university    text,
+ *   birthdate     date,
+ *   gender        text,
+ *   move_in_date  text,
+ *   group_size    integer DEFAULT 1,
+ *   about         text,
+ *   monthly_budget integer,
+ *   lease_length  text,
+ *   lifestyle     text,
+ *   notes         text
+ * );
+ * ALTER TABLE pre_screens ENABLE ROW LEVEL SECURITY;
+ * CREATE POLICY "Allow public inserts on pre_screens"
+ *   ON pre_screens FOR INSERT TO anon WITH CHECK (true);
+ *
+ * ALTER TABLE leads ADD COLUMN IF NOT EXISTS closed_reason text;
+ */
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,16 +42,23 @@ export type Lead = {
   last_name: string | null
   phone: string | null
   move_in_date: string | null
-  // prescreen fields (filled in step 2)
-  lease_length: string | null
-  budget: string | null
-  roommate_preference: string | null
-  lifestyle: string | null
-  notes: string | null
-  // status flow
   status: 'new' | 'contacted' | 'engaged' | 'qualified' | 'tour_scheduled' | 'closed'
   closed_reason: 'leased' | 'lost' | null
   property: string | null // stores property slug
+}
+
+export type PrescreenData = {
+  is_student: boolean
+  university: string
+  birthdate: string
+  gender: string
+  move_in_date: string
+  group_size: number
+  about: string
+  monthly_budget: number
+  lease_length: string
+  lifestyle: string
+  notes: string
 }
 
 export async function getLeadsForOwner(userId: string): Promise<Lead[]> {
@@ -100,21 +130,36 @@ export async function updateLeadStatus(
 
 export async function savePrescreen(
   leadId: string,
-  data: {
-    lease_length: string
-    budget: string
-    roommate_preference: string
-    lifestyle: string
-    notes: string
-  }
+  data: PrescreenData
 ): Promise<{ error: any }> {
-  const { error } = await supabase
+  // Upsert into separate pre_screens table (idempotent if re-submitted)
+  const { error: insertError } = await supabase
+    .from('pre_screens')
+    .upsert(
+      [{
+        lead_id: leadId,
+        is_student: data.is_student,
+        university: data.is_student ? data.university : null,
+        birthdate: data.birthdate || null,
+        gender: data.gender,
+        move_in_date: data.move_in_date,
+        group_size: data.group_size,
+        about: data.about,
+        monthly_budget: data.monthly_budget || null,
+        lease_length: data.lease_length,
+        lifestyle: data.lifestyle,
+        notes: data.notes || null,
+      }],
+      { onConflict: 'lead_id' }
+    )
+
+  if (insertError) return { error: insertError }
+
+  // Advance lead status to qualified
+  const { error: statusError } = await supabase
     .from('leads')
-    .update({
-      ...data,
-      status: 'qualified',
-    })
+    .update({ status: 'qualified' })
     .eq('id', leadId)
 
-  return { error }
+  return { error: statusError }
 }

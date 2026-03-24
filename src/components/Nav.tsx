@@ -254,9 +254,6 @@ export default function Nav() {
                   <a href="/homes" className="dropdown-item">
                     <span className="di-icon" style={{ background:'#faf9f6' }}>🔍</span> Browse Homes
                   </a>
-                  <a href="/roommates" className="dropdown-item">
-                    <span className="di-icon" style={{ background:'#faf9f6' }}>👥</span> Find Roommates
-                  </a>
 
                   {/* Landlord links */}
                   {(user.role === 'landlord' || user.role === 'admin') && (

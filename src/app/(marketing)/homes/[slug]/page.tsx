@@ -202,9 +202,12 @@ export default function PropertyPage({
           style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
         >
           <option value="">Desired move-in date</option>
-          <option>August 2025</option>
-          <option>January 2026</option>
-          <option>Spring 2026</option>
+          {Array.from({ length: 6 }, (_, i) => {
+            const d = new Date()
+            d.setDate(1)
+            d.setMonth(d.getMonth() + i)
+            return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+          }).map(label => <option key={label}>{label}</option>)}
           <option>Flexible</option>
         </select>
       </div>
@@ -551,7 +554,7 @@ export default function PropertyPage({
           {/* RIGHT — sticky form card */}
           <div className="prop-right">
             <div className="form-card">
-              <FormContent />
+              {FormContent()}
             </div>
 
             {/* HomeHive Promise */}
@@ -594,7 +597,7 @@ export default function PropertyPage({
         <div className="drawer-handle" />
         <div style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a', marginBottom: '4px' }}>{home.name}</div>
         <div style={{ fontSize: '12px', color: '#9b9b9b', marginBottom: '20px' }}>📍 {home.address}</div>
-        <FormContent />
+        {FormContent()}
       </div>
     </>
   )
