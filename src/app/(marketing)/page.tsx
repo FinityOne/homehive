@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import HomePageClient from './HomePageClient'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-const DEFAULT_OG = 'https://images.unsplash.com/photo-1562516155-e0c1ee44059b?w=1200&q=80'
+const DEFAULT_OG = 'https://ap.rdcpix.com/a50c9b367ab46c455f0be93f27ad00bal-m2992129795rd-w960_h720.jpg'
 
 export const metadata: Metadata = {
   title: 'HomeHive — Student Housing Near ASU in Tempe',
