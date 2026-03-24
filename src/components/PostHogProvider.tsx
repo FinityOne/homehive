@@ -21,7 +21,7 @@ function PageViewTracker() {
   const ph = usePostHog()
 
   useEffect(() => {
-    if (!isProd) return
+    // if (!isProd) return
     const url = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '')
     ph?.capture('$pageview', { $current_url: window.location.origin + url })
   }, [pathname, searchParams, ph])
