@@ -58,7 +58,7 @@ export default function PropertyPage({
 
   const guestName   = resolvedSearch?.name || ''
   const customMsg   = resolvedSearch?.msg  || ''
-  const fromName    = resolvedSearch?.from || 'Mike'
+  const fromName    = resolvedSearch?.from || 'Heran'
   const isPersonalized = !!guestName
 
   useEffect(() => {

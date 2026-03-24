@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { logEmail } from '@/lib/emailLog'
 
 // Anon key is fine here — RLS policy allows public inserts on leads
 const supabase = createClient(
@@ -110,6 +111,7 @@ export async function POST(req: Request) {
 </html>`,
     })
     console.log('Admin notification sent')
+    await logEmail(leadId, 'new_lead_landlord', `New interest! ${first_name} → ${propertyName}`, process.env.YOUR_EMAIL!, { property: propertyName })
   } catch (emailError) {
     console.error('Admin notification email error:', emailError)
   }
@@ -205,6 +207,7 @@ export async function POST(req: Request) {
 </html>`,
     })
     console.log('Welcome email sent to:', email)
+    await logEmail(leadId, 'lead_welcome', `${first_name}, one quick step to hold your spot at ${propertyName}`, email, { property: propertyName })
   } catch (emailError) {
     console.error('Welcome email error:', emailError)
   }

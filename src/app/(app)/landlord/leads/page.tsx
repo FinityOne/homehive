@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getLeadsForOwner } from '@/lib/leads'
+import { getLeadsForOwner, getLeadById } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 
 const supabase = createBrowserClient(
@@ -11,822 +11,540 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const STATUS_ORDER: Lead['status'][] = [
-  'new', 'contacted', 'engaged', 'qualified', 'tour_scheduled', 'closed',
-]
+const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'engaged', 'qualified', 'tour_scheduled', 'closed']
 
-const STATUS_LABELS: Record<Lead['status'], string> = {
-  new: 'New',
-  contacted: 'Contacted',
-  engaged: 'Engaged',
-  qualified: 'Qualified',
-  tour_scheduled: 'Tour Scheduled',
-  closed: 'Closed',
+const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: string; border: string }> = {
+  new:            { label: 'New',           color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
+  contacted:      { label: 'Contacted',     color: '#f97316', bg: 'rgba(249,115,22,0.08)',   border: 'rgba(249,115,22,0.25)' },
+  engaged:        { label: 'Engaged',       color: '#eab308', bg: 'rgba(234,179,8,0.08)',    border: 'rgba(234,179,8,0.3)' },
+  qualified:      { label: 'Qualified',     color: '#10b981', bg: 'rgba(16,185,129,0.08)',   border: 'rgba(16,185,129,0.25)' },
+  tour_scheduled: { label: 'Tour Sched.',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   border: 'rgba(139,92,246,0.25)' },
+  closed:         { label: 'Closed',        color: '#6b7280', bg: 'rgba(107,114,128,0.08)',  border: 'rgba(107,114,128,0.25)' },
 }
 
-const STATUS_COLORS: Record<Lead['status'], string> = {
-  new: '#3b82f6',
-  contacted: '#f97316',
-  engaged: '#eab308',
-  qualified: '#10b981',
-  tour_scheduled: '#8b5cf6',
-  closed: '#6b7280',
+function getHeat(createdAt: string | null) {
+  if (!createdAt) return { icon: '', color: '#94a3b8', label: '—' }
+  const h = (Date.now() - new Date(createdAt).getTime()) / 3600000
+  if (h < 24)  return { icon: '🔥', color: '#ef4444', label: '< 24h' }
+  if (h < 72)  return { icon: '🌡', color: '#f97316', label: '< 3d' }
+  if (h < 168) return { icon: '·',  color: '#eab308', label: '< 7d' }
+  return { icon: '·', color: '#cbd5e1', label: '7d+' }
 }
 
-const STATUS_BG: Record<Lead['status'], string> = {
-  new: 'rgba(59,130,246,0.08)',
-  contacted: 'rgba(249,115,22,0.08)',
-  engaged: 'rgba(234,179,8,0.08)',
-  qualified: 'rgba(16,185,129,0.08)',
-  tour_scheduled: 'rgba(139,92,246,0.08)',
-  closed: 'rgba(107,114,128,0.08)',
-}
-
-function getHeat(createdAt: string | null): { label: string; color: string; icon: string } {
-  if (!createdAt) return { label: 'Unknown', color: '#94a3b8', icon: '' }
-  const hours = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60)
-  if (hours < 24) return { label: '< 24h', color: '#ef4444', icon: '🔥' }
-  if (hours < 72) return { label: '< 3d', color: '#f97316', icon: '🌡' }
-  if (hours < 168) return { label: '< 7d', color: '#eab308', icon: '·' }
-  return { label: '7d+', color: '#94a3b8', icon: '·' }
-}
-
-function getLastInitial(lastName: string | null): string {
-  if (!lastName) return ''
-  return ` ${lastName[0].toUpperCase()}.`
-}
-
-function formatDate(d: string | null): string {
+function timeAgo(d: string | null): string {
   if (!d) return '—'
-  return d
+  const diff = Date.now() - new Date(d).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
+
+function initials(first: string | null, last: string | null): string {
+  return ((first?.[0] || '') + (last?.[0] || '')).toUpperCase() || '?'
+}
+
+type Property = { slug: string; name: string }
 
 export default function LandlordLeadsPage() {
   const router = useRouter()
   const [userId, setUserId] = useState<string | null>(null)
   const [leads, setLeads] = useState<Lead[]>([])
+  const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'pipeline' | 'list'>('pipeline')
-  const [propertyFilter, setPropertyFilter] = useState<string>('all')
-  const [dateFilter, setDateFilter] = useState<'all' | 'week' | 'month'>('all')
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [statusUpdating, setStatusUpdating] = useState(false)
-  const [closedReasonPicker, setClosedReasonPicker] = useState(false)
-  const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'pipeline'>('list')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<Lead['status'] | 'all'>('all')
+  const [propertyFilter, setPropertyFilter] = useState('all')
+  const [toast, setToast] = useState<string | null>(null)
 
-  // Auth
+  // Add lead modal
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
+  const [addingLead, setAddingLead] = useState(false)
+
+  // Reminder sending
+  const [remindingId, setRemindingId] = useState<string | null>(null)
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.user) {
-        router.push('/login')
-        return
-      }
+      if (!session?.user) { router.push('/login'); return }
       setUserId(session.user.id)
     })
   }, [router])
 
-  // Load leads
   const loadLeads = useCallback(async () => {
     if (!userId) return
     setLoading(true)
     const data = await getLeadsForOwner(userId)
+    // Sort by most recent first
+    data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
     setLeads(data)
+
+    // Extract unique properties
+    const props = Array.from(new Set(data.map(l => l.property).filter(Boolean))) as string[]
+    setProperties(props.map(slug => ({ slug, name: slug })))
     setLoading(false)
   }, [userId])
 
+  // Also fetch property names from Supabase
   useEffect(() => {
-    loadLeads()
-  }, [loadLeads])
+    if (!userId) return
+    supabase.from('properties').select('slug, name').eq('owner_id', userId).then(({ data }) => {
+      if (data) setProperties(data)
+    })
+  }, [userId])
 
-  // Filter logic
-  const filteredLeads = leads.filter(lead => {
-    if (propertyFilter !== 'all' && lead.property !== propertyFilter) return false
-    if (dateFilter !== 'all' && lead.created_at) {
-      const created = new Date(lead.created_at)
-      const now = new Date()
-      if (dateFilter === 'week') {
-        const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        if (created < cutoff) return false
-      }
-      if (dateFilter === 'month') {
-        const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        if (created < cutoff) return false
-      }
+  useEffect(() => { loadLeads() }, [loadLeads])
+
+  const filteredLeads = leads.filter(l => {
+    if (statusFilter !== 'all' && l.status !== statusFilter) return false
+    if (propertyFilter !== 'all' && l.property !== propertyFilter) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!((l.first_name || '').toLowerCase().includes(q) ||
+            (l.last_name || '').toLowerCase().includes(q) ||
+            (l.email || '').toLowerCase().includes(q) ||
+            (l.property || '').toLowerCase().includes(q))) return false
     }
     return true
   })
 
-  const uniqueProperties = Array.from(new Set(leads.map(l => l.property).filter(Boolean))) as string[]
-
-  const leadsByStatus = STATUS_ORDER.reduce<Record<Lead['status'], Lead[]>>((acc, s) => {
+  const leadsByStatus = STATUS_ORDER.reduce<Record<string, Lead[]>>((acc, s) => {
     acc[s] = filteredLeads.filter(l => l.status === s)
     return acc
-  }, {} as Record<Lead['status'], Lead[]>)
+  }, {})
 
-  const showToast = (msg: string) => {
-    setToastMsg(msg)
-    setTimeout(() => setToastMsg(null), 3000)
+  const counts = STATUS_ORDER.reduce<Record<string, number>>((acc, s) => {
+    acc[s] = leads.filter(l => l.status === s).length
+    return acc
+  }, {})
+  const needsPrescreen = leads.filter(l => ['new', 'contacted', 'engaged'].includes(l.status)).length
+
+  const sendReminder = async (lead: Lead, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setRemindingId(lead.id)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/send-reminder`, { method: 'POST' })
+      if (res.ok) showToast(`Reminder sent to ${lead.first_name || lead.email}`)
+      else showToast('Failed to send reminder')
+    } catch { showToast('Failed to send reminder') }
+    setRemindingId(null)
   }
 
-  const handleStatusUpdate = async (
-    leadId: string,
-    status: Lead['status'],
-    closedReason?: 'leased' | 'lost'
-  ) => {
-    setStatusUpdating(true)
+  const handleAddLead = async () => {
+    if (!addForm.first_name || !addForm.email || !addForm.property) return
+    setAddingLead(true)
     try {
-      const res = await fetch(`/api/leads/${leadId}/status`, {
-        method: 'PATCH',
+      const res = await fetch('/api/leads', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, closed_reason: closedReason }),
+        body: JSON.stringify(addForm),
       })
       if (res.ok) {
-        // Update local state
-        setLeads(prev => prev.map(l =>
-          l.id === leadId
-            ? { ...l, status, closed_reason: closedReason || l.closed_reason }
-            : l
-        ))
-        if (selectedLead?.id === leadId) {
-          setSelectedLead(prev => prev
-            ? { ...prev, status, closed_reason: closedReason || prev.closed_reason }
-            : null
-          )
-        }
-        showToast(`Status updated to ${STATUS_LABELS[status]}`)
+        setShowAddModal(false)
+        setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
+        await loadLeads()
+        showToast('Lead added + pre-screen email sent!')
+      } else {
+        showToast('Failed to add lead')
       }
-    } catch (e) {
-      console.error(e)
-    }
-    setStatusUpdating(false)
-    setClosedReasonPicker(false)
+    } catch { showToast('Failed to add lead') }
+    setAddingLead(false)
   }
 
-  // ── Lead Card ──
-  const LeadCard = ({ lead }: { lead: Lead }) => {
-    const heat = getHeat(lead.created_at)
-    const isQualifiedOrMore = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
-    return (
-      <div
-        onClick={() => setSelectedLead(lead)}
-        style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '10px',
-          padding: '14px',
-          cursor: 'pointer',
-          transition: 'box-shadow 0.15s, transform 0.1s',
-          marginBottom: '8px',
-        }}
-        onMouseEnter={e => {
-          ;(e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
-          ;(e.currentTarget as HTMLDivElement).style.transform = 'translateY(-1px)'
-        }}
-        onMouseLeave={e => {
-          ;(e.currentTarget as HTMLDivElement).style.boxShadow = 'none'
-          ;(e.currentTarget as HTMLDivElement).style.transform = 'none'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>
-            {lead.first_name || '—'}{getLastInitial(lead.last_name)}
-          </div>
-          <span style={{ fontSize: '14px' }} title={heat.label}>{heat.icon}</span>
-        </div>
-
-        {lead.property && (
-          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
-            {lead.property}
-          </div>
-        )}
-
-        {lead.move_in_date && (
-          <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
-            Move-in: {lead.move_in_date}
-          </div>
-        )}
-
-        {isQualifiedOrMore && (
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: 'rgba(16,185,129,0.1)',
-            color: '#10b981',
-            fontSize: '11px',
-            fontWeight: 600,
-            padding: '3px 8px',
-            borderRadius: '999px',
-          }}>
-            ✓ Pre-screen complete
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── Detail Modal ──
-  const DetailModal = () => {
-    if (!selectedLead) return null
-    const lead = selectedLead
-    const heat = getHeat(lead.created_at)
-
-    return (
-      <>
-        {/* Overlay */}
-        <div
-          style={{
-            position: 'fixed', inset: 0,
-            background: 'rgba(0,0,0,0.35)',
-            zIndex: 200,
-          }}
-          onClick={() => setSelectedLead(null)}
-        />
-        {/* Panel */}
-        <div style={{
-          position: 'fixed', top: 0, right: 0, bottom: 0,
-          width: '420px', maxWidth: '100vw',
-          background: '#ffffff',
-          zIndex: 300,
-          overflowY: 'auto',
-          boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
-          padding: '28px 24px',
-          fontFamily: "'DM Sans', sans-serif",
-        }}>
-          {/* Close */}
-          <button
-            onClick={() => setSelectedLead(null)}
-            style={{
-              position: 'absolute', top: '16px', right: '16px',
-              background: 'none', border: 'none', fontSize: '20px',
-              cursor: 'pointer', color: '#64748b',
-            }}
-          >✕</button>
-
-          {/* Header */}
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-              <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: '#0f172a' }}>
-                {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-              </h2>
-              <span style={{ fontSize: '16px' }} title={heat.label}>{heat.icon}</span>
-            </div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              background: STATUS_BG[lead.status],
-              color: STATUS_COLORS[lead.status],
-              fontSize: '12px',
-              fontWeight: 600,
-              padding: '4px 10px',
-              borderRadius: '999px',
-              border: `1px solid ${STATUS_COLORS[lead.status]}33`,
-            }}>
-              {STATUS_LABELS[lead.status]}
-              {lead.status === 'closed' && lead.closed_reason && ` — ${lead.closed_reason}`}
-            </div>
-          </div>
-
-          {/* Contact info */}
-          <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>
-              Contact
-            </div>
-            <Row label="Email" value={<a href={`mailto:${lead.email}`} style={{ color: '#10b981', textDecoration: 'none' }}>{lead.email}</a>} />
-            <Row label="Phone" value={lead.phone || '—'} />
-            <Row label="Property" value={lead.property || '—'} />
-            <Row label="Move-in" value={formatDate(lead.move_in_date)} />
-            <Row label="Submitted" value={lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '—'} />
-          </div>
-
-          {/* Pre-screen data */}
-          {(lead.budget || lead.lease_length || lead.lifestyle || lead.roommate_preference || lead.notes) && (
-            <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>
-                Pre-screen Data
-              </div>
-              {lead.budget && <Row label="Budget" value={lead.budget} />}
-              {lead.lease_length && <Row label="Lease Length" value={lead.lease_length} />}
-              {lead.lifestyle && <Row label="Lifestyle" value={lead.lifestyle} />}
-              {lead.roommate_preference && <Row label="Roommates" value={lead.roommate_preference} />}
-              {lead.notes && (
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Notes</div>
-                  <div style={{ fontSize: '13px', color: '#0f172a', lineHeight: 1.5 }}>{lead.notes}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Status Change Pills */}
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
-              Update Status
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {STATUS_ORDER.filter(s => s !== 'closed').map(s => (
-                <button
-                  key={s}
-                  onClick={() => handleStatusUpdate(lead.id, s)}
-                  disabled={statusUpdating || lead.status === s}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '999px',
-                    border: `1.5px solid ${STATUS_COLORS[s]}`,
-                    background: lead.status === s ? STATUS_COLORS[s] : 'transparent',
-                    color: lead.status === s ? '#fff' : STATUS_COLORS[s],
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: lead.status === s ? 'default' : 'pointer',
-                    opacity: statusUpdating ? 0.6 : 1,
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {STATUS_LABELS[s]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Closed reason picker */}
-          {(lead.status === 'closed' || closedReasonPicker) && (
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
-                Closed Reason
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => handleStatusUpdate(lead.id, 'closed', 'leased')}
-                  disabled={statusUpdating}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    border: `1.5px solid #10b981`,
-                    background: lead.closed_reason === 'leased' ? '#10b981' : 'transparent',
-                    color: lead.closed_reason === 'leased' ? '#fff' : '#10b981',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: "'DM Sans', sans-serif",
-                  }}
-                >
-                  Leased ✓
-                </button>
-                <button
-                  onClick={() => handleStatusUpdate(lead.id, 'closed', 'lost')}
-                  disabled={statusUpdating}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    border: `1.5px solid #ef4444`,
-                    background: lead.closed_reason === 'lost' ? '#ef4444' : 'transparent',
-                    color: lead.closed_reason === 'lost' ? '#fff' : '#ef4444',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: "'DM Sans', sans-serif",
-                  }}
-                >
-                  Lost ✗
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Actions */}
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
-              Quick Actions
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <QuickAction
-                label="Mark Contacted"
-                color="#f97316"
-                onClick={() => handleStatusUpdate(lead.id, 'contacted')}
-                disabled={statusUpdating || lead.status === 'contacted'}
-              />
-              <QuickAction
-                label="Schedule Tour"
-                color="#8b5cf6"
-                onClick={() => handleStatusUpdate(lead.id, 'tour_scheduled')}
-                disabled={statusUpdating || lead.status === 'tour_scheduled'}
-              />
-              <QuickAction
-                label="Close as Leased"
-                color="#10b981"
-                onClick={() => handleStatusUpdate(lead.id, 'closed', 'leased')}
-                disabled={statusUpdating || (lead.status === 'closed' && lead.closed_reason === 'leased')}
-              />
-              <QuickAction
-                label="Not a Fit"
-                color="#ef4444"
-                onClick={() => handleStatusUpdate(lead.id, 'closed', 'lost')}
-                disabled={statusUpdating || (lead.status === 'closed' && lead.closed_reason === 'lost')}
-              />
-              {(lead.status === 'new' || lead.status === 'contacted') && (
-                <QuickAction
-                  label="Send Pre-screen Reminder"
-                  color="#64748b"
-                  onClick={() => showToast('Reminder sent! (coming soon)')}
-                  disabled={false}
-                />
-              )}
-            </div>
-          </div>
-
-        </div>
-      </>
-    )
-  }
-
-  // ── Render ──
+  // ── Loading skeleton ───────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ padding: '40px 32px', fontFamily: "'DM Sans', sans-serif" }}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');`}</style>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{
-              flex: 1,
-              height: '200px',
-              background: 'linear-gradient(90deg, #f0f4f8 25%, #e8edf2 50%, #f0f4f8 75%)',
-              backgroundSize: '400% 100%',
-              borderRadius: '12px',
-              animation: 'shimmer 1.4s infinite',
-            }} />
-          ))}
-        </div>
-        <style>{`@keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }`}</style>
+      <div style={{ padding: '32px', fontFamily: "'DM Sans', sans-serif" }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap'); @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+        {[1,2,3,4,5].map(i => (
+          <div key={i} style={{ height: '64px', borderRadius: '10px', marginBottom: '8px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+        ))}
       </div>
     )
   }
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif", minHeight: '100vh', background: '#f0f4f8' }}>
+    <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
-        * { box-sizing: border-box; }
-        @media (max-width: 768px) {
-          .pipeline-grid { flex-direction: column !important; }
-          .pipeline-col { min-width: 100% !important; }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .ll-page { background: #f5f4f0; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
+
+        /* Header */
+        .ll-header { background: #1a1a1a; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .ll-title { font-size: 20px; font-weight: 700; color: #fff; }
+        .ll-subtitle { font-size: 12px; color: #9b9b9b; margin-top: 2px; }
+        .ll-header-right { display: flex; align-items: center; gap: 10px; }
+
+        /* Stats bar */
+        .ll-stats { background: #fff; border-bottom: 1px solid #e8e5de; padding: 10px 28px; display: flex; gap: 24px; overflow-x: auto; }
+        .ll-stat { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .ll-stat-num { font-size: 16px; font-weight: 700; color: #1a1a1a; }
+        .ll-stat-label { font-size: 11px; color: #9b9b9b; }
+        .ll-stat-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+        /* Filters */
+        .ll-filters { background: #fff; border-bottom: 1px solid #e8e5de; padding: 10px 28px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .ll-search { padding: 8px 12px 8px 34px; border: 1.5px solid #e8e5de; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; width: 220px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239b9b9b' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center; transition: border-color 0.15s; }
+        .ll-search:focus { border-color: #8C1D40; }
+        .ll-status-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+        .ll-pill { padding: 5px 12px; border-radius: 20px; border: 1.5px solid #e8e5de; background: #fff; font-size: 12px; font-weight: 500; color: #6b6b6b; cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: 'DM Sans', sans-serif; }
+        .ll-pill.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; font-weight: 600; }
+        .ll-select { padding: 7px 12px; border: 1.5px solid #e8e5de; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; background: #fff; color: #1a1a1a; cursor: pointer; }
+        .ll-view-toggle { display: flex; background: #f5f4f0; border-radius: 7px; padding: 3px; gap: 2px; }
+        .ll-view-btn { padding: 5px 12px; border: none; border-radius: 5px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+        .ll-view-btn.active { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .ll-view-btn:not(.active) { background: transparent; color: #9b9b9b; }
+
+        /* List */
+        .ll-list { padding: 16px 28px; display: flex; flex-direction: column; gap: 6px; }
+        .ll-row { background: #fff; border: 1px solid #e8e5de; border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
+        .ll-row:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); border-color: #d0cdc7; }
+        .ll-avatar { width: 38px; height: 38px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; }
+        .ll-name { font-size: 14px; font-weight: 600; color: #1a1a1a; }
+        .ll-email { font-size: 12px; color: #9b9b9b; margin-top: 1px; }
+        .ll-prop { font-size: 12px; color: #6b6b6b; }
+        .ll-movein { font-size: 11px; color: #b0a898; }
+        .ll-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap; }
+        .ll-time { font-size: 11px; color: #b0a898; white-space: nowrap; }
+        .ll-action-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
+
+        /* Pipeline */
+        .ll-pipeline { padding: 16px 28px; display: flex; gap: 12px; overflow-x: auto; }
+        .ll-pcol { flex-shrink: 0; width: 210px; background: #fff; border-radius: 12px; border-top: 3px solid; overflow: hidden; }
+        .ll-pcol-header { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f0ede6; }
+        .ll-pcol-label { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+        .ll-pcol-count { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .ll-pcard { margin: 8px 8px 0; padding: 12px; border: 1px solid #f0ede6; border-radius: 8px; cursor: pointer; transition: box-shadow 0.15s; }
+        .ll-pcard:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .ll-pcard:last-child { margin-bottom: 8px; }
+
+        /* Buttons */
+        .btn-primary { background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; white-space: nowrap; }
+        .btn-primary:hover { opacity: 0.88; }
+        .btn-gold { background: #FFC627; color: #1a1a1a; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; white-space: nowrap; }
+        .btn-gold:hover { opacity: 0.9; }
+        .btn-ghost { background: transparent; color: #9b9b9b; border: 1.5px solid #e8e5de; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+        .btn-ghost:hover { border-color: #8C1D40; color: #8C1D40; }
+
+        /* Add Lead Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 400; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(2px); }
+        .modal-card { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 480px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
+        .modal-title { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+        .modal-sub { font-size: 13px; color: #9b9b9b; margin-bottom: 22px; }
+        .field-label { font-size: 12px; font-weight: 700; color: #1a1a1a; margin-bottom: 5px; display: block; }
+        .field-input { width: 100%; padding: 10px 13px; border: 1.5px solid #e8e5de; border-radius: 8px; font-size: 14px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+        .field-input:focus { border-color: #8C1D40; }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+        .field-col { display: flex; flex-direction: column; margin-bottom: 14px; }
+
+        /* Toast */
+        .ll-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
+        @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+        /* Empty */
+        .ll-empty { padding: 60px 28px; display: flex; justify-content: center; }
+        .ll-empty-card { background: #fff; border: 1px dashed #e8e5de; border-radius: 16px; padding: 48px 40px; max-width: 440px; width: 100%; text-align: center; }
+
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        @media (max-width: 640px) {
+          .ll-header { padding: 16px; }
+          .ll-filters { padding: 10px 16px; }
+          .ll-list { padding: 12px 16px; }
+          .ll-row { flex-wrap: wrap; }
+          .field-row { grid-template-columns: 1fr; }
         }
       `}</style>
 
-      {/* Toast */}
-      {toastMsg && (
-        <div style={{
-          position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
-          background: '#0f172a', color: '#fff',
-          padding: '12px 20px', borderRadius: '10px',
-          fontSize: '14px', fontWeight: 500,
-          zIndex: 400, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-        }}>
-          {toastMsg}
-        </div>
-      )}
+      <div className="ll-page">
 
-      {/* Page Header */}
-      <div style={{
-        background: '#ffffff',
-        borderBottom: '1px solid #e2e8f0',
-        padding: '20px 32px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px',
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: '#0f172a' }}>Leads Pipeline</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#64748b' }}>
-            {filteredLeads.length} lead{filteredLeads.length !== 1 ? 's' : ''} total
-          </p>
+        {/* Toast */}
+        {toast && <div className="ll-toast">✓ {toast}</div>}
+
+        {/* Header */}
+        <div className="ll-header">
+          <div>
+            <div className="ll-title">Leads CRM</div>
+            <div className="ll-subtitle">{leads.length} total · sorted by most recent</div>
+          </div>
+          <div className="ll-header-right">
+            <a href="/landlord/leads/pipeline" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}>Pipeline guide →</a>
+            <button className="btn-gold" onClick={() => setShowAddModal(true)}>+ Add Lead</button>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <a
-            href="/landlord/leads/pipeline"
-            style={{ fontSize: '13px', color: '#10b981', textDecoration: 'none', fontWeight: 500 }}
-          >
-            How does this work? →
-          </a>
-          {/* View toggle */}
-          <div style={{
-            display: 'flex',
-            background: '#f1f5f9',
-            borderRadius: '8px',
-            padding: '3px',
-            gap: '2px',
-          }}>
-            {(['pipeline', 'list'] as const).map(mode => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: viewMode === mode ? '#ffffff' : 'transparent',
-                  color: viewMode === mode ? '#0f172a' : '#64748b',
-                  fontSize: '13px',
-                  fontWeight: viewMode === mode ? 600 : 400,
-                  cursor: 'pointer',
-                  fontFamily: "'DM Sans', sans-serif",
-                  boxShadow: viewMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.15s',
-                }}
+
+        {/* Stats bar */}
+        <div className="ll-stats">
+          {STATUS_ORDER.map(s => (
+            <div key={s} className="ll-stat" style={{ cursor: 'pointer' }} onClick={() => setStatusFilter(s === statusFilter ? 'all' : s)}>
+              <div className="ll-stat-dot" style={{ background: STATUS_META[s].color }} />
+              <div className="ll-stat-num" style={{ color: STATUS_META[s].color }}>{counts[s]}</div>
+              <div className="ll-stat-label">{STATUS_META[s].label}</div>
+            </div>
+          ))}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <div className="ll-stat-dot" style={{ background: '#FFC627' }} />
+            <div className="ll-stat-num" style={{ color: '#c9973a' }}>{needsPrescreen}</div>
+            <div className="ll-stat-label">Need pre-screen</div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="ll-filters">
+          <input
+            className="ll-search"
+            placeholder="Search name, email, property…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <div className="ll-status-pills">
+            <div className={`ll-pill${statusFilter === 'all' ? ' active' : ''}`} onClick={() => setStatusFilter('all')}>All</div>
+            {STATUS_ORDER.map(s => (
+              <div
+                key={s}
+                className={`ll-pill${statusFilter === s ? ' active' : ''}`}
+                onClick={() => setStatusFilter(s)}
+                style={statusFilter === s ? {} : { borderColor: STATUS_META[s].border, color: STATUS_META[s].color }}
               >
-                {mode === 'pipeline' ? '⊞ Pipeline' : '≡ List'}
-              </button>
+                {STATUS_META[s].label}
+              </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Filter Bar */}
-      <div style={{
-        background: '#ffffff',
-        borderBottom: '1px solid #e2e8f0',
-        padding: '12px 32px',
-        display: 'flex',
-        gap: '12px',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-      }}>
-        <select
-          value={propertyFilter}
-          onChange={e => setPropertyFilter(e.target.value)}
-          style={{
-            padding: '7px 12px',
-            border: '1.5px solid #e2e8f0',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontFamily: "'DM Sans', sans-serif",
-            color: '#0f172a',
-            background: '#fff',
-            outline: 'none',
-          }}
-        >
-          <option value="all">All Properties</option>
-          {uniqueProperties.map(p => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {(['all', 'week', 'month'] as const).map(df => (
-            <button
-              key={df}
-              onClick={() => setDateFilter(df)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '8px',
-                border: `1.5px solid ${dateFilter === df ? '#10b981' : '#e2e8f0'}`,
-                background: dateFilter === df ? 'rgba(16,185,129,0.08)' : '#fff',
-                color: dateFilter === df ? '#10b981' : '#64748b',
-                fontSize: '12px',
-                fontWeight: dateFilter === df ? 600 : 400,
-                cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-              }}
-            >
-              {df === 'all' ? 'All time' : df === 'week' ? 'This week' : 'This month'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Empty State */}
-      {filteredLeads.length === 0 && !loading && (
-        <div style={{ padding: '60px 32px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)',
-            borderRadius: '16px',
-            padding: '48px 40px',
-            maxWidth: '520px',
-            width: '100%',
-            textAlign: 'center',
-            color: '#f1f5f9',
-          }}>
-            <div style={{
-              width: '60px', height: '60px', borderRadius: '50%',
-              background: 'rgba(16,185,129,0.2)',
-              color: '#10b981', fontSize: '28px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px',
-            }}>
-              ◉
+          {properties.length > 1 && (
+            <select className="ll-select" value={propertyFilter} onChange={e => setPropertyFilter(e.target.value)}>
+              <option value="all">All Properties</option>
+              {properties.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+            </select>
+          )}
+          <div style={{ marginLeft: 'auto' }}>
+            <div className="ll-view-toggle">
+              <button className={`ll-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}>≡ List</button>
+              <button className={`ll-view-btn${viewMode === 'pipeline' ? ' active' : ''}`} onClick={() => setViewMode('pipeline')}>⊞ Pipeline</button>
             </div>
-            <h2 style={{ margin: '0 0 12px', fontSize: '22px', fontWeight: 700 }}>
-              No leads yet
-            </h2>
-            <p style={{ margin: '0 0 24px', fontSize: '15px', color: 'rgba(241,245,249,0.65)', lineHeight: 1.7 }}>
-              When tenants express interest in your properties, they'll appear here. Your pipeline will fill up as leads come in.
-            </p>
-            <a
-              href="/landlord/leads/pipeline"
-              style={{
-                display: 'inline-block',
-                background: '#10b981',
-                color: '#fff',
-                textDecoration: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 600,
-              }}
-            >
-              Learn how the pipeline works →
-            </a>
           </div>
         </div>
-      )}
 
-      {/* Pipeline View */}
-      {viewMode === 'pipeline' && filteredLeads.length > 0 && (
-        <div style={{ padding: '24px 24px', overflowX: 'auto' }}>
-          <div
-            className="pipeline-grid"
-            style={{ display: 'flex', gap: '16px', minWidth: '900px' }}
-          >
-            {STATUS_ORDER.map(status => {
-              const colLeads = leadsByStatus[status]
-              return (
-                <div
-                  key={status}
-                  className="pipeline-col"
-                  style={{
-                    flex: 1,
-                    minWidth: '200px',
-                    background: '#f8fafc',
-                    borderRadius: '12px',
-                    borderTop: `3px solid ${STATUS_COLORS[status]}`,
-                    padding: '12px',
-                  }}
-                >
-                  {/* Column Header */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: '12px',
-                    padding: '0 2px',
-                  }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: STATUS_COLORS[status], textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {STATUS_LABELS[status]}
-                    </span>
-                    <span style={{
-                      background: STATUS_COLORS[status],
-                      color: '#fff',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '2px 7px',
-                      borderRadius: '999px',
-                      minWidth: '20px',
-                      textAlign: 'center',
-                    }}>
-                      {colLeads.length}
-                    </span>
-                  </div>
-
-                  {/* Lead Cards */}
-                  {colLeads.map(lead => (
-                    <LeadCard key={lead.id} lead={lead} />
-                  ))}
-
-                  {colLeads.length === 0 && (
-                    <div style={{
-                      padding: '20px',
-                      textAlign: 'center',
-                      color: '#cbd5e1',
-                      fontSize: '12px',
-                      border: '1.5px dashed #e2e8f0',
-                      borderRadius: '8px',
-                    }}>
-                      No leads
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+        {/* Empty state */}
+        {filteredLeads.length === 0 && (
+          <div className="ll-empty">
+            <div className="ll-empty-card">
+              <div style={{ fontSize: '32px', marginBottom: '12px' }}>📋</div>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: '#1a1a1a', marginBottom: '8px' }}>
+                {search || statusFilter !== 'all' || propertyFilter !== 'all' ? 'No matching leads' : 'No leads yet'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '20px', lineHeight: 1.6 }}>
+                {search || statusFilter !== 'all' ? 'Try adjusting your filters.' : 'Add a lead manually or wait for tenants to submit interest forms.'}
+              </div>
+              <button className="btn-primary" onClick={() => setShowAddModal(true)}>+ Add First Lead</button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* List View */}
-      {viewMode === 'list' && filteredLeads.length > 0 && (
-        <div style={{ padding: '24px 32px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* ── LIST VIEW ── */}
+        {viewMode === 'list' && filteredLeads.length > 0 && (
+          <div className="ll-list">
             {filteredLeads.map(lead => {
               const heat = getHeat(lead.created_at)
-              const isQualified = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
+              const meta = STATUS_META[lead.status]
+              const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
+              const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
+              const prop = properties.find(p => p.slug === lead.property)
+
               return (
                 <div
                   key={lead.id}
-                  onClick={() => setSelectedLead(lead)}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '10px',
-                    padding: '16px 20px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    transition: 'box-shadow 0.15s',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}
+                  className="ll-row"
+                  onClick={() => router.push(`/landlord/leads/${lead.id}`)}
                 >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a' }}>
-                        {lead.first_name || '—'}{getLastInitial(lead.last_name)}
-                      </span>
-                      <span style={{ fontSize: '14px' }}>{heat.icon}</span>
+                  {/* Avatar */}
+                  <div className="ll-avatar">{initials(lead.first_name, lead.last_name)}</div>
+
+                  {/* Name + email */}
+                  <div style={{ flex: '0 0 180px', minWidth: 0 }}>
+                    <div className="ll-name">
+                      {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
+                      {heat.icon && <span style={{ marginLeft: '5px', fontSize: '13px' }} title={heat.label}>{heat.icon}</span>}
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      {lead.property || '—'}{lead.move_in_date ? ` · Move-in: ${lead.move_in_date}` : ''}
-                    </div>
+                    <div className="ll-email">{lead.email}</div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-                    {isQualified && (
-                      <span style={{
-                        fontSize: '11px', fontWeight: 600,
-                        color: '#10b981', background: 'rgba(16,185,129,0.08)',
-                        padding: '3px 8px', borderRadius: '999px',
-                      }}>
-                        ✓ Pre-screen
+
+                  {/* Property + move-in */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="ll-prop">{prop?.name || lead.property || '—'}</div>
+                    {lead.move_in_date && <div className="ll-movein">Move-in: {lead.move_in_date}</div>}
+                  </div>
+
+                  {/* Pre-screen badge */}
+                  <div style={{ flexShrink: 0 }}>
+                    {hasPrescreen ? (
+                      <span className="ll-badge" style={{ color: '#10b981', background: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)', fontSize: '10px' }}>
+                        ✓ Pre-screened
+                      </span>
+                    ) : (
+                      <span className="ll-badge" style={{ color: '#b0a898', background: '#faf9f6', borderColor: '#e8e5de', fontSize: '10px' }}>
+                        Needs pre-screen
                       </span>
                     )}
-                    <span style={{
-                      fontSize: '12px', fontWeight: 600,
-                      color: STATUS_COLORS[lead.status],
-                      background: STATUS_BG[lead.status],
-                      padding: '4px 10px', borderRadius: '999px',
-                      border: `1px solid ${STATUS_COLORS[lead.status]}33`,
-                    }}>
-                      {STATUS_LABELS[lead.status]}
+                  </div>
+
+                  {/* Status */}
+                  <div style={{ flexShrink: 0 }}>
+                    <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
+                      {meta.label}
+                      {lead.status === 'closed' && lead.closed_reason && ` · ${lead.closed_reason}`}
                     </span>
-                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>
-                      {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '—'}
-                    </span>
+                  </div>
+
+                  {/* Time */}
+                  <div className="ll-time">{timeAgo(lead.created_at)}</div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                    {needsRemind && (
+                      <button
+                        className="ll-action-btn"
+                        style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
+                        disabled={remindingId === lead.id}
+                        onClick={e => sendReminder(lead, e)}
+                      >
+                        {remindingId === lead.id ? '…' : '📧 Remind'}
+                      </button>
+                    )}
+                    <button
+                      className="ll-action-btn"
+                      style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
+                      onClick={e => { e.stopPropagation(); router.push(`/landlord/leads/${lead.id}`) }}
+                    >
+                      View →
+                    </button>
                   </div>
                 </div>
               )
             })}
           </div>
+        )}
+
+        {/* ── PIPELINE VIEW ── */}
+        {viewMode === 'pipeline' && filteredLeads.length > 0 && (
+          <div className="ll-pipeline">
+            {STATUS_ORDER.map(status => {
+              const meta = STATUS_META[status]
+              const colLeads = leadsByStatus[status] || []
+              return (
+                <div key={status} className="ll-pcol" style={{ borderTopColor: meta.color }}>
+                  <div className="ll-pcol-header">
+                    <span className="ll-pcol-label" style={{ color: meta.color }}>{meta.label}</span>
+                    <span className="ll-pcol-count" style={{ background: meta.color }}>{colLeads.length}</span>
+                  </div>
+                  {colLeads.length === 0 && (
+                    <div style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: '#c5c1b8', borderBottom: 'none' }}>No leads</div>
+                  )}
+                  {colLeads.map(lead => {
+                    const heat = getHeat(lead.created_at)
+                    return (
+                      <div
+                        key={lead.id}
+                        className="ll-pcard"
+                        onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {initials(lead.first_name, lead.last_name)}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>
+                              {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name[0]}.` : ''}
+                              {heat.icon && <span style={{ marginLeft: '4px' }}>{heat.icon}</span>}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#9b9b9b' }}>{lead.email}</div>
+                          </div>
+                        </div>
+                        {lead.property && <div style={{ fontSize: '11px', color: '#6b6b6b', marginBottom: '4px' }}>{lead.property}</div>}
+                        <div style={{ fontSize: '10px', color: '#b0a898' }}>{timeAgo(lead.created_at)}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+      </div>
+
+      {/* ── ADD LEAD MODAL ── */}
+      {showAddModal && (
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+              <div>
+                <div className="modal-title">Add Lead Manually</div>
+                <div className="modal-sub">A pre-screen invitation will be emailed automatically.</div>
+              </div>
+              <button style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#9b9b9b', padding: '0 0 0 12px' }} onClick={() => setShowAddModal(false)}>✕</button>
+            </div>
+
+            <div className="field-row">
+              <div className="field-col" style={{ marginBottom: 0 }}>
+                <label className="field-label">First Name *</label>
+                <input className="field-input" placeholder="Jordan" value={addForm.first_name} onChange={e => setAddForm(f => ({ ...f, first_name: e.target.value }))} />
+              </div>
+              <div className="field-col" style={{ marginBottom: 0 }}>
+                <label className="field-label">Last Name</label>
+                <input className="field-input" placeholder="Lee" value={addForm.last_name} onChange={e => setAddForm(f => ({ ...f, last_name: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="field-col" style={{ marginTop: '14px' }}>
+              <label className="field-label">Email *</label>
+              <input className="field-input" type="email" placeholder="jordan@asu.edu" value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} />
+            </div>
+
+            <div className="field-row" style={{ marginTop: '14px' }}>
+              <div className="field-col" style={{ marginBottom: 0 }}>
+                <label className="field-label">Phone</label>
+                <input className="field-input" type="tel" placeholder="(480) 000-0000" value={addForm.phone} onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))} />
+              </div>
+              <div className="field-col" style={{ marginBottom: 0 }}>
+                <label className="field-label">Property *</label>
+                <select className="field-input" value={addForm.property} onChange={e => setAddForm(f => ({ ...f, property: e.target.value }))}>
+                  <option value="">Select property</option>
+                  {properties.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="field-col" style={{ marginTop: '14px' }}>
+              <label className="field-label">Desired Move-in</label>
+              <input className="field-input" placeholder="e.g. August 2026" value={addForm.move_in_date} onChange={e => setAddForm(f => ({ ...f, move_in_date: e.target.value }))} />
+            </div>
+
+            <div style={{ background: '#fdf9ec', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 14px', marginTop: '16px', marginBottom: '20px', fontSize: '12px', color: '#92400e' }}>
+              📧 HomeHive will automatically email this lead a personalized pre-screen invitation.
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setShowAddModal(false)}>Cancel</button>
+              <button
+                className="btn-gold"
+                style={{ flex: 2 }}
+                disabled={!addForm.first_name || !addForm.email || !addForm.property || addingLead}
+                onClick={handleAddLead}
+              >
+                {addingLead ? 'Adding…' : 'Add Lead + Send Pre-screen →'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Detail Modal */}
-      <DetailModal />
-    </div>
-  )
-}
-
-// Helper: row in detail modal
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-      <span style={{ fontSize: '13px', color: '#64748b', minWidth: '100px' }}>{label}</span>
-      <span style={{ fontSize: '13px', fontWeight: 500, color: '#0f172a', textAlign: 'right' }}>{value}</span>
-    </div>
-  )
-}
-
-// Helper: quick action button
-function QuickAction({
-  label,
-  color,
-  onClick,
-  disabled,
-}: {
-  label: string
-  color: string
-  onClick: () => void
-  disabled: boolean
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        padding: '10px 14px',
-        borderRadius: '8px',
-        border: `1.5px solid ${color}33`,
-        background: disabled ? '#f8fafc' : `${color}0d`,
-        color: disabled ? '#94a3b8' : color,
-        fontSize: '13px',
-        fontWeight: 600,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontFamily: "'DM Sans', sans-serif",
-        textAlign: 'left',
-        transition: 'all 0.15s',
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      {label}
-    </button>
+    </>
   )
 }
