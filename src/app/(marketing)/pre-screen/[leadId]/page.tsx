@@ -13,6 +13,7 @@ type LeadInfo = {
   property_price: number | null
   status: string
   move_in_date: string | null
+  prescreen_completed: boolean
 }
 
 // Dynamic next 6 months
@@ -154,6 +155,36 @@ export default function PreScreenPage({
           <h2 style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: 700, color: '#1a1a1a' }}>This link has expired</h2>
           <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#6b6b6b', lineHeight: 1.65 }}>This pre-screen link is no longer valid. It may have already been used or expired after 7 days.</p>
           <a href="mailto:hello@homehive.live" style={{ fontSize: '13px', color: '#8C1D40', textDecoration: 'none' }}>Contact us → hello@homehive.live</a>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Already completed ─────────────────────────────────────────────────────
+  if (!submitted && leadInfo?.prescreen_completed) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+        <div style={{ background: '#fff', borderRadius: '20px', padding: '48px 32px', maxWidth: '460px', width: '100%', textAlign: 'center', border: '1px solid #e8e5de', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
+          <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(16,185,129,0.1)', border: '2px solid rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 24px' }}>✅</div>
+          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '26px', fontWeight: 400, color: '#1a1a1a' }}>
+            You&apos;re all set{leadInfo?.first_name ? `, ${leadInfo.first_name}` : ''}!
+          </h2>
+          <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
+            We already have your pre-screen on file. Our team is reviewing your profile and will be in touch soon.
+          </p>
+          <div style={{ background: '#f0fdf8', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '16px 20px', textAlign: 'left' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
+            {["A HomeHive rep will review your profile", "We'll be in touch within 24 hours", "Get ready for a tour!"].map((step, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a', marginBottom: i < 2 ? '8px' : 0 }}>
+                <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#10b981', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
+                {step}
+              </div>
+            ))}
+          </div>
+          <p style={{ margin: '24px 0 0', fontSize: '13px', color: '#9b9b9b' }}>
+            Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', textDecoration: 'none' }}>hello@homehive.live</a>
+          </p>
         </div>
       </div>
     )

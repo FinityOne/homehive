@@ -46,12 +46,12 @@ export default function Nav() {
       setUser({ email, fullName, role: profile?.role || 'tenant' })
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
         loadUser(
-          session.user.id,
-          session.user.email || '',
-          session.user.user_metadata?.full_name || '',
+          user.id,
+          user.email || '',
+          user.user_metadata?.full_name || '',
         )
       }
     })

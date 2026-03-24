@@ -72,9 +72,9 @@ export default function LandlordLeadsPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.user) { router.push('/login'); return }
-      setUserId(session.user.id)
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { router.push('/login'); return }
+      setUserId(user.id)
     })
   }, [router])
 

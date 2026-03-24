@@ -90,8 +90,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   useEffect(() => {
     const load = async () => {
       // Verify auth
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
 
       // Fetch lead
       const { data: leadData, error } = await supabase.from('leads').select('*').eq('id', leadId).single()

@@ -128,9 +128,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       setUser({ email, fullName, role: profile?.role || 'tenant' })
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        loadUser(session.user.id, session.user.email || '', session.user.user_metadata?.full_name || '')
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        loadUser(user.id, user.email || '', user.user_metadata?.full_name || '')
       } else {
         router.push('/login')
       }

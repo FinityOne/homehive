@@ -52,6 +52,13 @@ export async function GET(
     }
   }
 
+  // Check if pre-screen already submitted
+  const { data: existingPrescreen } = await supabase
+    .from('pre_screens')
+    .select('id')
+    .eq('lead_id', leadId)
+    .maybeSingle()
+
   return Response.json({
     first_name: lead.first_name,
     property: lead.property,
@@ -61,6 +68,7 @@ export async function GET(
     property_price,
     status: lead.status,
     move_in_date: lead.move_in_date,
+    prescreen_completed: !!existingPrescreen,
   })
 }
 
