@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, use, useEffect, useRef } from 'react'
+import { usePostHog } from 'posthog-js/react'
 import { getPropertyBySlug, Property } from '@/lib/properties'
 import { notFound } from 'next/navigation'
 
@@ -56,6 +57,8 @@ export default function PropertyPageClient({
   const [showStickyBar, setShowStickyBar] = useState(false)
   const titleRef = useRef<HTMLDivElement>(null)
 
+  const ph = usePostHog()
+
   const guestName   = resolvedSearch?.name || ''
   const customMsg   = resolvedSearch?.msg  || ''
   const fromName    = resolvedSearch?.from || 'Heran'
@@ -64,6 +67,19 @@ export default function PropertyPageClient({
   useEffect(() => {
     getPropertyBySlug(slug).then(p => setHome(p ?? null))
   }, [slug])
+
+  useEffect(() => {
+    if (!home) return
+    ph?.capture('property_viewed', {
+      property_slug: slug,
+      property_name: home.name,
+      property_price: home.price,
+      beds: home.beds,
+      baths: home.baths,
+      available_rooms: home.available,
+      is_personalized: isPersonalized,
+    })
+  }, [home]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (guestName) {
@@ -121,7 +137,16 @@ export default function PropertyPageClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, property: slug }),
       })
-      if (res.ok) { setSubmitted(true); setMobileFormOpen(false) }
+      if (res.ok) {
+        ph?.capture('inquiry_submitted', {
+          property_slug: slug,
+          property_name: home?.name,
+          move_in_date: formData.move_in_date,
+          is_personalized: isPersonalized,
+        })
+        setSubmitted(true)
+        setMobileFormOpen(false)
+      }
     } catch (e) { console.error(e) }
     setSubmitting(false)
   }

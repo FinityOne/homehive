@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
+import { usePostHog } from 'posthog-js/react'
 
 type Step = 1 | 2 | 3
 
@@ -44,6 +45,7 @@ export default function PreScreenPage({
   params: Promise<{ leadId: string }>
 }) {
   const { leadId } = use(params)
+  const ph = usePostHog()
 
   const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -125,7 +127,21 @@ export default function PreScreenPage({
           notes: form.notes,
         }),
       })
-      if (res.ok) setSubmitted(true)
+      if (res.ok) {
+        ph?.capture('prescreen_submitted', {
+          lead_id: leadId,
+          property: leadInfo?.property,
+          property_name: leadInfo?.property_name,
+          is_student: form.is_student === 'yes',
+          is_group: form.is_group === 'group',
+          group_size: form.is_group === 'solo' ? 1 : form.group_size,
+          monthly_budget: form.monthly_budget ? parseInt(form.monthly_budget) : null,
+          lease_length: form.lease_length,
+          lifestyle: form.lifestyle,
+          move_in_date: form.move_in_date,
+        })
+        setSubmitted(true)
+      }
     } catch (e) {
       console.error(e)
     }
@@ -429,7 +445,10 @@ export default function PreScreenPage({
             <button
               className="ps-btn-next"
               disabled={!step1Valid}
-              onClick={() => setStep(2)}
+              onClick={() => {
+                ph?.capture('prescreen_step_completed', { step: 1, lead_id: leadId, property: leadInfo?.property })
+                setStep(2)
+              }}
             >
               Next: Your Move →
             </button>
@@ -528,7 +547,10 @@ export default function PreScreenPage({
             <button
               className="ps-btn-next"
               disabled={!step2Valid}
-              onClick={() => setStep(3)}
+              onClick={() => {
+                ph?.capture('prescreen_step_completed', { step: 2, lead_id: leadId, property: leadInfo?.property })
+                setStep(3)
+              }}
             >
               Next: Budget & Lifestyle →
             </button>
