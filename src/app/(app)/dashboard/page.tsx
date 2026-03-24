@@ -261,7 +261,7 @@ export default function TenantDashboard() {
                       {cfg.icon} {cfg.label}
                     </span>
 
-                    {lead.status !== 'closed' && (
+                    {/* {lead.status !== 'closed' && (
                       <div>
                         <div className="next-step-label">What&apos;s next</div>
                         <div className="next-step-box">
@@ -272,7 +272,7 @@ export default function TenantDashboard() {
                             : cfg.nextStep}
                         </div>
                       </div>
-                    )}
+                    )} */}
 
                     <div className="icard-actions">
                       {prop
