@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { createLease, uploadLeaseDocument } from '@/lib/leases'
+import { createLease, addLeaseDocument } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
 import type { Property } from '@/lib/properties'
@@ -32,7 +32,7 @@ export default function NewLeasePage() {
     notes: '',
   })
 
-  const [docFile, setDocFile] = useState<File | null>(null)
+  const [pendingDocs, setPendingDocs] = useState<{ file: File; name: string }[]>([])
   const [tenants, setTenants] = useState<TenantInput[]>([])
   const [tenantSearch, setTenantSearch] = useState('')
   const [showTenantSearch, setShowTenantSearch] = useState(false)
@@ -86,18 +86,6 @@ export default function NewLeasePage() {
     setSaving(true)
     setErrorMsg('')
 
-    let document_url: string | null = null
-    if (docFile) {
-      const tmpId = crypto.randomUUID()
-      const { path, error: uploadErr } = await uploadLeaseDocument(docFile, tmpId)
-      if (uploadErr) {
-        setErrorMsg('Failed to upload document. Please try again.')
-        setSaving(false)
-        return
-      }
-      document_url = path
-    }
-
     const { id, error } = await createLease(
       userId,
       {
@@ -107,18 +95,25 @@ export default function NewLeasePage() {
         rent_amount: form.rent_amount ? parseInt(form.rent_amount) : null,
         unit_number: form.unit_number || null,
         notes: form.notes || null,
-        document_url,
+        document_url: null,
       },
       tenants
     )
 
-    setSaving(false)
     if (error || !id) {
+      setSaving(false)
       setErrorMsg('Failed to create lease. Please try again.')
-    } else {
-      setSuccessMsg('Lease created!')
-      setTimeout(() => router.push(`/landlord/leases/${id}`), 1000)
+      return
     }
+
+    // Upload all pending documents
+    for (const pd of pendingDocs) {
+      await addLeaseDocument(id, pd.file, pd.name)
+    }
+
+    setSaving(false)
+    setSuccessMsg('Lease created!')
+    setTimeout(() => router.push(`/landlord/leases/${id}`), 1000)
   }
 
   return (
@@ -176,6 +171,15 @@ export default function NewLeasePage() {
         .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #166534; margin-bottom: 16px; }
         .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #991b1b; margin-bottom: 16px; }
 
+        .doc-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+        .doc-row { display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; }
+        .doc-icon { font-size: 16px; flex-shrink: 0; }
+        .doc-name-input { flex: 1; border: none; background: transparent; font-size: 14px; color: #0f172a; font-family: 'DM Sans', sans-serif; outline: none; }
+        .doc-filename { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+        .doc-remove { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }
+        .doc-remove:hover { color: #ef4444; }
+        .btn-add-doc { background: #fff; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; font-family: 'DM Sans', sans-serif; display: inline-block; }
+        .btn-add-doc:hover { border-color: #10b981; color: #10b981; }
         .file-hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
 
         @media (max-width: 480px) {
@@ -264,14 +268,40 @@ export default function NewLeasePage() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Lease Document (PDF)</label>
-          <input
-            className="form-input"
-            type="file"
-            accept=".pdf"
-            onChange={e => setDocFile(e.target.files?.[0] || null)}
-          />
-          {docFile && <div className="file-hint">Selected: {docFile.name}</div>}
+          <label className="form-label">Documents</label>
+          {pendingDocs.length > 0 && (
+            <div className="doc-list">
+              {pendingDocs.map((pd, i) => (
+                <div key={i} className="doc-row">
+                  <span className="doc-icon">📄</span>
+                  <input
+                    className="doc-name-input"
+                    type="text"
+                    value={pd.name}
+                    onChange={e => setPendingDocs(prev => prev.map((d, j) => j === i ? { ...d, name: e.target.value } : d))}
+                    placeholder="Document name"
+                  />
+                  <span className="doc-filename">{pd.file.name}</span>
+                  <button className="doc-remove" onClick={() => setPendingDocs(prev => prev.filter((_, j) => j !== i))}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="btn-add-doc">
+            + Add Document
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  setPendingDocs(prev => [...prev, { file, name: file.name.replace(/\.[^/.]+$/, '') }])
+                  e.target.value = ''
+                }
+              }}
+            />
+          </label>
         </div>
 
         <hr className="section-divider" />

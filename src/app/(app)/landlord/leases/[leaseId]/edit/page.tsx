@@ -3,10 +3,10 @@
 import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getLeaseById, updateLease, uploadLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
+import { getLeaseById, updateLease, addLeaseDocument, deleteLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
-import type { Lease, TenantInput } from '@/lib/leases'
+import type { Lease, TenantInput, LeaseDocument } from '@/lib/leases'
 import type { Property } from '@/lib/properties'
 
 const supabase = createBrowserClient(
@@ -34,9 +34,9 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
     notes: '',
   })
 
-  const [docFile, setDocFile] = useState<File | null>(null)
-  const [existingDocUrl, setExistingDocUrl] = useState<string | null>(null)
-  const [signedDocUrl, setSignedDocUrl] = useState<string | null>(null)
+  const [existingDocs, setExistingDocs] = useState<LeaseDocument[]>([])
+  const [pendingDocs, setPendingDocs] = useState<{ file: File; name: string }[]>([])
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const [tenants, setTenants] = useState<TenantInput[]>([])
   const [tenantSearch, setTenantSearch] = useState('')
   const [showTenantSearch, setShowTenantSearch] = useState(false)
@@ -64,10 +64,18 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           rent_amount: leaseData.rent_amount?.toString() || '',
           notes: leaseData.notes || '',
         })
-        setExistingDocUrl(leaseData.document_url)
-        if (leaseData.document_url) {
-          getLeaseDocumentSignedUrl(leaseData.document_url).then(url => setSignedDocUrl(url))
-        }
+        setExistingDocs(leaseData.documents || [])
+        // Generate signed URLs for all existing docs
+        Promise.all(
+          (leaseData.documents || []).map(async d => {
+            const url = await getLeaseDocumentSignedUrl(d.storage_path)
+            return { id: d.id, url }
+          })
+        ).then(results => {
+          const map: Record<string, string> = {}
+          results.forEach(r => { if (r.url) map[r.id] = r.url })
+          setSignedUrls(map)
+        })
         setTenants(leaseData.tenants.map(t => ({
           tenant_id: t.tenant_id,
           lead_id: t.lead_id,
@@ -116,17 +124,6 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
     setErrorMsg('')
     setSuccessMsg('')
 
-    let document_url: string | null = existingDocUrl
-    if (docFile) {
-      const { path, error: uploadErr } = await uploadLeaseDocument(docFile, leaseId)
-      if (uploadErr) {
-        setErrorMsg('Failed to upload document. Please try again.')
-        setSaving(false)
-        return
-      }
-      document_url = path
-    }
-
     const { error } = await updateLease(
       leaseId,
       {
@@ -136,22 +133,38 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         rent_amount: form.rent_amount ? parseInt(form.rent_amount) : null,
         unit_number: form.unit_number || null,
         notes: form.notes || null,
-        document_url,
+        document_url: null,
       },
       tenants
     )
 
-    setSaving(false)
     if (error) {
+      setSaving(false)
       setErrorMsg('Failed to save changes. Please try again.')
-    } else {
-      setSuccessMsg('Lease updated!')
-      setExistingDocUrl(document_url)
-      setDocFile(null)
-      if (document_url) {
-        getLeaseDocumentSignedUrl(document_url).then(url => setSignedDocUrl(url))
-      }
+      return
     }
+
+    // Upload any new pending documents
+    const uploaded: LeaseDocument[] = []
+    for (const pd of pendingDocs) {
+      const { doc } = await addLeaseDocument(leaseId, pd.file, pd.name)
+      if (doc) uploaded.push(doc)
+    }
+
+    // Refresh signed URLs for newly uploaded docs
+    if (uploaded.length > 0) {
+      const newUrls: Record<string, string> = { ...signedUrls }
+      await Promise.all(uploaded.map(async d => {
+        const url = await getLeaseDocumentSignedUrl(d.storage_path)
+        if (url) newUrls[d.id] = url
+      }))
+      setSignedUrls(newUrls)
+      setExistingDocs(prev => [...prev, ...uploaded])
+    }
+
+    setPendingDocs([])
+    setSaving(false)
+    setSuccessMsg('Lease updated!')
   }
 
   if (loading) {
@@ -207,8 +220,18 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         .tenant-search-item:hover { background: #f0fdf4; }
         .tenant-search-sub { font-size: 12px; color: #94a3b8; }
 
-        .existing-doc { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 8px; font-size: 13px; color: #166534; }
-        .existing-doc a { color: #166534; font-weight: 500; }
+        .doc-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+        .doc-row { display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; }
+        .doc-icon { font-size: 16px; flex-shrink: 0; }
+        .doc-name { font-size: 14px; color: #0f172a; flex: 1; font-weight: 500; }
+        .doc-name-input { flex: 1; border: none; background: transparent; font-size: 14px; color: #0f172a; font-family: 'DM Sans', sans-serif; outline: none; }
+        .doc-filename { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+        .doc-link { font-size: 12px; color: #3b82f6; text-decoration: none; white-space: nowrap; }
+        .doc-link:hover { text-decoration: underline; }
+        .doc-remove { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }
+        .doc-remove:hover { color: #ef4444; }
+        .btn-add-doc { background: #fff; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; font-family: 'DM Sans', sans-serif; display: inline-block; }
+        .btn-add-doc:hover { border-color: #10b981; color: #10b981; }
         .file-hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
 
         .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 28px; flex-wrap: wrap; }
@@ -309,24 +332,58 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         </div>
 
         <div className="form-group">
-          <label className="form-label">Lease Document (PDF)</label>
-          {existingDocUrl && !docFile && (
-            <div className="existing-doc">
-              📄{' '}
-              {signedDocUrl
-                ? <a href={signedDocUrl} target="_blank" rel="noopener noreferrer">View current document</a>
-                : <span>Document attached</span>
-              }
-              <span style={{ color: '#94a3b8', marginLeft: '4px' }}>· Upload a new file to replace</span>
+          <label className="form-label">Documents</label>
+          {(existingDocs.length > 0 || pendingDocs.length > 0) && (
+            <div className="doc-list">
+              {existingDocs.map(d => (
+                <div key={d.id} className="doc-row">
+                  <span className="doc-icon">📄</span>
+                  <span className="doc-name">{d.name}</span>
+                  {signedUrls[d.id]
+                    ? <a href={signedUrls[d.id]} target="_blank" rel="noopener noreferrer" className="doc-link">View</a>
+                    : <span className="doc-filename">...</span>
+                  }
+                  <button
+                    className="doc-remove"
+                    onClick={async () => {
+                      await deleteLeaseDocument(d)
+                      setExistingDocs(prev => prev.filter(x => x.id !== d.id))
+                      setSignedUrls(prev => { const n = { ...prev }; delete n[d.id]; return n })
+                    }}
+                  >×</button>
+                </div>
+              ))}
+              {pendingDocs.map((pd, i) => (
+                <div key={`pending-${i}`} className="doc-row">
+                  <span className="doc-icon">📄</span>
+                  <input
+                    className="doc-name-input"
+                    type="text"
+                    value={pd.name}
+                    onChange={e => setPendingDocs(prev => prev.map((d, j) => j === i ? { ...d, name: e.target.value } : d))}
+                    placeholder="Document name"
+                  />
+                  <span className="doc-filename">{pd.file.name}</span>
+                  <button className="doc-remove" onClick={() => setPendingDocs(prev => prev.filter((_, j) => j !== i))}>×</button>
+                </div>
+              ))}
             </div>
           )}
-          <input
-            className="form-input"
-            type="file"
-            accept=".pdf"
-            onChange={e => setDocFile(e.target.files?.[0] || null)}
-          />
-          {docFile && <div className="file-hint">New file: {docFile.name}</div>}
+          <label className="btn-add-doc">
+            + Add Document
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  setPendingDocs(prev => [...prev, { file, name: file.name.replace(/\.[^/.]+$/, '') }])
+                  e.target.value = ''
+                }
+              }}
+            />
+          </label>
         </div>
 
         <hr className="section-divider" />

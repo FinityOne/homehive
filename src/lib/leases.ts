@@ -16,6 +16,14 @@ export type LeaseTenant = {
   email: string | null
 }
 
+export type LeaseDocument = {
+  id: string
+  lease_id: string
+  name: string
+  storage_path: string
+  created_at: string
+}
+
 export type Lease = {
   id: string
   created_at: string
@@ -27,8 +35,9 @@ export type Lease = {
   rent_amount: number | null
   unit_number: string | null
   notes: string | null
-  document_url: string | null
+  document_url: string | null  // legacy — kept for DB compat, not used in UI
   tenants: LeaseTenant[]
+  documents: LeaseDocument[]
   property?: { id: string; name: string; slug: string }
 }
 
@@ -53,6 +62,7 @@ export async function getLeasesForOwner(ownerId: string): Promise<Lease[]> {
     .select(`
       *,
       lease_tenants ( id, lease_id, tenant_id, lead_id, name, email ),
+      lease_documents ( id, lease_id, name, storage_path, created_at ),
       property:properties ( id, name, slug )
     `)
     .eq('owner_id', ownerId)
@@ -66,6 +76,7 @@ export async function getLeasesForOwner(ownerId: string): Promise<Lease[]> {
   return data.map(row => ({
     ...row,
     tenants: row.lease_tenants || [],
+    documents: row.lease_documents || [],
     property: row.property || undefined,
   })) as Lease[]
 }
@@ -76,6 +87,7 @@ export async function getLeaseById(leaseId: string): Promise<Lease | null> {
     .select(`
       *,
       lease_tenants ( id, lease_id, tenant_id, lead_id, name, email ),
+      lease_documents ( id, lease_id, name, storage_path, created_at ),
       property:properties ( id, name, slug )
     `)
     .eq('id', leaseId)
@@ -89,6 +101,7 @@ export async function getLeaseById(leaseId: string): Promise<Lease | null> {
   return {
     ...data,
     tenants: data.lease_tenants || [],
+    documents: data.lease_documents || [],
     property: data.property || undefined,
   } as Lease
 }
@@ -100,7 +113,7 @@ export type LeaseFormData = {
   rent_amount: number | null
   unit_number: string | null
   notes: string | null
-  document_url: string | null
+  document_url: string | null  // always null going forward; kept for DB column compat
 }
 
 export type TenantInput = {
@@ -168,8 +181,39 @@ export async function updateLease(
   return { error: null }
 }
 
-// Uploads a lease document and returns the storage path (not a public URL).
-// The bucket is private — use getLeaseDocumentSignedUrl() to generate a temporary download link.
+// Uploads a file to storage and saves a record in lease_documents.
+export async function addLeaseDocument(
+  leaseId: string,
+  file: File,
+  displayName: string
+): Promise<{ doc: LeaseDocument | null; error: any }> {
+  const ext = file.name.split('.').pop()
+  const storagePath = `${leaseId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+
+  const { error: uploadError } = await supabase.storage
+    .from('lease-docs')
+    .upload(storagePath, file, { upsert: false })
+
+  if (uploadError) return { doc: null, error: uploadError }
+
+  const { data, error: dbError } = await supabase
+    .from('lease_documents')
+    .insert({ lease_id: leaseId, name: displayName.trim() || file.name, storage_path: storagePath })
+    .select()
+    .single()
+
+  if (dbError) return { doc: null, error: dbError }
+  return { doc: data as LeaseDocument, error: null }
+}
+
+// Deletes a document record and its file from storage.
+export async function deleteLeaseDocument(doc: LeaseDocument): Promise<{ error: any }> {
+  await supabase.storage.from('lease-docs').remove([doc.storage_path])
+  const { error } = await supabase.from('lease_documents').delete().eq('id', doc.id)
+  return { error }
+}
+
+// Legacy single-file upload kept for any existing code paths.
 export async function uploadLeaseDocument(
   file: File,
   leaseId: string
@@ -182,7 +226,6 @@ export async function uploadLeaseDocument(
     .upload(path, file, { upsert: true })
 
   if (error) return { path: null, error }
-
   return { path, error: null }
 }
 

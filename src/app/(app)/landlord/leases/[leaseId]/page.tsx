@@ -4,7 +4,7 @@ import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { getLeaseById, getLeaseStatus, formatLeaseDate, getLeaseDocumentSignedUrl } from '@/lib/leases'
-import type { Lease, LeaseStatus } from '@/lib/leases'
+import type { Lease, LeaseStatus, LeaseDocument } from '@/lib/leases'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +22,7 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
   const router = useRouter()
   const [lease, setLease] = useState<Lease | null>(null)
   const [loading, setLoading] = useState(true)
-  const [signedDocUrl, setSignedDocUrl] = useState<string | null>(null)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -33,9 +33,17 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
           return
         }
         setLease(data)
-        if (data.document_url) {
-          getLeaseDocumentSignedUrl(data.document_url).then(url => setSignedDocUrl(url))
-        }
+        // Generate signed URLs for all documents
+        Promise.all(
+          (data.documents || []).map(async (d: LeaseDocument) => {
+            const url = await getLeaseDocumentSignedUrl(d.storage_path)
+            return { id: d.id, url }
+          })
+        ).then(results => {
+          const map: Record<string, string> = {}
+          results.forEach(r => { if (r.url) map[r.id] = r.url })
+          setSignedUrls(map)
+        })
         setLoading(false)
       })
     })
@@ -88,7 +96,10 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
         .tenant-lead-badge { font-size: 11px; color: #10b981; background: rgba(16,185,129,0.1); padding: 2px 7px; border-radius: 20px; font-weight: 500; }
 
         .notes-text { font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap; }
-        .doc-link { display: inline-flex; align-items: center; gap: 6px; color: #3b82f6; font-size: 14px; font-weight: 500; text-decoration: none; }
+        .doc-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+        .doc-item:last-child { border-bottom: none; }
+        .doc-name { font-size: 14px; font-weight: 500; color: #0f172a; flex: 1; }
+        .doc-link { color: #3b82f6; font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; }
         .doc-link:hover { text-decoration: underline; }
 
         @media (max-width: 480px) {
@@ -188,14 +199,20 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
           </div>
         )}
 
-        {/* Document */}
-        {lease.document_url && (
+        {/* Documents */}
+        {lease.documents.length > 0 && (
           <div className="detail-card">
-            <div className="detail-card-title">Lease Document</div>
-            {signedDocUrl
-              ? <a href={signedDocUrl} target="_blank" rel="noopener noreferrer" className="doc-link">📄 Download / View Document</a>
-              : <span style={{ color: '#94a3b8', fontSize: '14px' }}>Generating link...</span>
-            }
+            <div className="detail-card-title">Documents ({lease.documents.length})</div>
+            {lease.documents.map(d => (
+              <div key={d.id} className="doc-item">
+                <span style={{ fontSize: '16px' }}>📄</span>
+                <span className="doc-name">{d.name}</span>
+                {signedUrls[d.id]
+                  ? <a href={signedUrls[d.id]} target="_blank" rel="noopener noreferrer" className="doc-link">Download</a>
+                  : <span style={{ color: '#94a3b8', fontSize: '13px' }}>Loading...</span>
+                }
+              </div>
+            ))}
           </div>
         )}
       </div>
