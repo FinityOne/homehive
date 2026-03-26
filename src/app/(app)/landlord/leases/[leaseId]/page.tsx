@@ -171,8 +171,8 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
                     <div className="tenant-name">{t.name || '—'}</div>
                     {t.email && <div className="tenant-email">{t.email}</div>}
                   </div>
-                  {t.lead_id && (
-                    <a href={`/landlord/leads/${t.lead_id}`} className="tenant-lead-badge">View Lead</a>
+                  {t.tenant_id && (
+                    <a href="/landlord/tenants" className="tenant-lead-badge">View Tenant</a>
                   )}
                 </div>
               )

@@ -10,6 +10,7 @@ export type LeaseStatus = 'upcoming' | 'current' | 'past'
 export type LeaseTenant = {
   id: string
   lease_id: string
+  tenant_id: string | null
   lead_id: string | null
   name: string | null
   email: string | null
@@ -51,7 +52,7 @@ export async function getLeasesForOwner(ownerId: string): Promise<Lease[]> {
     .from('leases')
     .select(`
       *,
-      lease_tenants ( id, lease_id, lead_id, name, email ),
+      lease_tenants ( id, lease_id, tenant_id, lead_id, name, email ),
       property:properties ( id, name, slug )
     `)
     .eq('owner_id', ownerId)
@@ -74,7 +75,7 @@ export async function getLeaseById(leaseId: string): Promise<Lease | null> {
     .from('leases')
     .select(`
       *,
-      lease_tenants ( id, lease_id, lead_id, name, email ),
+      lease_tenants ( id, lease_id, tenant_id, lead_id, name, email ),
       property:properties ( id, name, slug )
     `)
     .eq('id', leaseId)
@@ -103,6 +104,7 @@ export type LeaseFormData = {
 }
 
 export type TenantInput = {
+  tenant_id: string | null
   lead_id: string | null
   name: string
   email: string
@@ -124,6 +126,7 @@ export async function createLease(
   if (tenants.length > 0) {
     const rows = tenants.map(t => ({
       lease_id: lease.id,
+      tenant_id: t.tenant_id || null,
       lead_id: t.lead_id || null,
       name: t.name,
       email: t.email,
@@ -153,6 +156,7 @@ export async function updateLease(
   if (tenants.length > 0) {
     const rows = tenants.map(t => ({
       lease_id: leaseId,
+      tenant_id: t.tenant_id || null,
       lead_id: t.lead_id || null,
       name: t.name,
       email: t.email,

@@ -5,10 +5,9 @@ import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { getLeaseById, updateLease, uploadLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
-import { getLeadsForOwner } from '@/lib/leads'
+import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
 import type { Lease, TenantInput } from '@/lib/leases'
 import type { Property } from '@/lib/properties'
-import type { Lead } from '@/lib/leads'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +19,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
   const router = useRouter()
   const [lease, setLease] = useState<Lease | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
-  const [leads, setLeads] = useState<Lead[]>([])
+  const [allTenants, setAllTenants] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
@@ -39,10 +38,8 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
   const [existingDocUrl, setExistingDocUrl] = useState<string | null>(null)
   const [signedDocUrl, setSignedDocUrl] = useState<string | null>(null)
   const [tenants, setTenants] = useState<TenantInput[]>([])
-  const [leadSearch, setLeadSearch] = useState('')
-  const [showLeadSearch, setShowLeadSearch] = useState(false)
-  const [showManualForm, setShowManualForm] = useState(false)
-  const [manualTenant, setManualTenant] = useState({ name: '', email: '' })
+  const [tenantSearch, setTenantSearch] = useState('')
+  const [showTenantSearch, setShowTenantSearch] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -50,15 +47,15 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
       Promise.all([
         getLeaseById(leaseId),
         getPropertiesByOwner(user.id),
-        getLeadsForOwner(user.id),
-      ]).then(([leaseData, props, ls]) => {
+        getTenantsByOwner(user.id),
+      ]).then(([leaseData, props, ts]) => {
         if (!leaseData || leaseData.owner_id !== user.id) {
           router.push('/landlord/leases')
           return
         }
         setLease(leaseData)
         setProperties(props)
-        setLeads(ls)
+        setAllTenants(ts)
         setForm({
           property_id: leaseData.property_id,
           unit_number: leaseData.unit_number || '',
@@ -72,6 +69,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           getLeaseDocumentSignedUrl(leaseData.document_url).then(url => setSignedDocUrl(url))
         }
         setTenants(leaseData.tenants.map(t => ({
+          tenant_id: t.tenant_id,
           lead_id: t.lead_id,
           name: t.name || '',
           email: t.email || '',
@@ -81,34 +79,28 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
     })
   }, [leaseId, router])
 
-  const filteredLeads = leads.filter(l => {
-    if (!leadSearch.trim()) return true
-    const q = leadSearch.toLowerCase()
+  const alreadyAddedIds = new Set(tenants.map(t => t.tenant_id).filter(Boolean))
+
+  const filteredTenants = allTenants.filter(t => {
+    if (alreadyAddedIds.has(t.id)) return false
+    if (!tenantSearch.trim()) return true
+    const q = tenantSearch.toLowerCase()
     return (
-      l.first_name?.toLowerCase().includes(q) ||
-      l.last_name?.toLowerCase().includes(q) ||
-      l.email?.toLowerCase().includes(q)
+      t.first_name.toLowerCase().includes(q) ||
+      t.last_name?.toLowerCase().includes(q) ||
+      t.email.toLowerCase().includes(q)
     )
   })
 
-  const alreadyAddedLeadIds = new Set(tenants.map(t => t.lead_id).filter(Boolean))
-
-  function addLeadAsTenant(lead: Lead) {
-    if (alreadyAddedLeadIds.has(lead.id)) return
+  function addTenant(t: Tenant) {
     setTenants(prev => [...prev, {
-      lead_id: lead.id,
-      name: [lead.first_name, lead.last_name].filter(Boolean).join(' '),
-      email: lead.email,
+      tenant_id: t.id,
+      lead_id: t.lead_id,
+      name: [t.first_name, t.last_name].filter(Boolean).join(' '),
+      email: t.email,
     }])
-    setLeadSearch('')
-    setShowLeadSearch(false)
-  }
-
-  function addManualTenant() {
-    if (!manualTenant.name && !manualTenant.email) return
-    setTenants(prev => [...prev, { lead_id: null, name: manualTenant.name, email: manualTenant.email }])
-    setManualTenant({ name: '', email: '' })
-    setShowManualForm(false)
+    setTenantSearch('')
+    setShowTenantSearch(false)
   }
 
   function removeTenant(idx: number) {
@@ -194,6 +186,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .section-divider { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
         .section-label { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 14px; }
+        .section-sub { font-size: 12px; color: #94a3b8; margin-bottom: 14px; }
 
         .tenant-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
         .tenant-row { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
@@ -202,19 +195,17 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         .tenant-remove { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px; }
         .tenant-remove:hover { color: #ef4444; }
 
-        .btn-add-tenant { background: #fff; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; font-family: 'DM Sans', sans-serif; margin-right: 8px; }
+        .btn-add-tenant { background: #fff; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; font-family: 'DM Sans', sans-serif; }
         .btn-add-tenant:hover { border-color: #10b981; color: #10b981; }
+        .btn-go-tenants { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: #166534; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: inline-block; }
+        .btn-go-tenants:hover { background: #dcfce7; }
 
-        .lead-search-box { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; margin-top: 10px; overflow: hidden; }
-        .lead-search-input { width: 100%; border: none; border-bottom: 1px solid #e2e8f0; padding: 10px 12px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #0f172a; outline: none; }
-        .lead-search-item { padding: 10px 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
-        .lead-search-item:last-child { border-bottom: none; }
-        .lead-search-item:hover { background: #f0fdf4; }
-        .lead-search-item.disabled { color: #cbd5e1; cursor: default; }
-        .lead-search-sub { font-size: 12px; color: #94a3b8; }
-
-        .manual-form { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-top: 10px; }
-        .manual-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .tenant-search-box { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; margin-top: 10px; overflow: hidden; }
+        .tenant-search-input { width: 100%; border: none; border-bottom: 1px solid #e2e8f0; padding: 10px 12px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #0f172a; outline: none; }
+        .tenant-search-item { padding: 10px 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+        .tenant-search-item:last-child { border-bottom: none; }
+        .tenant-search-item:hover { background: #f0fdf4; }
+        .tenant-search-sub { font-size: 12px; color: #94a3b8; }
 
         .existing-doc { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 8px; font-size: 13px; color: #166534; }
         .existing-doc a { color: #166534; font-weight: 500; }
@@ -226,17 +217,12 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         .btn-save:not(:disabled):hover { background: #1e293b; }
         .btn-cancel { background: #fff; color: #64748b; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 11px 20px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: inline-block; }
         .btn-cancel:hover { border-color: #94a3b8; }
-        .btn-small { background: #0f172a; color: #34d399; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .btn-small:hover { background: #1e293b; }
-        .btn-small-outline { background: #fff; color: #64748b; border: 1.5px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .btn-small-outline:hover { border-color: #94a3b8; }
 
         .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #166534; margin-bottom: 16px; }
         .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #991b1b; margin-bottom: 16px; }
 
         @media (max-width: 480px) {
           .form-row { grid-template-columns: 1fr; }
-          .manual-form-row { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -345,6 +331,11 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
 
         <hr className="section-divider" />
         <div className="section-label">Tenants</div>
+        <div className="section-sub">
+          Only tenants from your{' '}
+          <a href="/landlord/tenants" style={{ color: '#10b981' }}>Tenants list</a>
+          {' '}can be added to a lease.
+        </div>
 
         {tenants.length > 0 && (
           <div className="tenant-list">
@@ -353,7 +344,6 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
                 <div>
                   <div className="tenant-info">{t.name || '—'}</div>
                   {t.email && <div className="tenant-sub">{t.email}</div>}
-                  {t.lead_id && <div className="tenant-sub" style={{ color: '#10b981' }}>Linked to lead</div>}
                 </div>
                 <button className="tenant-remove" onClick={() => removeTenant(i)}>×</button>
               </div>
@@ -361,72 +351,44 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           </div>
         )}
 
-        <div style={{ marginBottom: '10px' }}>
+        <div style={{ marginBottom: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           <button
             className="btn-add-tenant"
-            onClick={() => { setShowLeadSearch(v => !v); setShowManualForm(false) }}
+            onClick={() => setShowTenantSearch(v => !v)}
           >
-            + From Leads
+            + Add Tenant
           </button>
-          <button
-            className="btn-add-tenant"
-            onClick={() => { setShowManualForm(v => !v); setShowLeadSearch(false) }}
-          >
-            + Add Manually
-          </button>
+          <a href="/landlord/tenants" className="btn-go-tenants">
+            Manage Tenants →
+          </a>
         </div>
 
-        {showLeadSearch && (
-          <div className="lead-search-box">
+        {showTenantSearch && (
+          <div className="tenant-search-box">
             <input
-              className="lead-search-input"
+              className="tenant-search-input"
               type="text"
-              placeholder="Search by name or email..."
-              value={leadSearch}
-              onChange={e => setLeadSearch(e.target.value)}
+              placeholder="Search tenants by name or email..."
+              value={tenantSearch}
+              onChange={e => setTenantSearch(e.target.value)}
               autoFocus
             />
-            {filteredLeads.slice(0, 8).map(l => {
-              const added = alreadyAddedLeadIds.has(l.id)
-              return (
-                <div
-                  key={l.id}
-                  className={`lead-search-item${added ? ' disabled' : ''}`}
-                  onClick={() => !added && addLeadAsTenant(l)}
-                >
-                  <div>{[l.first_name, l.last_name].filter(Boolean).join(' ') || '—'}</div>
-                  <div className="lead-search-sub">{l.email}{added ? ' · already added' : ''}</div>
-                </div>
-              )
-            })}
-            {filteredLeads.length === 0 && (
-              <div style={{ padding: '12px', fontSize: '13px', color: '#94a3b8' }}>No leads found</div>
+            {filteredTenants.slice(0, 8).map(t => (
+              <div
+                key={t.id}
+                className="tenant-search-item"
+                onClick={() => addTenant(t)}
+              >
+                <div>{[t.first_name, t.last_name].filter(Boolean).join(' ')}</div>
+                <div className="tenant-search-sub">{t.email} · {t.status}</div>
+              </div>
+            ))}
+            {filteredTenants.length === 0 && (
+              <div style={{ padding: '12px', fontSize: '13px', color: '#94a3b8' }}>
+                No tenants found.{' '}
+                <a href="/landlord/tenants" style={{ color: '#10b981' }}>Add tenants first.</a>
+              </div>
             )}
-          </div>
-        )}
-
-        {showManualForm && (
-          <div className="manual-form">
-            <div className="manual-form-row">
-              <input
-                className="form-input"
-                type="text"
-                placeholder="Full name"
-                value={manualTenant.name}
-                onChange={e => setManualTenant(m => ({ ...m, name: e.target.value }))}
-              />
-              <input
-                className="form-input"
-                type="email"
-                placeholder="Email address"
-                value={manualTenant.email}
-                onChange={e => setManualTenant(m => ({ ...m, email: e.target.value }))}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn-small" onClick={addManualTenant}>Add Tenant</button>
-              <button className="btn-small-outline" onClick={() => setShowManualForm(false)}>Cancel</button>
-            </div>
           </div>
         )}
 
