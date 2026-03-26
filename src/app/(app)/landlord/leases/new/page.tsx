@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { createLease, uploadLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
+import { createLease, uploadLeaseDocument } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getLeadsForOwner } from '@/lib/leads'
 import type { Property } from '@/lib/properties'
@@ -17,7 +17,7 @@ const supabase = createBrowserClient(
 
 export default function NewLeasePage() {
   const router = useRouter()
-  const [userId, setUserId] = useState<string | null>(null)
+  const userIdRef = useRef<string | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
   const [saving, setSaving] = useState(false)
@@ -43,7 +43,7 @@ export default function NewLeasePage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }
-      setUserId(user.id)
+      userIdRef.current = user.id
       Promise.all([getPropertiesByOwner(user.id), getLeadsForOwner(user.id)]).then(([props, ls]) => {
         setProperties(props)
         setLeads(ls)
@@ -86,6 +86,7 @@ export default function NewLeasePage() {
   }
 
   async function handleSave() {
+    const userId = userIdRef.current
     if (!userId) return
     if (!form.property_id) { setErrorMsg('Please select a property.'); return }
     if (!form.start_date || !form.end_date) { setErrorMsg('Please enter start and end dates.'); return }
@@ -209,7 +210,6 @@ export default function NewLeasePage() {
         {successMsg && <div className="alert-success">{successMsg}</div>}
         {errorMsg && <div className="alert-error">{errorMsg}</div>}
 
-        {/* Property */}
         <div className="form-group">
           <label className="form-label">Property *</label>
           <select
@@ -289,7 +289,6 @@ export default function NewLeasePage() {
           {docFile && <div className="file-hint">Selected: {docFile.name}</div>}
         </div>
 
-        {/* Tenants */}
         <hr className="section-divider" />
         <div className="section-label">Tenants</div>
 

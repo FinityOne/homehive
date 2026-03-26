@@ -33,16 +33,15 @@ export default function LandlordLeasesPage() {
     })
   }, [router])
 
-  const filtered = leases.filter(l => {
-    if (statusFilter === 'all') return true
-    return getLeaseStatus(l.start_date, l.end_date) === statusFilter
-  })
+  const statuses = Object.fromEntries(leases.map(l => [l.id, getLeaseStatus(l.start_date, l.end_date)]))
+
+  const filtered = leases.filter(l => statusFilter === 'all' || statuses[l.id] === statusFilter)
 
   const counts = {
     all: leases.length,
-    upcoming: leases.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'upcoming').length,
-    current:  leases.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'current').length,
-    past:     leases.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'past').length,
+    upcoming: leases.filter(l => statuses[l.id] === 'upcoming').length,
+    current:  leases.filter(l => statuses[l.id] === 'current').length,
+    past:     leases.filter(l => statuses[l.id] === 'past').length,
   }
 
   if (loading) {
@@ -123,7 +122,7 @@ export default function LandlordLeasesPage() {
             </thead>
             <tbody>
               {filtered.map(lease => {
-                const status = getLeaseStatus(lease.start_date, lease.end_date)
+                const status = statuses[lease.id]
                 const meta = STATUS_META[status]
                 return (
                   <tr key={lease.id} onClick={() => router.push(`/landlord/leases/${lease.id}`)}>

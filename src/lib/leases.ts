@@ -147,8 +147,8 @@ export async function updateLease(
 
   if (error) return { error }
 
-  // Replace all tenants: delete then re-insert
-  await supabase.from('lease_tenants').delete().eq('lease_id', leaseId)
+  const { error: deleteError } = await supabase.from('lease_tenants').delete().eq('lease_id', leaseId)
+  if (deleteError) return { error: deleteError }
 
   if (tenants.length > 0) {
     const rows = tenants.map(t => ({

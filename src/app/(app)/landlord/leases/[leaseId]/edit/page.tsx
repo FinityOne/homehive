@@ -156,6 +156,9 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
       setSuccessMsg('Lease updated!')
       setExistingDocUrl(document_url)
       setDocFile(null)
+      if (document_url) {
+        getLeaseDocumentSignedUrl(document_url).then(url => setSignedDocUrl(url))
+      }
     }
   }
 
