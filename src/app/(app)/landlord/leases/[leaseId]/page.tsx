@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getLeaseById, getLeaseStatus, formatLeaseDate } from '@/lib/leases'
+import { getLeaseById, getLeaseStatus, formatLeaseDate, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import type { Lease, LeaseStatus } from '@/lib/leases'
 
 const supabase = createBrowserClient(
@@ -22,6 +22,7 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
   const router = useRouter()
   const [lease, setLease] = useState<Lease | null>(null)
   const [loading, setLoading] = useState(true)
+  const [signedDocUrl, setSignedDocUrl] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -32,6 +33,9 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
           return
         }
         setLease(data)
+        if (data.document_url) {
+          getLeaseDocumentSignedUrl(data.document_url).then(url => setSignedDocUrl(url))
+        }
         setLoading(false)
       })
     })
@@ -188,9 +192,10 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
         {lease.document_url && (
           <div className="detail-card">
             <div className="detail-card-title">Lease Document</div>
-            <a href={lease.document_url} target="_blank" rel="noopener noreferrer" className="doc-link">
-              📄 Download / View Document
-            </a>
+            {signedDocUrl
+              ? <a href={signedDocUrl} target="_blank" rel="noopener noreferrer" className="doc-link">📄 Download / View Document</a>
+              : <span style={{ color: '#94a3b8', fontSize: '14px' }}>Generating link...</span>
+            }
           </div>
         )}
       </div>

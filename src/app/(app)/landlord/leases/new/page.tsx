@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { createLease, uploadLeaseDocument } from '@/lib/leases'
+import { createLease, uploadLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getLeadsForOwner } from '@/lib/leads'
 import type { Property } from '@/lib/properties'
@@ -97,13 +97,13 @@ export default function NewLeasePage() {
     let document_url: string | null = null
     if (docFile) {
       const tmpId = crypto.randomUUID()
-      const { url, error: uploadErr } = await uploadLeaseDocument(docFile, tmpId)
+      const { path, error: uploadErr } = await uploadLeaseDocument(docFile, tmpId)
       if (uploadErr) {
         setErrorMsg('Failed to upload document. Please try again.')
         setSaving(false)
         return
       }
-      document_url = url
+      document_url = path
     }
 
     const { id, error } = await createLease(

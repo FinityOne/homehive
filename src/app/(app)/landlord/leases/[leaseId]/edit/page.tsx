@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getLeaseById, updateLease, uploadLeaseDocument } from '@/lib/leases'
+import { getLeaseById, updateLease, uploadLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getLeadsForOwner } from '@/lib/leads'
 import type { Lease, TenantInput } from '@/lib/leases'
@@ -37,6 +37,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
 
   const [docFile, setDocFile] = useState<File | null>(null)
   const [existingDocUrl, setExistingDocUrl] = useState<string | null>(null)
+  const [signedDocUrl, setSignedDocUrl] = useState<string | null>(null)
   const [tenants, setTenants] = useState<TenantInput[]>([])
   const [leadSearch, setLeadSearch] = useState('')
   const [showLeadSearch, setShowLeadSearch] = useState(false)
@@ -67,6 +68,9 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           notes: leaseData.notes || '',
         })
         setExistingDocUrl(leaseData.document_url)
+        if (leaseData.document_url) {
+          getLeaseDocumentSignedUrl(leaseData.document_url).then(url => setSignedDocUrl(url))
+        }
         setTenants(leaseData.tenants.map(t => ({
           lead_id: t.lead_id,
           name: t.name || '',
@@ -122,13 +126,13 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
 
     let document_url: string | null = existingDocUrl
     if (docFile) {
-      const { url, error: uploadErr } = await uploadLeaseDocument(docFile, leaseId)
+      const { path, error: uploadErr } = await uploadLeaseDocument(docFile, leaseId)
       if (uploadErr) {
         setErrorMsg('Failed to upload document. Please try again.')
         setSaving(false)
         return
       }
-      document_url = url
+      document_url = path
     }
 
     const { error } = await updateLease(
@@ -319,7 +323,11 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           <label className="form-label">Lease Document (PDF)</label>
           {existingDocUrl && !docFile && (
             <div className="existing-doc">
-              📄 <a href={existingDocUrl} target="_blank" rel="noopener noreferrer">View current document</a>
+              📄{' '}
+              {signedDocUrl
+                ? <a href={signedDocUrl} target="_blank" rel="noopener noreferrer">View current document</a>
+                : <span>Document attached</span>
+              }
               <span style={{ color: '#94a3b8', marginLeft: '4px' }}>· Upload a new file to replace</span>
             </div>
           )}

@@ -164,10 +164,12 @@ export async function updateLease(
   return { error: null }
 }
 
+// Uploads a lease document and returns the storage path (not a public URL).
+// The bucket is private — use getLeaseDocumentSignedUrl() to generate a temporary download link.
 export async function uploadLeaseDocument(
   file: File,
   leaseId: string
-): Promise<{ url: string | null; error: any }> {
+): Promise<{ path: string | null; error: any }> {
   const ext = file.name.split('.').pop()
   const path = `${leaseId}/${Date.now()}.${ext}`
 
@@ -175,8 +177,18 @@ export async function uploadLeaseDocument(
     .from('lease-docs')
     .upload(path, file, { upsert: true })
 
-  if (error) return { url: null, error }
+  if (error) return { path: null, error }
 
-  const { data } = supabase.storage.from('lease-docs').getPublicUrl(path)
-  return { url: data.publicUrl, error: null }
+  return { path, error: null }
+}
+
+// Generates a signed URL valid for 1 hour for a private lease document.
+export async function getLeaseDocumentSignedUrl(
+  storagePath: string
+): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from('lease-docs')
+    .createSignedUrl(storagePath, 3600)
+  if (error || !data) return null
+  return data.signedUrl
 }
