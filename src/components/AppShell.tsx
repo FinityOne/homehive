@@ -29,6 +29,7 @@ const NAV_ITEMS = {
     { href: '/landlord/dashboard',    label: 'Overview',     icon: '⊞' },
     { href: '/landlord/listings',     label: 'My Listings',  icon: '▣' },
     { href: '/landlord/leads', label: 'Leads', icon: '◉' },
+    { href: '/landlord/leases', label: 'Leases', icon: '📋' },
   ],
   admin: [
     { href: '/admin', label: 'Leads', icon: '◈' },
