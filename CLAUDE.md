@@ -43,4 +43,4 @@ npm run build  # Production build
 npm run lint   # ESLint
 ```
 
-Every time you create a new feature, automatically create a new branch and pr. use the /commit-push-pr skill
+<!-- Every time you create a new feature, automatically create a new branch and pr. use the /commit-push-pr skill -->

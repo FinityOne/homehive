@@ -116,7 +116,7 @@ const PSW_LABEL = { tenant: 'Tenant', landlord: 'Landlord', admin: 'Admin' }
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
-  const [user, setUser]             = useState<{ email: string; fullName: string; role: string } | null>(null)
+  const [user, setUser]             = useState<{ email: string; fullName: string; role: string; avatarUrl: string | null } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // ── Auth ──
@@ -124,10 +124,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const loadUser = async (userId: string, email: string, fullName: string) => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, avatar_url')
         .eq('id', userId)
         .single()
-      setUser({ email, fullName, role: profile?.role || 'tenant' })
+      setUser({ email, fullName, role: profile?.role || 'tenant', avatarUrl: profile?.avatar_url || null })
     }
 
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -238,7 +238,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <>
             {/* Clicking the user row goes to profile */}
             <a href="/profile" className={`sb-user-row${pathname === '/profile' ? ' active' : ''}`}>
-              <div className="sb-avatar">{getInitials(user.email, user.fullName)}</div>
+              <div className="sb-avatar">
+                {user.avatarUrl
+                  ? <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                  : getInitials(user.email, user.fullName)
+                }
+              </div>
               <div className="sb-user-info">
                 <div className="sb-user-name">{user.fullName || user.email.split('@')[0]}</div>
                 <div className="sb-user-email">{user.email}</div>
@@ -440,7 +445,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mob-topbar">
             <a href="/" className="sb-logo">Home<em>Hive</em></a>
             <div className="mob-topbar-right">
-              {user && <a href="/profile" className="mob-avatar" style={{ textDecoration: 'none' }}>{getInitials(user.email, user.fullName)}</a>}
+              {user && (
+                <a href="/profile" className="mob-avatar" style={{ textDecoration: 'none', overflow: 'hidden' }}>
+                  {user.avatarUrl
+                    ? <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    : getInitials(user.email, user.fullName)
+                  }
+                </a>
+              )}
               <button
                 className={`hamburger${sidebarOpen ? ' open' : ''}`}
                 onClick={() => setSidebarOpen(o => !o)}

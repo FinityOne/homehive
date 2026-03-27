@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 
@@ -18,6 +18,7 @@ type ProfileData = {
   company_name: string | null
   verified: boolean
   onboarded: boolean
+  avatar_url: string | null
 }
 
 function splitName(full: string | null) {
@@ -30,8 +31,11 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [resetSent, setResetSent] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({ first: '', last: '', phone: '', company_name: '' })
 
@@ -48,6 +52,7 @@ export default function ProfilePage() {
 
       if (data) {
         setProfile({ ...data, email: user.email || '' })
+        setAvatarUrl(data.avatar_url || null)
         const { first, last } = splitName(data.full_name)
         setForm({ first, last, phone: data.phone || '', company_name: data.company_name || '' })
       }
@@ -79,6 +84,41 @@ export default function ProfilePage() {
     if (!profile?.email) return
     const { error } = await supabase.auth.resetPasswordForEmail(profile.email)
     if (!error) setResetSent(true)
+  }
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !profile) return
+
+    setUploading(true)
+    const ext = file.name.split('.').pop()
+    const path = `${profile.id}/avatar.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+
+    if (uploadError) {
+      showToast('Upload failed. Please try again.', 'error')
+      setUploading(false)
+      return
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+    // Bust cache by appending timestamp
+    const urlWithCacheBust = `${publicUrl}?t=${Date.now()}`
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', profile.id)
+
+    setUploading(false)
+    if (updateError) { showToast('Failed to save photo.', 'error'); return }
+    setAvatarUrl(urlWithCacheBust)
+    showToast('Profile photo updated!', 'success')
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = ''
   }
 
   const roleMeta = {
@@ -125,8 +165,17 @@ export default function ProfilePage() {
         .save-btn:hover:not(:disabled) { background: #333; }
         .save-btn:disabled { opacity: .6; cursor: not-allowed; }
 
+        .avatar-wrap { position: relative; width: 62px; height: 62px; flex-shrink: 0; cursor: pointer; }
+        .avatar-img { width: 62px; height: 62px; border-radius: 50%; object-fit: cover; display: block; }
+        .avatar-initials { width: 62px; height: 62px; border-radius: 50%; background: #8C1D40; color: #FFC627; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+        .avatar-overlay { position: absolute; inset: 0; border-radius: 50%; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .2s; }
+        .avatar-wrap:hover .avatar-overlay { opacity: 1; }
+        .avatar-overlay-icon { font-size: 18px; line-height: 1; }
+        .avatar-uploading { position: absolute; inset: 0; border-radius: 50%; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
+
         .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; font-family: 'DM Sans', sans-serif; z-index: 9999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,.15); animation: toastIn .2s ease; }
         @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         @media (max-width: 500px) {
           .prof-page { padding: 20px 16px 80px; }
@@ -152,8 +201,22 @@ export default function ProfilePage() {
         {/* Avatar + role card */}
         <div className="prof-card">
           <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '18px' }}>
-            <div style={{ width: '62px', height: '62px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: 700, flexShrink: 0, letterSpacing: '0.5px' }}>
-              {((form.first[0] || '') + (form.last[0] || '')).toUpperCase() || profile.email[0].toUpperCase()}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              style={{ display: 'none' }}
+              onChange={handleAvatarUpload}
+            />
+            <div className="avatar-wrap" onClick={() => !uploading && fileInputRef.current?.click()} title="Change photo">
+              {avatarUrl
+                ? <img className="avatar-img" src={avatarUrl} alt="Profile photo" />
+                : <div className="avatar-initials">{((form.first[0] || '') + (form.last[0] || '')).toUpperCase() || profile.email[0].toUpperCase()}</div>
+              }
+              {uploading
+                ? <div className="avatar-uploading"><div style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .7s linear infinite' }} /></div>
+                : <div className="avatar-overlay"><span className="avatar-overlay-icon">📷</span></div>
+              }
             </div>
             <div>
               <div style={{ fontSize: '17px', fontWeight: 600, color: '#1a1a1a', marginBottom: '4px' }}>
@@ -164,6 +227,15 @@ export default function ProfilePage() {
                 {roleMeta.label}
               </span>
             </div>
+          </div>
+          <div style={{ paddingBottom: '16px', paddingLeft: '24px' }}>
+            <button
+              onClick={() => !uploading && fileInputRef.current?.click()}
+              disabled={uploading}
+              style={{ fontSize: '12px', color: '#9b9b9b', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: "'DM Sans', sans-serif", textDecoration: 'underline', textDecorationColor: '#d4d0c9' }}
+            >
+              {uploading ? 'Uploading…' : 'Change photo'}
+            </button>
           </div>
         </div>
 

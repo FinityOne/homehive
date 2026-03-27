@@ -44,8 +44,8 @@ export default function ListingsPage() {
 
         .listings-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; gap: 12px; }
         .listings-title { font-family: 'Fraunces', serif; font-size: 26px; font-weight: 300; color: #0f172a; letter-spacing: -0.4px; }
-        .btn-add { background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: not-allowed; font-family: 'DM Sans', sans-serif; opacity: 0.7; position: relative; }
-        .btn-add:hover::after { content: 'Coming soon'; position: absolute; bottom: calc(100% + 6px); right: 0; background: #1e293b; color: #f1f5f9; font-size: 11px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; }
+        .btn-add { background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: inline-block; }
+        .btn-add:hover { background: #1e293b; }
 
         .prop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 
@@ -85,7 +85,7 @@ export default function ListingsPage() {
       <div className="listings-wrap">
         <div className="listings-header">
           <h1 className="listings-title">My Listings</h1>
-          <button className="btn-add" disabled title="Coming soon">+ Add Property</button>
+          <a href="/landlord/listings/new" className="btn-add">+ Add Property</a>
         </div>
 
         <div className="prop-grid">
@@ -98,7 +98,7 @@ export default function ListingsPage() {
                 <span className="proof-item">✓ No agency fees</span>
                 <span className="proof-item">✓ Avg. 3 days to first lead</span>
               </div>
-              <button className="btn-list" disabled title="Coming soon">List a Property</button>
+              <a href="/landlord/listings/new" style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', padding: '12px 24px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textDecoration: 'none', display: 'inline-block' }}>Create your first listing →</a>
             </div>
           ) : (
             properties.map(p => {

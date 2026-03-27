@@ -22,12 +22,17 @@ export default function LandlordLeasesPage() {
   const [leases, setLeases] = useState<Lease[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<LeaseStatus | 'all'>('all')
+  const [hasListings, setHasListings] = useState(true)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }
-      getLeasesForOwner(user.id).then(data => {
+      Promise.all([
+        getLeasesForOwner(user.id),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).eq('owner_id', user.id),
+      ]).then(([data, { count }]) => {
         setLeases(data)
+        setHasListings((count ?? 0) > 0)
         setLoading(false)
       })
     })
@@ -48,6 +53,21 @@ export default function LandlordLeasesPage() {
     return (
       <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
         Loading...
+      </div>
+    )
+  }
+
+  if (!hasListings) {
+    return (
+      <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
+        <div style={{ fontSize: '40px', marginBottom: '16px' }}>📋</div>
+        <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>No listings yet</div>
+        <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>
+          Leases are created after you have a listing and a tenant. Start by creating your first listing.
+        </div>
+        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+          Create a listing →
+        </a>
       </div>
     )
   }

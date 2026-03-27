@@ -73,6 +73,7 @@ export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasListings, setHasListings] = useState(true)
 
   // Add/Edit modal
   const [modalOpen, setModalOpen] = useState(false)
@@ -95,9 +96,14 @@ export default function TenantsPage() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
-      Promise.all([getTenantsByOwner(user.id), getLeadsForOwner(user.id)]).then(([ts, ls]) => {
+      Promise.all([
+        getTenantsByOwner(user.id),
+        getLeadsForOwner(user.id),
+        supabase.from('properties').select('id', { count: 'exact', head: true }).eq('owner_id', user.id),
+      ]).then(([ts, ls, { count }]) => {
         setTenants(ts)
         setLeads(ls)
+        setHasListings((count ?? 0) > 0)
         setLoading(false)
       })
     })
@@ -214,6 +220,21 @@ export default function TenantsPage() {
     }
     return true
   })
+
+  if (!loading && !hasListings) {
+    return (
+      <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
+        <div style={{ fontSize: '40px', marginBottom: '16px' }}>🏘️</div>
+        <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>No listings yet</div>
+        <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>
+          Your tenants will appear here once you have an active listing. Create your first listing to start tracking tenants.
+        </div>
+        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+          Create a listing →
+        </a>
+      </div>
+    )
+  }
 
   return (
     <>

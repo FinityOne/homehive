@@ -22,7 +22,7 @@ export default function Nav() {
   const [showLoader, setShowLoader] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [user, setUser] = useState<{ email: string; fullName: string; role: string } | null>(null)
+  const [user, setUser] = useState<{ email: string; fullName: string; role: string; avatarUrl: string | null } | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
 
   useEffect(() => {
@@ -40,10 +40,10 @@ export default function Nav() {
     const loadUser = async (userId: string, email: string, fullName: string) => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, avatar_url')
         .eq('id', userId)
         .single()
-      setUser({ email, fullName, role: profile?.role || 'tenant' })
+      setUser({ email, fullName, role: profile?.role || 'tenant', avatarUrl: profile?.avatar_url || null })
     }
 
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -222,14 +222,18 @@ export default function Nav() {
           <a href="/how-it-works" className="nav-link">How it works</a>
           <div className="nav-sep" />
           <a href="/pricing" className="nav-link">Pricing</a>
+          <a href="/for-landlords" className="nav-link">For Landlords</a>
           <a href="/student-guide" className="nav-link">Student Guide</a>
         </div>
 
         <div className="nav-right">
           {user ? (
             <div className="profile-wrap" onClick={e => { e.stopPropagation(); setProfileOpen(o => !o) }}>
-              <div className={`profile-avatar${profileOpen ? ' open' : ''}`}>
-                {getInitials(user.email, user.fullName)}
+              <div className={`profile-avatar${profileOpen ? ' open' : ''}`} style={{ overflow: 'hidden', padding: 0 }}>
+                {user.avatarUrl
+                  ? <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }} />
+                  : getInitials(user.email, user.fullName)
+                }
               </div>
               {profileOpen && (
                 <div className="profile-dropdown" onClick={e => e.stopPropagation()}>
@@ -321,8 +325,9 @@ export default function Nav() {
             { href: '/homes',         label: 'Homes',         pill: '2 open', pt: 'hot' },
             { href: '/roommates',     label: 'Roommates',     pill: 'new',    pt: 'new' },
             { href: '/how-it-works',  label: 'How it works',  pill: null,     pt: null  },
-            { href: '/pricing',       label: 'Pricing',       pill: null,     pt: null  },
-            { href: '/student-guide', label: 'Student Guide', pill: null,     pt: null  },
+            { href: '/pricing',        label: 'Pricing',        pill: null,     pt: null  },
+            { href: '/for-landlords',  label: 'For Landlords',  pill: 'free',   pt: 'new' },
+            { href: '/student-guide',  label: 'Student Guide',  pill: null,     pt: null  },
           ].map(({ href, label, pill, pt }) => (
             <a key={href} href={href} className="mob-link" onClick={() => setMobileOpen(false)}>
               <span className="mob-link-inner">
@@ -352,7 +357,12 @@ export default function Nav() {
           {user ? (
             <>
               <div className="mob-user-row">
-                <div className="mob-user-avatar">{getInitials(user.email, user.fullName)}</div>
+                <div className="mob-user-avatar" style={{ overflow: 'hidden', padding: 0 }}>
+                  {user.avatarUrl
+                    ? <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    : getInitials(user.email, user.fullName)
+                  }
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="mob-user-name">{user.fullName || user.email}</div>
                   <div className="mob-user-email">{user.email}</div>
