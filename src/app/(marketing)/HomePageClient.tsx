@@ -63,16 +63,12 @@ function HomePageInner() {
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
         /* HERO — dead simple */
-        .hero { padding: 64px 0 56px; text-align: center; border-bottom: 1px solid #e8e4db; margin-bottom: 56px; }
-        .hero-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: #f0e6cc; color: #92620a; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 24px; }
+        .hero { padding: 36px 0 24px; text-align: center; border-bottom: 1px solid #e8e4db; margin-bottom: 28px; }
+        .hero-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: #f0e6cc; color: #92620a; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 20px; }
         .hero-eyebrow-dot { width: 5px; height: 5px; border-radius: 50%; background: #c9973a; }
-        .hero-title { font-family: 'Fraunces', serif; font-size: 58px; font-weight: 300; line-height: 1.06; color: #1a1a1a; letter-spacing: -2px; margin-bottom: 18px; }
+        .hero-title { font-family: 'Fraunces', serif; font-size: 50px; font-weight: 300; line-height: 1.06; color: #1a1a1a; letter-spacing: -2px; margin-bottom: 12px; }
         .hero-title em { font-style: italic; color: #8C1D40; }
-        .hero-sub { font-size: 17px; color: #6b6b6b; line-height: 1.7; max-width: 480px; margin: 0 auto 36px; }
-        .hero-sub strong { color: #1a1a1a; font-weight: 500; }
-        .hero-cta { display: inline-block; background: #8C1D40; color: #fff; padding: 15px 36px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; font-family: 'DM Sans', sans-serif; letter-spacing: 0.1px; transition: background 0.2s; }
-        .hero-cta:hover { background: #7a1835; }
-        .hero-trust { display: flex; align-items: center; justify-content: center; gap: 24px; margin-top: 24px; flex-wrap: wrap; }
+        .hero-trust { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 16px; flex-wrap: wrap; }
         .hero-trust-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9b9b9b; }
         .trust-dot { width: 4px; height: 4px; border-radius: 50%; background: #FFC627; }
 
@@ -116,9 +112,8 @@ function HomePageInner() {
         @media (max-width: 768px) {
           .asu-bar-right { display: none; }
           .asu-bar-sub { display: none; }
-          .hero { padding: 48px 0 40px; }
-          .hero-title { font-size: 40px; letter-spacing: -1px; }
-          .hero-sub { font-size: 15px; }
+          .hero { padding: 24px 0 16px; }
+          .hero-title { font-size: 38px; letter-spacing: -1px; }
           .homes-grid { grid-template-columns: 1fr; }
         }
       `}</style>
@@ -142,10 +137,6 @@ function HomePageInner() {
           <h1 className="hero-title">
             Off-campus housing<br />for <em>Sun Devils.</em>
           </h1>
-          <p className="hero-sub">
-            Solo or with a group — find verified homes near ASU with <strong>transparent pricing</strong> and <strong>zero broker fees.</strong> No Zillow runaround. No scams.
-          </p>
-          <a href="#homes" className="hero-cta">View homes for rent →</a>
           <div className="hero-trust">
             {['$0 broker fees', 'Verified landlords', 'No commitment to apply', 'Groups welcome'].map(t => (
               <div className="hero-trust-item" key={t}>
