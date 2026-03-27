@@ -33,7 +33,8 @@ const NAV_ITEMS = {
     { href: '/landlord/leases',       label: 'Leases',       icon: '📋' },
   ],
   admin: [
-    { href: '/admin', label: 'Leads', icon: '◈' },
+    { href: '/admin',          label: 'Leads',    icon: '◈' },
+    { href: '/admin/listings', label: 'Listings', icon: '▣' },
   ],
 }
 

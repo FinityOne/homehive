@@ -219,12 +219,6 @@ export default function AdminDashboard() {
   const [filter, setFilter] = useState<Lead['status'] | 'all'>('all')
   const [search, setSearch] = useState('')
   const [stats, setStats] = useState<Stats | null>(null)
-  const [userEmail, setUserEmail] = useState('')
-
-  const signOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/admin/login')
-  }
 
   const fetchLeads = useCallback(async () => {
     const { data, error } = await supabase
@@ -256,7 +250,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setUserEmail(data.user.email || '')
+      if (!data.user) router.push('/login')
     })
     fetchLeads()
 
@@ -294,18 +288,8 @@ export default function AdminDashboard() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; color: #1a1a1a; }
 
         .admin-wrap { min-height: 100vh; display: flex; flex-direction: column; }
-
-        /* TOP NAV */
-        .admin-nav { background: #fff; border-bottom: 1px solid #e8e4db; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; position: sticky; top: 0; z-index: 100; flex-shrink: 0; }
-        .admin-logo { font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 600; color: #1a1a1a; letter-spacing: -0.3px; }
-        .admin-logo em { font-family: 'Fraunces', serif; font-style: italic; color: #FFC627; }
-        .admin-nav-right { display: flex; align-items: center; gap: 16px; }
-        .admin-user { font-size: 12px; color: #9b9b9b; }
-        .signout-btn { background: none; border: 1px solid #e8e4db; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #6b6b6b; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
-        .signout-btn:hover { border-color: #8C1D40; color: #8C1D40; }
 
         /* PAGE BODY */
         .admin-body { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 28px 24px; }
