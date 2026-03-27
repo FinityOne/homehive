@@ -22,7 +22,7 @@ export default function Nav() {
   const [showLoader, setShowLoader] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [user, setUser] = useState<{ email: string; fullName: string; role: string } | null>(null)
+  const [user, setUser] = useState<{ email: string; fullName: string; role: string; avatarUrl: string | null } | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
 
   useEffect(() => {
@@ -40,10 +40,10 @@ export default function Nav() {
     const loadUser = async (userId: string, email: string, fullName: string) => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, avatar_url')
         .eq('id', userId)
         .single()
-      setUser({ email, fullName, role: profile?.role || 'tenant' })
+      setUser({ email, fullName, role: profile?.role || 'tenant', avatarUrl: profile?.avatar_url || null })
     }
 
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -228,8 +228,11 @@ export default function Nav() {
         <div className="nav-right">
           {user ? (
             <div className="profile-wrap" onClick={e => { e.stopPropagation(); setProfileOpen(o => !o) }}>
-              <div className={`profile-avatar${profileOpen ? ' open' : ''}`}>
-                {getInitials(user.email, user.fullName)}
+              <div className={`profile-avatar${profileOpen ? ' open' : ''}`} style={{ overflow: 'hidden', padding: 0 }}>
+                {user.avatarUrl
+                  ? <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }} />
+                  : getInitials(user.email, user.fullName)
+                }
               </div>
               {profileOpen && (
                 <div className="profile-dropdown" onClick={e => e.stopPropagation()}>
@@ -352,7 +355,12 @@ export default function Nav() {
           {user ? (
             <>
               <div className="mob-user-row">
-                <div className="mob-user-avatar">{getInitials(user.email, user.fullName)}</div>
+                <div className="mob-user-avatar" style={{ overflow: 'hidden', padding: 0 }}>
+                  {user.avatarUrl
+                    ? <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    : getInitials(user.email, user.fullName)
+                  }
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="mob-user-name">{user.fullName || user.email}</div>
                   <div className="mob-user-email">{user.email}</div>
