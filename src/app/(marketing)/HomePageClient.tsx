@@ -27,6 +27,7 @@ function HomePageInner() {
   const [showLoader, setShowLoader] = useState(false)
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  const [showLandlordBanner, setShowLandlordBanner] = useState(false)
 
   useEffect(() => {
     getProperties().then(data => {
@@ -35,9 +36,10 @@ function HomePageInner() {
     })
     // Only show loader once per session
     const seen = sessionStorage.getItem('hh_loader_seen')
-    if (!seen) {
-      setShowLoader(true)
-    }
+    if (!seen) setShowLoader(true)
+    // Show landlord banner unless dismissed this session
+    const bannerDismissed = sessionStorage.getItem('hh_landlord_bar_dismissed')
+    if (!bannerDismissed) setShowLandlordBanner(true)
   }, [])
 
   const handleLoaderComplete = () => {
@@ -55,6 +57,13 @@ function HomePageInner() {
         body { font-family: 'DM Sans', sans-serif; background: #faf9f6; color: #1a1a1a; }
 
         .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+        /* LANDLORD BANNER */
+        .landlord-bar { background: #f0fdf4; border-bottom: 1px solid #bbf7d0; padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: #166534; position: relative; }
+        .landlord-bar a { color: #166534; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+        .landlord-bar a:hover { color: #065f46; }
+        .landlord-bar-close { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #6b6b6b; font-size: 16px; padding: 4px; line-height: 1; }
+        .landlord-bar-close:hover { color: #1a1a1a; }
 
         /* PERSONAL BAR */
         .personal-bar { background: #1a1a1a; padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: #c5c1b8; }
@@ -117,6 +126,15 @@ function HomePageInner() {
           .homes-grid { grid-template-columns: 1fr; }
         }
       `}</style>
+
+      {/* LANDLORD BANNER */}
+      {showLandlordBanner && (
+        <div className="landlord-bar">
+          🏠 Listing your place? Skip Zillow — get student leads on HomeHive.{' '}
+          <a href="/for-landlords">List for free →</a>
+          <button className="landlord-bar-close" onClick={() => { sessionStorage.setItem('hh_landlord_bar_dismissed', '1'); setShowLandlordBanner(false) }} aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       {/* PERSONALIZED BAR */}
       {isPersonalized && (
@@ -248,6 +266,14 @@ function HomePageInner() {
                 })}
             </div>
           )}
+        </div>
+
+        {/* Subtle landlord link */}
+        <div style={{ textAlign: 'center', paddingBottom: '48px', fontSize: '13px', color: '#9b9b9b' }}>
+          Subleasing or have a place to rent?{' '}
+          <a href="/for-landlords" style={{ color: '#6b6b6b', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+            List your place on HomeHive →
+          </a>
         </div>
 
       </div>

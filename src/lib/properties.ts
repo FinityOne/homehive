@@ -27,11 +27,85 @@ export type Property = {
   is_featured: boolean
   owner_id: string
   created_at: string
+  listing_type: 'standard_rental' | 'sublease' | 'lease_transfer'
+  unit_type: 'room_in_house' | 'apartment' | 'condo' | 'studio' | null
+  roommates_count: number | null
+  sublease_end_date: string | null
   // joined
   tags: string[]
   images: string[]
   nearby: { place: string; travel_time: string }[]
   asu_reasons: string[]
+}
+
+export type NewPropertyInput = {
+  name: string
+  address: string
+  description?: string
+  price: number
+  listing_type: 'standard_rental' | 'sublease' | 'lease_transfer'
+  unit_type?: 'room_in_house' | 'apartment' | 'condo' | 'studio' | null
+  roommates_count?: number | null
+  sublease_end_date?: string | null
+  beds?: number
+  baths?: number
+  sqft?: string
+  total_rooms?: number
+  available?: number
+  asu_distance?: number
+  hero_image?: string
+}
+
+export async function createProperty(
+  ownerId: string,
+  data: NewPropertyInput
+): Promise<{ slug: string | null; error: any }> {
+  // Generate a slug from the name + random suffix
+  const base = data.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)
+  const suffix = Math.random().toString(36).slice(2, 7)
+  const slug = `${base}-${suffix}`
+
+  const { error } = await supabase
+    .from('properties')
+    .insert({
+      slug,
+      owner_id: ownerId,
+      name: data.name,
+      address: data.address,
+      description: data.description || '',
+      price: data.price,
+      listing_type: data.listing_type,
+      unit_type: data.unit_type ?? null,
+      roommates_count: data.roommates_count ?? null,
+      sublease_end_date: data.sublease_end_date ?? null,
+      beds: data.beds ?? 1,
+      baths: data.baths ?? 1,
+      sqft: data.sqft ?? '',
+      total_rooms: data.total_rooms ?? 1,
+      available: data.available ?? 1,
+      asu_distance: data.asu_distance ?? 0,
+      hero_image: data.hero_image ?? '',
+      is_active: true,
+      is_featured: false,
+      lat: 0,
+      lng: 0,
+      map_embed_url: '',
+      asu_score: 7,
+    })
+
+  if (error) return { slug: null, error }
+  return { slug, error: null }
+}
+
+export async function getTotalPropertyCount(): Promise<number> {
+  const { count } = await supabase
+    .from('properties')
+    .select('*', { count: 'exact', head: true })
+  return count ?? 0
 }
 
 export async function getProperties(): Promise<Property[]> {

@@ -158,6 +158,22 @@ export default function LandlordLeadsPage() {
     setAddingLead(false)
   }
 
+  // ── No listings guard ─────────────────────────────────────────────────────
+  if (!loading && properties.length === 0) {
+    return (
+      <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
+        <div style={{ fontSize: '40px', marginBottom: '16px' }}>📭</div>
+        <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>No listings yet</div>
+        <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>
+          Leads appear here once you have an active listing. Create your first listing to start receiving inquiries from students.
+        </div>
+        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+          Create a listing →
+        </a>
+      </div>
+    )
+  }
+
   // ── Loading skeleton ───────────────────────────────────────────────────────
   if (loading) {
     return (

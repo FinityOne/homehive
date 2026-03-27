@@ -163,10 +163,18 @@ export default function LandlordDashboard() {
           </div>
 
           {properties.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-headline">No properties yet</div>
-              <div className="empty-sub">Start earning by listing your first property on HomeHive</div>
-              <a href="/landlord/listings" className="btn-primary">Add your first property →</a>
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderLeft: '4px solid #10b981', borderRadius: '14px', padding: '32px 28px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>Welcome! Let&apos;s get your first listing live.</div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>It takes about 5 minutes. Once live, students can find and inquire about your place directly.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
+                {['Student-focused audience — hundreds of ASU students searching near Tempe', '$0 to start — free forever for early landlords, no credit card', 'Average 3 days to your first qualified lead'].map(pt => (
+                  <div key={pt} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#1a1a1a' }}>
+                    <span style={{ color: '#10b981', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                    <span>{pt}</span>
+                  </div>
+                ))}
+              </div>
+              <a href="/landlord/listings/new" className="btn-primary">Create your first listing →</a>
             </div>
           ) : (
             properties.map(p => (

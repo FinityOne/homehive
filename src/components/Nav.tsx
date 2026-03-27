@@ -222,6 +222,7 @@ export default function Nav() {
           <a href="/how-it-works" className="nav-link">How it works</a>
           <div className="nav-sep" />
           <a href="/pricing" className="nav-link">Pricing</a>
+          <a href="/for-landlords" className="nav-link">For Landlords</a>
           <a href="/student-guide" className="nav-link">Student Guide</a>
         </div>
 
@@ -324,8 +325,9 @@ export default function Nav() {
             { href: '/homes',         label: 'Homes',         pill: '2 open', pt: 'hot' },
             { href: '/roommates',     label: 'Roommates',     pill: 'new',    pt: 'new' },
             { href: '/how-it-works',  label: 'How it works',  pill: null,     pt: null  },
-            { href: '/pricing',       label: 'Pricing',       pill: null,     pt: null  },
-            { href: '/student-guide', label: 'Student Guide', pill: null,     pt: null  },
+            { href: '/pricing',        label: 'Pricing',        pill: null,     pt: null  },
+            { href: '/for-landlords',  label: 'For Landlords',  pill: 'free',   pt: 'new' },
+            { href: '/student-guide',  label: 'Student Guide',  pill: null,     pt: null  },
           ].map(({ href, label, pill, pt }) => (
             <a key={href} href={href} className="mob-link" onClick={() => setMobileOpen(false)}>
               <span className="mob-link-inner">
