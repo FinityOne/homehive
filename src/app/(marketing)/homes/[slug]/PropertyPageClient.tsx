@@ -65,6 +65,7 @@ export default function PropertyPageClient({
   const [badgeHover, setBadgeHover] = useState(false)
   const [landlordProfile, setLandlordProfile] = useState<{ first_name: string | null; avatar_url: string | null } | null>(null)
   const titleRef = useRef<HTMLDivElement>(null)
+  const formStartedRef = useRef(false)
 
   const ph = usePostHog()
 
@@ -137,6 +138,13 @@ export default function PropertyPageClient({
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Track mobile form open (must be before early returns)
+  useEffect(() => {
+    if (mobileFormOpen && home) {
+      ph?.capture('inquiry_form_opened_mobile', { property_slug: slug, property_name: home.name })
+    }
+  }, [mobileFormOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Loading / not-found guards ────────────────────────────────────────────
   if (home === undefined) {
     return (
@@ -171,6 +179,16 @@ export default function PropertyPageClient({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
+    if (!formStartedRef.current && home) {
+      formStartedRef.current = true
+      ph?.capture('inquiry_form_started', {
+        property_slug: slug,
+        property_name: home.name,
+        property_price: home.price,
+        available_rooms: home.available,
+        first_field: e.target.name,
+      })
+    }
   }
 
   const handleSubmit = async () => {

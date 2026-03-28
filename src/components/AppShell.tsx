@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { usePathname, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,8 +25,9 @@ type NavItem = { href: string; label: string; icon: string; exact?: boolean }
 
 const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
   tenant: [
-    { href: '/dashboard', label: 'Overview',     icon: '⊞' },
-    { href: '/homes',     label: 'Browse Homes', icon: '▣' },
+    { href: '/dashboard',      label: 'Overview',       icon: '⊞', exact: true },
+    { href: '/homes',          label: 'Browse Homes',   icon: '▣' },
+    { href: '/dashboard/list', label: 'List your place', icon: '⊕' },
   ],
   landlord: [
     { href: '/landlord/dashboard', label: 'Overview',    icon: '⊞', exact: true },
@@ -35,10 +37,11 @@ const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
     { href: '/landlord/leases',    label: 'Leases',      icon: '📋' },
   ],
   admin: [
-    { href: '/admin',            label: 'Overview',   icon: '⊞', exact: true },
-    { href: '/admin/users',      label: 'Users',      icon: '◎' },
-    { href: '/admin/properties', label: 'Properties', icon: '▣' },
-    { href: '/admin/leads',      label: 'Leads',      icon: '◉' },
+    { href: '/admin',                    label: 'Overview',        icon: '⊞', exact: true },
+    { href: '/admin/users',              label: 'Users',           icon: '◎' },
+    { href: '/admin/properties',         label: 'Properties',      icon: '▣' },
+    { href: '/admin/leads',              label: 'Leads',           icon: '◉' },
+    { href: '/admin/upgrade-requests',   label: 'Upgrade Requests', icon: '⬆' },
   ],
 }
 
@@ -131,12 +134,14 @@ const PSW_LABEL = { tenant: 'Tenant',  landlord: 'Landlord', admin: 'Admin' }
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
+  const ph       = usePostHog()
 
   const [user, setUser] = useState<{
     email: string; fullName: string; role: string; avatarUrl: string | null
   } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [pendingUpgradeCount, setPendingUpgradeCount] = useState(0)
   const profileRef = useRef<HTMLDivElement>(null)
 
   // ── Auth ──
@@ -144,7 +149,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const loadUser = async (userId: string, email: string, fullName: string) => {
       const { data: profile } = await supabase
         .from('profiles').select('role, avatar_url').eq('id', userId).single()
-      setUser({ email, fullName, role: profile?.role || 'tenant', avatarUrl: profile?.avatar_url || null })
+      const role = profile?.role || 'tenant'
+      setUser({ email, fullName, role, avatarUrl: profile?.avatar_url || null })
+      ph?.identify(userId, { email, name: fullName, role })
+
+      // Fetch pending upgrade request count for admin badge
+      if (role === 'admin') {
+        fetch('/api/upgrade-requests')
+          .then(r => r.json())
+          .then((data: Array<{ status: string }>) => {
+            setPendingUpgradeCount(data.filter(r => r.status === 'pending').length)
+          })
+          .catch(() => {})
+      }
     }
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) loadUser(user.id, user.email || '', user.user_metadata?.full_name || '')
@@ -175,6 +192,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
+    ph?.reset()
     setUser(null)
     window.location.href = '/'
   }
@@ -507,8 +525,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <span className="sb-nav-icon">{item.icon}</span>
                   {item.label}
+                  {item.href === '/admin/upgrade-requests' && pendingUpgradeCount > 0 && (
+                    <span style={{ marginLeft: 'auto', background: '#f59e0b', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
+                      {pendingUpgradeCount}
+                    </span>
+                  )}
                 </a>
               ))}
+              {/* Landlord portal link for tenants who've been upgraded */}
+              {currentPortal === 'tenant' && (role === 'landlord' || role === 'admin') && (
+                <a href="/landlord/dashboard" className="sb-nav-item" style={{ borderTop: '1px solid var(--sb-border)', marginTop: '6px', paddingTop: '12px' }}>
+                  <span className="sb-nav-icon">→</span>
+                  Landlord Portal
+                </a>
+              )}
             </nav>
 
             {otherPortals.length > 0 && (

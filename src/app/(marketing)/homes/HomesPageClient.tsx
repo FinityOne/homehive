@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { getProperties, Property } from '@/lib/properties'
+import { usePostHog } from 'posthog-js/react'
 
 // ─── FILTER STATE ────────────────────────────────────────────────────────────
 type Filters = {
@@ -304,12 +305,14 @@ function HomeCard({ home, onHover }: { home: Property; onHover: (id: string | nu
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
 export default function HomesPageClient() {
+  const ph = usePostHog()
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'price' | 'score' | 'distance'>('price')
   const [mapVisible, setMapVisible] = useState(true)
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     getProperties().then(data => { setProperties(data); setLoading(false) })
@@ -404,7 +407,14 @@ export default function HomesPageClient() {
             <input
               placeholder="Search by name or address..."
               value={filters.search}
-              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+              onChange={e => {
+                const q = e.target.value
+                setFilters(f => ({ ...f, search: q }))
+                if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+                searchDebounceRef.current = setTimeout(() => {
+                  if (q.trim()) ph?.capture('homes_searched', { query: q.trim(), results_count: filtered.length })
+                }, 1500)
+              }}
             />
           </div>
 
@@ -418,6 +428,8 @@ export default function HomesPageClient() {
                 min={500} max={1200} step={50}
                 value={filters.maxPrice}
                 onChange={e => setFilters(f => ({ ...f, maxPrice: Number(e.target.value) }))}
+                onMouseUp={e => ph?.capture('homes_filter_changed', { filter: 'max_price', value: Number((e.target as HTMLInputElement).value) })}
+                onTouchEnd={e => ph?.capture('homes_filter_changed', { filter: 'max_price', value: Number((e.target as HTMLInputElement).value) })}
               />
               <span style={{ fontSize: '12px', fontWeight: 600, minWidth: '38px' }}>${filters.maxPrice}</span>
             </div>
@@ -427,7 +439,11 @@ export default function HomesPageClient() {
               <label>Beds</label>
               <select
                 value={filters.minBeds}
-                onChange={e => setFilters(f => ({ ...f, minBeds: Number(e.target.value) }))}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  setFilters(f => ({ ...f, minBeds: v }))
+                  ph?.capture('homes_filter_changed', { filter: 'min_beds', value: v })
+                }}
               >
                 <option value={1}>Any</option>
                 <option value={2}>2+</option>
@@ -444,6 +460,8 @@ export default function HomesPageClient() {
                 min={0.2} max={2} step={0.1}
                 value={filters.maxDistance}
                 onChange={e => setFilters(f => ({ ...f, maxDistance: Number(e.target.value) }))}
+                onMouseUp={e => ph?.capture('homes_filter_changed', { filter: 'max_distance_mi', value: Number((e.target as HTMLInputElement).value) })}
+                onTouchEnd={e => ph?.capture('homes_filter_changed', { filter: 'max_distance_mi', value: Number((e.target as HTMLInputElement).value) })}
               />
               <span style={{ fontSize: '12px', fontWeight: 600, minWidth: '34px' }}>{filters.maxDistance}mi</span>
             </div>
@@ -451,7 +469,7 @@ export default function HomesPageClient() {
             {/* Available only */}
             <button
               className={`filter-pill ${filters.maxPrice < 1200 || filters.minBeds > 1 || filters.maxDistance < 2 ? 'active' : ''}`}
-              onClick={() => setFilters(DEFAULT_FILTERS)}
+              onClick={() => { setFilters(DEFAULT_FILTERS); ph?.capture('homes_filter_reset') }}
               style={{ cursor: 'pointer', border: '1.5px solid #e8e4db' }}
             >
               Reset
@@ -460,12 +478,20 @@ export default function HomesPageClient() {
 
           <div className="toolbar-right">
             <span className="result-count">{loading ? 'Loading…' : `${filtered.length} home${filtered.length !== 1 ? 's' : ''}`}</span>
-            <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+            <select className="sort-select" value={sortBy} onChange={e => {
+              const v = e.target.value as 'price' | 'score' | 'distance'
+              setSortBy(v)
+              ph?.capture('homes_sorted', { sort_by: v, results_count: filtered.length })
+            }}>
               <option value="price">Price: low to high</option>
               <option value="score">Best ASU fit</option>
               <option value="distance">Closest to ASU</option>
             </select>
-            <button className="map-toggle" onClick={() => setMapVisible(v => !v)}>
+            <button className="map-toggle" onClick={() => {
+              const next = !mapVisible
+              setMapVisible(next)
+              ph?.capture('map_toggled', { visible: next })
+            }}>
               {mapVisible ? '⊟ Hide map' : '⊞ Show map'}
             </button>
           </div>
