@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, Property } from '@/lib/properties'
+import { getPropertiesByOwner, Property, updatePropertyOffer } from '@/lib/properties'
 import { getLeadsForOwner, Lead } from '@/lib/leads'
 
 const supabase = createBrowserClient(
@@ -39,6 +39,13 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [descExpanded, setDescExpanded] = useState(false)
+  // Offer state
+  const [offerAmount, setOfferAmount] = useState('')
+  const [offerDeadline, setOfferDeadline] = useState('')
+  const [offerDescription, setOfferDescription] = useState('')
+  const [offerSaving, setOfferSaving] = useState(false)
+  const [offerSaved, setOfferSaved] = useState(false)
+  const [offerError, setOfferError] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -55,10 +62,29 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
 
       setProperty(found)
       setLeads(lds.filter(l => l.property === slug))
+      setOfferAmount(found.offer_amount != null ? String(found.offer_amount) : '')
+      setOfferDeadline(found.offer_deadline || '')
+      setOfferDescription(found.offer_description || '')
       setLoading(false)
     }
     load()
   }, [slug, router])
+
+  const handleSaveOffer = async () => {
+    if (!property) return
+    setOfferSaving(true)
+    setOfferError('')
+    setOfferSaved(false)
+    const { error } = await updatePropertyOffer(property.id, {
+      offer_amount: offerAmount === '' ? null : Number(offerAmount),
+      offer_deadline: offerDeadline || null,
+      offer_description: offerDescription.trim() || null,
+    })
+    if (error) { setOfferError('Failed to save offer. Try again.'); setOfferSaving(false); return }
+    setOfferSaved(true)
+    setOfferSaving(false)
+    setTimeout(() => setOfferSaved(false), 3000)
+  }
 
   if (loading) {
     return (
@@ -476,6 +502,77 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             ) : (
               <span className="detail-value-muted" style={{ fontSize: '13px' }}>No tags added yet</span>
             )}
+          </div>
+        </div>
+
+        {/* SECTION I: SPECIAL OFFER */}
+        <div className="section-card">
+          <div className="section-card-header">
+            <span className="section-card-title">Special Offer</span>
+            {property.offer_amount ? (
+              <span className="badge badge-teal">Active</span>
+            ) : (
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>Optional</span>
+            )}
+          </div>
+          <div className="section-card-body">
+            <p style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5, marginBottom: '14px' }}>
+              Add a cash credit offer to attract tenants. It shows as an eye-catching banner on your listing and pushes them to inquire.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div>
+                <div className="detail-label" style={{ marginBottom: '5px' }}>Cash Credit Amount ($)</div>
+                <input
+                  type="number" min="0" placeholder="e.g. 500"
+                  value={offerAmount}
+                  onChange={e => { setOfferAmount(e.target.value); setOfferSaved(false) }}
+                  style={{ width: '100%', height: '36px', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '0 10px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
+                  onFocus={e => e.target.style.borderColor = '#10b981'}
+                  onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                />
+              </div>
+              <div>
+                <div className="detail-label" style={{ marginBottom: '5px' }}>Sign-by Deadline</div>
+                <input
+                  type="date"
+                  value={offerDeadline}
+                  onChange={e => { setOfferDeadline(e.target.value); setOfferSaved(false) }}
+                  style={{ width: '100%', height: '36px', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '0 10px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
+                  onFocus={e => e.target.style.borderColor = '#10b981'}
+                  onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                />
+              </div>
+            </div>
+            <div style={{ marginBottom: '12px' }}>
+              <div className="detail-label" style={{ marginBottom: '5px' }}>Offer Description</div>
+              <input
+                type="text" placeholder="e.g. Cash credit applied at lease signing"
+                value={offerDescription}
+                onChange={e => { setOfferDescription(e.target.value); setOfferSaved(false) }}
+                style={{ width: '100%', height: '36px', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '0 10px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
+                onFocus={e => e.target.style.borderColor = '#10b981'}
+                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+              />
+            </div>
+            {offerError && <div style={{ fontSize: '12px', color: '#9f1239', marginBottom: '8px' }}>{offerError}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                onClick={handleSaveOffer}
+                disabled={offerSaving}
+                style={{ height: '34px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '7px', padding: '0 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: offerSaving ? 0.7 : 1 }}
+              >
+                {offerSaving ? 'Saving…' : 'Save offer'}
+              </button>
+              {offerSaved && <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>✓ Saved</span>}
+              {offerAmount && (
+                <button
+                  onClick={() => { setOfferAmount(''); setOfferDeadline(''); setOfferDescription(''); setOfferSaved(false) }}
+                  style={{ background: 'none', border: 'none', fontSize: '12px', color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Remove offer
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

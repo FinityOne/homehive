@@ -44,6 +44,9 @@ export async function PATCH(
     lng?: number
     owner_id?: string | null
     is_claimable?: boolean
+    offer_amount?: number | null
+    offer_deadline?: string | null
+    offer_description?: string | null
     tags?: string[]
     asu_reasons?: string[]
     nearby?: { place: string; travel_time: string }[]
@@ -74,6 +77,9 @@ export async function PATCH(
       lng: body.lng ?? 0,
       owner_id: body.owner_id ?? null,
       is_claimable: body.is_claimable ?? false,
+      offer_amount: body.offer_amount ?? null,
+      offer_deadline: body.offer_deadline ?? null,
+      offer_description: body.offer_description ?? null,
     })
     .eq('id', id)
 

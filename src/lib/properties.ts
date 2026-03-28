@@ -37,6 +37,9 @@ export type Property = {
   claim_token: string | null
   is_claimable: boolean
   sublease_start_date: string | null
+  offer_amount: number | null
+  offer_deadline: string | null
+  offer_description: string | null
   // joined
   tags: string[]
   images: string[]
@@ -265,6 +268,17 @@ export async function getPropertiesByOwner(userId: string): Promise<Property[]> 
                   .sort((a: any, b: any) => a.position - b.position)
                   .map((r: any) => r.reason),
   }))
+}
+
+export async function updatePropertyOffer(
+  id: string,
+  offer: { offer_amount: number | null; offer_deadline: string | null; offer_description: string | null }
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('properties')
+    .update(offer)
+    .eq('id', id)
+  return { error }
 }
 
 export async function updatePropertyCore(
