@@ -37,6 +37,10 @@ function ListingPanel({ listing, onClose, onUpdate }: {
   const [isTest, setIsTest] = useState(listing.is_test ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [claimCopied, setClaimCopied] = useState(false)
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const claimUrl = listing.claim_token ? `${siteUrl}/claim/${listing.claim_token}` : null
 
   const save = async () => {
     setSaving(true)
@@ -114,6 +118,10 @@ function ListingPanel({ listing, onClose, onUpdate }: {
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '10px' }}>Quick actions</div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <a href={`/admin/properties/${listing.id}/edit`}
+              style={{ background: '#18181b', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
+              Edit listing →
+            </a>
             {listing.admin_status === 'pending' && (
               <a href={`/admin/properties/review/${listing.id}`}
                 style={{ background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
@@ -130,6 +138,23 @@ function ListingPanel({ listing, onClose, onUpdate }: {
             </a>
           </div>
         </div>
+
+        {claimUrl && (
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0ede6', background: '#fffbeb' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#92400e', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '8px' }}>Private Claim Link</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#fff', border: '1px solid #fde68a', borderRadius: '7px', padding: '8px 10px' }}>
+              <span style={{ flex: 1, fontSize: '11px', fontFamily: 'monospace', color: '#1a1a1a', wordBreak: 'break-all', lineHeight: 1.4 }}>{claimUrl}</span>
+              <button
+                onClick={() => { navigator.clipboard.writeText(claimUrl); setClaimCopied(true); setTimeout(() => setClaimCopied(false), 2000) }}
+                style={{ background: claimCopied ? '#16a34a' : '#1a1a1a', color: '#fff', border: 'none', borderRadius: '5px', padding: '5px 10px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background 0.15s', fontFamily: "'DM Sans', sans-serif" }}>
+                {claimCopied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <div style={{ fontSize: '11px', color: '#92400e', marginTop: '6px', lineHeight: 1.5 }}>
+              Share with the landlord — link deactivates after claim.
+            </div>
+          </div>
+        )}
 
         <div style={{ padding: '16px 24px', marginTop: 'auto', flexShrink: 0 }}>
           <button onClick={save} disabled={saving}
@@ -271,6 +296,10 @@ export default function AdminPropertiesPage() {
             <option value="lease_transfer">Lease Transfer</option>
           </select>
           <span className="p-count">{filtered.length} listing{filtered.length !== 1 ? 's' : ''}</span>
+          <a href="/admin/properties/new"
+            style={{ height: '36px', background: 'linear-gradient(135deg, #6c002a, #8c1d40)', color: '#fff', borderRadius: '8px', padding: '0 16px', fontSize: '13px', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif" }}>
+            + New listing
+          </a>
         </div>
 
         <div className="p-table-wrap">

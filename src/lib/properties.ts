@@ -34,6 +34,9 @@ export type Property = {
   admin_status: 'pending' | 'active' | 'inactive' | 'test' | 'flagged' | 'rejected'
   review_note: string | null
   security_deposit: number | null
+  claim_token: string | null
+  is_claimable: boolean
+  sublease_start_date: string | null
   // joined
   tags: string[]
   images: string[]
@@ -140,6 +143,34 @@ export async function getAllPropertiesForAdmin(): Promise<Property[]> {
                   .sort((a: any, b: any) => a.position - b.position)
                   .map((r: any) => r.reason),
   }))
+}
+
+export async function getPropertyByIdForAdmin(id: string): Promise<Property | null> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select(`
+      *,
+      property_tags ( tag ),
+      property_images ( url, position ),
+      property_nearby ( place, travel_time ),
+      property_asu_reasons ( reason, position )
+    `)
+    .eq('id', id)
+    .single()
+
+  if (error || !data) return null
+
+  return {
+    ...data,
+    tags: data.property_tags.map((t: any) => t.tag),
+    images: data.property_images
+              .sort((a: any, b: any) => a.position - b.position)
+              .map((i: any) => i.url),
+    nearby: data.property_nearby.map((n: any) => ({ place: n.place, travel_time: n.travel_time })),
+    asu_reasons: data.property_asu_reasons
+                  .sort((a: any, b: any) => a.position - b.position)
+                  .map((r: any) => r.reason),
+  }
 }
 
 export async function updatePropertyAdminStatus(
@@ -341,6 +372,37 @@ export async function deletePropertyImage(propertyId: string, url: string): Prom
     }
   }
   return { error: null }
+}
+
+export async function getPropertyByClaimToken(token: string): Promise<Property | null> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select(`
+      *,
+      property_tags ( tag ),
+      property_images ( url, position ),
+      property_nearby ( place, travel_time ),
+      property_asu_reasons ( reason, position )
+    `)
+    .eq('claim_token', token)
+    .single()
+
+  if (error || !data) return null
+
+  return {
+    ...data,
+    tags:        data.property_tags.map((t: any) => t.tag),
+    images:      data.property_images
+                   .sort((a: any, b: any) => a.position - b.position)
+                   .map((i: any) => i.url),
+    nearby:      data.property_nearby.map((n: any) => ({
+                   place: n.place,
+                   travel_time: n.travel_time,
+                 })),
+    asu_reasons: data.property_asu_reasons
+                   .sort((a: any, b: any) => a.position - b.position)
+                   .map((r: any) => r.reason),
+  }
 }
 
 export async function getPropertyBySlug(slug: string): Promise<Property | null> {

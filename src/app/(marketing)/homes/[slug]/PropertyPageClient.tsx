@@ -2,8 +2,14 @@
 
 import { useState, use, useEffect, useRef } from 'react'
 import { usePostHog } from 'posthog-js/react'
+import { createBrowserClient } from '@supabase/ssr'
 import { getPropertyBySlug, Property } from '@/lib/properties'
 import { notFound } from 'next/navigation'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // Platform-wide amenity icons mapped to common tag keywords
 const TAG_ICONS: Record<string, string> = {
@@ -51,10 +57,13 @@ export default function PropertyPageClient({
   const [home, setHome] = useState<Property | null | undefined>(undefined)
   const [activePhoto, setActivePhoto] = useState(0)
   const [formData, setFormData] = useState({ first_name: '', email: '', phone: '', move_in_date: '' })
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string; email: string; phone: string; avatarUrl: string | null } | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [mobileFormOpen, setMobileFormOpen] = useState(false)
   const [showStickyBar, setShowStickyBar] = useState(false)
+  const [badgeHover, setBadgeHover] = useState(false)
+  const [landlordProfile, setLandlordProfile] = useState<{ first_name: string | null; avatar_url: string | null } | null>(null)
   const titleRef = useRef<HTMLDivElement>(null)
 
   const ph = usePostHog()
@@ -67,6 +76,14 @@ export default function PropertyPageClient({
   useEffect(() => {
     getPropertyBySlug(slug).then(p => setHome(p ?? null))
   }, [slug])
+
+  useEffect(() => {
+    if (!home?.owner_id) return
+    fetch(`/api/profiles/${home.owner_id}/public`)
+      .then(r => r.json())
+      .then(data => { if (data.first_name) setLandlordProfile(data) })
+      .catch(() => {})
+  }, [home?.owner_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!home) return
@@ -86,6 +103,29 @@ export default function PropertyPageClient({
       setFormData(prev => ({ ...prev, first_name: guestName.trim().split(' ')[0] || '' }))
     }
   }, [guestName])
+
+  // Pre-fill form for logged-in users
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user) return
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, phone, avatar_url')
+        .eq('id', session.user.id)
+        .single()
+      const fullName = profile?.full_name || session.user.user_metadata?.full_name || ''
+      const firstName = fullName.trim().split(/\s+/)[0] || ''
+      const phone = profile?.phone || ''
+      const avatarUrl = profile?.avatar_url || null
+      setLoggedInUser({ name: fullName, email: session.user.email || '', phone, avatarUrl })
+      setFormData(prev => ({
+        ...prev,
+        first_name: firstName || prev.first_name,
+        email: session.user.email || prev.email,
+        phone: phone || prev.phone,
+      }))
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show sticky mobile bar once user scrolls past the title
   useEffect(() => {
@@ -119,6 +159,12 @@ export default function PropertyPageClient({
   const avail      = availabilityConfig(home.available, home.total_rooms)
   const isPopular  = (home.asu_score ?? 0) >= 8
   const canSubmit  = formData.first_name.trim() !== '' && formData.email.trim() !== ''
+
+  const listingTypeCfg = home.listing_type === 'sublease'
+    ? { label: 'Sublease', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' }
+    : home.listing_type === 'lease_transfer'
+      ? { label: 'Lease Transfer', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' }
+      : { label: 'Whole Home', color: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' }
   const ctaCopy    = formData.first_name.trim()
     ? `Check availability for ${formData.first_name.trim().split(' ')[0]} →`
     : 'Check Availability →'
@@ -188,53 +234,104 @@ export default function PropertyPageClient({
       <div style={{ height: '1px', background: '#f0ede6', marginBottom: '18px' }} />
 
       {/* Form fields */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-        <input
-          name="first_name"
-          placeholder="Your first name *"
-          value={formData.first_name}
-          onChange={handleChange}
-          autoFocus={!isPersonalized}
-          style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.first_name ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#8C1D40'}
-          onBlur={e => e.target.style.borderColor = formData.first_name ? '#1a1a1a' : '#e8e5de'}
-        />
-        <input
-          name="email"
-          type="email"
-          placeholder="Email address *"
-          value={formData.email}
-          onChange={handleChange}
-          style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.email ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#8C1D40'}
-          onBlur={e => e.target.style.borderColor = formData.email ? '#1a1a1a' : '#e8e5de'}
-        />
-        <input
-          name="phone"
-          type="tel"
-          placeholder="Phone (optional)"
-          value={formData.phone}
-          onChange={handleChange}
-          style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = '#8C1D40'}
-          onBlur={e => e.target.style.borderColor = '#e8e5de'}
-        />
-        <select
-          name="move_in_date"
-          value={formData.move_in_date}
-          onChange={handleChange}
-          style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
-        >
-          <option value="">Desired move-in date</option>
-          {Array.from({ length: 6 }, (_, i) => {
-            const d = new Date()
-            d.setDate(1)
-            d.setMonth(d.getMonth() + i)
-            return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-          }).map(label => <option key={label}>{label}</option>)}
-          <option>Flexible</option>
-        </select>
-      </div>
+      {loggedInUser ? (
+        /* ── Logged-in: compact pre-filled form ── */
+        <div style={{ marginBottom: '14px' }}>
+          {/* Identity row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f5f4f0', border: '1px solid #e8e5de', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
+            {loggedInUser.avatarUrl ? (
+              <img src={loggedInUser.avatarUrl} alt={loggedInUser.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+            ) : (
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#8C1D40', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>
+                {(loggedInUser.name || loggedInUser.email)[0].toUpperCase()}
+              </div>
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {loggedInUser.name || 'You'}
+              </div>
+              <div style={{ fontSize: '11px', color: '#9b9b9b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {loggedInUser.email}
+              </div>
+            </div>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 7px', borderRadius: '4px', flexShrink: 0 }}>Verified ✓</span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Phone — only show if not on profile */}
+            {!loggedInUser.phone && (
+              <input
+                name="phone"
+                type="tel"
+                placeholder="Phone number (optional)"
+                value={formData.phone}
+                onChange={handleChange}
+                style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+                onFocus={e => e.target.style.borderColor = '#8C1D40'}
+                onBlur={e => e.target.style.borderColor = '#e8e5de'}
+              />
+            )}
+            {/* Move-in date — always shown */}
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: '#6b6b6b', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>When do you want to move in?</div>
+              <input
+                name="move_in_date"
+                type="date"
+                value={formData.move_in_date}
+                onChange={handleChange}
+                min={new Date().toISOString().split('T')[0]}
+                style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+                onFocus={e => e.target.style.borderColor = '#8C1D40'}
+                onBlur={e => e.target.style.borderColor = '#e8e5de'}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ── Guest: full form ── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+          <input
+            name="first_name"
+            placeholder="Your first name *"
+            value={formData.first_name}
+            onChange={handleChange}
+            autoFocus={!isPersonalized}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.first_name ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = '#8C1D40'}
+            onBlur={e => e.target.style.borderColor = formData.first_name ? '#1a1a1a' : '#e8e5de'}
+          />
+          <input
+            name="email"
+            type="email"
+            placeholder="Email address *"
+            value={formData.email}
+            onChange={handleChange}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.email ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = '#8C1D40'}
+            onBlur={e => e.target.style.borderColor = formData.email ? '#1a1a1a' : '#e8e5de'}
+          />
+          <input
+            name="phone"
+            type="tel"
+            placeholder="Phone (optional)"
+            value={formData.phone}
+            onChange={handleChange}
+            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = '#8C1D40'}
+            onBlur={e => e.target.style.borderColor = '#e8e5de'}
+          />
+          <input
+            name="move_in_date"
+            type="date"
+            value={formData.move_in_date}
+            onChange={handleChange}
+            min={new Date().toISOString().split('T')[0]}
+            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = '#8C1D40'}
+            onBlur={e => e.target.style.borderColor = '#e8e5de'}
+          />
+        </div>
+      )}
 
       {/* CTA Button — gold always, never grey */}
       <button
@@ -431,7 +528,34 @@ export default function PropertyPageClient({
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 'clamp(26px,4vw,38px)', color: '#1a1a1a', lineHeight: 1.15, marginBottom: '8px' }}>{home.name}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '14px', color: '#6b6b6b' }}>📍 {home.address}</span>
-            <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '20px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>⭐ Sun Devils Approved</span>
+            <span style={{ fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', background: listingTypeCfg.bg, color: listingTypeCfg.color, border: `1px solid ${listingTypeCfg.border}`, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: listingTypeCfg.color, display: 'inline-block', flexShrink: 0 }} />
+              {listingTypeCfg.label}
+            </span>
+            <span
+              style={{ position: 'relative', display: 'inline-block' }}
+              onMouseEnter={() => setBadgeHover(true)}
+              onMouseLeave={() => setBadgeHover(false)}
+            >
+              <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 11px', borderRadius: '20px', background: '#8C1D40', color: '#fff', border: '1px solid #7a1835', cursor: 'default', letterSpacing: '0.2px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                ✓ HomeHive Verified
+              </span>
+              {badgeHover && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', boxShadow: '0 8px 28px rgba(0,0,0,0.12)', zIndex: 50, minWidth: '220px', pointerEvents: 'none' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>What this means</div>
+                  {[
+                    'Zero-tolerance scam policy',
+                    'Every listing manually reviewed',
+                    'Landlord identity verified',
+                  ].map(item => (
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: '#3a3a3a', marginBottom: '5px' }}>
+                      <span style={{ color: '#16a34a', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </span>
             <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '20px', background: avail.bg, color: avail.color, animation: avail.urgent ? 'pulse 2s infinite' : 'none' }}>{avail.text}</span>
           </div>
         </div>
@@ -468,12 +592,12 @@ export default function PropertyPageClient({
             <div className="section" style={{ marginTop: '20px' }}>
               <div className="section-label">Property Overview</div>
               <div className="stats-row">
-                {[
+                {([
                   [String(home.beds), 'Beds'],
                   [String(home.baths), 'Baths'],
-                  [home.sqft ?? '—', 'Sq Ft'],
+                  ...(home.sqft?.trim() ? [[home.sqft, 'Sq Ft']] : []),
                   [`${home.asu_distance ?? '?'} mi`, 'To ASU'],
-                ].map(([n, l]) => (
+                ] as [string, string][]).map(([n, l]) => (
                   <div className="stat-item" key={l}>
                     <div className="stat-num">{n}</div>
                     <div className="stat-lbl">{l}</div>
@@ -492,6 +616,39 @@ export default function PropertyPageClient({
                 </div>
               )}
             </div>
+
+            {/* SUBLEASE / LEASE TRANSFER DATES */}
+            {(home.listing_type === 'sublease' || home.listing_type === 'lease_transfer') &&
+              (home.sublease_start_date || home.sublease_end_date) && (
+              <div className="section" style={{ background: listingTypeCfg.bg, border: `1px solid ${listingTypeCfg.border}` }}>
+                <div className="section-label" style={{ color: listingTypeCfg.color }}>
+                  {home.listing_type === 'lease_transfer' ? 'Lease Transfer Period' : 'Sublease Period'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {home.sublease_start_date && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: listingTypeCfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Available From</span>
+                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                        {new Date(home.sublease_start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                  )}
+                  {home.sublease_start_date && home.sublease_end_date && (
+                    <span style={{ fontSize: '20px', color: listingTypeCfg.color, fontWeight: 300, margin: '0 4px' }}>→</span>
+                  )}
+                  {home.sublease_end_date && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: listingTypeCfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        {home.listing_type === 'lease_transfer' ? 'Lease Ends' : 'Sublease Ends'}
+                      </span>
+                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                        {new Date(home.sublease_end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* DESCRIPTION */}
             {home.description && (
@@ -585,6 +742,24 @@ export default function PropertyPageClient({
 
           {/* RIGHT — sticky form card */}
           <div className="prop-right">
+
+            {/* Posted by landlord */}
+            {landlordProfile && (
+              <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '12px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {landlordProfile.avatar_url ? (
+                  <img src={landlordProfile.avatar_url} alt={landlordProfile.first_name ?? ''} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid #e8e5de' }} />
+                ) : (
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#8C1D40', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                    {(landlordProfile.first_name ?? '?')[0].toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>Posted by {landlordProfile.first_name}</div>
+                  <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>HomeHive verified member</div>
+                </div>
+              </div>
+            )}
+
             <div className="form-card">
               {FormContent()}
             </div>
@@ -593,6 +768,10 @@ export default function PropertyPageClient({
             <div style={{ background: '#1a1a1a', borderRadius: '14px', padding: '18px 20px', marginTop: '12px' }}>
               <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#d4a843', marginBottom: '8px' }}>The HomeHive Promise</div>
               <p style={{ fontSize: '13px', color: '#c5c1b8', lineHeight: 1.65 }}>We match you with homes and housemates that fit your life — your schedule, your major, your vibe. No surprises, no runaround.</p>
+              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #2a2a2a', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <span style={{ fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>🔍</span>
+                <p style={{ fontSize: '12px', color: '#a09890', lineHeight: 1.6 }}>Every listing is manually reviewed — we verify ownership and check for red flags before it goes live. No ghost listings, no scams.</p>
+              </div>
               <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#d4a843', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>🏠</div>
                 <div>

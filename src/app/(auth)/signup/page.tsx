@@ -135,7 +135,7 @@ function RolePicker({ onPick }: { onPick: (role: Role) => void }) {
 
 // ─── SIGNUP FORM ─────────────────────────────────────────────────────────────
 
-function SignupForm({ initialRole, onBack }: { initialRole: Role; onBack: () => void }) {
+function SignupForm({ initialRole, onBack, next = '' }: { initialRole: Role; onBack: () => void; next?: string }) {
   const router = useRouter()
 
   const [role, setRole] = useState<Role>(initialRole)
@@ -203,10 +203,17 @@ function SignupForm({ initialRole, onBack }: { initialRole: Role; onBack: () => 
         .eq('id', data.user.id)
     }
 
+    // Notify admin of new signup (fire-and-forget)
+    fetch('/api/auth/notify-signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: form.name, email: form.email, role }),
+    }).catch(() => {})
+
     if (data.session) {
-      router.push(role === 'landlord' ? '/landlord/dashboard' : '/dashboard')
+      router.push(next || (role === 'landlord' ? '/landlord/dashboard' : '/dashboard'))
     } else {
-      router.push('/login?registered=1')
+      router.push(`/login?registered=1${next ? `&next=${encodeURIComponent(next)}` : ''}`)
     }
 
     setLoading(false)
@@ -359,6 +366,7 @@ function SignupForm({ initialRole, onBack }: { initialRole: Role; onBack: () => 
 function SignupFlow() {
   const searchParams = useSearchParams()
   const roleParam = searchParams.get('role')
+  const next = searchParams.get('next') || ''
 
   // If a role is pre-set via URL (e.g. from landlord CTA links), skip the picker
   const [step, setStep] = useState<Step>(roleParam === 'landlord' || roleParam === 'student' ? 'form' : 'pick')
@@ -370,7 +378,7 @@ function SignupFlow() {
   }
 
   if (step === 'pick') return <RolePicker onPick={handlePick} />
-  return <SignupForm initialRole={role} onBack={() => setStep('pick')} />
+  return <SignupForm initialRole={role} onBack={() => setStep('pick')} next={next} />
 }
 
 export default function SignupPage() {

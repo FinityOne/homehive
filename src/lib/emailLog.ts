@@ -14,6 +14,7 @@ export type EmailType =
   | 'listing_submitted'
   | 'listing_approved'
   | 'listing_rejected'
+  | 'admin_new_signup'
 
 export async function logEmail(
   leadId: string,

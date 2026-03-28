@@ -226,8 +226,8 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             <span> &rsaquo; {property.name}</span>
           </div>
           <div className="mp-topbar-actions">
-            <a href={`/landlord/listings/${slug}/preview`} target="_blank" rel="noopener noreferrer" className="btn-preview">
-              Preview as Tenant →
+            <a href={property.is_active ? `/homes/${property.slug}` : `/landlord/listings/${slug}/preview`} target="_blank" rel="noopener noreferrer" className="btn-preview">
+              {property.is_active ? 'View Live Listing ↗' : 'Preview as Tenant →'}
             </a>
             <span className="leads-badge">{leads.length} lead{leads.length !== 1 ? 's' : ''}</span>
           </div>

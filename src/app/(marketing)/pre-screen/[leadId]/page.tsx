@@ -2,6 +2,12 @@
 
 import { useState, useEffect, use } from 'react'
 import { usePostHog } from 'posthog-js/react'
+import { createBrowserClient } from '@supabase/ssr'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type Step = 1 | 2 | 3
 
@@ -53,6 +59,7 @@ export default function PreScreenPage({
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [step, setStep] = useState<Step>(1)
+  const [authed, setAuthed] = useState<boolean | null>(null) // null = checking
 
   const [form, setForm] = useState({
     // Step 1 — About you
@@ -73,17 +80,20 @@ export default function PreScreenPage({
   })
 
   useEffect(() => {
-    fetch(`/api/leads/${leadId}/prescreen`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) { setNotFound(true); setLoading(false); return }
-        setLeadInfo(data)
-        if (data.move_in_date) {
-          setForm(f => ({ ...f, move_in_date: data.move_in_date }))
-        }
-        setLoading(false)
-      })
-      .catch(() => { setNotFound(true); setLoading(false) })
+    // Check auth and load lead info in parallel
+    Promise.all([
+      supabase.auth.getSession().then(({ data }) => setAuthed(!!data.session)),
+      fetch(`/api/leads/${leadId}/prescreen`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) { setNotFound(true); return }
+          setLeadInfo(data)
+          if (data.move_in_date) {
+            setForm(f => ({ ...f, move_in_date: data.move_in_date }))
+          }
+        })
+        .catch(() => setNotFound(true)),
+    ]).finally(() => setLoading(false))
   }, [leadId])
 
   const set = (key: keyof typeof form, value: string | number) =>
@@ -241,12 +251,99 @@ export default function PreScreenPage({
     )
   }
 
-  // ── Main form ──────────────────────────────────────────────────────────────
+  // ── Auth gate ─────────────────────────────────────────────────────────────
   const firstName = leadInfo?.first_name || ''
   const heroImage = leadInfo?.property_hero_image
   const propName = leadInfo?.property_name || leadInfo?.property || 'your property'
   const propAddress = leadInfo?.property_address
+  const preScreenPath = `/pre-screen/${leadId}`
 
+  if (authed === false) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f4f0', fontFamily: "'DM Sans', sans-serif" }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+          *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+          body { background: #f5f4f0; font-family: 'DM Sans', sans-serif; }
+        `}</style>
+
+        {/* Hero image strip */}
+        {heroImage && (
+          <div style={{ position: 'relative', height: '260px', overflow: 'hidden', background: '#1e293b' }}>
+            <img src={heroImage} alt={propName} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.85 }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.6) 100%)' }} />
+            <div style={{ position: 'absolute', bottom: '20px', left: '24px', right: '24px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>You inquired about</div>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#fff', lineHeight: 1.2 }}>{propName}</div>
+              {propAddress && <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)', marginTop: '4px' }}>📍 {propAddress}</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Auth gate card */}
+        <div style={{ maxWidth: '480px', margin: '0 auto', padding: '32px 24px 60px' }}>
+          {!heroImage && propName !== 'your property' && (
+            <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '12px', padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#fdf2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>🏠</div>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{propName}</div>
+                {propAddress && <div style={{ fontSize: '12px', color: '#9b9b9b' }}>{propAddress}</div>}
+              </div>
+            </div>
+          )}
+
+          <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '16px', padding: '32px 28px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+            {/* Lock icon */}
+            <div style={{ width: '52px', height: '52px', borderRadius: '12px', background: '#fdf2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', marginBottom: '20px' }}>🔒</div>
+
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', lineHeight: 1.25, marginBottom: '10px' }}>
+              One quick step before your pre-screen
+            </div>
+            <p style={{ fontSize: '14px', color: '#4a4a4a', lineHeight: 1.7, marginBottom: '6px' }}>
+              {firstName ? `Hey ${firstName} — we` : 'We'}&apos;re excited you&apos;re interested. To keep HomeHive scam-free and verified, we ask everyone to have a free account before filling out a pre-screen.
+            </p>
+            <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.65, marginBottom: '24px' }}>
+              It takes under a minute. Once you&apos;re in, you&apos;ll land right back here to finish up.
+            </p>
+
+            {/* Trust points */}
+            <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '14px 16px', marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[
+                ['✓', 'Keeps our platform scam-free and verified'],
+                ['✓', 'Your info is never shared without permission'],
+                ['✓', 'Access your pre-screen status anytime'],
+              ].map(([icon, text]) => (
+                <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a' }}>
+                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>{icon}</span>
+                  {text}
+                </div>
+              ))}
+            </div>
+
+            {/* CTAs */}
+            <a
+              href={`/signup?role=student&next=${encodeURIComponent(preScreenPath)}`}
+              style={{ display: 'block', width: '100%', background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '10px', padding: '14px', fontSize: '15px', fontWeight: 700, textAlign: 'center', textDecoration: 'none', marginBottom: '10px', fontFamily: "'DM Sans', sans-serif" }}
+            >
+              Create a free account →
+            </a>
+            <a
+              href={`/login?next=${encodeURIComponent(preScreenPath)}`}
+              style={{ display: 'block', width: '100%', background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '13px', fontSize: '14px', fontWeight: 600, textAlign: 'center', textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}
+            >
+              Sign in to existing account
+            </a>
+          </div>
+
+          <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: '#b0a898' }}>
+            Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', textDecoration: 'none' }}>hello@homehive.live</a>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Main form ──────────────────────────────────────────────────────────────
   return (
     <>
       <style>{`

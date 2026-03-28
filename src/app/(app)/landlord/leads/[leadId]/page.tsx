@@ -415,7 +415,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                 <div className="info-row"><span className="info-label">Email</span><span className="info-value"><a href={`mailto:${lead.email}`} style={{ color: '#8C1D40', textDecoration: 'none' }}>{lead.email}</a></span></div>
                 <div className="info-row"><span className="info-label">Phone</span><span className="info-value">{lead.phone || '—'}</span></div>
                 <div className="info-row"><span className="info-label">Property</span><span className="info-value">{property?.name || lead.property || '—'}</span></div>
-                <div className="info-row"><span className="info-label">Move-in</span><span className="info-value">{lead.move_in_date || '—'}</span></div>
+                <div className="info-row"><span className="info-label">Move-in</span><span className="info-value">{lead.move_in_date ? new Date(lead.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'}</span></div>
                 <div className="info-row"><span className="info-label">Submitted</span><span className="info-value">{lead.created_at ? new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</span></div>
                 <div className="info-row"><span className="info-label">Lead Age</span><span className="info-value" style={{ color: heat.color, fontWeight: 600 }}>{heat.icon} {heat.label}</span></div>
               </div>
@@ -677,7 +677,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
               <div className="edit-field">
                 <label className="edit-field-label">Move-in Date</label>
-                <input className="edit-input" value={editForm.move_in_date} onChange={e => setEditForm(f => ({ ...f, move_in_date: e.target.value }))} placeholder="e.g. August 2025" />
+                <input className="edit-input" type="date" value={editForm.move_in_date ?? ''} onChange={e => setEditForm(f => ({ ...f, move_in_date: e.target.value }))} />
               </div>
 
               <div className="edit-field">

@@ -13,6 +13,7 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const registered = searchParams.get('registered')
+  const next = searchParams.get('next')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
@@ -37,6 +38,7 @@ function LoginForm() {
       .eq('id', data.user.id)
       .single()
 
+    if (next) { router.push(next); return }
     const role = profile?.role || 'tenant'
     if (role === 'admin') router.push('/admin')
     else if (role === 'landlord') router.push('/landlord/dashboard')
@@ -252,7 +254,7 @@ function LoginForm() {
           {/* Sign up CTA */}
           <div style={{ textAlign: 'center', fontSize: '13px', color: '#9b9b9b' }}>
             New to HomeHive?{' '}
-            <a href="/signup" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
+            <a href={`/signup${next ? `?next=${encodeURIComponent(next)}&role=landlord` : ''}`} style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
               Create a free account →
             </a>
           </div>

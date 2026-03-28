@@ -70,6 +70,11 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
   const mainImage = allImages[activePhoto] ?? ''
   const isPending = property.admin_status === 'pending'
   const statusCfg = STATUS_LABELS[property.admin_status] ?? STATUS_LABELS['inactive']
+  const listingTypeCfg = property.listing_type === 'sublease'
+    ? { label: 'Sublease', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' }
+    : property.listing_type === 'lease_transfer'
+      ? { label: 'Lease Transfer', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' }
+      : { label: 'Whole Home', color: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' }
 
   return (
     <>
@@ -220,7 +225,11 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 'clamp(26px,4vw,38px)', color: '#1a1a1a', lineHeight: 1.15, marginBottom: '8px' }}>{property.name}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '14px', color: '#6b6b6b' }}>📍 {property.address}</span>
-            <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '20px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>⭐ Sun Devils Approved</span>
+            <span style={{ fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', background: listingTypeCfg.bg, color: listingTypeCfg.color, border: `1px solid ${listingTypeCfg.border}`, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: listingTypeCfg.color, display: 'inline-block', flexShrink: 0 }} />
+              {listingTypeCfg.label}
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '20px', background: '#fdf4ff', color: '#7e22ce', border: '1px solid #e9d5ff' }}>✓ HomeHive Verified</span>
             <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px', background: statusCfg.bg, color: statusCfg.color, border: `1px solid ${statusCfg.border}` }}>
               {statusCfg.label}
             </span>
@@ -273,12 +282,12 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
             <div className="section">
               <div className="section-label">Property Overview</div>
               <div className="stats-row">
-                {[
+                {([
                   [String(property.beds || '—'), 'Beds'],
                   [String(property.baths || '—'), 'Baths'],
-                  [property.sqft ? String(property.sqft) : '—', 'Sq Ft'],
+                  ...(property.sqft?.trim() ? [[String(property.sqft), 'Sq Ft']] : []),
                   [`${property.asu_distance ?? '?'} mi`, 'To ASU'],
-                ].map(([n, l]) => (
+                ] as [string, string][]).map(([n, l]) => (
                   <div className="stat-item" key={l}>
                     <div className="stat-num">{n}</div>
                     <div className="stat-lbl">{l}</div>
