@@ -22,7 +22,6 @@ export type Property = {
   lng: number
   map_embed_url: string
   asu_score: number
-  hero_image: string
   is_active: boolean
   is_featured: boolean
   owner_id: string
@@ -32,7 +31,9 @@ export type Property = {
   roommates_count: number | null
   sublease_end_date: string | null
   is_test: boolean
-  admin_status: 'pending' | 'active' | 'inactive' | 'test' | 'flagged'
+  admin_status: 'pending' | 'active' | 'inactive' | 'test' | 'flagged' | 'rejected'
+  review_note: string | null
+  security_deposit: number | null
   // joined
   tags: string[]
   images: string[]
@@ -55,13 +56,13 @@ export type NewPropertyInput = {
   total_rooms?: number
   available?: number
   asu_distance?: number
-  hero_image?: string
+  security_deposit?: number | null
 }
 
 export async function createProperty(
   ownerId: string,
   data: NewPropertyInput
-): Promise<{ slug: string | null; error: any }> {
+): Promise<{ slug: string | null; id: string | null; error: any }> {
   // Generate a slug from the name + random suffix
   const base = data.name
     .toLowerCase()
@@ -71,7 +72,7 @@ export async function createProperty(
   const suffix = Math.random().toString(36).slice(2, 7)
   const slug = `${base}-${suffix}`
 
-  const { error } = await supabase
+  const { data: row, error } = await supabase
     .from('properties')
     .insert({
       slug,
@@ -90,20 +91,23 @@ export async function createProperty(
       total_rooms: data.total_rooms ?? 1,
       available: data.available ?? 1,
       asu_distance: data.asu_distance ?? 0,
-      hero_image: data.hero_image ?? '',
-      is_active: true,
+      security_deposit: data.security_deposit ?? null,
+      is_active: false,
+      admin_status: 'pending',
       is_featured: false,
       lat: 0,
       lng: 0,
       map_embed_url: '',
       asu_score: 7,
     })
+    .select('id')
+    .single()
 
-  if (error) return { slug: null, error }
-  return { slug, error: null }
+  if (error) return { slug: null, id: null, error }
+  return { slug, id: row?.id ?? null, error: null }
 }
 
-export type AdminStatus = 'pending' | 'active' | 'inactive' | 'test' | 'flagged'
+export type AdminStatus = 'pending' | 'active' | 'inactive' | 'test' | 'flagged' | 'rejected'
 
 export async function getAllPropertiesForAdmin(): Promise<Property[]> {
   const { data, error } = await supabase
@@ -141,15 +145,16 @@ export async function getAllPropertiesForAdmin(): Promise<Property[]> {
 export async function updatePropertyAdminStatus(
   id: string,
   adminStatus: AdminStatus,
-  isTest: boolean
+  isTest: boolean,
+  reviewNote?: string | null
 ): Promise<{ error: any }> {
   const { error } = await supabase
     .from('properties')
     .update({
       admin_status: adminStatus,
       is_test: isTest,
-      // sync is_active: inactive/test/flagged/pending = not publicly active
       is_active: adminStatus === 'active',
+      ...(reviewNote !== undefined ? { review_note: reviewNote } : {}),
     })
     .eq('id', id)
   return { error }
@@ -233,7 +238,7 @@ export async function getPropertiesByOwner(userId: string): Promise<Property[]> 
 
 export async function updatePropertyCore(
   id: string,
-  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'hero_image'|'is_active'|'is_featured'>>
+  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'>>
 ): Promise<{ error: any }> {
   const { error } = await supabase
     .from('properties')
@@ -303,6 +308,39 @@ export async function replacePropertyImages(propertyId: string, images: string[]
     .from('property_images')
     .insert(images.map((url, position) => ({ property_id: propertyId, url, position })))
   return { error: insError }
+}
+
+export async function uploadPropertyImage(
+  file: File,
+  userId: string,
+  propertyId: string
+): Promise<{ url: string | null; error: any }> {
+  const path = `${userId}/${propertyId}/${Date.now()}-${file.name}`
+  const { error } = await supabase.storage.from('property-images').upload(path, file, { upsert: false })
+  if (error) return { url: null, error }
+  const { data: { publicUrl } } = supabase.storage.from('property-images').getPublicUrl(path)
+  return { url: publicUrl, error: null }
+}
+
+export async function deletePropertyImage(propertyId: string, url: string): Promise<{ error: any }> {
+  const { error: delError } = await supabase
+    .from('property_images')
+    .delete()
+    .eq('property_id', propertyId)
+    .eq('url', url)
+  if (delError) return { error: delError }
+  // Re-sequence positions
+  const { data } = await supabase
+    .from('property_images')
+    .select('id')
+    .eq('property_id', propertyId)
+    .order('position')
+  if (data) {
+    for (let i = 0; i < data.length; i++) {
+      await supabase.from('property_images').update({ position: i }).eq('id', data[i].id)
+    }
+  }
+  return { error: null }
 }
 
 export async function getPropertyBySlug(slug: string): Promise<Property | null> {

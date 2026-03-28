@@ -62,6 +62,7 @@ export default function LandlordDashboard() {
   const newLeadsCount = leads.filter(l => l.status === 'new').length
   const vacantRooms = properties.reduce((s, p) => s + (p.available || 0), 0)
   const recentLeads = leads.slice(0, 5)
+  const pendingProperties = properties.filter(p => p.admin_status === 'pending')
 
   return (
     <>
@@ -115,6 +116,15 @@ export default function LandlordDashboard() {
 
         .coming-soon-banner { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 10px 14px; font-size: 12px; color: #166534; margin-bottom: 12px; }
 
+        .pending-banner { background: linear-gradient(135deg, #fffbeb 0%, #fefce8 100%); border: 1.5px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 14px; padding: 20px 22px; margin-bottom: 28px; }
+        .pending-banner-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+        .pending-banner-title { font-size: 16px; font-weight: 700; color: #92400e; margin-bottom: 4px; }
+        .pending-banner-sub { font-size: 13px; color: #78350f; line-height: 1.5; }
+        .pending-banner-count { background: #f59e0b; color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+        .pending-tips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+        .pending-tip { background: rgba(245,158,11,0.12); border: 1px solid #fde68a; border-radius: 20px; padding: 4px 12px; font-size: 12px; color: #92400e; font-weight: 500; }
+        .pcard-status { display: inline-flex; align-items: center; border-radius: 20px; padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+
         @media (max-width: 560px) {
           .stat-grid { grid-template-columns: repeat(2, 1fr); }
           .pcard-img, .pcard-img-placeholder { display: none; }
@@ -133,6 +143,37 @@ export default function LandlordDashboard() {
               : `All rooms occupied across ${properties.length} propert${properties.length !== 1 ? 'ies' : 'y'}`
           }
         </div>
+
+        {/* PENDING REVIEW BANNER */}
+        {pendingProperties.length > 0 && (
+          <div className="pending-banner">
+            <div className="pending-banner-top">
+              <div>
+                <div className="pending-banner-title">Your listing is being reviewed — you&apos;re almost there!</div>
+                <div className="pending-banner-sub">
+                  The HomeHive team personally reviews every listing to verify it&apos;s legitimate, accurate, and a great fit for students.
+                  This keeps our platform trusted and scam-free — which means higher-quality leads for you.
+                  Most listings are reviewed <strong>within 24 hours</strong>.
+                </div>
+              </div>
+              <span className="pending-banner-count">{pendingProperties.length} in review</span>
+            </div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Boost your approval odds while you wait
+            </div>
+            <div className="pending-tips">
+              <span className="pending-tip">Add high-quality photos</span>
+              <span className="pending-tip">Write a detailed description</span>
+              <span className="pending-tip">Set accurate pricing</span>
+              <span className="pending-tip">Add ASU distance & nearby places</span>
+            </div>
+            {pendingProperties.length === 1 && (
+              <a href={`/landlord/listings/${pendingProperties[0].slug}`} style={{ display: 'inline-block', marginTop: '14px', fontSize: '13px', fontWeight: 600, color: '#92400e', textDecoration: 'none', borderBottom: '1px solid #f59e0b' }}>
+                Complete your listing →
+              </a>
+            )}
+          </div>
+        )}
 
         {/* STAT CARDS */}
         <div className="stat-grid">
@@ -179,12 +220,23 @@ export default function LandlordDashboard() {
           ) : (
             properties.map(p => (
               <div key={p.id} className="pcard">
-                {p.hero_image
-                  ? <img src={p.hero_image} alt={p.name} className="pcard-img" />
+                {p.images?.[0]
+                  ? <img src={p.images[0]} alt={p.name} className="pcard-img" />
                   : <div className="pcard-img-placeholder">🏠</div>
                 }
                 <div className="pcard-body">
-                  <div className="pcard-name">{p.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                    <div className="pcard-name" style={{ margin: 0 }}>{p.name}</div>
+                    {p.admin_status === 'pending' && (
+                      <span className="pcard-status" style={{ background: '#fef3c7', color: '#92400e' }}>Under Review</span>
+                    )}
+                    {p.admin_status === 'active' && (
+                      <span className="pcard-status" style={{ background: '#d1fae5', color: '#065f46' }}>Live</span>
+                    )}
+                    {p.admin_status === 'rejected' && (
+                      <span className="pcard-status" style={{ background: '#fff1f2', color: '#9f1239' }}>Not Approved</span>
+                    )}
+                  </div>
                   <div className="pcard-addr">{p.address}</div>
                   <div className="pcard-meta">
                     <span className="pcard-price">${p.price?.toLocaleString()}/mo</span>

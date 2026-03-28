@@ -15,7 +15,7 @@ const supabase = createBrowserClient(
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type OverviewData = {
-  stats: { totalLeads: number; activeProperties: number; thisWeekLeads: number; conversionRate: number }
+  stats: { totalLeads: number; activeProperties: number; pendingListings: number; thisWeekLeads: number; conversionRate: number }
   leadVolume: Array<{ day: string; count: number }>
   funnelData: Array<{ status: string; label: string; count: number; color: string }>
   statusDist: Array<{ status: string; label: string; count: number; color: string }>
@@ -38,6 +38,7 @@ const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string }> = 
   inactive: { label: 'Inactive', color: '#9b9b9b' },
   test:     { label: 'Test',     color: '#7c3aed' },
   flagged:  { label: 'Flagged',  color: '#dc2626' },
+  rejected: { label: 'Rejected', color: '#9f1239' },
 }
 
 // ─── HELPER ───────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ function buildOverviewData(leads: Lead[], properties: Property[]): OverviewData 
   const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000
 
   const activeProperties = properties.filter(p => p.admin_status === 'active' && !p.is_test).length
+  const pendingListings = properties.filter(p => p.admin_status === 'pending').length
   const thisWeekLeads = leads.filter(l => l.created_at && new Date(l.created_at).getTime() > oneWeekAgo).length
   const closedLeads = leads.filter(l => l.status === 'closed' && l.closed_reason === 'leased').length
   const conversionRate = leads.length > 0 ? Math.round((closedLeads / leads.length) * 100) : 0
@@ -91,7 +93,7 @@ function buildOverviewData(leads: Lead[], properties: Property[]): OverviewData 
     growthData.push({ date: e.date, properties: cumProps, leads: cumLeads })
   }
 
-  return { stats: { totalLeads: leads.length, activeProperties, thisWeekLeads, conversionRate }, leadVolume, funnelData, statusDist, growthData }
+  return { stats: { totalLeads: leads.length, activeProperties, pendingListings, thisWeekLeads, conversionRate }, leadVolume, funnelData, statusDist, growthData }
 }
 
 // ─── D3: LEAD VOLUME BAR ─────────────────────────────────────────────────────
@@ -311,6 +313,19 @@ export default function AdminOverview() {
           <div style={{ textAlign: 'center', padding: '60px 20px', color: '#9b9b9b', fontSize: '14px' }}>Loading...</div>
         ) : (
           <>
+            {data.stats.pendingListings > 0 && (
+              <a href="/admin/properties?status=pending" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '10px', padding: '14px 20px', marginBottom: '16px', textDecoration: 'none', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ fontSize: '22px' }}>⏳</div>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#92400e' }}>{data.stats.pendingListings} listing{data.stats.pendingListings !== 1 ? 's' : ''} pending review</div>
+                    <div style={{ fontSize: '12px', color: '#b45309', marginTop: '1px' }}>Click to review and approve or reject</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e' }}>Review now →</div>
+              </a>
+            )}
+
             <div className="ov-stats">
               {[
                 { label: 'Total leads',     value: data.stats.totalLeads,       sub: 'All time' },

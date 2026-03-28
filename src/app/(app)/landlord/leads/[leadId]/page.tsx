@@ -70,7 +70,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [lead, setLead] = useState<Lead | null>(null)
   const [prescreen, setPrescreen] = useState<Prescreen | null>(null)
   const [emails, setEmails] = useState<EmailLog[]>([])
-  const [property, setProperty] = useState<{ name: string; address: string; hero_image: string; price: number } | null>(null)
+  const [property, setProperty] = useState<{ name: string; address: string; heroImage: string; price: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -128,10 +128,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       if (leadData.property) {
         const { data: prop } = await supabase
           .from('properties')
-          .select('name, address, hero_image, price')
+          .select('name, address, price, property_images(url, position)')
           .eq('slug', leadData.property)
           .single()
-        if (prop) setProperty(prop)
+        if (prop) {
+          const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
+          setProperty({ name: prop.name, address: prop.address, price: prop.price, heroImage: imgs.sort((a, b) => a.position - b.position)[0]?.url || '' })
+        }
       }
 
       setLoading(false)
@@ -172,8 +175,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         setLead(prev => prev ? { ...prev, ...editForm } : prev)
         // If property changed, refresh property details
         if (editForm.property !== lead.property) {
-          const { data: prop } = await supabase.from('properties').select('name, address, hero_image, price').eq('slug', editForm.property).single()
-          if (prop) setProperty(prop)
+          const { data: prop } = await supabase.from('properties').select('name, address, price, property_images(url, position)').eq('slug', editForm.property).single()
+          if (prop) {
+            const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
+            setProperty({ name: prop.name, address: prop.address, price: prop.price, heroImage: imgs.sort((a, b) => a.position - b.position)[0]?.url || '' })
+          }
         }
         setEditModal(false)
         showToast('Lead updated')
@@ -348,9 +354,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
         {/* Hero */}
         <div className="ld-hero">
-          {property?.hero_image && (
+          {property?.heroImage && (
             <div style={{ width: '56px', height: '56px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0 }}>
-              <img src={property.hero_image} alt={property.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img src={property.heroImage} alt={property.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           )}
           <div className="ld-avatar-lg">

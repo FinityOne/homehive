@@ -220,7 +220,7 @@ function HomePageInner() {
                       )}
 
                       <div className="card-img">
-                        <img src={home.hero_image} alt={home.name} />
+                        {home.images?.[0] && <img src={home.images[0]} alt={home.name} />}
                         <div className={`card-avail ${isWholeHouse ? 'green' : home.available === 1 ? 'amber' : 'green'}`}>
                           {isWholeHouse ? '🏠 Whole house available' : home.available === 1 ? '⚡ Last room' : `${home.available} rooms open`}
                         </div>

@@ -1,9 +1,13 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { use, useEffect, useRef, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, updatePropertyCore, Property } from '@/lib/properties'
+import {
+  getPropertiesByOwner,
+  uploadPropertyImage,
+  Property,
+} from '@/lib/properties'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,16 +17,15 @@ const supabase = createBrowserClient(
 export default function EditMediaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [property, setProperty] = useState<Property | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [successMsg, setSuccessMsg] = useState('')
-  const [errorMsg, setErrorMsg] = useState('')
-
   const [userId, setUserId] = useState('')
-  const [heroImage, setHeroImage] = useState('')
-  const [galleryImages, setGalleryImages] = useState<string[]>([])
+  const [images, setImages] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string>('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -35,62 +38,81 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
-      setHeroImage(found.hero_image || '')
-      setGalleryImages(found.images || [])
+      setImages(found.images || [])
       setLoading(false)
     }
     load()
   }, [slug, router])
 
-  async function handleSave() {
-    if (!property) return
-    setSaving(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    const filteredGallery = galleryImages.filter(url => url.trim() !== '')
-
-    const { error: coreError } = await updatePropertyCore(property.id, {
-      hero_image: heroImage,
-    })
-
-    if (coreError) {
-      setSaving(false)
-      setErrorMsg('Failed to save hero image. Please try again.')
-      return
-    }
-
+  // Routes through the API (service-role key) to bypass property_images RLS
+  async function saveImages(urls: string[]): Promise<{ error: string | null }> {
+    if (!property) return { error: 'No property loaded' }
     const res = await fetch(`/api/properties/${property.id}/images`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: filteredGallery, ownerId: userId }),
+      body: JSON.stringify({ images: urls, ownerId: userId }),
     })
-    setSaving(false)
+    if (!res.ok) return { error: 'Failed to save' }
+    return { error: null }
+  }
 
-    if (!res.ok) {
-      setErrorMsg('Hero image saved, but gallery failed to save. Please try again.')
-    } else {
-      setSuccessMsg('Photos saved successfully!')
-      setTimeout(() => router.push(`/landlord/listings/${slug}`), 1200)
+  async function handleUpload(files: FileList) {
+    if (!property) return
+    setUploading(true)
+    setErrorMsg('')
+
+    const uploaded: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress(`Uploading ${i + 1} of ${files.length}…`)
+      const { url, error } = await uploadPropertyImage(files[i], userId, property.id)
+      if (error || !url) {
+        setErrorMsg(`Failed to upload "${files[i].name}". Please try again.`)
+        setUploading(false)
+        setUploadProgress('')
+        return
+      }
+      uploaded.push(url)
     }
+
+    const newImages = [...images, ...uploaded]
+    const { error } = await saveImages(newImages)
+    if (error) {
+      setErrorMsg('Photos uploaded but failed to save. Please try again.')
+    } else {
+      setImages(newImages)
+    }
+
+    setUploading(false)
+    setUploadProgress('')
   }
 
-  function addImage() {
-    setGalleryImages(imgs => [...imgs, ''])
+  async function moveUp(index: number) {
+    if (!property || index === 0) return
+    const reordered = [...images]
+    ;[reordered[index - 1], reordered[index]] = [reordered[index], reordered[index - 1]]
+    setImages(reordered)
+    await saveImages(reordered)
   }
 
-  function updateImage(index: number, value: string) {
-    setGalleryImages(imgs => imgs.map((img, i) => i === index ? value : img))
+  async function moveDown(index: number) {
+    if (!property || index === images.length - 1) return
+    const reordered = [...images]
+    ;[reordered[index], reordered[index + 1]] = [reordered[index + 1], reordered[index]]
+    setImages(reordered)
+    await saveImages(reordered)
   }
 
-  function removeImage(index: number) {
-    setGalleryImages(imgs => imgs.filter((_, i) => i !== index))
+  async function handleDelete(index: number) {
+    if (!property) return
+    const updated = images.filter((_, i) => i !== index)
+    setImages(updated)
+    await saveImages(updated)
   }
 
   if (loading) {
     return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
-        Loading...
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', sans-serif", fontSize: '14px', color: '#897174' }}>
+        Loading…
       </div>
     )
   }
@@ -98,159 +120,125 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        .media-wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; font-family: 'Inter', sans-serif; }
+        .media-breadcrumb { font-size: 13px; color: #897174; margin-bottom: 20px; }
+        .media-breadcrumb a { color: #8C1D40; text-decoration: none; }
+        .media-breadcrumb a:hover { text-decoration: underline; }
+        .media-title { font-family: 'Manrope', sans-serif; font-size: 22px; font-weight: 800; color: #191c1d; letter-spacing: -0.02em; margin-bottom: 4px; }
+        .media-sub { font-size: 14px; color: #897174; margin-bottom: 28px; }
 
-        .edit-wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; font-family: 'DM Sans', sans-serif; }
-        .edit-breadcrumb { font-size: 13px; color: #64748b; margin-bottom: 20px; }
-        .edit-breadcrumb a { color: #10b981; text-decoration: none; }
-        .edit-breadcrumb a:hover { text-decoration: underline; }
-        .edit-title { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
-        .edit-subtitle { font-size: 14px; color: #64748b; margin-bottom: 28px; }
+        .media-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+        .media-heading { font-size: 14px; font-weight: 600; color: #191c1d; }
+        .btn-upload { display: inline-flex; align-items: center; gap: 7px; background: #191c1d; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: background 0.15s; }
+        .btn-upload:hover:not(:disabled) { background: #2e3132; }
+        .btn-upload:disabled { opacity: 0.6; cursor: not-allowed; }
 
-        .section-card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 20px 22px; margin-bottom: 20px; }
-        .section-heading { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px; }
+        .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+        .photo-card { background: #fff; border: 1.5px solid #ddbfc3; border-radius: 12px; overflow: hidden; position: relative; }
+        .photo-card.hero { border-color: #FFC627; border-width: 2px; }
+        .photo-thumb { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
+        .photo-card-body { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+        .photo-pos { font-size: 11px; font-weight: 600; color: #897174; }
+        .hero-star { font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: #8C1D40; background: #fdf2f5; border: 1px solid #f4c9d5; border-radius: 20px; padding: 2px 8px; }
+        .photo-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+        .btn-arrow { background: none; border: 1px solid #ddbfc3; border-radius: 5px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; color: #564145; transition: background 0.1s, border-color 0.1s; }
+        .btn-arrow:hover:not(:disabled) { background: #fdf2f5; border-color: #8C1D40; color: #8C1D40; }
+        .btn-arrow:disabled { opacity: 0.25; cursor: default; }
+        .btn-del { background: none; border: 1px solid #f5c6d0; border-radius: 5px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; color: #8C1D40; transition: background 0.1s; }
+        .btn-del:hover { background: #fdf2f5; }
 
-        .hero-block { display: grid; grid-template-columns: 1fr 220px; gap: 16px; align-items: start; }
-        @media (max-width: 560px) { .hero-block { grid-template-columns: 1fr; } }
+        .empty-state { border: 2px dashed #ddbfc3; border-radius: 14px; padding: 48px 24px; text-align: center; color: #897174; }
+        .empty-icon { font-size: 36px; margin-bottom: 12px; }
+        .empty-title { font-size: 15px; font-weight: 600; color: #564145; margin-bottom: 4px; }
+        .empty-sub { font-size: 13px; }
 
-        .form-label { display: block; font-size: 12px; font-weight: 600; color: #334155; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
-        .form-input { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #0f172a; font-family: 'DM Sans', sans-serif; background: #fff; outline: none; transition: border-color 0.15s; }
-        .form-input:focus { border-color: #10b981; }
-        .form-input::placeholder { color: #94a3b8; }
-
-        .img-preview { width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: 8px; border: 1.5px solid #e2e8f0; display: block; background: #f8fafc; }
-        .img-placeholder { width: 100%; aspect-ratio: 16/10; border-radius: 8px; border: 1.5px dashed #cbd5e1; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px; color: #94a3b8; font-size: 13px; }
-
-        .hero-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #8C1D40; background: #fdf2f5; border: 1px solid #f4c9d5; border-radius: 20px; padding: 3px 10px; margin-bottom: 10px; }
-
-        .gallery-list { display: flex; flex-direction: column; gap: 12px; }
-        .gallery-item { display: grid; grid-template-columns: 100px 1fr auto; gap: 12px; align-items: start; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px; }
-        @media (max-width: 500px) { .gallery-item { grid-template-columns: 1fr auto; } .gallery-thumb { display: none; } }
-
-        .gallery-thumb { width: 100px; aspect-ratio: 1; object-fit: cover; border-radius: 7px; border: 1px solid #e2e8f0; display: block; background: #fff; }
-        .gallery-thumb-placeholder { width: 100px; aspect-ratio: 1; border-radius: 7px; border: 1.5px dashed #cbd5e1; background: #fff; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 22px; }
-
-        .gallery-input-col { display: flex; flex-direction: column; gap: 6px; }
-        .gallery-index { font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; }
-
-        .btn-remove { background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; border-radius: 7px; padding: 7px 10px; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; flex-shrink: 0; line-height: 1; transition: background 0.15s; }
-        .btn-remove:hover { background: #fee2e2; }
-
-        .btn-add-img { background: #fff; color: #334155; border: 1.5px dashed #cbd5e1; border-radius: 10px; padding: 12px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; width: 100%; margin-top: 4px; transition: background 0.15s, border-color 0.15s; }
-        .btn-add-img:hover { background: #f1f5f9; border-color: #94a3b8; }
-
-        .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 28px; flex-wrap: wrap; }
-        .btn-save { background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 11px 24px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
-        .btn-save:not(:disabled):hover { background: #1e293b; }
-        .btn-cancel { background: #fff; color: #64748b; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 11px 20px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: inline-block; }
-        .btn-cancel:hover { border-color: #94a3b8; }
-
-        .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #166534; margin-bottom: 16px; }
+        .upload-progress { background: #fdf2f5; border: 1px solid #f4c9d5; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #8C1D40; margin-bottom: 16px; }
         .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #991b1b; margin-bottom: 16px; }
 
-        .count-badge { font-size: 12px; color: #64748b; margin-left: 6px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+        .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #8C1D40; text-decoration: none; margin-top: 32px; background: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif; padding: 0; }
+        .back-link:hover { text-decoration: underline; }
       `}</style>
 
-      <div className="edit-wrap">
-        <div className="edit-breadcrumb">
+      <div className="media-wrap">
+        <div className="media-breadcrumb">
           <a href="/landlord/listings">Listings</a>
           {' › '}
           <a href={`/landlord/listings/${slug}`}>{property?.name}</a>
           {' › '}
-          Edit Photos
+          Photos
         </div>
 
-        <h1 className="edit-title">Photos</h1>
-        <p className="edit-subtitle">Paste image URLs to set your hero photo and gallery images.</p>
+        <h1 className="media-title">Photos</h1>
+        <p className="media-sub">The first photo is your hero — it's what students see first in listings and emails.</p>
 
-        {successMsg && <div className="alert-success">{successMsg}</div>}
+        {uploadProgress && <div className="upload-progress">{uploadProgress}</div>}
         {errorMsg && <div className="alert-error">{errorMsg}</div>}
 
-        {/* Hero Image */}
-        <div className="section-card">
-          <div className="section-heading">
-            <span className="hero-badge">Hero</span> Cover Photo
+        <div className="media-header-row">
+          <div className="media-heading">
+            {images.length > 0 ? `${images.length} photo${images.length !== 1 ? 's' : ''}` : 'No photos yet'}
           </div>
-          <div className="hero-block">
-            <div>
-              <label className="form-label">Image URL</label>
-              <input
-                className="form-input"
-                type="url"
-                value={heroImage}
-                onChange={e => setHeroImage(e.target.value)}
-                placeholder="https://example.com/hero.jpg"
-              />
-              <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>
-                This is the main photo shown in listings and emails.
-              </p>
-            </div>
-            <div>
-              {heroImage ? (
-                <img src={heroImage} alt="Hero preview" className="img-preview" />
-              ) : (
-                <div className="img-placeholder">
-                  <span style={{ fontSize: '28px' }}>🖼️</span>
-                  <span>No image yet</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Gallery Images */}
-        <div className="section-card">
-          <div className="section-heading">
-            Gallery Images
-            <span className="count-badge">
-              {galleryImages.filter(u => u.trim() !== '').length} photo{galleryImages.filter(u => u.trim() !== '').length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          {galleryImages.length === 0 ? (
-            <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '12px' }}>No gallery images yet. Add one below.</p>
-          ) : (
-            <div className="gallery-list">
-              {galleryImages.map((url, i) => (
-                <div key={i} className="gallery-item">
-                  <div className="gallery-thumb">
-                    {url.trim() ? (
-                      <img src={url} alt={`Photo ${i + 1}`} className="gallery-thumb" />
-                    ) : (
-                      <div className="gallery-thumb-placeholder">📷</div>
-                    )}
-                  </div>
-                  <div className="gallery-input-col">
-                    <span className="gallery-index">Photo {i + 1}</span>
-                    <input
-                      className="form-input"
-                      type="url"
-                      value={url}
-                      onChange={e => updateImage(i, e.target.value)}
-                      placeholder={`https://example.com/photo-${i + 1}.jpg`}
-                    />
-                  </div>
-                  <button className="btn-remove" onClick={() => removeImage(i)} title="Remove image">
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button className="btn-add-img" onClick={addImage} style={{ marginTop: galleryImages.length > 0 ? '12px' : '0' }}>
-            + Add image URL
+          <button
+            className="btn-upload"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading ? uploadProgress || 'Uploading…' : '+ Upload photos'}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={e => e.target.files && e.target.files.length > 0 && handleUpload(e.target.files)}
+          />
         </div>
 
-        <div className="form-actions">
-          <button className="btn-save" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
-          <a href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</a>
-        </div>
+        {images.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📷</div>
+            <div className="empty-title">No photos yet</div>
+            <div className="empty-sub">Upload photos to help students picture the space.</div>
+          </div>
+        ) : (
+          <div className="photo-grid">
+            {images.map((url, i) => (
+              <div key={url} className={`photo-card${i === 0 ? ' hero' : ''}`}>
+                <img src={url} alt={`Photo ${i + 1}`} className="photo-thumb" />
+                <div className="photo-card-body">
+                  {i === 0 ? (
+                    <span className="hero-star">Hero ★</span>
+                  ) : (
+                    <span className="photo-pos">#{i + 1}</span>
+                  )}
+                  <div className="photo-actions">
+                    <button
+                      className="btn-arrow"
+                      disabled={i === 0}
+                      onClick={() => moveUp(i)}
+                      title="Move up"
+                    >↑</button>
+                    <button
+                      className="btn-arrow"
+                      disabled={i === images.length - 1}
+                      onClick={() => moveDown(i)}
+                      title="Move down"
+                    >↓</button>
+                    <button
+                      className="btn-del"
+                      onClick={() => handleDelete(i)}
+                      title="Delete"
+                    >×</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <a href={`/landlord/listings/${slug}`} className="back-link">← Back to listing</a>
       </div>
     </>
   )

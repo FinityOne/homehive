@@ -30,11 +30,12 @@ export async function POST(
 
   if (lead.property) {
     const { data: prop } = await supabase
-      .from('properties').select('name, address, hero_image').eq('slug', lead.property).single()
+      .from('properties').select('name, address, property_images(url, position)').eq('slug', lead.property).single()
     if (prop) {
       propertyName = prop.name
       propertyAddress = prop.address
-      propertyHeroImage = prop.hero_image || ''
+      const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
+      propertyHeroImage = imgs.sort((a, b) => a.position - b.position)[0]?.url || ''
     }
   }
 

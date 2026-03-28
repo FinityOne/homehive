@@ -17,6 +17,7 @@ const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string; bg: 
   inactive: { label: 'Inactive', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
   test:     { label: 'Test',     color: '#5b21b6', bg: '#f5f3ff', border: '#ddd6fe' },
   flagged:  { label: 'Flagged',  color: '#9f1239', bg: '#fff1f2', border: '#fecdd3' },
+  rejected: { label: 'Rejected', color: '#9f1239', bg: '#fff1f2', border: '#fecdd3' },
 }
 const ALL_STATUSES = Object.keys(ADMIN_STATUS_CFG) as AdminStatus[]
 
@@ -57,9 +58,9 @@ function ListingPanel({ listing, onClose, onUpdate }: {
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', color: '#9b9b9b', cursor: 'pointer', padding: '4px', lineHeight: 1, flexShrink: 0 }}>✕</button>
         </div>
 
-        {listing.hero_image && (
+        {listing.images?.[0] && (
           <div style={{ height: '180px', overflow: 'hidden', flexShrink: 0 }}>
-            <img src={listing.hero_image} alt={listing.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            <img src={listing.images[0]} alt={listing.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           </div>
         )}
 
@@ -103,9 +104,22 @@ function ListingPanel({ listing, onClose, onUpdate }: {
           </label>
         </div>
 
+        {listing.review_note && (
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0ede6', background: '#fff1f2' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#9f1239', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Rejection note</div>
+            <p style={{ fontSize: '13px', color: '#3a3a3a', lineHeight: 1.6, margin: 0 }}>{listing.review_note}</p>
+          </div>
+        )}
+
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '10px' }}>Quick actions</div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {listing.admin_status === 'pending' && (
+              <a href={`/admin/properties/review/${listing.id}`}
+                style={{ background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
+                Review listing →
+              </a>
+            )}
             <a href={`/listing/${listing.slug}`} target="_blank" rel="noopener noreferrer"
               style={{ background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
               View public listing ↗
@@ -155,12 +169,13 @@ export default function AdminPropertiesPage() {
   }
 
   const counts = {
-    all:     listings.length,
-    active:  listings.filter(l => l.admin_status === 'active').length,
-    pending: listings.filter(l => l.admin_status === 'pending').length,
-    inactive:listings.filter(l => l.admin_status === 'inactive').length,
-    test:    listings.filter(l => l.admin_status === 'test').length,
-    flagged: listings.filter(l => l.admin_status === 'flagged').length,
+    all:      listings.length,
+    active:   listings.filter(l => l.admin_status === 'active').length,
+    pending:  listings.filter(l => l.admin_status === 'pending').length,
+    inactive: listings.filter(l => l.admin_status === 'inactive').length,
+    test:     listings.filter(l => l.admin_status === 'test').length,
+    flagged:  listings.filter(l => l.admin_status === 'flagged').length,
+    rejected: listings.filter(l => l.admin_status === 'rejected').length,
   }
 
   const filtered = listings.filter(l => {
@@ -237,9 +252,9 @@ export default function AdminPropertiesPage() {
         )}
 
         <div className="p-filters">
-          {(['all', 'active', 'pending', 'test', 'flagged', 'inactive'] as const).map(f => (
+          {(['all', 'active', 'pending', 'rejected', 'test', 'flagged', 'inactive'] as const).map(f => (
             <button key={f} className={`p-filter${statusFilter === f ? ' active' : ''}`} onClick={() => setStatusFilter(f)}>
-              {f === 'all' ? 'All' : ADMIN_STATUS_CFG[f as AdminStatus].label} ({f === 'all' ? counts.all : counts[f] ?? 0})
+              {f === 'all' ? 'All' : ADMIN_STATUS_CFG[f as AdminStatus].label} ({f === 'all' ? counts.all : counts[f as keyof typeof counts] ?? 0})
             </button>
           ))}
         </div>
@@ -302,6 +317,12 @@ export default function AdminPropertiesPage() {
                     </td>
                     <td style={{ color: '#9b9b9b', fontSize: '12px', whiteSpace: 'nowrap' }}>
                       {new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                      {l.admin_status === 'pending' && (
+                        <a href={`/admin/properties/review/${l.id}`} onClick={e => e.stopPropagation()}
+                          style={{ display: 'block', marginTop: '4px', fontSize: '11px', fontWeight: 600, color: '#8C1D40', textDecoration: 'none' }}>
+                          Review →
+                        </a>
+                      )}
                     </td>
                   </tr>
                 )

@@ -18,8 +18,7 @@ function getCompleteness(p: Property): { items: CompletenessItem[]; pct: number 
     { label: 'Property name',     filled: !!p.name,               weight: 1 },
     { label: 'Address',           filled: !!p.address,            weight: 1 },
     { label: 'Description',       filled: !!p.description,        weight: 2 },
-    { label: 'Hero image',        filled: !!p.hero_image,         weight: 2 },
-    { label: 'Gallery photos',    filled: p.images?.length > 0,   weight: 2 },
+    { label: 'Photos',            filled: p.images?.length > 0,   weight: 2 },
     { label: 'Price',             filled: (p.price || 0) > 0,     weight: 1 },
     { label: 'ASU distance',      filled: (p.asu_distance || 0) > 0, weight: 1 },
     { label: 'Map embed URL',     filled: !!p.map_embed_url,      weight: 1 },
@@ -83,6 +82,16 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         .mp-wrap { max-width: 860px; margin: 0 auto; padding: 24px 20px 80px; font-family: 'DM Sans', sans-serif; }
+
+        /* REVIEW BANNER */
+        .review-banner { border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; }
+        .review-banner-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+        .review-banner-body { font-size: 13px; line-height: 1.6; margin-bottom: 0; }
+        .review-banner-note { font-size: 13px; font-style: italic; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(159,18,57,0.07); }
+        .review-banner a { font-weight: 600; }
+        .review-banner-tips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .review-banner-tip { background: rgba(245,158,11,0.12); border: 1px solid #fde68a; border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #92400e; font-weight: 600; }
+        .review-banner-cta { display: inline-block; margin-top: 14px; font-size: 13px; font-weight: 700; color: #92400e; text-decoration: none; border-bottom: 1.5px solid #f59e0b; padding-bottom: 1px; }
 
         /* TOP BAR */
         .mp-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
@@ -162,6 +171,54 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
 
       <div className="mp-wrap">
 
+        {/* REVIEW STATUS BANNER */}
+        {property.admin_status === 'pending' && (
+          <div className="review-banner" style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fefce8 100%)', border: '1.5px solid #fde68a', borderLeft: '4px solid #f59e0b' }}>
+            <div className="review-banner-title" style={{ color: '#92400e' }}>You&apos;re in the queue — review in progress!</div>
+            <div className="review-banner-body" style={{ color: '#78350f' }}>
+              The HomeHive team is personally reviewing your listing to verify it&apos;s accurate, legitimate, and a great fit for our students.
+              We do this to protect renters from scams and ensure every listing on our platform is top quality — which means <strong>serious, high-intent leads</strong> for you once you&apos;re live.
+              You&apos;ll receive an email notification the moment a decision is made. <strong>Most listings are reviewed within 24 hours.</strong>
+            </div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', marginTop: '12px', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Boost your approval odds &amp; get more leads
+            </div>
+            <div className="review-banner-tips">
+              <span className="review-banner-tip">Upload clear, well-lit photos</span>
+              <span className="review-banner-tip">Write a detailed description</span>
+              <span className="review-banner-tip">Set your ASU distance</span>
+              <span className="review-banner-tip">Add nearby places</span>
+              <span className="review-banner-tip">Fill out all details below</span>
+            </div>
+            <a href={`/landlord/listings/${slug}/edit/basics`} className="review-banner-cta">Complete your listing now →</a>
+          </div>
+        )}
+        {property.admin_status === 'rejected' && (
+          <div className="review-banner" style={{ background: '#fff1f2', border: '1.5px solid #fecdd3', borderLeft: '4px solid #9f1239' }}>
+            <div className="review-banner-title" style={{ color: '#9f1239' }}>Your listing needs some updates before going live</div>
+            <div className="review-banner-body" style={{ color: '#7f1d1d' }}>
+              Our team reviewed your listing and couldn&apos;t approve it in its current state. Don&apos;t worry — this is fixable.
+              Update your listing based on the feedback below and reach out to us so we can get you live as quickly as possible.{' '}
+              <a href="mailto:hello@homehive.live" style={{ color: '#9f1239' }}>hello@homehive.live</a>
+            </div>
+            {property.review_note && (
+              <div className="review-banner-note" style={{ color: '#9f1239' }}>
+                <strong>Reviewer note:</strong> &ldquo;{property.review_note}&rdquo;
+              </div>
+            )}
+          </div>
+        )}
+        {(property.admin_status === 'inactive' || property.admin_status === 'test' || property.admin_status === 'flagged') && (
+          <div className="review-banner" style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderLeft: '4px solid #cbd5e1' }}>
+            <div className="review-banner-title" style={{ color: '#475569' }}>This listing is not publicly visible</div>
+            <div className="review-banner-body" style={{ color: '#64748b' }}>
+              Students cannot currently see this listing. Contact us at{' '}
+              <a href="mailto:hello@homehive.live" style={{ color: '#475569' }}>hello@homehive.live</a>{' '}
+              if you believe this is an error.
+            </div>
+          </div>
+        )}
+
         {/* TOP BAR */}
         <div className="mp-topbar">
           <div className="mp-breadcrumb">
@@ -169,7 +226,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             <span> &rsaquo; {property.name}</span>
           </div>
           <div className="mp-topbar-actions">
-            <a href={`/homes/${slug}`} target="_blank" rel="noopener noreferrer" className="btn-preview">
+            <a href={`/landlord/listings/${slug}/preview`} target="_blank" rel="noopener noreferrer" className="btn-preview">
               Preview as Tenant →
             </a>
             <span className="leads-badge">{leads.length} lead{leads.length !== 1 ? 's' : ''}</span>
@@ -321,14 +378,14 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             <a href={`${editBase}/media`} className="btn-edit">Edit</a>
           </div>
           <div className="section-card-body">
-            {property.hero_image
-              ? <img src={property.hero_image} alt="Hero" className="photo-thumb" />
-              : <span className="detail-value-muted" style={{ fontSize: '13px' }}>No hero image set</span>
+            {property.images?.[0]
+              ? <img src={property.images[0]} alt="Hero" className="photo-thumb" />
+              : <span className="detail-value-muted" style={{ fontSize: '13px' }}>No photos yet</span>
             }
             <div className="photo-count">
               {property.images?.length > 0
-                ? `${property.images.length} gallery photo${property.images.length !== 1 ? 's' : ''}`
-                : 'No gallery photos yet'
+                ? `${property.images.length} photo${property.images.length !== 1 ? 's' : ''} · first is hero`
+                : 'No photos yet'
               }
             </div>
           </div>

@@ -40,15 +40,16 @@ export async function GET(
   if (lead.property) {
     const { data: prop } = await supabase
       .from('properties')
-      .select('name, address, hero_image, price')
+      .select('name, address, price, property_images(url, position)')
       .eq('slug', lead.property)
       .single()
 
     if (prop) {
       property_name = prop.name
       property_address = prop.address
-      property_hero_image = prop.hero_image || ''
       property_price = prop.price
+      const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
+      property_hero_image = imgs.sort((a, b) => a.position - b.position)[0]?.url || ''
     }
   }
 
@@ -122,26 +123,36 @@ export async function POST(
   let propertyName = lead?.property || 'Property'
   let propertyAddress = ''
   let propertyHeroImage = ''
+  let landlordEmail = process.env.ADMIN_EMAIL!
 
   if (lead?.property) {
     const { data: prop } = await supabase
       .from('properties')
-      .select('name, address, hero_image')
+      .select('name, address, owner_id, property_images(url, position)')
       .eq('slug', lead.property)
       .single()
 
     if (prop) {
       propertyName = prop.name
       propertyAddress = prop.address
-      propertyHeroImage = prop.hero_image || ''
+      const imgs2 = (prop.property_images as { url: string; position: number }[] | null) ?? []
+      propertyHeroImage = imgs2.sort((a, b) => a.position - b.position)[0]?.url || ''
+
+      // Look up landlord email
+      if (prop.owner_id) {
+        try {
+          const { data: { user } } = await supabase.auth.admin.getUserById(prop.owner_id)
+          if (user?.email) landlordEmail = user.email
+        } catch (_) {}
+      }
     }
   }
 
-  // 4. Notify landlord/admin with full pre-screen summary
+  // 4. Notify landlord with full pre-screen summary
   try {
     await resend.emails.send({
       from: 'HomeHive <hello@homehive.live>',
-      to: process.env.YOUR_EMAIL!,
+      to: landlordEmail,
       subject: `✅ Pre-screen completed: ${lead?.first_name || 'Applicant'} — ${propertyName}`,
       html: buildLandlordPrescreenEmail({
         firstName: lead?.first_name || 'Applicant',
@@ -163,7 +174,7 @@ export async function POST(
         leadId,
       }),
     })
-    await logEmail(leadId, 'lead_qualified_landlord', `✅ Pre-screen completed: ${lead?.first_name || 'Applicant'} — ${propertyName}`, process.env.YOUR_EMAIL!, { property: propertyName, first_name: lead?.first_name })
+    await logEmail(leadId, 'lead_qualified_landlord', `✅ Pre-screen completed: ${lead?.first_name || 'Applicant'} — ${propertyName}`, landlordEmail, { property: propertyName, first_name: lead?.first_name })
   } catch (e) {
     console.error('Landlord pre-screen notification error:', e)
   }

@@ -27,6 +27,7 @@ const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string; bg: 
   inactive: { label: 'Inactive', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
   test:     { label: 'Test',     color: '#5b21b6', bg: '#f5f3ff', border: '#ddd6fe' },
   flagged:  { label: 'Flagged',  color: '#9f1239', bg: '#fff1f2', border: '#fecdd3' },
+  rejected: { label: 'Rejected', color: '#9f1239', bg: '#fff1f2', border: '#fecdd3' },
 }
 
 function buildUserSummaries(properties: Property[], leads: Lead[]): UserSummary[] {

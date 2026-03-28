@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     property.beds ? `${property.beds} bed · ${property.baths} bath` : null,
   ].filter(Boolean).join(' · ')
 
-  const ogImage = property.hero_image || DEFAULT_OG
+  const ogImage = property.images?.[0] || DEFAULT_OG
   const url = `${SITE_URL}/homes/${slug}`
 
   return {

@@ -237,7 +237,7 @@ export default function TenantDashboard() {
           ) : leads.map(lead => {
             const cfg = STATUS_CONFIG[lead.status] ?? STATUS_CONFIG.new
             const prop = matchProperty(lead, properties)
-            const heroImage = prop?.hero_image || (prop?.images?.[0] ?? null)
+            const heroImage = prop?.images?.[0] ?? null
 
             return (
               <div key={lead.id} className="icard">
@@ -302,7 +302,7 @@ export default function TenantDashboard() {
             </div>
 
             {availableHomes.slice(0, 3).map(home => {
-              const heroImage = home.hero_image || home.images?.[0]
+              const heroImage = home.images?.[0]
               return (
                 <div key={home.slug} className="hcard">
                   {heroImage && <img src={heroImage} alt={home.name} className="hcard-img" />}

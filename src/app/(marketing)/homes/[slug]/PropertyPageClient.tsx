@@ -114,8 +114,7 @@ export default function PropertyPageClient({
   if (home === null) return notFound()
 
   // ── Derived values ────────────────────────────────────────────────────────
-  // hero_image (properties table) is always slot 0; property_images table fills the rest
-  const allImages  = [home.hero_image, ...home.images].filter((url): url is string => !!url)
+  const allImages  = home.images.filter(Boolean)
   const mainImage  = allImages[activePhoto] ?? ''
   const avail      = availabilityConfig(home.available, home.total_rooms)
   const isPopular  = (home.asu_score ?? 0) >= 8
@@ -526,7 +525,11 @@ export default function PropertyPageClient({
                 ['High-speed WiFi', 'Included', true],
                 ['Move-in fee', '$0', true],
                 ['Broker / agency fee', '$0', true],
-                ['Security deposit', `$${home.price.toLocaleString()} (refundable)`, false],
+                ['Security deposit',
+                  home.security_deposit === 0 ? '$0 — No deposit required' :
+                  home.security_deposit != null ? `$${home.security_deposit.toLocaleString()} (refundable)` :
+                  `$${home.price.toLocaleString()} (refundable)`,
+                  home.security_deposit === 0],
               ].map(([l, v, g]) => (
                 <div className="pricing-row" key={String(l)}>
                   <span className="pricing-label">{l}</span>
@@ -535,7 +538,11 @@ export default function PropertyPageClient({
               ))}
               <div className="pricing-total">
                 <span>Total to move in</span>
-                <span>${(home.price * 2).toLocaleString()}</span>
+                <span>
+                  {home.security_deposit === 0
+                    ? `$${home.price.toLocaleString()}`
+                    : `$${(home.price + (home.security_deposit ?? home.price)).toLocaleString()}`}
+                </span>
               </div>
               <p style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '10px', lineHeight: 1.5 }}>The price you see is the price you pay. No hidden charges at signing. Deposit fully refunded at move-out.</p>
             </div>

@@ -132,7 +132,7 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
         .addTo(map)
         .bindPopup(`
           <div style="font-family:'DM Sans',sans-serif;min-width:200px;padding:4px 0;">
-            <img src="${home.hero_image}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:10px;" />
+            ${home.images?.[0] ? `<img src="${home.images[0]}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:10px;" />` : ''}
             <div style="font-weight:700;font-size:14px;color:#1a1a1a;margin-bottom:3px;">${home.name}</div>
             <div style="font-size:11px;color:#9b9b9b;margin-bottom:8px;">📍 ${home.address}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -221,7 +221,7 @@ function HomeCard({ home, onHover }: { home: Property; onHover: (id: string | nu
     >
       {/* Image */}
       <div style={{ height: '200px', overflow: 'hidden', position: 'relative' }}>
-        <img src={home.hero_image} alt={home.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {home.images?.[0] && <img src={home.images[0]} alt={home.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
 
         {/* Top-left: availability badge */}
         <div style={{

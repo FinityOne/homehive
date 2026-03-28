@@ -2,10 +2,16 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
 
-// Anon key is fine here — RLS policy allows public inserts on leads
+// Anon key for public lead inserts (RLS allows)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+// Service role client for auth admin lookups
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
 const resend = new Resend(process.env.RESEND_API_KEY!)
@@ -36,27 +42,37 @@ export async function POST(req: Request) {
   let propertyAddress = ''
   let propertyHeroImage = ''
   let propertyPrice: number | null = null
+  let landlordEmail = process.env.ADMIN_EMAIL!
 
   if (property) {
     const { data: prop } = await supabase
       .from('properties')
-      .select('name, address, hero_image, price')
+      .select('name, address, price, owner_id, property_images(url, position)')
       .eq('slug', property)
       .single()
 
     if (prop) {
       propertyName = prop.name
       propertyAddress = prop.address
-      propertyHeroImage = prop.hero_image || ''
       propertyPrice = prop.price
+      const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
+      propertyHeroImage = imgs.sort((a, b) => a.position - b.position)[0]?.url || ''
+
+      // Look up landlord email via service role
+      if (prop.owner_id) {
+        try {
+          const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(prop.owner_id)
+          if (user?.email) landlordEmail = user.email
+        } catch (_) {}
+      }
     }
   }
 
-  // 3. Notify landlord/admin
+  // 3. Notify landlord
   try {
     await resend.emails.send({
       from: 'HomeHive <hello@homehive.live>',
-      to: process.env.YOUR_EMAIL!,
+      to: landlordEmail,
       subject: `New interest! ${first_name} → ${propertyName}`,
       html: `<!DOCTYPE html>
 <html>
@@ -110,8 +126,7 @@ export async function POST(req: Request) {
 </body>
 </html>`,
     })
-    console.log('Admin notification sent')
-    await logEmail(leadId, 'new_lead_landlord', `New interest! ${first_name} → ${propertyName}`, process.env.YOUR_EMAIL!, { property: propertyName })
+    await logEmail(leadId, 'new_lead_landlord', `New interest! ${first_name} → ${propertyName}`, landlordEmail, { property: propertyName })
   } catch (emailError) {
     console.error('Admin notification email error:', emailError)
   }

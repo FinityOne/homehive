@@ -25,6 +25,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
     address: '',
     description: '',
     price: '',
+    security_deposit: '',
     beds: '',
     baths: '',
     sqft: '',
@@ -47,6 +48,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
         address: found.address || '',
         description: found.description || '',
         price: found.price?.toString() || '',
+        security_deposit: found.security_deposit?.toString() ?? '',
         beds: found.beds?.toString() || '',
         baths: found.baths?.toString() || '',
         sqft: found.sqft?.toString() || '',
@@ -69,6 +71,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
       address: form.address,
       description: form.description,
       price: parseFloat(form.price) || 0,
+      security_deposit: form.security_deposit === '' ? null : parseInt(form.security_deposit),
       beds: parseInt(form.beds) || 0,
       baths: parseFloat(form.baths) || 0,
       sqft: form.sqft,
@@ -191,6 +194,25 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
             />
           </div>
           <div className="form-group">
+            <label className="form-label">
+              Security Deposit ($) <span style={{ fontWeight: 400, textTransform: 'none', color: '#94a3b8' }}>— 0 for none</span>
+            </label>
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              value={form.security_deposit}
+              onChange={e => setForm(f => ({ ...f, security_deposit: e.target.value }))}
+              placeholder="e.g. 699 or 0"
+            />
+            {form.security_deposit === '0' && (
+              <div style={{ fontSize: '12px', color: '#10b981', marginTop: '4px' }}>No deposit — shown as $0 on listing</div>
+            )}
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group" style={{ gridColumn: '2' }}>
             <label className="form-label">ASU Distance (minutes)</label>
             <input
               className="form-input"

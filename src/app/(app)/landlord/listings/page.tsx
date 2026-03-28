@@ -54,7 +54,9 @@ export default function ListingsPage() {
         .prop-card-img { width: 100%; height: 200px; object-fit: cover; display: block; }
         .prop-card-img-placeholder { width: 100%; height: 200px; display: flex; align-items: center; justify-content: center; font-size: 40px; background: #1e293b; }
         .prop-status-badge { position: absolute; top: 10px; left: 10px; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
-        .badge-active { background: #d1fae5; color: #065f46; }
+        .badge-active   { background: #d1fae5; color: #065f46; }
+        .badge-pending  { background: #fef3c7; color: #92400e; }
+        .badge-rejected { background: #fff1f2; color: #9f1239; }
         .badge-inactive { background: #e5e7eb; color: #6b7280; }
 
         .prop-card-body { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
@@ -68,6 +70,12 @@ export default function ListingsPage() {
         .prop-card-footer { margin-top: auto; padding-top: 12px; }
         .btn-manage { display: block; text-align: center; background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; }
         .btn-manage:hover { background: #1e293b; }
+
+        .pending-insight { background: linear-gradient(135deg, #fffbeb 0%, #fefce8 100%); border: 1.5px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 12px; padding: 18px 20px; grid-column: 1 / -1; margin-bottom: 4px; }
+        .pending-insight-title { font-size: 14px; font-weight: 700; color: #92400e; margin-bottom: 6px; }
+        .pending-insight-body { font-size: 13px; color: #78350f; line-height: 1.55; margin-bottom: 10px; }
+        .pending-insight-tips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .pending-insight-tip { background: rgba(245,158,11,0.12); border: 1px solid #fde68a; border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #92400e; font-weight: 600; }
 
         .empty-card { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 12px; padding: 40px 32px; grid-column: 1 / -1; }
         .empty-headline { font-size: 20px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
@@ -89,6 +97,22 @@ export default function ListingsPage() {
         </div>
 
         <div className="prop-grid">
+          {properties.some(p => p.admin_status === 'pending') && (
+            <div className="pending-insight">
+              <div className="pending-insight-title">Your listing is in review — exciting times ahead!</div>
+              <div className="pending-insight-body">
+                The HomeHive team reviews every listing to ensure it&apos;s verified, legitimate, and a great experience for students.
+                Most listings are approved <strong>within 24 hours</strong>. Use this time to complete your listing — the more detail you add, the faster the approval and the more leads you&apos;ll get once you&apos;re live.
+              </div>
+              <div className="pending-insight-tips">
+                <span className="pending-insight-tip">Add clear photos</span>
+                <span className="pending-insight-tip">Write a compelling description</span>
+                <span className="pending-insight-tip">Set your ASU distance</span>
+                <span className="pending-insight-tip">List nearby places</span>
+                <span className="pending-insight-tip">Add tags &amp; highlights</span>
+              </div>
+            </div>
+          )}
           {properties.length === 0 ? (
             <div className="empty-card">
               <div className="empty-headline">Your first listing is one step away</div>
@@ -106,12 +130,20 @@ export default function ListingsPage() {
               return (
                 <div key={p.id} className="prop-card">
                   <div className="prop-card-img-wrap">
-                    {p.hero_image
-                      ? <img src={p.hero_image} alt={p.name} className="prop-card-img" />
+                    {p.images?.[0]
+                      ? <img src={p.images[0]} alt={p.name} className="prop-card-img" />
                       : <div className="prop-card-img-placeholder">🏠</div>
                     }
-                    <span className={`prop-status-badge ${p.is_active ? 'badge-active' : 'badge-inactive'}`}>
-                      {p.is_active ? 'Active' : 'Inactive'}
+                    <span className={`prop-status-badge ${
+                      p.admin_status === 'active'   ? 'badge-active'   :
+                      p.admin_status === 'pending'  ? 'badge-pending'  :
+                      p.admin_status === 'rejected' ? 'badge-rejected' :
+                      'badge-inactive'
+                    }`}>
+                      {p.admin_status === 'active'   ? 'Live'          :
+                       p.admin_status === 'pending'  ? 'Under Review'  :
+                       p.admin_status === 'rejected' ? 'Not Approved'  :
+                       'Inactive'}
                     </span>
                   </div>
                   <div className="prop-card-body">

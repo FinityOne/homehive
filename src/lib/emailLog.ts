@@ -11,6 +11,9 @@ export type EmailType =
   | 'prescreen_reminder'
   | 'lead_qualified_landlord'
   | 'new_lead_landlord'
+  | 'listing_submitted'
+  | 'listing_approved'
+  | 'listing_rejected'
 
 export async function logEmail(
   leadId: string,
