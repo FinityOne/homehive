@@ -31,6 +31,8 @@ export type Property = {
   unit_type: 'room_in_house' | 'apartment' | 'condo' | 'studio' | null
   roommates_count: number | null
   sublease_end_date: string | null
+  is_test: boolean
+  admin_status: 'pending' | 'active' | 'inactive' | 'test' | 'flagged'
   // joined
   tags: string[]
   images: string[]
@@ -101,6 +103,58 @@ export async function createProperty(
   return { slug, error: null }
 }
 
+export type AdminStatus = 'pending' | 'active' | 'inactive' | 'test' | 'flagged'
+
+export async function getAllPropertiesForAdmin(): Promise<Property[]> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select(`
+      *,
+      property_tags ( tag ),
+      property_images ( url, position ),
+      property_nearby ( place, travel_time ),
+      property_asu_reasons ( reason, position )
+    `)
+    .order('created_at', { ascending: false })
+
+  if (error || !data) {
+    console.error('Error fetching all properties for admin:', error)
+    return []
+  }
+
+  return data.map(p => ({
+    ...p,
+    tags:       p.property_tags.map((t: any) => t.tag),
+    images:     p.property_images
+                  .sort((a: any, b: any) => a.position - b.position)
+                  .map((i: any) => i.url),
+    nearby:     p.property_nearby.map((n: any) => ({
+                  place: n.place,
+                  travel_time: n.travel_time,
+                })),
+    asu_reasons: p.property_asu_reasons
+                  .sort((a: any, b: any) => a.position - b.position)
+                  .map((r: any) => r.reason),
+  }))
+}
+
+export async function updatePropertyAdminStatus(
+  id: string,
+  adminStatus: AdminStatus,
+  isTest: boolean
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('properties')
+    .update({
+      admin_status: adminStatus,
+      is_test: isTest,
+      // sync is_active: inactive/test/flagged/pending = not publicly active
+      is_active: adminStatus === 'active',
+    })
+    .eq('id', id)
+  return { error }
+}
+
 export async function getTotalPropertyCount(): Promise<number> {
   const { count } = await supabase
     .from('properties')
@@ -119,6 +173,7 @@ export async function getProperties(): Promise<Property[]> {
       property_asu_reasons ( reason, position )
     `)
     .eq('is_active', true)
+    .eq('is_test', false)
     .order('created_at', { ascending: true })
 
   if (error || !data) {
@@ -262,6 +317,7 @@ export async function getPropertyBySlug(slug: string): Promise<Property | null> 
     `)
     .eq('slug', slug)
     .eq('is_active', true)
+    .eq('is_test', false)
     .single()
 
   if (error || !data) return null

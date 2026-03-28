@@ -120,7 +120,7 @@ export default async function ForLandlordsPage() {
             Skip Zillow fees and the endless scroll of Marketplace posts. HomeHive puts your listing in front of pre-vetted ASU students actively looking for housing — no noise, no scams.
           </p>
           <div className="hero-cta-row">
-            <a href="/landlord/signup" className="btn-primary">List for free →</a>
+            <a href="/signup?role=landlord" className="btn-primary">List for free →</a>
             <a href="#how-it-works" className="btn-ghost">See how it works ↓</a>
           </div>
         </div>
@@ -251,7 +251,7 @@ export default async function ForLandlordsPage() {
               </div>
             </div>
 
-            <a href="/landlord/signup" className="btn-primary" style={{ display: 'block', textAlign: 'center' }}>
+            <a href="/signup?role=landlord" className="btn-primary" style={{ display: 'block', textAlign: 'center' }}>
               Claim your free spot →
             </a>
             <div style={{ marginTop: '12px', fontSize: '12px', color: '#9b9b9b' }}>
@@ -266,7 +266,7 @@ export default async function ForLandlordsPage() {
         <div className="bottom-cta">
           <div className="bottom-cta-h2">Your next tenant is already<br /><em>searching on HomeHive.</em></div>
           <div className="bottom-cta-sub">It takes 5 minutes to list. The students are ready. All that's missing is you.</div>
-          <a href="/landlord/signup" className="btn-gold">Get started free →</a>
+          <a href="/signup?role=landlord" className="btn-gold">Get started free →</a>
         </div>
       </div>
     </>

@@ -3,8 +3,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-export default function LandlordSignupRedirect() {
+export default function AdminListingsRedirect() {
   const router = useRouter()
-  useEffect(() => { router.replace('/signup?role=landlord') }, [router])
+  useEffect(() => { router.replace('/admin/properties') }, [router])
   return null
 }
