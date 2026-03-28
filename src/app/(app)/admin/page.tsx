@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import * as d3 from 'd3'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
+import { getAllPropertiesForAdmin } from '@/lib/properties'
+import type { Property, AdminStatus } from '@/lib/properties'
+import type { Lead } from '@/lib/leads'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,498 +14,341 @@ const supabase = createBrowserClient(
 )
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-type Lead = {
-  id: string
-  created_at: string
-  first_name: string
-  last_name: string
-  email: string
-  phone: string
-  property: string
-  move_in_date: string
-  budget: string
-  roommate_preference: string
-  lifestyle: string
-  notes: string
-  status: 'new' | 'contacted' | 'touring' | 'qualified' | 'signed' | 'lost'
-}
-
-type Stats = {
-  total: number
-  new: number
-  contacted: number
-  touring: number
-  qualified: number
-  signed: number
-  lost: number
-  thisWeek: number
-  conversionRate: number
+type OverviewData = {
+  stats: { totalLeads: number; activeProperties: number; thisWeekLeads: number; conversionRate: number }
+  leadVolume: Array<{ day: string; count: number }>
+  funnelData: Array<{ status: string; label: string; count: number; color: string }>
+  statusDist: Array<{ status: string; label: string; count: number; color: string }>
+  growthData: Array<{ date: Date; properties: number; leads: number }>
 }
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const STATUS_CONFIG: Record<Lead['status'], { label: string; color: string; bg: string; border: string }> = {
-  new:       { label: 'New',       color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-  contacted: { label: 'Contacted', color: '#c9973a', bg: '#fefce8', border: '#fde68a' },
-  touring:   { label: 'Touring',   color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
-  qualified: { label: 'Qualified', color: '#166534', bg: '#f0fdf4', border: '#bbf7d0' },
-  signed:    { label: 'Signed',    color: '#fff',    bg: '#8C1D40', border: '#8C1D40' },
-  lost:      { label: 'Lost',      color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+const LEAD_STATUS_CONFIG: Record<Lead['status'], { label: string; color: string }> = {
+  new:            { label: 'New',            color: '#1d4ed8' },
+  contacted:      { label: 'Contacted',      color: '#c9973a' },
+  engaged:        { label: 'Engaged',        color: '#7c3aed' },
+  qualified:      { label: 'Qualified',      color: '#166534' },
+  tour_scheduled: { label: 'Tour Scheduled', color: '#0e7490' },
+  closed:         { label: 'Closed',         color: '#8C1D40' },
 }
 
-const STATUSES = Object.keys(STATUS_CONFIG) as Lead['status'][]
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  if (days < 7) return `${days}d ago`
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string }> = {
+  active:   { label: 'Active',   color: '#166534' },
+  pending:  { label: 'Pending',  color: '#c9973a' },
+  inactive: { label: 'Inactive', color: '#9b9b9b' },
+  test:     { label: 'Test',     color: '#7c3aed' },
+  flagged:  { label: 'Flagged',  color: '#dc2626' },
 }
 
-function initials(first: string, last: string) {
-  return `${(first || '?')[0]}${(last || '?')[0]}`.toUpperCase()
+// ─── HELPER ───────────────────────────────────────────────────────────────────
+function buildOverviewData(leads: Lead[], properties: Property[]): OverviewData {
+  const now = Date.now()
+  const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000
+
+  const activeProperties = properties.filter(p => p.admin_status === 'active' && !p.is_test).length
+  const thisWeekLeads = leads.filter(l => l.created_at && new Date(l.created_at).getTime() > oneWeekAgo).length
+  const closedLeads = leads.filter(l => l.status === 'closed' && l.closed_reason === 'leased').length
+  const conversionRate = leads.length > 0 ? Math.round((closedLeads / leads.length) * 100) : 0
+
+  // Lead volume — last 30 days by day
+  const volumeMap = new Map<string, number>()
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now - i * 24 * 60 * 60 * 1000)
+    volumeMap.set(d.toISOString().slice(0, 10), 0)
+  }
+  for (const l of leads) {
+    if (!l.created_at) continue
+    const day = l.created_at.slice(0, 10)
+    if (volumeMap.has(day)) volumeMap.set(day, (volumeMap.get(day) ?? 0) + 1)
+  }
+  const leadVolume = Array.from(volumeMap.entries()).map(([day, count]) => ({ day, count }))
+
+  // Funnel
+  const funnelData = (Object.keys(LEAD_STATUS_CONFIG) as Lead['status'][]).map(s => ({
+    status: s,
+    label: LEAD_STATUS_CONFIG[s].label,
+    count: leads.filter(l => l.status === s).length,
+    color: LEAD_STATUS_CONFIG[s].color,
+  }))
+
+  // Property status distribution
+  const statusDist = (Object.keys(ADMIN_STATUS_CFG) as AdminStatus[]).map(s => ({
+    status: s,
+    label: ADMIN_STATUS_CFG[s].label,
+    count: properties.filter(p => p.admin_status === s).length,
+    color: ADMIN_STATUS_CFG[s].color,
+  })).filter(d => d.count > 0)
+
+  // Platform growth — cumulative
+  const events: Array<{ date: Date; type: 'property' | 'lead' }> = []
+  for (const p of properties) if (p.created_at) events.push({ date: new Date(p.created_at), type: 'property' })
+  for (const l of leads) if (l.created_at) events.push({ date: new Date(l.created_at), type: 'lead' })
+  events.sort((a, b) => a.date.getTime() - b.date.getTime())
+  let cumProps = 0, cumLeads = 0
+  const growthData: OverviewData['growthData'] = []
+  for (const e of events) {
+    if (e.type === 'property') cumProps++; else cumLeads++
+    growthData.push({ date: e.date, properties: cumProps, leads: cumLeads })
+  }
+
+  return { stats: { totalLeads: leads.length, activeProperties, thisWeekLeads, conversionRate }, leadVolume, funnelData, statusDist, growthData }
 }
 
-// ─── STATUS BADGE ─────────────────────────────────────────────────────────────
-function StatusBadge({ status }: { status: Lead['status'] }) {
-  const cfg = STATUS_CONFIG[status]
-  return (
-    <span style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, fontSize: '11px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', letterSpacing: '0.2px' }}>
-      {cfg.label}
-    </span>
-  )
-}
+// ─── D3: LEAD VOLUME BAR ─────────────────────────────────────────────────────
+function LeadVolumeChart({ data }: { data: Array<{ day: string; count: number }> }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-// ─── LEAD DETAIL PANEL ────────────────────────────────────────────────────────
-function LeadPanel({ lead, onClose, onUpdate }: {
-  lead: Lead
-  onClose: () => void
-  onUpdate: (id: string, updates: Partial<Lead>) => void
-}) {
-  const [notes, setNotes] = useState(lead.notes || '')
-  const [status, setStatus] = useState(lead.status)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  const save = async () => {
-    setSaving(true)
-    const { error } = await supabase
-      .from('leads')
-      .update({ notes, status })
-      .eq('id', lead.id)
-    if (!error) {
-      onUpdate(lead.id, { notes, status })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+  useEffect(() => {
+    if (!svgRef.current || !containerRef.current || data.length === 0) return
+    const draw = () => {
+      const svg = d3.select(svgRef.current!)
+      svg.selectAll('*').remove()
+      const W0 = containerRef.current!.clientWidth || 400
+      const height = 180, margin = { top: 14, right: 12, bottom: 36, left: 32 }
+      const W = W0 - margin.left - margin.right, H = height - margin.top - margin.bottom
+      const g = svg.attr('width', W0).attr('height', height).append('g').attr('transform', `translate(${margin.left},${margin.top})`)
+      const x = d3.scaleBand().domain(data.map(d => d.day)).range([0, W]).padding(0.25)
+      const y = d3.scaleLinear().domain([0, Math.max(d3.max(data, d => d.count) ?? 1, 1)]).nice().range([H, 0])
+      g.append('g').call(d3.axisLeft(y).ticks(4).tickSize(-W).tickFormat(() => ''))
+        .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').attr('stroke', '#f0ede6') })
+      g.selectAll('.bar').data(data).join('rect').attr('class', 'bar')
+        .attr('x', d => x(d.day) ?? 0).attr('y', d => y(d.count))
+        .attr('width', x.bandwidth()).attr('height', d => H - y(d.count))
+        .attr('fill', '#8C1D40').attr('opacity', 0.82).attr('rx', 2)
+      g.append('g').attr('transform', `translate(0,${H})`).call(
+        d3.axisBottom(x).tickValues(data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => d.day))
+          .tickFormat(d => { const [, m, day] = (d as string).split('-'); return `${parseInt(m)}/${parseInt(day)}` })
+      ).call(gg => {
+        gg.select('.domain').attr('stroke', '#e8e4db')
+        gg.selectAll('line').attr('stroke', '#e8e4db')
+        gg.selectAll('text').attr('fill', '#9b9b9b').style('font-size', '10px').style('font-family', 'DM Sans, sans-serif')
+      })
+      g.append('g').call(d3.axisLeft(y).ticks(4))
+        .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').remove(); gg.selectAll('text').attr('fill', '#9b9b9b').style('font-size', '10px').style('font-family', 'DM Sans, sans-serif') })
     }
-    setSaving(false)
-  }
+    draw()
+    const ro = new ResizeObserver(draw); ro.observe(containerRef.current!); return () => ro.disconnect()
+  }, [data])
 
-  const sendEmail = () => {
-    window.open(`mailto:${lead.email}?subject=Re: Your interest in ${lead.property || 'HomeHive'}&body=Hi ${lead.first_name},%0D%0A%0D%0A`, '_blank')
-  }
+  return <div ref={containerRef} style={{ width: '100%' }}><svg ref={svgRef} style={{ display: 'block' }} /></div>
+}
+
+// ─── D3: LEAD FUNNEL ─────────────────────────────────────────────────────────
+function LeadFunnelChart({ data }: { data: Array<{ status: string; label: string; count: number; color: string }> }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!svgRef.current || !containerRef.current) return
+    const draw = () => {
+      const svg = d3.select(svgRef.current!); svg.selectAll('*').remove()
+      const W0 = containerRef.current!.clientWidth || 320
+      const rowH = 34, margin = { top: 8, right: 40, bottom: 8, left: 108 }
+      const W = W0 - margin.left - margin.right
+      const height = data.length * rowH + margin.top + margin.bottom
+      const maxCount = Math.max(d3.max(data, d => d.count) ?? 1, 1)
+      const x = d3.scaleLinear().domain([0, maxCount]).range([0, W])
+      svg.attr('width', W0).attr('height', height)
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`)
+      data.forEach((d, i) => {
+        const y = i * rowH + rowH / 2 - 9
+        g.append('rect').attr('x', 0).attr('y', y).attr('width', W).attr('height', 18).attr('fill', '#faf9f6').attr('rx', 3)
+        if (x(d.count) > 0) g.append('rect').attr('x', 0).attr('y', y).attr('width', x(d.count)).attr('height', 18).attr('fill', d.color).attr('opacity', 0.18).attr('rx', 3)
+        g.append('text').attr('x', -8).attr('y', y + 12).attr('text-anchor', 'end').attr('fill', '#6b6b6b').style('font-size', '11px').style('font-family', 'DM Sans, sans-serif').style('font-weight', '500').text(d.label)
+        g.append('text').attr('x', W + 6).attr('y', y + 12).attr('text-anchor', 'start').attr('fill', d.count > 0 ? d.color : '#c5c1b8').style('font-size', '11px').style('font-family', 'DM Sans, sans-serif').style('font-weight', '700').text(d.count)
+      })
+    }
+    draw()
+    const ro = new ResizeObserver(draw); ro.observe(containerRef.current!); return () => ro.disconnect()
+  }, [data])
+
+  return <div ref={containerRef} style={{ width: '100%' }}><svg ref={svgRef} style={{ display: 'block' }} /></div>
+}
+
+// ─── D3: STATUS DONUT ────────────────────────────────────────────────────────
+function ListingStatusDonut({ data }: { data: Array<{ status: string; label: string; count: number; color: string }> }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  useEffect(() => {
+    if (!svgRef.current || data.length === 0) return
+    const svg = d3.select(svgRef.current); svg.selectAll('*').remove()
+    const size = 160, r = size / 2 - 8, innerR = r * 0.52
+    const total = d3.sum(data, d => d.count)
+    svg.attr('width', size).attr('height', size)
+    const g = svg.append('g').attr('transform', `translate(${size / 2},${size / 2})`)
+    const pie = d3.pie<typeof data[0]>().value(d => d.count).sort(null)
+    const arc = d3.arc<d3.PieArcDatum<typeof data[0]>>().innerRadius(innerR).outerRadius(r)
+    g.selectAll('path').data(pie(data)).join('path')
+      .attr('d', arc).attr('fill', d => d.data.color).attr('stroke', '#fff').attr('stroke-width', 2)
+    g.append('text').attr('text-anchor', 'middle').attr('dy', '-0.2em')
+      .style('font-family', 'Fraunces, serif').style('font-size', '26px').style('font-weight', '300').style('fill', '#1a1a1a').text(total)
+    g.append('text').attr('text-anchor', 'middle').attr('dy', '1.3em')
+      .style('font-family', 'DM Sans, sans-serif').style('font-size', '10px').style('fill', '#9b9b9b').style('text-transform', 'uppercase').style('letter-spacing', '0.5px').text('listings')
+  }, [data])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex' }}>
-      {/* Backdrop */}
-      <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }} onClick={onClose} />
-
-      {/* Panel */}
-      <div style={{ width: '420px', background: '#fff', height: '100%', overflowY: 'auto', borderLeft: '1px solid #e8e4db', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }}>
-
-        {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e8e4db', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fdf2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 700, color: '#8C1D40', flexShrink: 0 }}>
-              {initials(lead.first_name, lead.last_name)}
-            </div>
-            <div>
-              <div style={{ fontSize: '15px', fontWeight: 600, color: '#1a1a1a' }}>{lead.first_name} {lead.last_name}</div>
-              <div style={{ fontSize: '12px', color: '#9b9b9b' }}>{timeAgo(lead.created_at)}</div>
-            </div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+      <svg ref={svgRef} style={{ display: 'block' }} />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', justifyContent: 'center' }}>
+        {data.map(d => (
+          <div key={d.status} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: d.color, flexShrink: 0 }} />
+            <span style={{ fontSize: '11px', color: '#6b6b6b', fontFamily: 'DM Sans, sans-serif' }}>{d.label} <strong style={{ color: '#1a1a1a' }}>{d.count}</strong></span>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', color: '#9b9b9b', cursor: 'pointer', padding: '4px', lineHeight: 1 }}>✕</button>
-        </div>
-
-        {/* Contact actions */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0ede6', display: 'flex', gap: '8px' }}>
-          <button onClick={sendEmail} style={{ flex: 1, background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '9px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-            Email {lead.first_name}
-          </button>
-          {lead.phone && (
-            <a href={`tel:${lead.phone}`} style={{ flex: 1, background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '7px', padding: '9px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textDecoration: 'none', textAlign: 'center' }}>
-              Call
-            </a>
-          )}
-        </div>
-
-        {/* Status */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '10px' }}>Status</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {STATUSES.map(s => {
-              const cfg = STATUS_CONFIG[s]
-              const active = status === s
-              return (
-                <button
-                  key={s}
-                  onClick={() => setStatus(s)}
-                  style={{ background: active ? cfg.bg : '#fff', color: active ? cfg.color : '#9b9b9b', border: `1.5px solid ${active ? cfg.border : '#e8e4db'}`, borderRadius: '20px', padding: '4px 12px', fontSize: '12px', fontWeight: active ? 600 : 400, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
-                >
-                  {cfg.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Lead details */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '14px' }}>Lead details</div>
-          {[
-            { label: 'Email',      value: lead.email,                link: `mailto:${lead.email}` },
-            { label: 'Phone',      value: lead.phone || '—',         link: lead.phone ? `tel:${lead.phone}` : undefined },
-            { label: 'Property',   value: lead.property || '—',      link: undefined },
-            { label: 'Move-in',    value: lead.move_in_date || '—',  link: undefined },
-            { label: 'Budget',     value: lead.budget || '—',        link: undefined },
-            { label: 'Roommates',  value: lead.roommate_preference || '—', link: undefined },
-            { label: 'Lifestyle',  value: lead.lifestyle || '—',     link: undefined },
-            { label: 'Submitted',  value: new Date(lead.created_at).toLocaleString(), link: undefined },
-          ].map(row => (
-            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #f5f4f0', gap: '12px' }}>
-              <span style={{ fontSize: '12px', color: '#9b9b9b', flexShrink: 0 }}>{row.label}</span>
-              {row.link ? (
-                <a href={row.link} style={{ fontSize: '13px', color: '#8C1D40', fontWeight: 500, textDecoration: 'none', textAlign: 'right', wordBreak: 'break-all' }}>{row.value}</a>
-              ) : (
-                <span style={{ fontSize: '13px', color: '#1a1a1a', textAlign: 'right', wordBreak: 'break-word' }}>{row.value}</span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Notes */}
-        <div style={{ padding: '20px 24px', flex: 1 }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '10px' }}>Notes</div>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Add notes about this lead — tour scheduled, price discussed, any concerns..."
-            style={{ width: '100%', height: '120px', border: '1.5px solid #e8e4db', borderRadius: '8px', padding: '10px 12px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", resize: 'none', outline: 'none', boxSizing: 'border-box', color: '#1a1a1a', lineHeight: 1.6 }}
-          />
-        </div>
-
-        {/* Save */}
-        <div style={{ padding: '16px 24px', borderTop: '1px solid #e8e4db', flexShrink: 0 }}>
-          <button
-            onClick={save}
-            disabled={saving}
-            style={{ width: '100%', background: saved ? '#16a34a' : '#1a1a1a', color: '#fff', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'background 0.2s' }}
-          >
-            {saving ? 'Saving...' : saved ? 'Saved' : 'Save changes'}
-          </button>
-        </div>
+        ))}
       </div>
     </div>
   )
 }
 
-// ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
-export default function AdminDashboard() {
-  const router = useRouter()
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [filter, setFilter] = useState<Lead['status'] | 'all'>('all')
-  const [search, setSearch] = useState('')
-  const [stats, setStats] = useState<Stats | null>(null)
+// ─── D3: PLATFORM GROWTH ─────────────────────────────────────────────────────
+function PlatformGrowthChart({ data }: { data: Array<{ date: Date; properties: number; leads: number }> }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  const fetchLeads = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (!error && data) {
-      setLeads(data as Lead[])
-      computeStats(data as Lead[])
+  useEffect(() => {
+    if (!svgRef.current || !containerRef.current || data.length < 2) return
+    const draw = () => {
+      const svg = d3.select(svgRef.current!); svg.selectAll('*').remove()
+      const W0 = containerRef.current!.clientWidth || 400
+      const height = 160, margin = { top: 12, right: 16, bottom: 28, left: 32 }
+      const W = W0 - margin.left - margin.right, H = height - margin.top - margin.bottom
+      const g = svg.attr('width', W0).attr('height', height).append('g').attr('transform', `translate(${margin.left},${margin.top})`)
+      const x = d3.scaleTime().domain(d3.extent(data, d => d.date) as [Date, Date]).range([0, W])
+      const maxY = Math.max(d3.max(data, d => d.leads) ?? 1, d3.max(data, d => d.properties) ?? 1, 1)
+      const y = d3.scaleLinear().domain([0, maxY]).nice().range([H, 0])
+      g.append('g').call(d3.axisLeft(y).ticks(4).tickSize(-W).tickFormat(() => ''))
+        .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').attr('stroke', '#f0ede6') })
+      const areaLeads = d3.area<typeof data[0]>().x(d => x(d.date)).y0(H).y1(d => y(d.leads)).curve(d3.curveMonotoneX)
+      const areaProps = d3.area<typeof data[0]>().x(d => x(d.date)).y0(H).y1(d => y(d.properties)).curve(d3.curveMonotoneX)
+      g.append('path').datum(data).attr('fill', '#8C1D40').attr('opacity', 0.12).attr('d', areaLeads)
+      g.append('path').datum(data).attr('fill', '#a78bfa').attr('opacity', 0.14).attr('d', areaProps)
+      const lineLeads = d3.line<typeof data[0]>().x(d => x(d.date)).y(d => y(d.leads)).curve(d3.curveMonotoneX)
+      const lineProps = d3.line<typeof data[0]>().x(d => x(d.date)).y(d => y(d.properties)).curve(d3.curveMonotoneX)
+      g.append('path').datum(data).attr('fill', 'none').attr('stroke', '#8C1D40').attr('stroke-width', 1.8).attr('d', lineLeads)
+      g.append('path').datum(data).attr('fill', 'none').attr('stroke', '#a78bfa').attr('stroke-width', 1.8).attr('d', lineProps)
+      g.append('g').attr('transform', `translate(0,${H})`).call(d3.axisBottom(x).ticks(4))
+        .call(gg => { gg.select('.domain').attr('stroke', '#e8e4db'); gg.selectAll('line').attr('stroke', '#e8e4db'); gg.selectAll('text').attr('fill', '#9b9b9b').style('font-size', '10px').style('font-family', 'DM Sans, sans-serif') })
+      g.append('g').call(d3.axisLeft(y).ticks(4))
+        .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').remove(); gg.selectAll('text').attr('fill', '#9b9b9b').style('font-size', '10px').style('font-family', 'DM Sans, sans-serif') })
     }
+    draw()
+    const ro = new ResizeObserver(draw); ro.observe(containerRef.current!); return () => ro.disconnect()
+  }, [data])
+
+  return (
+    <div>
+      <div ref={containerRef} style={{ width: '100%' }}><svg ref={svgRef} style={{ display: 'block' }} /></div>
+      <div style={{ display: 'flex', gap: '16px', marginTop: '8px', justifyContent: 'center' }}>
+        {[{ color: '#8C1D40', label: 'Leads' }, { color: '#a78bfa', label: 'Properties' }].map(s => (
+          <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div style={{ width: '20px', height: '2px', background: s.color, borderRadius: '1px' }} />
+            <span style={{ fontSize: '11px', color: '#6b6b6b', fontFamily: 'DM Sans, sans-serif' }}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+export default function AdminOverview() {
+  const router = useRouter()
+  const [data, setData] = useState<OverviewData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchData = useCallback(async () => {
+    const [leadsRes, propsData] = await Promise.all([
+      supabase.from('leads').select('id, created_at, status, closed_reason, property').order('created_at', { ascending: false }),
+      getAllPropertiesForAdmin(),
+    ])
+    const leads = (leadsRes.data ?? []) as Lead[]
+    setData(buildOverviewData(leads, propsData))
     setLoading(false)
   }, [])
 
-  const computeStats = (data: Lead[]) => {
-    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-    const s: Stats = {
-      total: data.length,
-      new: data.filter(l => l.status === 'new').length,
-      contacted: data.filter(l => l.status === 'contacted').length,
-      touring: data.filter(l => l.status === 'touring').length,
-      qualified: data.filter(l => l.status === 'qualified').length,
-      signed: data.filter(l => l.status === 'signed').length,
-      lost: data.filter(l => l.status === 'lost').length,
-      thisWeek: data.filter(l => new Date(l.created_at).getTime() > oneWeekAgo).length,
-      conversionRate: data.length > 0 ? Math.round((data.filter(l => l.status === 'signed').length / data.length) * 100) : 0,
-    }
-    setStats(s)
-  }
-
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) router.push('/login')
-    })
-    fetchLeads()
-
-    // Real-time updates
-    const channel = supabase
-      .channel('leads-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => fetchLeads())
+    supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
+    fetchData()
+    const ch = supabase.channel('admin-overview')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, fetchData)
       .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [fetchLeads])
-
-  const updateLead = (id: string, updates: Partial<Lead>) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
-    if (selectedLead?.id === id) setSelectedLead(prev => prev ? { ...prev, ...updates } : prev)
-    computeStats(leads.map(l => l.id === id ? { ...l, ...updates } : l))
-  }
-
-  const filtered = leads.filter(l => {
-    if (filter !== 'all' && l.status !== filter) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (
-        `${l.first_name} ${l.last_name}`.toLowerCase().includes(q) ||
-        l.email?.toLowerCase().includes(q) ||
-        l.property?.toLowerCase().includes(q) ||
-        l.phone?.includes(q)
-      )
-    }
-    return true
-  })
+    return () => { supabase.removeChannel(ch) }
+  }, [fetchData, router])
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        .admin-wrap { min-height: 100vh; display: flex; flex-direction: column; }
-
-        /* PAGE BODY */
-        .admin-body { flex: 1; max-width: 1200px; width: 100%; margin: 0 auto; padding: 28px 24px; }
-
-        /* STAT CARDS */
-        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
-        .stat-card { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 18px 20px; }
-        .stat-label { font-size: 11px; font-weight: 600; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
-        .stat-num { font-family: 'Fraunces', serif; font-size: 32px; font-weight: 300; color: #1a1a1a; letter-spacing: -1px; line-height: 1; }
-        .stat-sub { font-size: 11px; color: #9b9b9b; margin-top: 4px; }
-
-        /* PIPELINE */
-        .pipeline-row { display: flex; gap: 6px; margin-bottom: 28px; flex-wrap: wrap; }
-        .pipeline-stage { flex: 1; min-width: 80px; background: #fff; border: 1px solid #e8e4db; border-radius: 10px; padding: 12px 14px; text-align: center; cursor: pointer; transition: all 0.15s; }
-        .pipeline-stage:hover { border-color: #8C1D40; }
-        .pipeline-stage.active { border-color: #8C1D40; background: #fdf2f5; }
-        .pipeline-num { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1a1a1a; line-height: 1; }
-        .pipeline-lbl { font-size: 10px; font-weight: 600; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
-
-        /* TOOLBAR */
-        .leads-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-        .search-wrap { display: flex; align-items: center; gap: 8px; background: #fff; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 12px; height: 36px; flex: 1; min-width: 200px; }
-        .search-wrap input { border: none; background: none; outline: none; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; width: 100%; }
-        .search-wrap input::placeholder { color: #c5c1b8; }
-        .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-        .export-btn { background: #fff; border: 1px solid #e8e4db; border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 500; color: #6b6b6b; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
-        .export-btn:hover { border-color: #1a1a1a; color: #1a1a1a; }
-        .leads-count { font-size: 13px; color: #9b9b9b; white-space: nowrap; }
-
-        /* LEADS TABLE */
-        .leads-table-wrap { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; overflow: hidden; }
-        .leads-table { width: 100%; border-collapse: collapse; }
-        .leads-table th { background: #faf9f6; padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; border-bottom: 1px solid #e8e4db; white-space: nowrap; }
-        .leads-table td { padding: 13px 16px; border-bottom: 1px solid #f5f4f0; vertical-align: middle; }
-        .leads-table tr:last-child td { border-bottom: none; }
-        .leads-table tbody tr { cursor: pointer; transition: background 0.1s; }
-        .leads-table tbody tr:hover { background: #faf9f6; }
-        .lead-name { display: flex; align-items: center; gap: 10px; }
-        .lead-avatar { width: 32px; height: 32px; border-radius: 50%; background: #fdf2f5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #8C1D40; flex-shrink: 0; }
-        .lead-name-text { font-size: 14px; font-weight: 500; color: #1a1a1a; }
-        .lead-email { font-size: 12px; color: #9b9b9b; margin-top: 1px; }
-        .lead-prop { font-size: 13px; color: #4a4a4a; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .lead-date { font-size: 12px; color: #9b9b9b; white-space: nowrap; }
-        .lead-budget { font-size: 13px; color: #4a4a4a; }
-        .new-indicator { width: 7px; height: 7px; border-radius: 50%; background: #1d4ed8; animation: blink 2s infinite; flex-shrink: 0; }
-        @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.3} }
-
-        /* EMPTY */
-        .empty-state { text-align: center; padding: 60px 20px; }
-        .empty-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1a1a1a; margin-bottom: 8px; }
-        .empty-sub { font-size: 14px; color: #9b9b9b; }
-
-        /* LOADING */
-        .loading-row td { padding: 40px; text-align: center; font-size: 14px; color: #9b9b9b; }
-
-        @media (max-width: 768px) {
-          .stats-row { grid-template-columns: 1fr 1fr; }
-          .admin-body { padding: 20px 16px; }
-          .col-budget, .col-lifestyle, .col-roommate { display: none; }
+        .ov-body { max-width: 1200px; margin: 0 auto; padding: 28px 24px 80px; font-family: 'DM Sans', sans-serif; }
+        .ov-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+        .ov-stat { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 18px 20px; }
+        .ov-stat-label { font-size: 11px; font-weight: 600; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+        .ov-stat-num { font-family: 'Fraunces', serif; font-size: 32px; font-weight: 300; color: #1a1a1a; letter-spacing: -1px; line-height: 1; }
+        .ov-stat-sub { font-size: 11px; color: #9b9b9b; margin-top: 4px; }
+        .ov-charts-row { display: flex; gap: 14px; margin-bottom: 14px; }
+        .ov-chart { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+        .ov-chart-head { display: flex; align-items: baseline; gap: 8px; }
+        .ov-chart-title { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+        .ov-chart-sub { font-size: 11px; color: #9b9b9b; }
+        @media (max-width: 900px) {
+          .ov-stats { grid-template-columns: 1fr 1fr; }
+          .ov-charts-row { flex-direction: column; }
         }
+        @media (max-width: 600px) { .ov-body { padding: 20px 16px; } }
       `}</style>
 
-      {selectedLead && (
-        <LeadPanel
-          lead={selectedLead}
-          onClose={() => setSelectedLead(null)}
-          onUpdate={updateLead}
-        />
-      )}
-
-      <div className="admin-wrap">
-
-        <div className="admin-body">
-
-          {/* PAGE TITLE */}
-          <div style={{ marginBottom: '24px' }}>
-            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: '28px', fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.5px', marginBottom: '4px' }}>Lead dashboard</h1>
-            <p style={{ fontSize: '13px', color: '#9b9b9b' }}>All interest form submissions · Real-time updates</p>
-          </div>
-
-          {/* STAT CARDS */}
-          {stats && (
-            <div className="stats-row">
-              <div className="stat-card">
-                <div className="stat-label">Total leads</div>
-                <div className="stat-num">{stats.total}</div>
-                <div className="stat-sub">{stats.thisWeek} this week</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">New / unread</div>
-                <div className="stat-num" style={{ color: stats.new > 0 ? '#1d4ed8' : '#1a1a1a' }}>{stats.new}</div>
-                <div className="stat-sub">Needs follow-up</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Rooms signed</div>
-                <div className="stat-num" style={{ color: stats.signed > 0 ? '#8C1D40' : '#1a1a1a' }}>{stats.signed}</div>
-                <div className="stat-sub">Leases executed</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Conversion</div>
-                <div className="stat-num">{stats.conversionRate}%</div>
-                <div className="stat-sub">Leads → signed</div>
-              </div>
-            </div>
-          )}
-
-          {/* PIPELINE */}
-          {stats && (
-            <div className="pipeline-row">
-              {(['all', ...STATUSES] as const).map(s => {
-                const count = s === 'all' ? stats.total : stats[s as keyof Stats] as number
-                const label = s === 'all' ? 'All' : STATUS_CONFIG[s as Lead['status']].label
-                return (
-                  <div
-                    key={s}
-                    className={`pipeline-stage${filter === s ? ' active' : ''}`}
-                    onClick={() => setFilter(s as any)}
-                  >
-                    <div className="pipeline-num">{count}</div>
-                    <div className="pipeline-lbl">{label}</div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* TOOLBAR */}
-          <div className="leads-toolbar">
-            <div className="search-wrap">
-              <span style={{ color: '#9b9b9b', fontSize: '14px', flexShrink: 0 }}>⌕</span>
-              <input
-                placeholder="Search by name, email, phone, or property..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-            <div className="toolbar-right">
-              <span className="leads-count">{filtered.length} lead{filtered.length !== 1 ? 's' : ''}</span>
-              <button
-                className="export-btn"
-                onClick={() => {
-                  const csv = [
-                    ['Name', 'Email', 'Phone', 'Property', 'Move-in', 'Budget', 'Roommate pref', 'Status', 'Submitted'].join(','),
-                    ...filtered.map(l => [
-                      `${l.first_name} ${l.last_name}`,
-                      l.email, l.phone, l.property,
-                      l.move_in_date, l.budget,
-                      l.roommate_preference, l.status,
-                      new Date(l.created_at).toLocaleDateString(),
-                    ].map(v => `"${v || ''}"`).join(','))
-                  ].join('\n')
-                  const blob = new Blob([csv], { type: 'text/csv' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url; a.download = 'homehive-leads.csv'; a.click()
-                  URL.revokeObjectURL(url)
-                }}
-              >
-                Export CSV
-              </button>
-            </div>
-          </div>
-
-          {/* LEADS TABLE */}
-          <div className="leads-table-wrap">
-            <table className="leads-table">
-              <thead>
-                <tr>
-                  <th>Lead</th>
-                  <th>Property</th>
-                  <th>Move-in</th>
-                  <th className="col-budget">Budget</th>
-                  <th className="col-roommate">Roommates</th>
-                  <th>Status</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr className="loading-row"><td colSpan={7}>Loading leads...</td></tr>
-                ) : filtered.length === 0 ? (
-                  <tr><td colSpan={7}>
-                    <div className="empty-state">
-                      <div className="empty-title">{search || filter !== 'all' ? 'No leads match your filters' : 'No leads yet'}</div>
-                      <div className="empty-sub">{search || filter !== 'all' ? 'Try clearing your search or filter' : 'Leads will appear here when students submit the interest form'}</div>
-                    </div>
-                  </td></tr>
-                ) : filtered.map(lead => (
-                  <tr key={lead.id} onClick={() => setSelectedLead(lead)}>
-                    <td>
-                      <div className="lead-name">
-                        {lead.status === 'new' && <span className="new-indicator" />}
-                        <div className="lead-avatar">{initials(lead.first_name, lead.last_name)}</div>
-                        <div>
-                          <div className="lead-name-text">{lead.first_name} {lead.last_name}</div>
-                          <div className="lead-email">{lead.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><div className="lead-prop">{lead.property || '—'}</div></td>
-                    <td><span style={{ fontSize: '13px', color: '#4a4a4a' }}>{lead.move_in_date || '—'}</span></td>
-                    <td className="col-budget"><span className="lead-budget">{lead.budget || '—'}</span></td>
-                    <td className="col-roommate"><span style={{ fontSize: '12px', color: '#6b6b6b' }}>{lead.roommate_preference || '—'}</span></td>
-                    <td><StatusBadge status={lead.status || 'new'} /></td>
-                    <td><span className="lead-date">{timeAgo(lead.created_at)}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
+      <div className="ov-body">
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: '28px', fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.5px', marginBottom: '4px' }}>Overview</h1>
+          <p style={{ fontSize: '13px', color: '#9b9b9b' }}>Platform metrics · Real-time</p>
         </div>
+
+        {loading || !data ? (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#9b9b9b', fontSize: '14px' }}>Loading...</div>
+        ) : (
+          <>
+            <div className="ov-stats">
+              {[
+                { label: 'Total leads',     value: data.stats.totalLeads,       sub: 'All time' },
+                { label: 'Active listings', value: data.stats.activeProperties,  sub: 'Non-test, public' },
+                { label: 'Leads this week', value: data.stats.thisWeekLeads,     sub: 'Last 7 days' },
+                { label: 'Conversion rate', value: `${data.stats.conversionRate}%`, sub: 'Leads → leased' },
+              ].map(c => (
+                <div key={c.label} className="ov-stat">
+                  <div className="ov-stat-label">{c.label}</div>
+                  <div className="ov-stat-num">{c.value}</div>
+                  <div className="ov-stat-sub">{c.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="ov-charts-row">
+              <div className="ov-chart" style={{ flex: 3 }}>
+                <div className="ov-chart-head"><div className="ov-chart-title">Lead volume</div><div className="ov-chart-sub">Last 30 days</div></div>
+                <LeadVolumeChart data={data.leadVolume} />
+              </div>
+              <div className="ov-chart" style={{ flex: 2 }}>
+                <div className="ov-chart-head"><div className="ov-chart-title">Lead pipeline</div><div className="ov-chart-sub">By stage</div></div>
+                <LeadFunnelChart data={data.funnelData} />
+              </div>
+            </div>
+
+            <div className="ov-charts-row">
+              <div className="ov-chart" style={{ flex: 1, alignItems: 'center' }}>
+                <div className="ov-chart-head" style={{ width: '100%' }}><div className="ov-chart-title">Listing status</div><div className="ov-chart-sub">Distribution</div></div>
+                <ListingStatusDonut data={data.statusDist} />
+              </div>
+              <div className="ov-chart" style={{ flex: 2 }}>
+                <div className="ov-chart-head"><div className="ov-chart-title">Platform growth</div><div className="ov-chart-sub">Cumulative all time</div></div>
+                <PlatformGrowthChart data={data.growthData} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </>
   )
