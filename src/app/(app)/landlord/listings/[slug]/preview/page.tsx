@@ -413,6 +413,28 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
                 </div>
               </div>
               <div className="form-card-body">
+                {/* Special Offer Banner */}
+                {property.offer_amount && (
+                  <div style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2410 100%)', border: '1px solid #d4a843', borderRadius: '12px', padding: '14px 16px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '90px', height: '90px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,198,39,0.18) 0%,transparent 70%)', pointerEvents: 'none' }} />
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(255,198,39,0.15)', border: '1px solid rgba(255,198,39,0.4)', borderRadius: '20px', padding: '2px 9px', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '9px', color: '#FFC627', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase' }}>🎁 Limited offer</span>
+                    </div>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '18px', color: '#FFC627', lineHeight: 1.2, marginBottom: '3px' }}>
+                      ${property.offer_amount.toLocaleString()} lease credit
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#c5c1b8', lineHeight: 1.4, marginBottom: property.offer_deadline ? '6px' : '0' }}>
+                      {property.offer_description || 'Cash credit applied when you sign your lease.'}
+                    </div>
+                    {property.offer_deadline && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#FFC627', fontWeight: 600 }}>
+                        <span>⏰</span>
+                        <span>Sign by {new Date(property.offer_deadline + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} to claim</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Price (real) */}
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '2px' }}>

@@ -64,6 +64,11 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
   // Images — unified list of existing URLs + new file uploads
   const [images, setImages] = useState<ImageItem[]>([])
 
+  // Offer fields
+  const [offerAmount, setOfferAmount] = useState('')
+  const [offerDeadline, setOfferDeadline] = useState('')
+  const [offerDescription, setOfferDescription] = useState('')
+
   // Submit state
   const [submitting, setSubmitting] = useState(false)
   const [uploadStatus, setUploadStatus] = useState('')
@@ -115,6 +120,9 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
       )
       setImages((prop.images || []).map(url => ({ kind: 'existing' as const, url })))
       setSelectedOwnerId(prop.owner_id || 'claimable')
+      setOfferAmount(prop.offer_amount != null ? String(prop.offer_amount) : '')
+      setOfferDeadline(prop.offer_deadline || '')
+      setOfferDescription(prop.offer_description || '')
 
       setLoading(false)
     }
@@ -233,6 +241,9 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         lng: Number(lng) || 0,
         owner_id: ownerId,
         is_claimable: isClaimable,
+        offer_amount: offerAmount === '' ? null : Number(offerAmount),
+        offer_deadline: offerDeadline || null,
+        offer_description: offerDescription.trim() || null,
         tags,
         asu_reasons: asuReasons,
         nearby,
@@ -484,6 +495,26 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
               <label className="anp-label">Available Now</label>
               <input className="anp-input" type="number" min="0" value={available} onChange={e => setAvailable(e.target.value)} />
             </div>
+          </div>
+        </div>
+
+        {/* ── Special Offer ── */}
+        <div className="anp-section">
+          <div className="anp-section-title">Special Offer <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#b0a898', fontSize: '11px' }}>(optional — shown as a banner to tenants)</span></div>
+          <div className="anp-row">
+            <div className="anp-field">
+              <label className="anp-label">Cash Credit Amount ($)</label>
+              <input className="anp-input" type="number" min="0" placeholder="e.g. 500" value={offerAmount} onChange={e => setOfferAmount(e.target.value)} />
+              <div className="anp-hint">Leave blank to hide the offer banner</div>
+            </div>
+            <div className="anp-field">
+              <label className="anp-label">Sign-by Deadline</label>
+              <input className="anp-input" type="date" value={offerDeadline} onChange={e => setOfferDeadline(e.target.value)} />
+            </div>
+          </div>
+          <div className="anp-field" style={{ marginTop: '14px' }}>
+            <label className="anp-label">Offer Description</label>
+            <input className="anp-input" type="text" placeholder="e.g. Cash credit applied at lease signing" value={offerDescription} onChange={e => setOfferDescription(e.target.value)} />
           </div>
         </div>
 

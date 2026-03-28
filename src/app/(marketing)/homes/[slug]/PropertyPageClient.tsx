@@ -57,9 +57,11 @@ export default function PropertyPageClient({
   const [home, setHome] = useState<Property | null | undefined>(undefined)
   const [activePhoto, setActivePhoto] = useState(0)
   const [formData, setFormData] = useState({ first_name: '', email: '', phone: '', move_in_date: '' })
-  const [loggedInUser, setLoggedInUser] = useState<{ name: string; email: string; phone: string; avatarUrl: string | null } | null>(null)
+  const [loggedInUser, setLoggedInUser] = useState<{ id: string; name: string; email: string; phone: string; avatarUrl: string | null } | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [submittedLeadId, setSubmittedLeadId] = useState<string | null>(null)
+  const [existingLead, setExistingLead] = useState<{ id: string; status: string } | null | undefined>(undefined)
   const [mobileFormOpen, setMobileFormOpen] = useState(false)
   const [showStickyBar, setShowStickyBar] = useState(false)
   const [badgeHover, setBadgeHover] = useState(false)
@@ -105,28 +107,30 @@ export default function PropertyPageClient({
     }
   }, [guestName])
 
-  // Pre-fill form for logged-in users
+  // Pre-fill form for logged-in users + check for existing lead
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session?.user) return
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, phone, avatar_url')
-        .eq('id', session.user.id)
-        .single()
+      if (!session?.user) { setExistingLead(null); return }
+      const userId = session.user.id
+      const [profileResult, leadResult] = await Promise.all([
+        supabase.from('profiles').select('full_name, phone, avatar_url').eq('id', userId).single(),
+        supabase.from('leads').select('id, status').eq('email', session.user.email ?? '').eq('property', slug).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      ])
+      const profile = profileResult.data
       const fullName = profile?.full_name || session.user.user_metadata?.full_name || ''
       const firstName = fullName.trim().split(/\s+/)[0] || ''
       const phone = profile?.phone || ''
       const avatarUrl = profile?.avatar_url || null
-      setLoggedInUser({ name: fullName, email: session.user.email || '', phone, avatarUrl })
+      setLoggedInUser({ id: userId, name: fullName, email: session.user.email || '', phone, avatarUrl })
       setFormData(prev => ({
         ...prev,
         first_name: firstName || prev.first_name,
         email: session.user.email || prev.email,
         phone: phone || prev.phone,
       }))
+      setExistingLead(leadResult.data ?? null)
     })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slug]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show sticky mobile bar once user scrolls past the title
   useEffect(() => {
@@ -201,28 +205,133 @@ export default function PropertyPageClient({
         body: JSON.stringify({ ...formData, property: slug }),
       })
       if (res.ok) {
+        const data = await res.json()
         ph?.capture('inquiry_submitted', {
           property_slug: slug,
           property_name: home?.name,
           move_in_date: formData.move_in_date,
           is_personalized: isPersonalized,
         })
+        setSubmittedLeadId(data.leadId ?? null)
         setSubmitted(true)
         setMobileFormOpen(false)
+        // If logged in, redirect to pre-screen after a brief moment
+        if (loggedInUser && data.leadId) {
+          setTimeout(() => { window.location.href = `/pre-screen/${data.leadId}` }, 1800)
+        }
       }
     } catch (e) { console.error(e) }
     setSubmitting(false)
   }
 
+  // ── Lead status config ───────────────────────────────────────────────────
+  const LEAD_STATUS_LABEL: Record<string, { label: string; desc: string; color: string; bg: string }> = {
+    new:            { label: 'Pending Review',    desc: 'Your inquiry is in the queue — we\'ll be in touch within a few hours.',                  color: '#1d4ed8', bg: '#eff6ff' },
+    contacted:      { label: 'We Reached Out',    desc: 'Check your email or phone — a team member has already been in contact.',                  color: '#c9973a', bg: '#fefce8' },
+    engaged:        { label: 'In Conversation',   desc: 'You\'re in active conversation with us. Keep an eye on your messages.',                   color: '#7c3aed', bg: '#f5f3ff' },
+    qualified:      { label: 'Pre-Qualified',     desc: 'You\'ve been pre-qualified! A team member will schedule your tour soon.',                 color: '#166534', bg: '#f0fdf4' },
+    tour_scheduled: { label: 'Tour Scheduled',    desc: 'Your tour is booked — check your email for confirmation details.',                        color: '#8C1D40', bg: '#fdf2f5' },
+    closed:         { label: 'Closed',            desc: 'This inquiry has been closed.',                                                           color: '#6b7280', bg: '#f3f4f6' },
+  }
+
   // ── Form JSX (shared between sidebar + mobile drawer) ────────────────────
-  const FormContent = () => submitted ? (
-    <div style={{ textAlign: 'center', padding: '28px 8px' }}>
-      <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', margin: '0 auto 16px' }}>✓</div>
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', marginBottom: '8px' }}>You're on the list!</div>
-      <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6 }}>Check your email — we sent you next steps. We'll be in touch within a few hours.</p>
-    </div>
-  ) : (
+  const FormContent = () => {
+    // Offer banner (shown above form if offer exists)
+    const OfferBanner = home.offer_amount ? (
+      <div style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2410 100%)', border: '1px solid #d4a843', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,198,39,0.18) 0%,transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255,198,39,0.15)', border: '1px solid rgba(255,198,39,0.4)', borderRadius: '20px', padding: '3px 10px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '9px', color: '#FFC627', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase' }}>🎁 Limited offer</span>
+        </div>
+        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#FFC627', lineHeight: 1.2, marginBottom: '4px' }}>
+          ${home.offer_amount.toLocaleString()} lease credit
+        </div>
+        <div style={{ fontSize: '12px', color: '#c5c1b8', lineHeight: 1.5, marginBottom: home.offer_deadline ? '8px' : '0' }}>
+          {home.offer_description || 'Cash credit applied when you sign your lease.'}
+        </div>
+        {home.offer_deadline && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#FFC627', fontWeight: 600 }}>
+            <span>⏰</span>
+            <span>Sign by {new Date(home.offer_deadline + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} to claim</span>
+          </div>
+        )}
+      </div>
+    ) : null
+
+    // Existing lead — show status
+    if (existingLead) {
+      const cfg = LEAD_STATUS_LABEL[existingLead.status] ?? LEAD_STATUS_LABEL['new']
+      const needsPrescreen = existingLead.status === 'new' || existingLead.status === 'contacted'
+      return (
+        <>
+          {OfferBanner}
+          <div style={{ background: cfg.bg, border: `1px solid ${cfg.color}22`, borderRadius: '12px', padding: '18px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+              <span style={{ fontSize: '12px', fontWeight: 700, color: cfg.color, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{cfg.label}</span>
+            </div>
+            <p style={{ fontSize: '13px', color: '#3a3a3a', lineHeight: 1.6 }}>{cfg.desc}</p>
+          </div>
+          {needsPrescreen && (
+            <a
+              href={`/pre-screen/${existingLead.id}`}
+              style={{ display: 'block', width: '100%', padding: '14px', background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: '9px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.1px', textAlign: 'center', textDecoration: 'none', boxShadow: '0 4px 18px rgba(255,198,39,0.45)', animation: 'goldPulse 2.8s ease-in-out infinite' }}
+            >
+              Complete your pre-screen →
+            </a>
+          )}
+          {!needsPrescreen && (
+            <div style={{ textAlign: 'center', fontSize: '12px', color: '#9b9b9b', marginTop: '4px' }}>
+              Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', fontWeight: 600 }}>Contact us</a>
+            </div>
+          )}
+        </>
+      )
+    }
+
+    // Post-submit state
+    if (submitted) {
+      if (loggedInUser) {
+        return (
+          <div style={{ textAlign: 'center', padding: '22px 8px' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', margin: '0 auto 14px' }}>✓</div>
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#1a1a1a', marginBottom: '8px' }}>You're on the list!</div>
+            <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '16px' }}>Taking you to your pre-screen…</p>
+            {submittedLeadId && (
+              <a href={`/pre-screen/${submittedLeadId}`} style={{ display: 'block', padding: '13px', background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', fontSize: '14px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 4px 16px rgba(255,198,39,0.45)' }}>
+                Start pre-screen now →
+              </a>
+            )}
+          </div>
+        )
+      }
+      return (
+        <div style={{ textAlign: 'center', padding: '22px 8px' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', margin: '0 auto 14px' }}>✓</div>
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#1a1a1a', marginBottom: '6px' }}>You're on the list!</div>
+          <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '16px' }}>
+            Create an account to fill out your pre-screen and move to the front of the line.
+          </p>
+          <a
+            href={`/signup?next=${encodeURIComponent(submittedLeadId ? `/pre-screen/${submittedLeadId}` : '/dashboard')}`}
+            style={{ display: 'block', padding: '13px', background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', fontSize: '14px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 4px 16px rgba(255,198,39,0.45)', marginBottom: '8px' }}
+          >
+            Create free account →
+          </a>
+          <a
+            href={`/login?next=${encodeURIComponent(submittedLeadId ? `/pre-screen/${submittedLeadId}` : '/dashboard')}`}
+            style={{ display: 'block', padding: '11px', background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}
+          >
+            Already have an account? Sign in
+          </a>
+        </div>
+      )
+    }
+
+    return (
     <>
+      {OfferBanner}
+
       {/* Price header */}
       <div style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '2px' }}>
@@ -386,6 +495,7 @@ export default function PropertyPageClient({
       </div>
     </>
   )
+  }
 
   return (
     <>
