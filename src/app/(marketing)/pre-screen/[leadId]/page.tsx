@@ -91,6 +91,12 @@ export default function PreScreenPage({
           if (data.move_in_date) {
             setForm(f => ({ ...f, move_in_date: data.move_in_date }))
           }
+          ph?.capture('prescreen_started', {
+            lead_id: leadId,
+            property: data.property,
+            property_name: data.property_name,
+            already_completed: !!data.prescreen_completed,
+          })
         })
         .catch(() => setNotFound(true)),
     ]).finally(() => setLoading(false))

@@ -5,6 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { getLeadsForOwner, getLeadById } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
+import { usePostHog } from 'posthog-js/react'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,6 +52,7 @@ type Property = { slug: string; name: string }
 
 export default function LandlordLeadsPage() {
   const router = useRouter()
+  const ph = usePostHog()
   const [userId, setUserId] = useState<string | null>(null)
   const [leads, setLeads] = useState<Lead[]>([])
   const [properties, setProperties] = useState<Property[]>([])
@@ -131,8 +133,14 @@ export default function LandlordLeadsPage() {
     setRemindingId(lead.id)
     try {
       const res = await fetch(`/api/leads/${lead.id}/send-reminder`, { method: 'POST' })
-      if (res.ok) showToast(`Reminder sent to ${lead.first_name || lead.email}`)
-      else showToast('Failed to send reminder')
+      if (res.ok) {
+        showToast(`Reminder sent to ${lead.first_name || lead.email}`)
+        ph?.capture('lead_reminder_sent', {
+          lead_id: lead.id,
+          property: lead.property,
+          lead_status: lead.status,
+        })
+      } else showToast('Failed to send reminder')
     } catch { showToast('Failed to send reminder') }
     setRemindingId(null)
   }
@@ -147,6 +155,7 @@ export default function LandlordLeadsPage() {
         body: JSON.stringify(addForm),
       })
       if (res.ok) {
+        ph?.capture('lead_added_manually', { property: addForm.property })
         setShowAddModal(false)
         setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
         await loadLeads()
@@ -342,8 +351,8 @@ export default function LandlordLeadsPage() {
           )}
           <div style={{ marginLeft: 'auto' }}>
             <div className="ll-view-toggle">
-              <button className={`ll-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}>≡ List</button>
-              <button className={`ll-view-btn${viewMode === 'pipeline' ? ' active' : ''}`} onClick={() => setViewMode('pipeline')}>⊞ Pipeline</button>
+              <button className={`ll-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => { setViewMode('list'); ph?.capture('leads_view_mode_changed', { view_mode: 'list' }) }}>≡ List</button>
+              <button className={`ll-view-btn${viewMode === 'pipeline' ? ' active' : ''}`} onClick={() => { setViewMode('pipeline'); ph?.capture('leads_view_mode_changed', { view_mode: 'pipeline' }) }}>⊞ Pipeline</button>
             </div>
           </div>
         </div>
