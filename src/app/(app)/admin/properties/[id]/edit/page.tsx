@@ -17,6 +17,18 @@ type ImageItem =
   | { kind: 'existing'; url: string }
   | { kind: 'new'; file: File; previewUrl: string }
 
+type Tab = 'basics' | 'pricing' | 'location' | 'content' | 'media' | 'offer' | 'admin'
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'basics',   label: 'Basics'   },
+  { id: 'pricing',  label: 'Pricing'  },
+  { id: 'location', label: 'Location' },
+  { id: 'content',  label: 'Content'  },
+  { id: 'media',    label: 'Media'    },
+  { id: 'offer',    label: 'Offer'    },
+  { id: 'admin',    label: 'Admin'    },
+]
+
 export default function AdminEditPropertyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -24,6 +36,7 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
 
   const [loading, setLoading] = useState(true)
   const [property, setProperty] = useState<Property | null>(null)
+  const [activeTab, setActiveTab] = useState<Tab>('basics')
 
   // Owner options
   const [owners, setOwners] = useState<Owner[]>([])
@@ -92,7 +105,6 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
 
       setProperty(prop)
 
-      // Pre-populate fields
       setName(prop.name || '')
       setAddress(prop.address || '')
       setDescription(prop.description || '')
@@ -129,7 +141,6 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
     load()
   }, [id, router])
 
-  // Clean up blob URLs on unmount
   useEffect(() => {
     return () => {
       images.forEach(img => {
@@ -178,15 +189,14 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
   }
 
   const handleSubmit = async () => {
-    if (!name.trim()) { setError('Property name is required.'); return }
-    if (!address.trim()) { setError('Address is required.'); return }
-    if (!price || isNaN(Number(price)) || Number(price) <= 0) { setError('Valid price is required.'); return }
+    if (!name.trim()) { setError('Property name is required.'); setActiveTab('basics'); return }
+    if (!address.trim()) { setError('Address is required.'); setActiveTab('basics'); return }
+    if (!price || isNaN(Number(price)) || Number(price) <= 0) { setError('Valid price is required.'); setActiveTab('pricing'); return }
 
     setSubmitting(true)
     setError('')
     setUploadStatus('')
 
-    // Upload any new images
     const finalUrls: string[] = []
     let newCount = 0
     const newImages = images.filter(img => img.kind === 'new')
@@ -310,11 +320,25 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .anp-wrap { max-width: 760px; margin: 0 auto; padding: 28px 24px 80px; font-family: 'DM Sans', sans-serif; }
-        .anp-section { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 22px 24px; margin-bottom: 14px; }
-        .anp-section-title { font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 16px; }
-        .anp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+        .anp-wrap { max-width: 780px; margin: 0 auto; padding: 28px 24px 80px; font-family: 'DM Sans', sans-serif; }
+
+        /* ── Tab nav ── */
+        .anp-subnav { display: flex; gap: 2px; background: #f5f4f0; border-radius: 10px; padding: 4px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+        .anp-subnav::-webkit-scrollbar { display: none; }
+        .anp-tab { flex: 1; min-width: max-content; padding: 7px 14px; border-radius: 7px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #6b6b6b; background: transparent; transition: all 0.15s; white-space: nowrap; }
+        .anp-tab:hover { color: #1a1a1a; background: rgba(255,255,255,0.6); }
+        .anp-tab.active { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .anp-tab.active.offer-tab { background: #1a0a0f; color: #f5c842; }
+
+        /* ── Section card ── */
+        .anp-card { background: #fff; border: 1px solid #e8e4db; border-radius: 14px; padding: 24px; margin-bottom: 14px; }
+        .anp-card-title { font-size: 13px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.1px; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+        .anp-card-title-hint { font-size: 12px; font-weight: 400; color: #9b9b9b; }
+
+        /* ── Fields ── */
+        .anp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
         .anp-row.three { grid-template-columns: 1fr 1fr 1fr; }
+        .anp-row:last-child { margin-bottom: 0; }
         .anp-field { display: flex; flex-direction: column; gap: 5px; }
         .anp-label { font-size: 11px; font-weight: 700; color: #6b6b6b; text-transform: uppercase; letter-spacing: 0.5px; }
         .anp-input { height: 40px; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 12px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; background: #faf9f6; outline: none; transition: border-color 0.15s; }
@@ -326,7 +350,8 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         .anp-hint { font-size: 11px; color: #9b9b9b; margin-top: 3px; }
         .anp-hint.green { color: #16a34a; font-weight: 600; }
 
-        .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        /* ── Tags / pills ── */
+        .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
         .tag-pill { display: inline-flex; align-items: center; gap: 5px; background: #faf9f6; border: 1px solid #e8e4db; border-radius: 20px; padding: 4px 10px; font-size: 12px; color: #1a1a1a; }
         .tag-remove { background: none; border: none; color: #9b9b9b; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
         .tag-remove:hover { color: #8C1D40; }
@@ -335,15 +360,16 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         .add-btn { height: 36px; padding: 0 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: background 0.15s; }
         .add-btn:hover { background: #3a3a3a; }
 
+        /* ── Nearby ── */
         .nearby-row-wrap { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; }
         .remove-row-btn { background: none; border: 1.5px solid #e8e4db; border-radius: 7px; width: 36px; height: 36px; color: #9b9b9b; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
         .remove-row-btn:hover { border-color: #8C1D40; color: #8C1D40; }
         .add-nearby-btn { background: none; border: 1.5px dashed #e8e4db; border-radius: 7px; padding: 8px 14px; font-size: 13px; color: #9b9b9b; cursor: pointer; width: 100%; margin-top: 4px; transition: all 0.15s; font-family: 'DM Sans', sans-serif; }
         .add-nearby-btn:hover { border-color: #1a1a1a; color: #1a1a1a; }
 
+        /* ── Photos ── */
         .photo-zone { border: 2px dashed #e8e4db; border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.15s; margin-top: 12px; }
         .photo-zone:hover { border-color: #8C1D40; background: #fdf7f9; }
-
         .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
         .photo-item { position: relative; border-radius: 9px; overflow: hidden; aspect-ratio: 4/3; border: 1.5px solid #e8e4db; background: #f0f0f0; }
         .photo-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -358,331 +384,433 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         .photo-remove { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.55); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .photo-remove:hover { background: rgba(140,29,64,0.85); }
 
-        .owner-toggle { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        /* ── Owner ── */
+        .owner-toggle { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
         .owner-opt { padding: 7px 14px; border-radius: 20px; border: 1.5px solid #e8e4db; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #6b6b6b; transition: all 0.15s; }
         .owner-opt.selected { background: #18181b; color: #fff; border-color: #18181b; }
 
-        .submit-btn { width: 100%; height: 52px; background: linear-gradient(135deg, #6c002a, #8c1d40); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.2s; letter-spacing: 0.1px; }
+        /* ── Offer tab special styling ── */
+        .offer-card { background: #1a0a0f; border: 1px solid #3d1a24; border-radius: 14px; padding: 24px; margin-bottom: 14px; }
+        .offer-card-title { font-size: 13px; font-weight: 700; color: #f5c842; letter-spacing: -0.1px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+        .offer-card-desc { font-size: 13px; color: #9b7a7a; margin-bottom: 20px; line-height: 1.5; }
+        .offer-label { font-size: 11px; font-weight: 700; color: #9b7a7a; text-transform: uppercase; letter-spacing: 0.5px; }
+        .offer-input { height: 40px; border: 1.5px solid #3d1a24; border-radius: 8px; padding: 0 12px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #f5f5f0; background: #120508; outline: none; transition: border-color 0.15s; width: 100%; }
+        .offer-input:focus { border-color: #f5c842; }
+        .offer-input::placeholder { color: #5a3a3a; }
+        .offer-preview { background: linear-gradient(135deg, #1a0a0f, #2d1020); border: 1px solid #f5c842; border-radius: 10px; padding: 16px 18px; margin-top: 20px; }
+        .offer-preview-label { font-size: 10px; font-weight: 700; color: #9b7a7a; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+        .offer-preview-amount { font-family: 'Fraunces', serif; font-size: 28px; color: #f5c842; font-weight: 300; letter-spacing: -0.5px; margin-bottom: 4px; }
+        .offer-preview-desc { font-size: 13px; color: #d4b8b8; }
+        .offer-preview-date { font-size: 11px; color: #9b7a7a; margin-top: 6px; }
+        .offer-clear-btn { margin-top: 16px; padding: 8px 16px; background: transparent; border: 1.5px solid #3d1a24; border-radius: 7px; font-size: 12px; color: #9b7a7a; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+        .offer-clear-btn:hover { border-color: #8C1D40; color: #f5c842; }
+
+        /* ── Submit bar ── */
+        .anp-action-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        .submit-btn { flex: 1; height: 48px; background: linear-gradient(135deg, #6c002a, #8c1d40); color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.2s; letter-spacing: 0.1px; }
         .submit-btn:hover:not(:disabled) { opacity: 0.9; }
         .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .tab-nav-btns { display: flex; gap: 6px; }
+        .tab-nav-btn { height: 48px; padding: 0 16px; background: #fff; color: #1a1a1a; border: 1.5px solid #e8e4db; border-radius: 10px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
+        .tab-nav-btn:hover { border-color: #9b9b9b; }
 
         .error-box { background: #fdf2f5; border: 1px solid #f5c6d0; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #8C1D40; margin-bottom: 16px; }
 
         @media (max-width: 600px) {
           .anp-row, .anp-row.three { grid-template-columns: 1fr; }
           .nearby-row-wrap { grid-template-columns: 1fr auto; }
+          .anp-tab { font-size: 12px; padding: 6px 10px; }
         }
       `}</style>
 
       <div className="anp-wrap">
-        <a href="/admin/properties" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#9b9b9b', textDecoration: 'none', marginBottom: '20px' }}>
-          ← Back to properties
+        {/* ── Header ── */}
+        <a href={`/admin/properties/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#9b9b9b', textDecoration: 'none', marginBottom: '20px' }}>
+          ← Back to property
         </a>
 
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
             <div>
               <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: '26px', fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.4px', marginBottom: '4px' }}>
                 Edit listing
               </h1>
               <p style={{ fontSize: '13px', color: '#9b9b9b' }}>
-                Changes save immediately — slug stays the same.
+                {property?.name} · slug stays the same on save
               </p>
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {property?.slug && (
-                <a href={`/homes/${property.slug}`} target="_blank" rel="noopener noreferrer"
-                  style={{ height: '34px', background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '8px', padding: '0 14px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: "'DM Sans', sans-serif" }}>
-                  View public ↗
-                </a>
-              )}
-            </div>
+            {property?.slug && (
+              <a href={`/homes/${property.slug}`} target="_blank" rel="noopener noreferrer"
+                style={{ height: '34px', background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '8px', padding: '0 14px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: "'DM Sans', sans-serif" }}>
+                View public ↗
+              </a>
+            )}
           </div>
         </div>
 
-        {/* ── Basic Info ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Basic Info</div>
-          <div style={{ marginBottom: '14px' }}>
-            <div className="anp-field">
-              <label className="anp-label">Property Name *</label>
-              <input className="anp-input" placeholder="e.g. The Commons at Tempe" value={name} onChange={e => setName(e.target.value)} />
-            </div>
-          </div>
-          <div style={{ marginBottom: '14px' }}>
-            <div className="anp-field">
-              <label className="anp-label">Address *</label>
-              <input className="anp-input" placeholder="e.g. 123 College Ave, Tempe, AZ 85281" value={address} onChange={e => setAddress(e.target.value)} />
-            </div>
-          </div>
-          <div className="anp-field">
-            <label className="anp-label">Description</label>
-            <textarea className="anp-textarea" placeholder="Describe the property…" value={description} onChange={e => setDescription(e.target.value)} rows={4} />
-          </div>
-        </div>
-
-        {/* ── Listing Details ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Listing Details</div>
-          <div className="anp-row" style={{ marginBottom: '14px' }}>
-            <div className="anp-field">
-              <label className="anp-label">Listing Type *</label>
-              <select className="anp-select" value={listingType} onChange={e => setListingType(e.target.value)}>
-                <option value="standard_rental">Standard Rental</option>
-                <option value="sublease">Sublease</option>
-                <option value="lease_transfer">Lease Transfer</option>
-              </select>
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Unit Type</label>
-              <select className="anp-select" value={unitType} onChange={e => setUnitType(e.target.value)}>
-                <option value="">— Select —</option>
-                <option value="room_in_house">Room in a house</option>
-                <option value="apartment">Unit in apartment</option>
-                <option value="condo">Condo</option>
-                <option value="studio">Studio</option>
-              </select>
-            </div>
-          </div>
-          <div className="anp-row three">
-            <div className="anp-field">
-              <label className="anp-label">Bedrooms</label>
-              <input className="anp-input" type="number" min="0" value={beds} onChange={e => setBeds(e.target.value)} />
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Bathrooms</label>
-              <input className="anp-input" type="number" min="0" step="0.5" value={baths} onChange={e => setBaths(e.target.value)} />
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Sq Ft</label>
-              <input className="anp-input" type="text" placeholder="e.g. 850" value={sqft} onChange={e => setSqft(e.target.value)} />
-            </div>
-          </div>
-          {(listingType === 'sublease' || listingType === 'lease_transfer') && (
-            <div className="anp-row" style={{ marginTop: '14px' }}>
-              <div className="anp-field">
-                <label className="anp-label">Available From</label>
-                <input className="anp-input" type="date" value={subleaseStartDate} onChange={e => setSubleaseStartDate(e.target.value)} />
-              </div>
-              <div className="anp-field">
-                <label className="anp-label">Sublease Ends</label>
-                <input className="anp-input" type="date" value={subleaseEndDate} onChange={e => setSubleaseEndDate(e.target.value)} />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Pricing & Availability ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Pricing &amp; Availability</div>
-          <div className="anp-row">
-            <div className="anp-field">
-              <label className="anp-label">Monthly Rent ($) *</label>
-              <input className="anp-input" type="number" min="0" value={price} onChange={e => setPrice(e.target.value)} />
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Security Deposit ($)</label>
-              <input className="anp-input" type="number" min="0" placeholder="Leave blank = 1 month's rent" value={securityDeposit} onChange={e => setSecurityDeposit(e.target.value)} />
-              {securityDeposit === '0' && <div className="anp-hint green">No deposit required — will be shown in green</div>}
-            </div>
-          </div>
-          <div className="anp-row" style={{ marginTop: '14px' }}>
-            <div className="anp-field">
-              <label className="anp-label">Total Rooms</label>
-              <input className="anp-input" type="number" min="1" value={totalRooms} onChange={e => setTotalRooms(e.target.value)} />
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Available Now</label>
-              <input className="anp-input" type="number" min="0" value={available} onChange={e => setAvailable(e.target.value)} />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Special Offer ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Special Offer <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#b0a898', fontSize: '11px' }}>(optional — shown as a banner to tenants)</span></div>
-          <div className="anp-row">
-            <div className="anp-field">
-              <label className="anp-label">Cash Credit Amount ($)</label>
-              <input className="anp-input" type="number" min="0" placeholder="e.g. 500" value={offerAmount} onChange={e => setOfferAmount(e.target.value)} />
-              <div className="anp-hint">Leave blank to hide the offer banner</div>
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Sign-by Deadline</label>
-              <input className="anp-input" type="date" value={offerDeadline} onChange={e => setOfferDeadline(e.target.value)} />
-            </div>
-          </div>
-          <div className="anp-field" style={{ marginTop: '14px' }}>
-            <label className="anp-label">Offer Description</label>
-            <input className="anp-input" type="text" placeholder="e.g. Cash credit applied at lease signing" value={offerDescription} onChange={e => setOfferDescription(e.target.value)} />
-          </div>
-        </div>
-
-        {/* ── Location ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Location</div>
-          <div style={{ marginBottom: '14px' }}>
-            <div className="anp-field">
-              <label className="anp-label">Distance to ASU (miles)</label>
-              <input className="anp-input" type="number" min="0" step="0.1" placeholder="e.g. 0.4" value={asuDistance} onChange={e => setAsuDistance(e.target.value)} />
-            </div>
-          </div>
-          <div className="anp-row">
-            <div className="anp-field">
-              <label className="anp-label">Latitude</label>
-              <input className="anp-input" type="number" step="any" placeholder="e.g. 33.4255" value={lat} onChange={e => setLat(e.target.value)} />
-            </div>
-            <div className="anp-field">
-              <label className="anp-label">Longitude</label>
-              <input className="anp-input" type="number" step="any" placeholder="e.g. -111.9400" value={lng} onChange={e => setLng(e.target.value)} />
-            </div>
-          </div>
-          <div className="anp-field" style={{ marginTop: '14px' }}>
-            <label className="anp-label">Map Embed URL</label>
-            <input className="anp-input" type="url" placeholder="Google Maps embed URL" value={mapEmbedUrl} onChange={e => setMapEmbedUrl(e.target.value)} />
-          </div>
-        </div>
-
-        {/* ── Tags ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Amenity Tags</div>
-          {tags.length > 0 && (
-            <div className="tag-list">
-              {tags.map(t => (
-                <span key={t} className="tag-pill">
-                  {t}
-                  <button className="tag-remove" onClick={() => setTags(prev => prev.filter(x => x !== t))}>×</button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="add-row">
-            <input className="anp-input" style={{ flex: 1 }} placeholder="e.g. WiFi, Parking, In-unit washer/dryer" value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addTag()} />
-            <button className="add-btn" onClick={addTag}>Add</button>
-          </div>
-          <div className="anp-hint" style={{ marginTop: '6px' }}>Press Enter or click Add</div>
-        </div>
-
-        {/* ── ASU Reasons ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Why ASU Students Love This</div>
-          {asuReasons.length > 0 && (
-            <div className="tag-list">
-              {asuReasons.map(r => (
-                <span key={r} className="tag-pill">
-                  {r}
-                  <button className="tag-remove" onClick={() => setAsuReasons(prev => prev.filter(x => x !== r))}>×</button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="add-row">
-            <input className="anp-input" style={{ flex: 1 }} placeholder="e.g. Walking distance to Tempe campus" value={reasonInput}
-              onChange={e => setReasonInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addReason()} />
-            <button className="add-btn" onClick={addReason}>Add</button>
-          </div>
-        </div>
-
-        {/* ── Nearby Places ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Nearby Places</div>
-          {nearbyRows.map((row, i) => (
-            <div key={i} className="nearby-row-wrap">
-              <input className="anp-input" placeholder="Place (e.g. Sun Devil Stadium)" value={row.place}
-                onChange={e => setNearbyRows(prev => prev.map((r, idx) => idx === i ? { ...r, place: e.target.value } : r))} />
-              <input className="anp-input" placeholder="Travel time (e.g. 4 min walk)" value={row.travel_time}
-                onChange={e => setNearbyRows(prev => prev.map((r, idx) => idx === i ? { ...r, travel_time: e.target.value } : r))} />
-              {nearbyRows.length > 1 && (
-                <button className="remove-row-btn" onClick={() => setNearbyRows(prev => prev.filter((_, idx) => idx !== i))}>×</button>
-              )}
-            </div>
+        {/* ── Sub nav ── */}
+        <div className="anp-subnav">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              className={`anp-tab${activeTab === t.id ? ' active' : ''}${t.id === 'offer' && activeTab === t.id ? ' offer-tab' : ''}`}
+              onClick={() => setActiveTab(t.id)}
+            >
+              {t.label}
+              {t.id === 'offer' && offerAmount && <span style={{ marginLeft: '5px', fontSize: '10px', background: '#f5c842', color: '#1a0a0f', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>ON</span>}
+            </button>
           ))}
-          <button className="add-nearby-btn" onClick={() => setNearbyRows(prev => [...prev, { place: '', travel_time: '' }])}>
-            + Add place
-          </button>
         </div>
 
-        {/* ── Owner Assignment ── */}
-        <div className="anp-section">
-          <div className="anp-section-title">Owner Assignment</div>
-          <div className="owner-toggle">
-            <button className={`owner-opt${selectedOwnerId === 'claimable' ? ' selected' : ''}`} onClick={() => setSelectedOwnerId('claimable')}>
-              Claimable (no owner)
-            </button>
-            <button className={`owner-opt${selectedOwnerId !== 'claimable' && selectedOwnerId !== '' ? ' selected' : ''}`}
-              onClick={() => { if (owners.length > 0 && selectedOwnerId === 'claimable') setSelectedOwnerId(owners[0].id) }}>
-              Assign to landlord
-            </button>
-          </div>
-          {selectedOwnerId === 'claimable' ? (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', color: '#78350f', lineHeight: 1.6 }}>
-              No owner — listing is claimable via the private claim link.
+        {/* ══ BASICS ══ */}
+        {activeTab === 'basics' && (
+          <>
+            <div className="anp-card">
+              <div className="anp-card-title">Property Info</div>
+              <div style={{ marginBottom: '16px' }}>
+                <div className="anp-field">
+                  <label className="anp-label">Property Name *</label>
+                  <input className="anp-input" placeholder="e.g. The Commons at Tempe" value={name} onChange={e => setName(e.target.value)} />
+                </div>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <div className="anp-field">
+                  <label className="anp-label">Address *</label>
+                  <input className="anp-input" placeholder="e.g. 123 College Ave, Tempe, AZ 85281" value={address} onChange={e => setAddress(e.target.value)} />
+                </div>
+              </div>
+              <div className="anp-field">
+                <label className="anp-label">Description</label>
+                <textarea className="anp-textarea" placeholder="Describe the property…" value={description} onChange={e => setDescription(e.target.value)} rows={4} />
+              </div>
             </div>
-          ) : (
-            <div className="anp-field">
-              <label className="anp-label">Assigned Landlord</label>
-              {ownersLoading ? (
-                <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Loading landlords…</div>
-              ) : owners.length === 0 ? (
-                <div style={{ fontSize: '13px', color: '#9b9b9b' }}>No landlords found.</div>
-              ) : (
-                <select className="anp-select" value={selectedOwnerId} onChange={e => setSelectedOwnerId(e.target.value)}>
-                  {owners.map(o => (
-                    <option key={o.id} value={o.id}>{o.name} ({o.email})</option>
-                  ))}
-                </select>
+
+            <div className="anp-card">
+              <div className="anp-card-title">Listing Details</div>
+              <div className="anp-row" style={{ marginBottom: '16px' }}>
+                <div className="anp-field">
+                  <label className="anp-label">Listing Type *</label>
+                  <select className="anp-select" value={listingType} onChange={e => setListingType(e.target.value)}>
+                    <option value="standard_rental">Standard Rental</option>
+                    <option value="sublease">Sublease</option>
+                    <option value="lease_transfer">Lease Transfer</option>
+                  </select>
+                </div>
+                <div className="anp-field">
+                  <label className="anp-label">Unit Type</label>
+                  <select className="anp-select" value={unitType} onChange={e => setUnitType(e.target.value)}>
+                    <option value="">— Select —</option>
+                    <option value="room_in_house">Room in a house</option>
+                    <option value="apartment">Unit in apartment</option>
+                    <option value="condo">Condo</option>
+                    <option value="studio">Studio</option>
+                  </select>
+                </div>
+              </div>
+              <div className="anp-row three" style={{ marginBottom: (listingType === 'sublease' || listingType === 'lease_transfer') ? '16px' : '0' }}>
+                <div className="anp-field">
+                  <label className="anp-label">Bedrooms</label>
+                  <input className="anp-input" type="number" min="0" value={beds} onChange={e => setBeds(e.target.value)} />
+                </div>
+                <div className="anp-field">
+                  <label className="anp-label">Bathrooms</label>
+                  <input className="anp-input" type="number" min="0" step="0.5" value={baths} onChange={e => setBaths(e.target.value)} />
+                </div>
+                <div className="anp-field">
+                  <label className="anp-label">Sq Ft</label>
+                  <input className="anp-input" type="text" placeholder="e.g. 850" value={sqft} onChange={e => setSqft(e.target.value)} />
+                </div>
+              </div>
+              {(listingType === 'sublease' || listingType === 'lease_transfer') && (
+                <div className="anp-row" style={{ marginBottom: '0' }}>
+                  <div className="anp-field">
+                    <label className="anp-label">Available From</label>
+                    <input className="anp-input" type="date" value={subleaseStartDate} onChange={e => setSubleaseStartDate(e.target.value)} />
+                  </div>
+                  <div className="anp-field">
+                    <label className="anp-label">Sublease Ends</label>
+                    <input className="anp-input" type="date" value={subleaseEndDate} onChange={e => setSubleaseEndDate(e.target.value)} />
+                  </div>
+                </div>
               )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
-        {/* ── Photos ── */}
-        <div className="anp-section">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: images.length > 0 ? '12px' : '0' }}>
-            <div className="anp-section-title" style={{ marginBottom: 0 }}>Photos</div>
-            <span style={{ fontSize: '12px', color: '#9b9b9b' }}>{images.length} photo{images.length !== 1 ? 's' : ''} · drag or use arrows to reorder</span>
+        {/* ══ PRICING ══ */}
+        {activeTab === 'pricing' && (
+          <div className="anp-card">
+            <div className="anp-card-title">Pricing &amp; Availability</div>
+            <div className="anp-row" style={{ marginBottom: '16px' }}>
+              <div className="anp-field">
+                <label className="anp-label">Monthly Rent ($) *</label>
+                <input className="anp-input" type="number" min="0" value={price} onChange={e => setPrice(e.target.value)} />
+              </div>
+              <div className="anp-field">
+                <label className="anp-label">Security Deposit ($)</label>
+                <input className="anp-input" type="number" min="0" placeholder="Leave blank = 1 month's rent" value={securityDeposit} onChange={e => setSecurityDeposit(e.target.value)} />
+                {securityDeposit === '0' && <div className="anp-hint green">No deposit — shown in green on listing</div>}
+              </div>
+            </div>
+            <div className="anp-row" style={{ marginBottom: '0' }}>
+              <div className="anp-field">
+                <label className="anp-label">Total Rooms</label>
+                <input className="anp-input" type="number" min="1" value={totalRooms} onChange={e => setTotalRooms(e.target.value)} />
+              </div>
+              <div className="anp-field">
+                <label className="anp-label">Available Now</label>
+                <input className="anp-input" type="number" min="0" value={available} onChange={e => setAvailable(e.target.value)} />
+              </div>
+            </div>
           </div>
+        )}
 
-          {images.length > 0 && (
-            <div className="photo-grid" style={{ marginBottom: '12px' }}>
-              {images.map((img, i) => (
-                <div key={i} className={`photo-item${img.kind === 'new' ? ' photo-item-new' : ''}`}>
-                  <img
-                    src={img.kind === 'existing' ? img.url : img.previewUrl}
-                    alt={`Photo ${i + 1}`}
-                  />
-                  <span className="photo-badge photo-badge-order">{i + 1}</span>
-                  {img.kind === 'new' && <span className="photo-badge photo-badge-new" style={{ left: 'auto', right: '26px' }}>New</span>}
-                  <div className="photo-controls">
-                    <button className="photo-arrow" onClick={() => moveImage(i, -1)} disabled={i === 0} title="Move left">‹</button>
-                    <button className="photo-arrow" onClick={() => moveImage(i, 1)} disabled={i === images.length - 1} title="Move right">›</button>
-                  </div>
-                  <button className="photo-remove" onClick={() => removeImage(i)}>×</button>
+        {/* ══ LOCATION ══ */}
+        {activeTab === 'location' && (
+          <>
+            <div className="anp-card">
+              <div className="anp-card-title">Coordinates &amp; Map</div>
+              <div style={{ marginBottom: '16px' }}>
+                <div className="anp-field">
+                  <label className="anp-label">Distance to ASU (miles)</label>
+                  <input className="anp-input" type="number" min="0" step="0.1" placeholder="e.g. 0.4" value={asuDistance} onChange={e => setAsuDistance(e.target.value)} />
+                </div>
+              </div>
+              <div className="anp-row" style={{ marginBottom: '16px' }}>
+                <div className="anp-field">
+                  <label className="anp-label">Latitude</label>
+                  <input className="anp-input" type="number" step="any" placeholder="e.g. 33.4255" value={lat} onChange={e => setLat(e.target.value)} />
+                </div>
+                <div className="anp-field">
+                  <label className="anp-label">Longitude</label>
+                  <input className="anp-input" type="number" step="any" placeholder="e.g. -111.9400" value={lng} onChange={e => setLng(e.target.value)} />
+                </div>
+              </div>
+              <div className="anp-field">
+                <label className="anp-label">Map Embed URL</label>
+                <input className="anp-input" type="url" placeholder="Google Maps embed URL" value={mapEmbedUrl} onChange={e => setMapEmbedUrl(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="anp-card">
+              <div className="anp-card-title">Nearby Places <span className="anp-card-title-hint">shown on listing page</span></div>
+              {nearbyRows.map((row, i) => (
+                <div key={i} className="nearby-row-wrap">
+                  <input className="anp-input" placeholder="Place (e.g. Sun Devil Stadium)" value={row.place}
+                    onChange={e => setNearbyRows(prev => prev.map((r, idx) => idx === i ? { ...r, place: e.target.value } : r))} />
+                  <input className="anp-input" placeholder="Travel time (e.g. 4 min walk)" value={row.travel_time}
+                    onChange={e => setNearbyRows(prev => prev.map((r, idx) => idx === i ? { ...r, travel_time: e.target.value } : r))} />
+                  {nearbyRows.length > 1 && (
+                    <button className="remove-row-btn" onClick={() => setNearbyRows(prev => prev.filter((_, idx) => idx !== i))}>×</button>
+                  )}
                 </div>
               ))}
+              <button className="add-nearby-btn" onClick={() => setNearbyRows(prev => [...prev, { place: '', travel_time: '' }])}>
+                + Add place
+              </button>
             </div>
-          )}
+          </>
+        )}
 
-          <div className="photo-zone" onClick={() => fileInputRef.current?.click()}>
-            <div style={{ fontSize: '22px', marginBottom: '6px' }}>📸</div>
-            <div style={{ fontSize: '13px', fontWeight: 500, color: '#1a1a1a', marginBottom: '2px' }}>
-              {images.length === 0 ? 'Add photos' : 'Add more photos'}
+        {/* ══ CONTENT ══ */}
+        {activeTab === 'content' && (
+          <>
+            <div className="anp-card">
+              <div className="anp-card-title">Amenity Tags</div>
+              {tags.length > 0 && (
+                <div className="tag-list">
+                  {tags.map(t => (
+                    <span key={t} className="tag-pill">
+                      {t}
+                      <button className="tag-remove" onClick={() => setTags(prev => prev.filter(x => x !== t))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="add-row">
+                <input className="anp-input" style={{ flex: 1 }} placeholder="e.g. WiFi, Parking, In-unit washer/dryer" value={tagInput}
+                  onChange={e => setTagInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addTag()} />
+                <button className="add-btn" onClick={addTag}>Add</button>
+              </div>
+              <div className="anp-hint" style={{ marginTop: '6px' }}>Press Enter or click Add</div>
             </div>
-            <div style={{ fontSize: '12px', color: '#9b9b9b' }}>JPG, PNG, WEBP</div>
+
+            <div className="anp-card">
+              <div className="anp-card-title">Why ASU Students Love This</div>
+              {asuReasons.length > 0 && (
+                <div className="tag-list">
+                  {asuReasons.map(r => (
+                    <span key={r} className="tag-pill">
+                      {r}
+                      <button className="tag-remove" onClick={() => setAsuReasons(prev => prev.filter(x => x !== r))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="add-row">
+                <input className="anp-input" style={{ flex: 1 }} placeholder="e.g. Walking distance to Tempe campus" value={reasonInput}
+                  onChange={e => setReasonInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addReason()} />
+                <button className="add-btn" onClick={addReason}>Add</button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ══ MEDIA ══ */}
+        {activeTab === 'media' && (
+          <div className="anp-card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: images.length > 0 ? '14px' : '0' }}>
+              <div className="anp-card-title" style={{ marginBottom: 0 }}>Photos</div>
+              <span style={{ fontSize: '12px', color: '#9b9b9b' }}>{images.length} photo{images.length !== 1 ? 's' : ''} · use arrows to reorder</span>
+            </div>
+
+            {images.length > 0 && (
+              <div className="photo-grid" style={{ marginBottom: '14px' }}>
+                {images.map((img, i) => (
+                  <div key={i} className={`photo-item${img.kind === 'new' ? ' photo-item-new' : ''}`}>
+                    <img
+                      src={img.kind === 'existing' ? img.url : img.previewUrl}
+                      alt={`Photo ${i + 1}`}
+                    />
+                    <span className="photo-badge photo-badge-order">{i + 1}</span>
+                    {img.kind === 'new' && <span className="photo-badge photo-badge-new" style={{ left: 'auto', right: '26px' }}>New</span>}
+                    <div className="photo-controls">
+                      <button className="photo-arrow" onClick={() => moveImage(i, -1)} disabled={i === 0} title="Move left">‹</button>
+                      <button className="photo-arrow" onClick={() => moveImage(i, 1)} disabled={i === images.length - 1} title="Move right">›</button>
+                    </div>
+                    <button className="photo-remove" onClick={() => removeImage(i)}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="photo-zone" onClick={() => fileInputRef.current?.click()}>
+              <div style={{ fontSize: '22px', marginBottom: '6px' }}>📸</div>
+              <div style={{ fontSize: '13px', fontWeight: 500, color: '#1a1a1a', marginBottom: '2px' }}>
+                {images.length === 0 ? 'Add photos' : 'Add more photos'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#9b9b9b' }}>JPG, PNG, WEBP</div>
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+              onChange={e => e.target.files && addFiles(e.target.files)} />
           </div>
-          <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-            onChange={e => e.target.files && addFiles(e.target.files)} />
-        </div>
+        )}
 
-        {/* ── Submit ── */}
+        {/* ══ OFFER ══ */}
+        {activeTab === 'offer' && (
+          <>
+            <div className="offer-card">
+              <div className="offer-card-title">
+                <span>Special Offer</span>
+              </div>
+              <div className="offer-card-desc">
+                Set a cash credit offer to display as a banner on the tenant-facing listing page. Leave amount blank to hide the offer.
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div className="anp-field">
+                  <label className="offer-label">Cash Credit Amount ($)</label>
+                  <input className="offer-input" type="number" min="0" placeholder="e.g. 500" value={offerAmount} onChange={e => setOfferAmount(e.target.value)} />
+                </div>
+                <div className="anp-field">
+                  <label className="offer-label">Sign-by Deadline</label>
+                  <input className="offer-input" type="date" value={offerDeadline} onChange={e => setOfferDeadline(e.target.value)} />
+                </div>
+              </div>
+              <div className="anp-field">
+                <label className="offer-label">Offer Description</label>
+                <input className="offer-input" type="text" placeholder="e.g. Cash credit applied at lease signing" value={offerDescription} onChange={e => setOfferDescription(e.target.value)} />
+              </div>
+
+              {offerAmount && (
+                <div className="offer-preview">
+                  <div className="offer-preview-label">Preview — tenant will see this</div>
+                  <div className="offer-preview-amount">${Number(offerAmount).toLocaleString()} cash credit</div>
+                  {offerDescription && <div className="offer-preview-desc">{offerDescription}</div>}
+                  {offerDeadline && (
+                    <div className="offer-preview-date">
+                      Sign by {new Date(offerDeadline + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {offerAmount && (
+                <button className="offer-clear-btn" onClick={() => { setOfferAmount(''); setOfferDeadline(''); setOfferDescription('') }}>
+                  Clear offer
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ══ ADMIN ══ */}
+        {activeTab === 'admin' && (
+          <div className="anp-card">
+            <div className="anp-card-title">Owner Assignment</div>
+            <div className="owner-toggle">
+              <button className={`owner-opt${selectedOwnerId === 'claimable' ? ' selected' : ''}`} onClick={() => setSelectedOwnerId('claimable')}>
+                Claimable (no owner)
+              </button>
+              <button className={`owner-opt${selectedOwnerId !== 'claimable' && selectedOwnerId !== '' ? ' selected' : ''}`}
+                onClick={() => { if (owners.length > 0 && selectedOwnerId === 'claimable') setSelectedOwnerId(owners[0].id) }}>
+                Assign to landlord
+              </button>
+            </div>
+            {selectedOwnerId === 'claimable' ? (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', color: '#78350f', lineHeight: 1.6 }}>
+                No owner — listing is claimable via the private claim link.
+              </div>
+            ) : (
+              <div className="anp-field">
+                <label className="anp-label">Assigned Landlord</label>
+                {ownersLoading ? (
+                  <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Loading landlords…</div>
+                ) : owners.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: '#9b9b9b' }}>No landlords found.</div>
+                ) : (
+                  <select className="anp-select" value={selectedOwnerId} onChange={e => setSelectedOwnerId(e.target.value)}>
+                    {owners.map(o => (
+                      <option key={o.id} value={o.id}>{o.name} ({o.email})</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Actions ── */}
         {error && <div className="error-box">{error}</div>}
         {uploadStatus && <div style={{ fontSize: '13px', color: '#9b9b9b', textAlign: 'center', marginBottom: '12px' }}>{uploadStatus}</div>}
-        <button className="submit-btn" onClick={handleSubmit} disabled={submitting}>
-          {submitting ? 'Saving…' : 'Save changes →'}
-        </button>
+
+        <div className="anp-action-bar">
+          <div className="tab-nav-btns">
+            {TABS.findIndex(t => t.id === activeTab) > 0 && (
+              <button className="tab-nav-btn" onClick={() => {
+                const idx = TABS.findIndex(t => t.id === activeTab)
+                setActiveTab(TABS[idx - 1].id)
+              }}>
+                ← {TABS[TABS.findIndex(t => t.id === activeTab) - 1]?.label}
+              </button>
+            )}
+          </div>
+          <button className="submit-btn" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? 'Saving…' : 'Save changes →'}
+          </button>
+          <div className="tab-nav-btns">
+            {TABS.findIndex(t => t.id === activeTab) < TABS.length - 1 && (
+              <button className="tab-nav-btn" onClick={() => {
+                const idx = TABS.findIndex(t => t.id === activeTab)
+                setActiveTab(TABS[idx + 1].id)
+              }}>
+                {TABS[TABS.findIndex(t => t.id === activeTab) + 1]?.label} →
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </>
   )
