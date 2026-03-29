@@ -212,6 +212,7 @@ export async function getProperties(): Promise<Property[]> {
       property_asu_reasons ( reason, position )
     `)
     .eq('is_active', true)
+    .eq('admin_status', 'active')
     .eq('is_test', false)
     .order('created_at', { ascending: true })
 

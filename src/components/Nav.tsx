@@ -265,41 +265,19 @@ export default function Nav() {
                     </span>
                   </div>
 
-                  {/* Tenant links — every role gets these */}
-                  <div className="dropdown-section-label">For you</div>
+                  {/* Portals */}
                   <a href="/dashboard" className="dropdown-item">
                     <span className="di-icon" style={{ background:'#fdf2f5' }}>🏠</span> My Dashboard
                   </a>
-                  <a href="/homes" className="dropdown-item">
-                    <span className="di-icon" style={{ background:'#faf9f6' }}>🔍</span> Browse Homes
-                  </a>
-
-                  {/* Landlord links */}
                   {(user.role === 'landlord' || user.role === 'admin') && (
-                    <>
-                      <div className="dropdown-divider" />
-                      <div className="dropdown-section-label">Landlord</div>
-                      <a href="/landlord/dashboard" className="dropdown-item">
-                        <span className="di-icon" style={{ background:'#f0fdf4' }}>⊞</span> Landlord Portal
-                      </a>
-                      <a href="/landlord/listings" className="dropdown-item">
-                        <span className="di-icon" style={{ background:'#f0fdf4' }}>▣</span> My Listings
-                      </a>
-                      <a href="/landlord/leads" className="dropdown-item">
-                        <span className="di-icon" style={{ background:'#f0fdf4' }}>◉</span> Leads
-                      </a>
-                    </>
+                    <a href="/landlord/dashboard" className="dropdown-item">
+                      <span className="di-icon" style={{ background:'#f0fdf4' }}>⊞</span> Landlord Portal
+                    </a>
                   )}
-
-                  {/* Admin links */}
                   {user.role === 'admin' && (
-                    <>
-                      <div className="dropdown-divider" />
-                      <div className="dropdown-section-label">Admin</div>
-                      <a href="/admin" className="dropdown-item">
-                        <span className="di-icon" style={{ background:'#f3f0ff' }}>◈</span> All Leads
-                      </a>
-                    </>
+                    <a href="/admin" className="dropdown-item">
+                      <span className="di-icon" style={{ background:'#f3f0ff' }}>◈</span> Admin Portal
+                    </a>
                   )}
 
                   {/* Account */}
@@ -393,22 +371,13 @@ export default function Nav() {
                 </span>
               </div>
 
-              {/* Tenant — always shown */}
-              <a href="/dashboard"  className="mob-signin-link" onClick={() => setMobileOpen(false)}>🏠 My Dashboard →</a>
-
-              {/* Landlord */}
+              <a href="/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>🏠 My Dashboard →</a>
               {(user.role === 'landlord' || user.role === 'admin') && (
-                <>
-                  <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>⊞ Landlord Portal →</a>
-                  <a href="/landlord/leads"     className="mob-signin-link" onClick={() => setMobileOpen(false)}>◉ Leads →</a>
-                </>
+                <a href="/landlord/dashboard" className="mob-signin-link" onClick={() => setMobileOpen(false)}>⊞ Landlord Portal →</a>
               )}
-
-              {/* Admin */}
               {user.role === 'admin' && (
-                <a href="/admin" className="mob-signin-link" onClick={() => setMobileOpen(false)}>◈ All Leads →</a>
+                <a href="/admin" className="mob-signin-link" onClick={() => setMobileOpen(false)}>◈ Admin Portal →</a>
               )}
-
               <a href="/profile" className="mob-signin-link" onClick={() => setMobileOpen(false)}>👤 My Profile →</a>
               <button className="mob-signout" onClick={handleSignOut}>Sign out</button>
             </>
