@@ -355,7 +355,7 @@ export default function AdminPropertyDetailPage({ params }: { params: Promise<{ 
                             </td>
                             <td style={{ padding: '8px 8px', fontSize: '12px', color: '#9b9b9b', whiteSpace: 'nowrap' }}>{l.move_in_date || '—'}</td>
                             <td style={{ padding: '8px 8px', fontSize: '12px', color: '#9b9b9b', whiteSpace: 'nowrap' }}>
-                              {new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {l.created_at ? new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                             </td>
                           </tr>
                         )
