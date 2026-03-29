@@ -28,6 +28,7 @@ const SECTIONS = [
       { label: 'hello@homehive.live',    href: 'mailto:hello@homehive.live'},
       { label: '+1 (949) 867-0499',      href: 'tel:+19498670499'         },
       { label: 'Sign in',                href: '/login'                   },
+      { label: 'Sitemap',                href: '/sitemap-page'            },
     ],
   },
 ]
