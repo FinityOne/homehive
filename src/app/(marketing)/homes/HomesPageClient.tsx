@@ -13,9 +13,9 @@ type Filters = {
 }
 
 const DEFAULT_FILTERS: Filters = {
-  maxPrice: 1200,
+  maxPrice: 2000,
   minBeds: 1,
-  maxDistance: 2,
+  maxDistance: 5,
   search: '',
 }
 
@@ -393,11 +393,11 @@ export default function HomesPageClient() {
           <div className="filter-group">
 
             {/* Max price */}
-            <div className={`filter-pill ${filters.maxPrice < 1200 ? 'active' : ''}`}>
+            <div className={`filter-pill ${filters.maxPrice < 2000 ? 'active' : ''}`}>
               <label>Max $</label>
               <input
                 type="range"
-                min={500} max={1200} step={50}
+                min={500} max={2000} step={50}
                 value={filters.maxPrice}
                 onChange={e => setFilters(f => ({ ...f, maxPrice: Number(e.target.value) }))}
                 onMouseUp={e => ph?.capture('homes_filter_changed', { filter: 'max_price', value: Number((e.target as HTMLInputElement).value) })}
@@ -425,11 +425,11 @@ export default function HomesPageClient() {
             </div>
 
             {/* Distance */}
-            <div className={`filter-pill ${filters.maxDistance < 2 ? 'active' : ''}`}>
+            <div className={`filter-pill ${filters.maxDistance < 5 ? 'active' : ''}`}>
               <label>To ASU</label>
               <input
                 type="range"
-                min={0.2} max={2} step={0.1}
+                min={0.2} max={5} step={0.1}
                 value={filters.maxDistance}
                 onChange={e => setFilters(f => ({ ...f, maxDistance: Number(e.target.value) }))}
                 onMouseUp={e => ph?.capture('homes_filter_changed', { filter: 'max_distance_mi', value: Number((e.target as HTMLInputElement).value) })}
@@ -440,7 +440,7 @@ export default function HomesPageClient() {
 
             {/* Available only */}
             <button
-              className={`filter-pill ${filters.maxPrice < 1200 || filters.minBeds > 1 || filters.maxDistance < 2 ? 'active' : ''}`}
+              className={`filter-pill ${filters.maxPrice < 2000 || filters.minBeds > 1 || filters.maxDistance < 5 ? 'active' : ''}`}
               onClick={() => { setFilters(DEFAULT_FILTERS); ph?.capture('homes_filter_reset') }}
               style={{ cursor: 'pointer', border: '1.5px solid #e8e4db' }}
             >
