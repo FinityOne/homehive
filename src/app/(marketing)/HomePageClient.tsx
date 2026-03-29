@@ -137,7 +137,7 @@ function HomePageInner() {
 
   const featured  = properties
     .filter(p => p.listing_type === 'standard_rental')
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.asu_score - a.asu_score)
     .slice(0, 5)
 
   const subleases = properties
@@ -146,7 +146,7 @@ function HomePageInner() {
     .slice(0, 5)
 
   // Fallback: if no type separation, just show top 5 in featured row
-  const fallbackAll = properties.sort((a, b) => b.score - a.score).slice(0, 5)
+  const fallbackAll = properties.slice().sort((a, b) => b.asu_score - a.asu_score).slice(0, 5)
   const featuredRow  = featured.length  ? featured  : fallbackAll
   const subleasesRow = subleases.length ? subleases : []
 

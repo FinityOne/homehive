@@ -192,112 +192,60 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
   )
 }
 
+// ─── LISTING TYPE CONFIG ─────────────────────────────────────────────────────
+const TYPE_CONFIG = {
+  standard_rental: { label: 'For Rent',       bg: 'rgba(220,252,231,0.95)', color: '#166534', border: 'rgba(187,247,208,0.9)' },
+  sublease:        { label: 'Sublease',        bg: 'rgba(253,242,245,0.95)', color: '#8C1D40', border: 'rgba(245,198,208,0.9)' },
+  lease_transfer:  { label: 'Lease Transfer',  bg: 'rgba(239,246,255,0.95)', color: '#1d4ed8', border: 'rgba(191,219,254,0.9)' },
+} as const
+
+function fmtDate(d: string | null | undefined) {
+  if (!d) return null
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 // ─── HOME CARD ───────────────────────────────────────────────────────────────
 function HomeCard({ home, onHover }: { home: Property; onHover: (id: string | null) => void }) {
-  const isWholeHouseAvailable = home.available === home.total_rooms
-  const estimatedUtilities = '~$65–$140'
+  const tc   = TYPE_CONFIG[home.listing_type] ?? TYPE_CONFIG.standard_rental
+  const start = fmtDate(home.sublease_start_date)
+  const end   = fmtDate(home.sublease_end_date)
+  const isSublease = home.listing_type === 'sublease' || home.listing_type === 'lease_transfer'
 
   return (
     <a
       href={`/homes/${home.slug}`}
+      className="hc2-card"
       onMouseEnter={() => onHover(home.slug)}
       onMouseLeave={() => onHover(null)}
-      style={{
-        display: 'block', textDecoration: 'none', color: 'inherit',
-        background: '#fff', border: '1px solid #e8e4db', borderRadius: '14px',
-        overflow: 'hidden', transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
-      }}
-      onMouseOver={e => {
-        const el = e.currentTarget as HTMLElement
-        el.style.transform = 'translateY(-3px)'
-        el.style.boxShadow = '0 12px 40px rgba(0,0,0,0.09)'
-        el.style.borderColor = '#d4c9b0'
-      }}
-      onMouseOut={e => {
-        const el = e.currentTarget as HTMLElement
-        el.style.transform = 'translateY(0)'
-        el.style.boxShadow = 'none'
-        el.style.borderColor = '#e8e4db'
-      }}
     >
       {/* Image */}
-      <div style={{ height: '200px', overflow: 'hidden', position: 'relative' }}>
-        {home.images?.[0] && <img src={home.images[0]} alt={home.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-
-        {/* Top-left: availability badge */}
-        <div style={{
-          position: 'absolute', top: '10px', left: '10px',
-          display: 'flex', flexDirection: 'column', gap: '5px',
-        }}>
-          {isWholeHouseAvailable ? (
-            <div style={{ background: 'rgba(220,252,231,0.96)', color: '#166534', fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(187,247,208,0.9)', backdropFilter: 'blur(4px)' }}>
-              🏠 Entire house available
-            </div>
-          ) : (
-            <div style={{ background: home.available === 1 ? 'rgba(254,249,195,0.96)' : 'rgba(220,252,231,0.96)', color: home.available === 1 ? '#854d0e' : '#166534', fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: `1px solid ${home.available === 1 ? 'rgba(253,224,71,0.6)' : 'rgba(187,247,208,0.9)'}`, backdropFilter: 'blur(4px)' }}>
-              {home.available === 1 ? '⚡ 1 room left' : `${home.available} of ${home.total_rooms} rooms open`}
-            </div>
-          )}
+      <div className="hc2-img-wrap">
+        {home.images?.[0]
+          ? <img src={home.images[0]} alt={home.name} className="hc2-img" />
+          : <div className="hc2-img-placeholder" />
+        }
+        {/* Type badge — top left */}
+        <div className="hc2-type-badge" style={{ background: tc.bg, color: tc.color, border: `1px solid ${tc.border}` }}>
+          {tc.label}
         </div>
-
-        {/* Bottom-right: price pill */}
-        <div style={{ position: 'absolute', bottom: '10px', right: '10px', background: 'rgba(26,26,26,0.9)', color: '#fff', fontFamily: "'Fraunces', serif", fontSize: '18px', fontWeight: 300, padding: '5px 12px', borderRadius: '7px', backdropFilter: 'blur(6px)', letterSpacing: '-0.3px' }}>
-          ${home.price.toLocaleString()}<span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '11px', opacity: 0.7, fontWeight: 400 }}>/mo</span>
+        {/* Price — bottom right */}
+        <div className="hc2-price">
+          ${home.price.toLocaleString()}<span>/mo</span>
         </div>
       </div>
 
       {/* Body */}
-      <div style={{ padding: '16px 18px 18px' }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: '18px', fontWeight: 300, color: '#1a1a1a', marginBottom: '3px', letterSpacing: '-0.3px' }}>{home.name}</div>
-        <div style={{ fontSize: '12px', color: '#9b9b9b', marginBottom: '14px' }}>📍 {home.address}</div>
-
-        {/* Stats row */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
-          {[`${home.beds} bed`, `${home.baths} bath`, `${home.sqft} sqft`, `${home.asu_distance} mi to ASU`].map((s, i, arr) => (
-            <span key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: '#6b6b6b' }}>{s}</span>
-              {i < arr.length - 1 && <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: '#e8e4db', display: 'inline-block' }} />}
-            </span>
-          ))}
+      <div className="hc2-body">
+        <div className="hc2-name">{home.name}</div>
+        <div className="hc2-meta">
+          <span>📍 {home.asu_distance} mi to ASU</span>
+          <span className="hc2-sep" />
+          <span>{home.beds}bd · {home.baths}ba</span>
         </div>
-
-        {/* Cost breakdown */}
-        <div style={{ background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-            <span style={{ fontSize: '12px', color: '#6b6b6b' }}>Rent per room</span>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>${home.price.toLocaleString()}/mo</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-            <span style={{ fontSize: '12px', color: '#6b6b6b' }}>Est. utilities per person</span>
-            <span style={{ fontSize: '12px', color: '#6b6b6b' }}>{estimatedUtilities}/mo <span style={{ fontSize: '10px' }}>💡</span></span>
-          </div>
-          <div style={{ height: '1px', background: '#e8e4db', margin: '8px 0' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#1a1a1a' }}>Est. total per person</span>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#8C1D40' }}>${home.price + 65}–${home.price + 140}/mo</span>
-          </div>
-          <div style={{ fontSize: '10px', color: '#c5c1b8', marginTop: '5px' }}>Utilities vary by A/C usage. Summer months trend higher.</div>
-        </div>
-
-        {/* Group prompt if whole house available */}
-        {isWholeHouseAvailable && (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '9px 12px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '16px' }}>👥</span>
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: '#166534' }}>Perfect for a group of {home.total_rooms}</div>
-              <div style={{ fontSize: '11px', color: '#4b9e66' }}>Entire {home.beds}-bed house available — bring your squad</div>
-            </div>
-          </div>
+        {isSublease && start && end && (
+          <div className="hc2-dates">{start} → {end}</div>
         )}
-
-        {/* Footer CTA */}
-        <div style={{ borderTop: '1px solid #f0ede6', paddingTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#c9973a' }}>{home.asu_score}/10</span>
-            <span style={{ fontSize: '11px', color: '#9b9b9b' }}>ASU fit score</span>
-          </div>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#8C1D40' }}>View details →</span>
-        </div>
+        <div className="hc2-cta">Explore →</div>
       </div>
     </a>
   )
@@ -372,8 +320,28 @@ export default function HomesPageClient() {
         .homes-body { display: flex; flex: 1; overflow: hidden; }
 
         /* LIST */
-        .homes-list { width: 50%; flex-shrink: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: #faf9f6; }
+        .homes-list { width: 50%; flex-shrink: 0; overflow-y: auto; padding: 16px; background: #faf9f6; }
         .homes-list.full { width: 100%; }
+        .homes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .homes-list.full .homes-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+        /* COMPACT CARD */
+        .hc2-card { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #e8e4db; border-radius: 14px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
+        .hc2-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(0,0,0,0.09); border-color: #d4c9b0; }
+        .hc2-img-wrap { position: relative; height: 148px; overflow: hidden; background: #f0ede6; }
+        .hc2-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s; }
+        .hc2-card:hover .hc2-img { transform: scale(1.06); }
+        .hc2-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8e4db,#f0ede6); }
+        .hc2-type-badge { position: absolute; top: 9px; left: 9px; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; backdrop-filter: blur(4px); letter-spacing: 0.2px; }
+        .hc2-price { position: absolute; bottom: 9px; right: 9px; background: rgba(26,26,26,0.9); color: #fff; font-family: 'Fraunces', serif; font-size: 16px; font-weight: 300; padding: 4px 10px; border-radius: 7px; backdrop-filter: blur(6px); letter-spacing: -0.2px; line-height: 1.3; }
+        .hc2-price span { font-family: 'DM Sans', sans-serif; font-size: 10px; opacity: 0.65; font-weight: 400; }
+        .hc2-body { padding: 11px 13px 13px; }
+        .hc2-name { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 300; color: #1a1a1a; margin-bottom: 4px; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .hc2-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6b6b6b; margin-bottom: 4px; }
+        .hc2-sep { width: 3px; height: 3px; border-radius: 50%; background: #d4c9b0; flex-shrink: 0; }
+        .hc2-dates { font-size: 10px; color: #8C1D40; font-weight: 600; background: #fdf2f5; border: 1px solid #f5c6d0; padding: 2px 8px; border-radius: 20px; display: inline-block; margin-bottom: 4px; }
+        .hc2-cta { font-size: 12px; font-weight: 600; color: #8C1D40; margin-top: 6px; }
+        .hc2-card:hover .hc2-cta { color: #c9973a; }
 
         /* MAP */
         .homes-map { width: 50%; flex-shrink: 0; position: sticky; top: 0; height: 100%; background: #e8e4db; }
@@ -390,9 +358,13 @@ export default function HomesPageClient() {
           .homes-page { height: auto; overflow: visible; }
           .homes-body { flex-direction: column; }
           .homes-list, .homes-list.full { width: 100%; }
+          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr 1fr; }
           .homes-map { width: 100%; height: 340px; position: relative; }
           .search-box { max-width: 100%; }
           .toolbar-right { margin-left: 0; width: 100%; justify-content: space-between; }
+        }
+        @media (max-width: 480px) {
+          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -503,16 +475,17 @@ export default function HomesPageClient() {
           {/* LIST */}
           <div className={`homes-list${!mapVisible ? ' full' : ''}`}>
             {loading ? (
-              [0, 1].map(i => (
-                <div key={i} style={{ background: '#fff', border: '1px solid #e8e4db', borderRadius: '14px', overflow: 'hidden' }}>
-                  <div style={{ height: '200px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
-                  <div style={{ padding: '16px 18px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ height: '18px', width: '60%', background: '#f0ede6', borderRadius: '6px' }} />
-                    <div style={{ height: '12px', width: '40%', background: '#f0ede6', borderRadius: '6px' }} />
-                    <div style={{ height: '60px', background: '#f0ede6', borderRadius: '8px' }} />
+              <div className="homes-grid">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} style={{ background: '#fff', border: '1px solid #e8e4db', borderRadius: '14px', overflow: 'hidden' }}>
+                    <div style={{ height: '148px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+                    <div style={{ padding: '11px 13px 13px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ height: '14px', width: '70%', background: '#f0ede6', borderRadius: '4px' }} />
+                      <div style={{ height: '11px', width: '50%', background: '#f0ede6', borderRadius: '4px' }} />
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             ) : filtered.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-title">No homes match your filters</div>
@@ -520,9 +493,11 @@ export default function HomesPageClient() {
                 <button className="reset-btn" onClick={() => setFilters(DEFAULT_FILTERS)}>Clear filters</button>
               </div>
             ) : (
-              filtered.map(home => (
-                <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
-              ))
+              <div className="homes-grid">
+                {filtered.map(home => (
+                  <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                ))}
+              </div>
             )}
           </div>
 
