@@ -27,152 +27,11 @@ const LISTING_TYPE_LABEL: Record<string, string> = {
   lease_transfer:  'Lease Transfer',
 }
 
-// ─── LISTING DETAIL PANEL ─────────────────────────────────────────────────────
-function ListingPanel({ listing, onClose, onUpdate }: {
-  listing: Property
-  onClose: () => void
-  onUpdate: (id: string, adminStatus: AdminStatus, isTest: boolean) => void
-}) {
-  const [adminStatus, setAdminStatus] = useState<AdminStatus>((listing.admin_status as AdminStatus) ?? 'active')
-  const [isTest, setIsTest] = useState(listing.is_test ?? false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [claimCopied, setClaimCopied] = useState(false)
-
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-  const claimUrl = listing.claim_token ? `${siteUrl}/claim/${listing.claim_token}` : null
-
-  const save = async () => {
-    setSaving(true)
-    const { error } = await updatePropertyAdminStatus(listing.id, adminStatus, isTest)
-    if (!error) { onUpdate(listing.id, adminStatus, isTest); setSaved(true); setTimeout(() => setSaved(false), 2000) }
-    setSaving(false)
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex' }}>
-      <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }} onClick={onClose} />
-      <div style={{ width: '440px', background: '#fff', height: '100%', overflowY: 'auto', borderLeft: '1px solid #e8e4db', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }}>
-
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e8e4db', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: '#1a1a1a', marginBottom: '3px' }}>{listing.name}</div>
-            <div style={{ fontSize: '12px', color: '#9b9b9b' }}>{listing.address}</div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', color: '#9b9b9b', cursor: 'pointer', padding: '4px', lineHeight: 1, flexShrink: 0 }}>✕</button>
-        </div>
-
-        {listing.images?.[0] && (
-          <div style={{ height: '180px', overflow: 'hidden', flexShrink: 0 }}>
-            <img src={listing.images[0]} alt={listing.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          </div>
-        )}
-
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '12px' }}>Listing info</div>
-          {[
-            { label: 'Type',       value: LISTING_TYPE_LABEL[listing.listing_type] ?? listing.listing_type },
-            { label: 'Price',      value: listing.price ? `$${listing.price.toLocaleString()}/mo` : '—' },
-            { label: 'Beds/Baths', value: listing.beds || listing.baths ? `${listing.beds}bd / ${listing.baths}ba` : '—' },
-            { label: 'Rooms',      value: listing.total_rooms ? `${listing.available} of ${listing.total_rooms} available` : '—' },
-            { label: 'Owner ID',   value: listing.owner_id },
-            { label: 'Created',    value: new Date(listing.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
-            { label: 'Slug',       value: listing.slug },
-          ].map(row => (
-            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0', borderBottom: '1px solid #f5f4f0', gap: '12px' }}>
-              <span style={{ fontSize: '12px', color: '#9b9b9b', flexShrink: 0 }}>{row.label}</span>
-              <span style={{ fontSize: '12px', color: '#1a1a1a', textAlign: 'right', wordBreak: 'break-all', fontFamily: row.label === 'Slug' || row.label === 'Owner ID' ? 'monospace' : 'inherit' }}>{row.value}</span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '10px' }}>Admin status</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
-            {ALL_STATUSES.map(s => {
-              const cfg = ADMIN_STATUS_CFG[s]; const active = adminStatus === s
-              return (
-                <button key={s} onClick={() => { setAdminStatus(s); if (s === 'test') setIsTest(true); else if (s === 'active') setIsTest(false) }}
-                  style={{ background: active ? cfg.bg : '#fff', color: active ? cfg.color : '#9b9b9b', border: `1.5px solid ${active ? cfg.border : '#e8e4db'}`, borderRadius: '20px', padding: '4px 12px', fontSize: '12px', fontWeight: active ? 600 : 400, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-                  {cfg.label}
-                </button>
-              )
-            })}
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
-            <div onClick={() => setIsTest(v => !v)}
-              style={{ width: '36px', height: '20px', borderRadius: '10px', position: 'relative', flexShrink: 0, background: isTest ? '#7c3aed' : '#e5e7eb', transition: 'background 0.2s', cursor: 'pointer' }}>
-              <div style={{ position: 'absolute', top: '2px', left: isTest ? '18px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-            </div>
-            <span style={{ fontSize: '13px', color: '#4a4a4a' }}>Mark as test listing <span style={{ fontSize: '11px', color: '#9b9b9b' }}>(hidden from public)</span></span>
-          </label>
-        </div>
-
-        {listing.review_note && (
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0ede6', background: '#fff1f2' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#9f1239', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '6px' }}>Rejection note</div>
-            <p style={{ fontSize: '13px', color: '#3a3a3a', lineHeight: 1.6, margin: 0 }}>{listing.review_note}</p>
-          </div>
-        )}
-
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '10px' }}>Quick actions</div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <a href={`/admin/properties/${listing.id}/edit`}
-              style={{ background: '#18181b', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
-              Edit listing →
-            </a>
-            {listing.admin_status === 'pending' && (
-              <a href={`/admin/properties/review/${listing.id}`}
-                style={{ background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
-                Review listing →
-              </a>
-            )}
-            <a href={`/listing/${listing.slug}`} target="_blank" rel="noopener noreferrer"
-              style={{ background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
-              View public listing ↗
-            </a>
-            <a href={`/landlord/listings/${listing.slug}`} target="_blank" rel="noopener noreferrer"
-              style={{ background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 500, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
-              Landlord page ↗
-            </a>
-          </div>
-        </div>
-
-        {claimUrl && (
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0ede6', background: '#fffbeb' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#92400e', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '8px' }}>Private Claim Link</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#fff', border: '1px solid #fde68a', borderRadius: '7px', padding: '8px 10px' }}>
-              <span style={{ flex: 1, fontSize: '11px', fontFamily: 'monospace', color: '#1a1a1a', wordBreak: 'break-all', lineHeight: 1.4 }}>{claimUrl}</span>
-              <button
-                onClick={() => { navigator.clipboard.writeText(claimUrl); setClaimCopied(true); setTimeout(() => setClaimCopied(false), 2000) }}
-                style={{ background: claimCopied ? '#16a34a' : '#1a1a1a', color: '#fff', border: 'none', borderRadius: '5px', padding: '5px 10px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background 0.15s', fontFamily: "'DM Sans', sans-serif" }}>
-                {claimCopied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <div style={{ fontSize: '11px', color: '#92400e', marginTop: '6px', lineHeight: 1.5 }}>
-              Share with the landlord — link deactivates after claim.
-            </div>
-          </div>
-        )}
-
-        <div style={{ padding: '16px 24px', marginTop: 'auto', flexShrink: 0 }}>
-          <button onClick={save} disabled={saving}
-            style={{ width: '100%', background: saved ? '#16a34a' : '#18181b', color: '#fff', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'background 0.2s' }}>
-            {saving ? 'Saving...' : saved ? 'Saved ✓' : 'Save changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function AdminPropertiesPage() {
   const router = useRouter()
   const [listings, setListings] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Property | null>(null)
   const [statusFilter, setStatusFilter] = useState<AdminStatus | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
@@ -190,7 +49,6 @@ export default function AdminPropertiesPage() {
 
   const updateListing = (id: string, adminStatus: AdminStatus, isTest: boolean) => {
     setListings(prev => prev.map(l => l.id === id ? { ...l, admin_status: adminStatus, is_test: isTest, is_active: adminStatus === 'active' } : l))
-    setSelected(prev => prev?.id === id ? { ...prev, admin_status: adminStatus, is_test: isTest, is_active: adminStatus === 'active' } : prev)
   }
 
   const counts = {
@@ -251,10 +109,6 @@ export default function AdminPropertiesPage() {
         }
         @media (max-width: 600px) { .p-body { padding: 20px 16px; } .p-stats { grid-template-columns: 1fr 1fr; } }
       `}</style>
-
-      {selected && (
-        <ListingPanel listing={selected} onClose={() => setSelected(null)} onUpdate={updateListing} />
-      )}
 
       <div className="p-body">
         <div style={{ marginBottom: '24px' }}>
@@ -323,7 +177,7 @@ export default function AdminPropertiesPage() {
                 const adminStatus = (l.admin_status ?? 'active') as AdminStatus
                 const cfg = ADMIN_STATUS_CFG[adminStatus] ?? ADMIN_STATUS_CFG.active
                 return (
-                  <tr key={l.id} onClick={() => setSelected(l)}>
+                  <tr key={l.id} onClick={() => router.push(`/admin/properties/${l.id}`)}>
                     <td>
                       <div className="p-name">{l.name}{l.is_test && <span className="test-pill">TEST</span>}</div>
                       <div className="p-addr">{l.address}</div>
