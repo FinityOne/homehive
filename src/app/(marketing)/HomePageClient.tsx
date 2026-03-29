@@ -352,7 +352,7 @@ function HomePageInner() {
             <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
             <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
           </div>
-          <a href="/for-landlords" className="list-cta-btn">List your place →</a>
+          <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
         </div>
 
       </div>
