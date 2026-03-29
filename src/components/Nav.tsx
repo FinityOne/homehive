@@ -77,9 +77,22 @@ export default function Nav() {
     return () => document.removeEventListener('click', handler)
   }, [profileOpen])
 
+  // Auto-show loader once per browser (localStorage persists across sessions)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!localStorage.getItem('hh_loader_seen')) {
+      setShowLoader(true)
+    }
+  }, [])
+
   const replayLoader = () => {
-    sessionStorage.removeItem('hh_loader_seen')
+    localStorage.removeItem('hh_loader_seen')
     setShowLoader(true)
+  }
+
+  const handleLoaderComplete = () => {
+    localStorage.setItem('hh_loader_seen', '1')
+    setShowLoader(false)
   }
 
   const handleSignOut = async () => {
@@ -103,6 +116,7 @@ export default function Nav() {
         .asu-sub { font-size:11px; color:rgba(255,255,255,.65); white-space:nowrap; }
         .asu-right { display:flex; align-items:center; gap:12px; }
         .asu-pill { background:#FFC627; color:#8C1D40; font-size:10px; font-weight:700; letter-spacing:.4px; padding:2px 9px; border-radius:20px; white-space:nowrap; }
+        .pill-hot { background:#FFC627; color:#8C1D40; font-size:9px; font-weight:700; letter-spacing:.5px; padding:1px 5px; border-radius:4px; text-transform:uppercase; }
         .asu-rlink { font-size:11px; color:rgba(255,255,255,.75); text-decoration:none; font-weight:500; }
         .asu-rlink:hover { color:#FFC627; }
         .play-btn { width:24px; height:24px; border-radius:50%; border:1.5px solid rgba(255,255,255,.3); background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
@@ -118,8 +132,9 @@ export default function Nav() {
         .nav-center { display:flex; align-items:center; gap:4px; }
         .nav-link { font-size:13px; color:#6b6b6b; text-decoration:none; padding:6px 12px; border-radius:6px; transition:color .15s,background .15s; white-space:nowrap; display:flex; align-items:center; gap:6px; }
         .nav-link:hover { color:#1a1a1a; background:#f5f4f0; }
-        .pill-hot { background:#FFC627; color:#8C1D40; font-size:9px; font-weight:700; letter-spacing:.5px; padding:1px 5px; border-radius:4px; text-transform:uppercase; }
         .pill-new { background:#8C1D40; color:#fff; font-size:9px; font-weight:700; letter-spacing:.5px; padding:1px 5px; border-radius:4px; text-transform:uppercase; }
+        .nav-live-dot { width:7px; height:7px; border-radius:50%; background:#22c55e; flex-shrink:0; animation:live-pulse 2.4s ease-in-out infinite; }
+        @keyframes live-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.5);opacity:1} 50%{box-shadow:0 0 0 5px rgba(34,197,94,0);opacity:0.75} }
         .nav-sep { width:1px; height:20px; background:#e8e4db; margin:0 6px; }
         .nav-right { display:flex; align-items:center; gap:8px; }
         .nav-signin { font-size:13px; color:#6b6b6b; text-decoration:none; padding:6px 14px; border-radius:6px; transition:color .15s,background .15s; }
@@ -190,7 +205,7 @@ export default function Nav() {
         }
       `}</style>
 
-      {showLoader && <Loader onComplete={() => setShowLoader(false)} />}
+      {showLoader && <Loader onComplete={handleLoaderComplete} />}
 
       {/* ASU RIBBON */}
       <div className="asu-ribbon">
@@ -217,13 +232,13 @@ export default function Nav() {
         <a href="/" className="nav-logo">Home<em>Hive</em></a>
 
         <div className="nav-center">
-          <a href="/homes" className="nav-link">Homes <span className="pill-hot">2 open</span></a>
-          <a href="/roommates" className="nav-link">Roommates <span className="pill-new">new</span></a>
+          <a href="/homes" className="nav-link">Homes <span className="nav-live-dot" title="New listings available" /></a>
           <a href="/how-it-works" className="nav-link">How it works</a>
           <div className="nav-sep" />
           <a href="/pricing" className="nav-link">Pricing</a>
-          <a href="/for-landlords" className="nav-link">For Landlords</a>
+          <a href="/for-landlords" className="nav-link">List Your Place</a>
           <a href="/student-guide" className="nav-link">Student Guide</a>
+          <a href="/blog" className="nav-link">Blog</a>
         </div>
 
         <div className="nav-right">
@@ -322,17 +337,17 @@ export default function Nav() {
 
         <div className="mob-links">
           {[
-            { href: '/homes',         label: 'Homes',         pill: '2 open', pt: 'hot' },
-            { href: '/roommates',     label: 'Roommates',     pill: 'new',    pt: 'new' },
-            { href: '/how-it-works',  label: 'How it works',  pill: null,     pt: null  },
-            { href: '/pricing',        label: 'Pricing',        pill: null,     pt: null  },
-            { href: '/for-landlords',  label: 'For Landlords',  pill: 'free',   pt: 'new' },
-            { href: '/student-guide',  label: 'Student Guide',  pill: null,     pt: null  },
-          ].map(({ href, label, pill, pt }) => (
+            { href: '/homes',         label: 'Homes',          live: true  },
+            { href: '/how-it-works',  label: 'How it works',   live: false },
+            { href: '/pricing',       label: 'Pricing',        live: false },
+            { href: '/for-landlords', label: 'List Your Place', live: false },
+            { href: '/student-guide', label: 'Student Guide',  live: false },
+            { href: '/blog',          label: 'Blog',           live: false },
+          ].map(({ href, label, live }) => (
             <a key={href} href={href} className="mob-link" onClick={() => setMobileOpen(false)}>
               <span className="mob-link-inner">
                 {label}
-                {pill && <span className={pt === 'hot' ? 'pill-hot' : 'pill-new'}>{pill}</span>}
+                {live && <span className="nav-live-dot" />}
               </span>
               <span style={{ color: '#ccc', fontSize: '18px' }}>›</span>
             </a>

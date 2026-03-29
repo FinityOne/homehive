@@ -62,6 +62,71 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default function PropertyPage(props: Props) {
-  return <PropertyPageClient {...props} />
+export default async function PropertyPage(props: Props) {
+  const { slug } = await props.params
+  const property = await getPropertyBySlug(slug)
+
+  const jsonLd = property
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'RealEstateListing',
+        name: property.name,
+        description: property.description || `${property.beds}-bed, ${property.baths}-bath student housing near ASU in Tempe, AZ.`,
+        url: `${SITE_URL}/homes/${slug}`,
+        image: property.images?.length ? property.images : undefined,
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: property.address,
+          addressLocality: 'Tempe',
+          addressRegion: 'AZ',
+          addressCountry: 'US',
+        },
+        offers: {
+          '@type': 'Offer',
+          price: property.price,
+          priceCurrency: 'USD',
+          priceSpecification: {
+            '@type': 'UnitPriceSpecification',
+            price: property.price,
+            priceCurrency: 'USD',
+            unitText: 'MONTH',
+          },
+        },
+        numberOfRooms: property.beds,
+        numberOfBathroomsTotal: property.baths,
+        floorSize: property.sqft
+          ? { '@type': 'QuantitativeValue', value: property.sqft, unitCode: 'FTK' }
+          : undefined,
+        amenityFeature: property.tags?.map(tag => ({
+          '@type': 'LocationFeatureSpecification',
+          name: tag,
+          value: true,
+        })),
+        additionalProperty: [
+          {
+            '@type': 'PropertyValue',
+            name: 'Distance to ASU Tempe campus',
+            value: property.asu_distance ? `${property.asu_distance} miles` : 'Near campus',
+          },
+          {
+            '@type': 'PropertyValue',
+            name: 'Listing type',
+            value: property.listing_type === 'sublease' ? 'Sublease' :
+                   property.listing_type === 'lease_transfer' ? 'Lease Transfer' : 'Standard Rental',
+          },
+        ],
+      }
+    : null
+
+  return (
+    <>
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      <PropertyPageClient {...props} />
+    </>
+  )
 }
