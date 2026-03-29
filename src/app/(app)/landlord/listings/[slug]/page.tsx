@@ -3,7 +3,15 @@
 import { use, useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, Property, updatePropertyOffer } from '@/lib/properties'
+import {
+  getPropertiesByOwner,
+  updatePropertyCore,
+  updatePropertyOffer,
+  replacePropertyTags,
+  replacePropertyNearby,
+  replacePropertyAsuReasons,
+  Property,
+} from '@/lib/properties'
 import { getLeadsForOwner, Lead } from '@/lib/leads'
 
 const supabase = createBrowserClient(
@@ -11,42 +19,180 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type CompletenessItem = { label: string; filled: boolean; weight: number }
+type Tab = 'overview' | 'basics' | 'type' | 'location' | 'offer'
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'overview',  label: 'Overview'          },
+  { id: 'basics',    label: 'Basics'             },
+  { id: 'type',      label: 'Type & Availability'},
+  { id: 'location',  label: 'Location & Details' },
+  { id: 'offer',     label: 'Special Offer'      },
+]
 
-function getCompleteness(p: Property): { items: CompletenessItem[]; pct: number } {
-  const items: CompletenessItem[] = [
-    { label: 'Property name',     filled: !!p.name,               weight: 1 },
-    { label: 'Address',           filled: !!p.address,            weight: 1 },
-    { label: 'Description',       filled: !!p.description,        weight: 2 },
-    { label: 'Photos',            filled: p.images?.length > 0,   weight: 2 },
-    { label: 'Price',             filled: (p.price || 0) > 0,     weight: 1 },
-    { label: 'ASU distance',      filled: (p.asu_distance || 0) > 0, weight: 1 },
-    { label: 'Map embed URL',     filled: !!p.map_embed_url,      weight: 1 },
-    { label: 'Nearby places',     filled: p.nearby?.length > 0,   weight: 1 },
-    { label: 'ASU highlights',    filled: p.asu_reasons?.length > 0, weight: 1 },
-    { label: 'Tags',              filled: p.tags?.length > 0,     weight: 1 },
-  ]
-  const total = items.reduce((s, i) => s + i.weight, 0)
-  const earned = items.filter(i => i.filled).reduce((s, i) => s + i.weight, 0)
-  const pct = Math.round((earned / total) * 100)
-  return { items, pct }
+const LISTING_TYPE_LABELS: Record<string, string> = {
+  standard_rental: 'Standard Rental',
+  sublease:        'Sublease',
+  lease_transfer:  'Lease Transfer',
 }
+
+function getCompleteness(p: Property) {
+  const items = [
+    { label: 'Property name',  filled: !!p.name,                   weight: 1 },
+    { label: 'Address',        filled: !!p.address,                 weight: 1 },
+    { label: 'Description',    filled: !!p.description,             weight: 2 },
+    { label: 'Photos',         filled: (p.images?.length ?? 0) > 0, weight: 2 },
+    { label: 'Price',          filled: (p.price || 0) > 0,          weight: 1 },
+    { label: 'ASU distance',   filled: (p.asu_distance || 0) > 0,   weight: 1 },
+    { label: 'Nearby places',  filled: (p.nearby?.length ?? 0) > 0, weight: 1 },
+    { label: 'ASU highlights', filled: (p.asu_reasons?.length ?? 0) > 0, weight: 1 },
+    { label: 'Tags',           filled: (p.tags?.length ?? 0) > 0,   weight: 1 },
+  ]
+  const total  = items.reduce((s, i) => s + i.weight, 0)
+  const earned = items.filter(i => i.filled).reduce((s, i) => s + i.weight, 0)
+  return { items, pct: Math.round((earned / total) * 100) }
+}
+
+/* ── Shared form styles ───────────────────────────────────────────────────── */
+const SHARED_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  .lp-wrap { max-width: 900px; margin: 0 auto; padding: 24px 20px 80px; font-family: 'DM Sans', sans-serif; }
+
+  /* BREADCRUMB */
+  .lp-breadcrumb { font-size: 13px; color: #64748b; margin-bottom: 16px; }
+  .lp-breadcrumb a { color: #10b981; text-decoration: none; }
+  .lp-breadcrumb a:hover { text-decoration: underline; }
+
+  /* HEADER */
+  .lp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .lp-title { font-size: 20px; font-weight: 700; color: #0f172a; }
+  .lp-title-sub { font-size: 12px; color: #64748b; margin-top: 3px; }
+  .lp-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn-preview { background: #fff; color: #0f172a; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; white-space: nowrap; }
+  .btn-preview:hover { border-color: #10b981; color: #059669; }
+  .leads-badge { background: rgba(16,185,129,0.12); color: #059669; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+
+  /* BANNER */
+  .status-banner { border-radius: 12px; padding: 16px 20px; margin-bottom: 18px; }
+
+  /* TABS */
+  .lp-tabs { display: flex; gap: 2px; border-bottom: 2px solid #e2e8f0; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+  .lp-tabs::-webkit-scrollbar { display: none; }
+  .lp-tab { padding: 10px 16px; font-size: 13px; font-weight: 500; color: #64748b; border: none; background: none; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.15s; }
+  .lp-tab:hover { color: #0f172a; }
+  .lp-tab.active { color: #10b981; border-bottom-color: #10b981; font-weight: 600; }
+
+  /* CARDS */
+  .lp-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 14px; }
+  .lp-card-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; }
+  .lp-card-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.6px; }
+  .lp-card-body { padding: 16px 18px; }
+
+  /* DETAIL DISPLAY */
+  .detail-row { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 8px; }
+  .detail-item { display: flex; flex-direction: column; gap: 2px; }
+  .detail-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+  .detail-value { font-size: 13px; color: #0f172a; font-weight: 500; }
+  .detail-muted { font-size: 13px; color: #94a3b8; }
+  .badge { display: inline-flex; align-items: center; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+  .badge-grey  { background: #e5e7eb; color: #6b7280; }
+  .badge-teal  { background: rgba(16,185,129,0.15); color: #059669; }
+  .badge-blue  { background: #eff6ff; color: #1d4ed8; }
+  .badge-maroon { background: #fff1f2; color: #9f1239; }
+  .pill-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { background: #f1f5f9; color: #334155; border-radius: 20px; padding: 3px 10px; font-size: 12px; }
+
+  /* COMPLETENESS */
+  .comp-bar-track { height: 7px; background: #e2e8f0; border-radius: 10px; overflow: hidden; margin: 10px 0 8px; }
+  .comp-bar-fill  { height: 100%; border-radius: 10px; transition: width 0.4s; }
+  .missing-pill { background: #fef9c3; color: #92400e; border: 1px solid #fde68a; border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 500; }
+
+  /* FORM FIELDS */
+  .fg { margin-bottom: 16px; }
+  .fl { display: block; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; }
+  .fi { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: #0f172a; font-family: 'DM Sans', sans-serif; background: #fff; outline: none; transition: border-color 0.15s; }
+  .fi:focus { border-color: #10b981; }
+  .ft { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: #0f172a; font-family: 'DM Sans', sans-serif; background: #fff; outline: none; resize: vertical; min-height: 90px; transition: border-color 0.15s; }
+  .ft:focus { border-color: #10b981; }
+  .fs { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: #0f172a; font-family: 'DM Sans', sans-serif; background: #fff; outline: none; cursor: pointer; }
+  .fs:focus { border-color: #10b981; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .form-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+  .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid #f1f5f9; flex-wrap: wrap; }
+  .btn-save { background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 10px 22px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-save:not(:disabled):hover { background: #1e293b; }
+  .alert-ok  { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 9px 14px; font-size: 13px; color: #166534; margin-bottom: 14px; }
+  .alert-err { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 9px 14px; font-size: 13px; color: #991b1b; margin-bottom: 14px; }
+
+  /* NEARBY / REASONS list editor */
+  .list-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .list-row { display: flex; gap: 8px; align-items: center; }
+  .list-row .fi { flex: 1; }
+  .list-row .fi-sm { flex: 0 0 140px; }
+  .btn-rm { background: none; border: 1.5px solid #fecaca; border-radius: 7px; color: #ef4444; font-size: 14px; font-weight: 700; width: 30px; height: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .btn-rm:hover { background: #fef2f2; }
+  .btn-add { background: none; border: 1.5px dashed #cbd5e1; border-radius: 7px; color: #64748b; font-size: 12px; font-weight: 500; padding: 7px 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 4px; }
+  .btn-add:hover { border-color: #10b981; color: #10b981; }
+
+  /* LEADS TABLE */
+  .leads-table { width: 100%; border-collapse: collapse; }
+  .leads-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; padding: 8px 12px; text-align: left; border-bottom: 1px solid #f1f5f9; }
+  .leads-table td { font-size: 13px; color: #334155; padding: 10px 12px; border-bottom: 1px solid #f9fafb; }
+  .leads-table tr:last-child td { border-bottom: none; }
+
+  /* MEDIA */
+  .media-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .media-thumb { width: 80px; height: 60px; object-fit: cover; border-radius: 7px; border: 1px solid #e2e8f0; }
+
+  @media (max-width: 560px) {
+    .lp-header { flex-direction: column; }
+    .form-row, .form-row-3 { grid-template-columns: 1fr; }
+  }
+`
 
 export default function ManagePropertyPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
-  const router = useRouter()
-  const [property, setProperty] = useState<Property | null>(null)
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(true)
-  const [descExpanded, setDescExpanded] = useState(false)
-  // Offer state
-  const [offerAmount, setOfferAmount] = useState('')
-  const [offerDeadline, setOfferDeadline] = useState('')
-  const [offerDescription, setOfferDescription] = useState('')
-  const [offerSaving, setOfferSaving] = useState(false)
-  const [offerSaved, setOfferSaved] = useState(false)
-  const [offerError, setOfferError] = useState('')
+  const router   = useRouter()
 
+  const [property, setProperty]   = useState<Property | null>(null)
+  const [leads, setLeads]         = useState<Lead[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [activeTab, setActiveTab] = useState<Tab>('overview')
+
+  // ── Basics form ─────────────────────────────────────────────────────────────
+  const [basics, setBasics] = useState({ name: '', address: '', description: '', price: '', security_deposit: '', beds: '', baths: '', sqft: '', asu_distance: '' })
+  const [basicsSaving, setBasicsSaving] = useState(false)
+  const [basicsMsg, setBasicsMsg]       = useState<{ ok: boolean; text: string } | null>(null)
+
+  // ── Type & Availability form ────────────────────────────────────────────────
+  const [listingType, setListingType]           = useState<'standard_rental' | 'sublease' | 'lease_transfer'>('standard_rental')
+  const [subleaseStart, setSubleaseStart]       = useState('')
+  const [subleaseEnd, setSubleaseEnd]           = useState('')
+  const [totalRooms, setTotalRooms]             = useState('')
+  const [availableRooms, setAvailableRooms]     = useState('')
+  const [typeSaving, setTypeSaving]             = useState(false)
+  const [typeMsg, setTypeMsg]                   = useState<{ ok: boolean; text: string } | null>(null)
+
+  // ── Location & Details form ──────────────────────────────────────────────────
+  const [loc, setLoc] = useState({ lat: '', lng: '', map_embed_url: '' })
+  const [nearby, setNearby]       = useState<{ place: string; travel_time: string }[]>([])
+  const [reasons, setReasons]     = useState<string[]>([])
+  const [tags, setTags]           = useState<string[]>([])
+  const [newTag, setNewTag]       = useState('')
+  const [locSaving, setLocSaving] = useState(false)
+  const [locMsg, setLocMsg]       = useState<{ ok: boolean; text: string } | null>(null)
+
+  // ── Offer form ───────────────────────────────────────────────────────────────
+  const [offerAmount, setOfferAmount]           = useState('')
+  const [offerDeadline, setOfferDeadline]       = useState('')
+  const [offerDescription, setOfferDescription] = useState('')
+  const [offerSaving, setOfferSaving]           = useState(false)
+  const [offerMsg, setOfferMsg]                 = useState<{ ok: boolean; text: string } | null>(null)
+
+  // ── Load ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -56,12 +202,27 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
         getPropertiesByOwner(user.id),
         getLeadsForOwner(user.id),
       ])
-
       const found = props.find(p => p.slug === slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
       setLeads(lds.filter(l => l.property === slug))
+
+      setBasics({
+        name: found.name || '', address: found.address || '', description: found.description || '',
+        price: found.price?.toString() || '', security_deposit: found.security_deposit?.toString() ?? '',
+        beds: found.beds?.toString() || '', baths: found.baths?.toString() || '',
+        sqft: found.sqft?.toString() || '', asu_distance: found.asu_distance?.toString() || '',
+      })
+      setListingType(found.listing_type || 'standard_rental')
+      setSubleaseStart(found.sublease_start_date || '')
+      setSubleaseEnd(found.sublease_end_date || '')
+      setTotalRooms(found.total_rooms?.toString() || '')
+      setAvailableRooms(found.available?.toString() || '')
+      setLoc({ lat: found.lat?.toString() || '', lng: found.lng?.toString() || '', map_embed_url: found.map_embed_url || '' })
+      setNearby(found.nearby || [])
+      setReasons(found.asu_reasons || [])
+      setTags(found.tags || [])
       setOfferAmount(found.offer_amount != null ? String(found.offer_amount) : '')
       setOfferDeadline(found.offer_deadline || '')
       setOfferDescription(found.offer_description || '')
@@ -70,511 +231,509 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
     load()
   }, [slug, router])
 
-  const handleSaveOffer = async () => {
+  function flash(setter: (v: { ok: boolean; text: string } | null) => void, ok: boolean, text: string) {
+    setter({ ok, text })
+    setTimeout(() => setter(null), 3500)
+  }
+
+  // ── Save handlers ─────────────────────────────────────────────────────────
+  async function saveBasics() {
+    if (!property) return
+    setBasicsSaving(true)
+    const { error } = await updatePropertyCore(property.id, {
+      name: basics.name, address: basics.address, description: basics.description,
+      price: parseFloat(basics.price) || 0,
+      security_deposit: basics.security_deposit === '' ? null : parseInt(basics.security_deposit),
+      beds: parseInt(basics.beds) || 0, baths: parseFloat(basics.baths) || 0,
+      sqft: basics.sqft, asu_distance: parseFloat(basics.asu_distance) || 0,
+    })
+    setBasicsSaving(false)
+    flash(setBasicsMsg, !error, error ? 'Failed to save. Try again.' : 'Basics saved!')
+    if (!error) setProperty(p => p ? { ...p, name: basics.name, address: basics.address, description: basics.description, price: parseFloat(basics.price)||0, beds: parseInt(basics.beds)||0, baths: parseFloat(basics.baths)||0, sqft: basics.sqft, asu_distance: parseFloat(basics.asu_distance)||0 } : p)
+  }
+
+  async function saveType() {
+    if (!property) return
+    setTypeSaving(true)
+    const { error } = await supabase.from('properties').update({
+      listing_type:         listingType,
+      sublease_start_date:  listingType !== 'standard_rental' ? subleaseStart || null : null,
+      sublease_end_date:    listingType !== 'standard_rental' ? subleaseEnd   || null : null,
+      total_rooms:          parseInt(totalRooms) || 1,
+      available:            parseInt(availableRooms) || 0,
+    }).eq('id', property.id)
+    setTypeSaving(false)
+    flash(setTypeMsg, !error, error ? 'Failed to save. Try again.' : 'Saved!')
+    if (!error) setProperty(p => p ? { ...p, listing_type: listingType, total_rooms: parseInt(totalRooms)||1, available: parseInt(availableRooms)||0 } : p)
+  }
+
+  async function saveLocation() {
+    if (!property) return
+    setLocSaving(true)
+    const [coreRes, nearbyRes, reasonsRes, tagsRes] = await Promise.all([
+      updatePropertyCore(property.id, {
+        lat: parseFloat(loc.lat) || 0, lng: parseFloat(loc.lng) || 0, map_embed_url: loc.map_embed_url,
+      }),
+      replacePropertyNearby(property.id, nearby.filter(n => n.place.trim())),
+      replacePropertyAsuReasons(property.id, reasons.filter(r => r.trim())),
+      replacePropertyTags(property.id, tags.filter(t => t.trim())),
+    ])
+    setLocSaving(false)
+    const anyError = coreRes.error || nearbyRes.error || reasonsRes.error || tagsRes.error
+    flash(setLocMsg, !anyError, anyError ? 'Failed to save. Try again.' : 'Location & details saved!')
+  }
+
+  async function saveOffer() {
     if (!property) return
     setOfferSaving(true)
-    setOfferError('')
-    setOfferSaved(false)
     const { error } = await updatePropertyOffer(property.id, {
-      offer_amount: offerAmount === '' ? null : Number(offerAmount),
-      offer_deadline: offerDeadline || null,
+      offer_amount:      offerAmount === '' ? null : Number(offerAmount),
+      offer_deadline:    offerDeadline || null,
       offer_description: offerDescription.trim() || null,
     })
-    if (error) { setOfferError('Failed to save offer. Try again.'); setOfferSaving(false); return }
-    setOfferSaved(true)
     setOfferSaving(false)
-    setTimeout(() => setOfferSaved(false), 3000)
+    flash(setOfferMsg, !error, error ? 'Failed to save. Try again.' : 'Offer saved!')
   }
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
-        Loading...
-      </div>
-    )
-  }
-
+  // ── Render ────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans',sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
+      Loading…
+    </div>
+  )
   if (!property) return null
 
-  const { items: completenessItems, pct } = getCompleteness(property)
-  const missing = completenessItems.filter(i => !i.filled)
-
-  const editBase = `/landlord/listings/${slug}/edit`
+  const { items: compItems, pct } = getCompleteness(property)
+  const missing = compItems.filter(i => !i.filled)
+  const isSublease = listingType !== 'standard_rental'
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,300;1,9..144,600&family=DM+Sans:wght@300;400;500;600&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      <style>{SHARED_CSS}</style>
+      <div className="lp-wrap">
 
-        .mp-wrap { max-width: 860px; margin: 0 auto; padding: 24px 20px 80px; font-family: 'DM Sans', sans-serif; }
-
-        /* REVIEW BANNER */
-        .review-banner { border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; }
-        .review-banner-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-        .review-banner-body { font-size: 13px; line-height: 1.6; margin-bottom: 0; }
-        .review-banner-note { font-size: 13px; font-style: italic; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(159,18,57,0.07); }
-        .review-banner a { font-weight: 600; }
-        .review-banner-tips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .review-banner-tip { background: rgba(245,158,11,0.12); border: 1px solid #fde68a; border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #92400e; font-weight: 600; }
-        .review-banner-cta { display: inline-block; margin-top: 14px; font-size: 13px; font-weight: 700; color: #92400e; text-decoration: none; border-bottom: 1.5px solid #f59e0b; padding-bottom: 1px; }
-
-        /* TOP BAR */
-        .mp-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
-        .mp-breadcrumb { font-size: 13px; color: #64748b; }
-        .mp-breadcrumb a { color: #10b981; text-decoration: none; }
-        .mp-breadcrumb a:hover { text-decoration: underline; }
-        .mp-topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .btn-preview { background: #fff; color: #0f172a; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; white-space: nowrap; }
-        .btn-preview:hover { border-color: #10b981; color: #059669; }
-        .leads-badge { background: rgba(16,185,129,0.15); color: #059669; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-
-        /* COMPLETENESS */
-        .completeness-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-        .completeness-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-        .completeness-ring { width: 52px; height: 52px; flex-shrink: 0; }
-        .completeness-info { flex: 1; }
-        .completeness-pct { font-size: 20px; font-weight: 700; color: #0f172a; }
-        .completeness-label { font-size: 12px; color: #64748b; margin-top: 2px; }
-        .completeness-full { color: #10b981; font-weight: 600; font-size: 13px; margin-top: 4px; }
-        .progress-bar-track { height: 8px; background: #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
-        .progress-bar-fill { height: 100%; border-radius: 10px; transition: width 0.4s; }
-        .missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
-        .missing-pill { background: #fef9c3; color: #92400e; border: 1px solid #fde68a; border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 500; }
-
-        /* SECTION CARD */
-        .section-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        .section-card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; }
-        .section-card-title { font-size: 13px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
-        .btn-edit { background: #f8fafc; color: #0f172a; border: 1.5px solid #e2e8f0; border-radius: 7px; padding: 6px 13px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; white-space: nowrap; }
-        .btn-edit:hover { border-color: #10b981; color: #059669; }
-        .section-card-body { padding: 14px 18px; }
-
-        /* Content rows */
-        .detail-row { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 6px; }
-        .detail-item { display: flex; flex-direction: column; gap: 2px; }
-        .detail-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
-        .detail-value { font-size: 13px; color: #0f172a; font-weight: 500; }
-        .detail-value-muted { font-size: 13px; color: #94a3b8; }
-
-        /* Badges */
-        .badge { display: inline-flex; align-items: center; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
-        .badge-green { background: #d1fae5; color: #065f46; }
-        .badge-grey { background: #e5e7eb; color: #6b7280; }
-        .badge-teal { background: rgba(16,185,129,0.15); color: #059669; }
-
-        /* Pills */
-        .pill-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-        .pill { background: #f1f5f9; color: #334155; border-radius: 20px; padding: 3px 10px; font-size: 12px; }
-
-        /* Description */
-        .desc-text { font-size: 13px; color: #334155; line-height: 1.6; }
-        .desc-clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .desc-toggle { background: none; border: none; color: #10b981; font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; padding: 4px 0 0; }
-
-        /* Photo thumb */
-        .photo-thumb { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #e2e8f0; }
-        .photo-count { font-size: 12px; color: #64748b; margin-top: 6px; }
-
-        /* Nearby list */
-        .nearby-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
-        .nearby-item:last-child { border-bottom: none; }
-        .nearby-place { color: #0f172a; font-weight: 500; }
-        .nearby-time { color: #64748b; }
-
-        /* Reasons */
-        .reason-item { display: flex; gap: 10px; padding: 5px 0; font-size: 13px; color: #334155; }
-        .reason-num { width: 20px; height: 20px; border-radius: 50%; background: rgba(16,185,129,0.15); color: #10b981; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-
-        /* Map placeholder */
-        .map-placeholder { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; height: 80px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #94a3b8; margin-top: 8px; }
-
-        @media (max-width: 560px) {
-          .mp-topbar { flex-direction: column; align-items: flex-start; }
-          .mp-topbar-actions { margin-left: 0; }
-        }
-      `}</style>
-
-      <div className="mp-wrap">
-
-        {/* REVIEW STATUS BANNER */}
+        {/* STATUS BANNERS */}
         {property.admin_status === 'pending' && (
-          <div className="review-banner" style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fefce8 100%)', border: '1.5px solid #fde68a', borderLeft: '4px solid #f59e0b' }}>
-            <div className="review-banner-title" style={{ color: '#92400e' }}>You&apos;re in the queue — review in progress!</div>
-            <div className="review-banner-body" style={{ color: '#78350f' }}>
-              The HomeHive team is personally reviewing your listing to verify it&apos;s accurate, legitimate, and a great fit for our students.
-              We do this to protect renters from scams and ensure every listing on our platform is top quality — which means <strong>serious, high-intent leads</strong> for you once you&apos;re live.
-              You&apos;ll receive an email notification the moment a decision is made. <strong>Most listings are reviewed within 24 hours.</strong>
-            </div>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', marginTop: '12px', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Boost your approval odds &amp; get more leads
-            </div>
-            <div className="review-banner-tips">
-              <span className="review-banner-tip">Upload clear, well-lit photos</span>
-              <span className="review-banner-tip">Write a detailed description</span>
-              <span className="review-banner-tip">Set your ASU distance</span>
-              <span className="review-banner-tip">Add nearby places</span>
-              <span className="review-banner-tip">Fill out all details below</span>
-            </div>
-            <a href={`/landlord/listings/${slug}/edit/basics`} className="review-banner-cta">Complete your listing now →</a>
+          <div className="status-banner" style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderLeft: '4px solid #f59e0b', marginBottom: '18px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>In review — we&apos;ll email you within 24 hours</div>
+            <div style={{ fontSize: '13px', color: '#78350f', lineHeight: 1.5 }}>Your listing is being reviewed. Complete all sections below to boost your approval odds and get more leads once live.</div>
           </div>
         )}
         {property.admin_status === 'rejected' && (
-          <div className="review-banner" style={{ background: '#fff1f2', border: '1.5px solid #fecdd3', borderLeft: '4px solid #9f1239' }}>
-            <div className="review-banner-title" style={{ color: '#9f1239' }}>Your listing needs some updates before going live</div>
-            <div className="review-banner-body" style={{ color: '#7f1d1d' }}>
-              Our team reviewed your listing and couldn&apos;t approve it in its current state. Don&apos;t worry — this is fixable.
-              Update your listing based on the feedback below and reach out to us so we can get you live as quickly as possible.{' '}
-              <a href="mailto:hello@homehive.live" style={{ color: '#9f1239' }}>hello@homehive.live</a>
-            </div>
-            {property.review_note && (
-              <div className="review-banner-note" style={{ color: '#9f1239' }}>
-                <strong>Reviewer note:</strong> &ldquo;{property.review_note}&rdquo;
-              </div>
-            )}
+          <div className="status-banner" style={{ background: '#fff1f2', border: '1.5px solid #fecdd3', borderLeft: '4px solid #9f1239' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#9f1239', marginBottom: '4px' }}>Listing needs updates before going live</div>
+            {property.review_note && <div style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '6px' }}><strong>Note:</strong> &ldquo;{property.review_note}&rdquo;</div>}
+            <div style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '6px' }}>Contact us: <a href="mailto:hello@homehive.live" style={{ color: '#9f1239', fontWeight: 600 }}>hello@homehive.live</a></div>
           </div>
         )}
-        {(property.admin_status === 'inactive' || property.admin_status === 'test' || property.admin_status === 'flagged') && (
-          <div className="review-banner" style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderLeft: '4px solid #cbd5e1' }}>
-            <div className="review-banner-title" style={{ color: '#475569' }}>This listing is not publicly visible</div>
-            <div className="review-banner-body" style={{ color: '#64748b' }}>
-              Students cannot currently see this listing. Contact us at{' '}
-              <a href="mailto:hello@homehive.live" style={{ color: '#475569' }}>hello@homehive.live</a>{' '}
-              if you believe this is an error.
-            </div>
+        {['inactive', 'test', 'flagged'].includes(property.admin_status) && (
+          <div className="status-banner" style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderLeft: '4px solid #cbd5e1' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Not publicly visible</div>
+            <div style={{ fontSize: '13px', color: '#64748b' }}>Contact <a href="mailto:hello@homehive.live" style={{ color: '#475569', fontWeight: 600 }}>hello@homehive.live</a> if you believe this is an error.</div>
           </div>
         )}
 
-        {/* TOP BAR */}
-        <div className="mp-topbar">
-          <div className="mp-breadcrumb">
-            <a href="/landlord/listings">Listings</a>
-            <span> &rsaquo; {property.name}</span>
+        {/* BREADCRUMB + HEADER */}
+        <div className="lp-breadcrumb">
+          <a href="/landlord/listings">Listings</a> › {property.name}
+        </div>
+        <div className="lp-header">
+          <div>
+            <div className="lp-title">{property.name}</div>
+            <div className="lp-title-sub">{property.address || 'No address set'}</div>
           </div>
-          <div className="mp-topbar-actions">
-            <a href={property.is_active ? `/homes/${property.slug}` : `/landlord/listings/${slug}/preview`} target="_blank" rel="noopener noreferrer" className="btn-preview">
-              {property.is_active ? 'View Live Listing ↗' : 'Preview as Tenant →'}
+          <div className="lp-header-actions">
+            <a
+              href={property.is_active ? `/homes/${property.slug}` : `/landlord/listings/${slug}/preview`}
+              target="_blank" rel="noopener noreferrer"
+              className="btn-preview"
+            >
+              {property.is_active ? 'View Live ↗' : 'Preview →'}
             </a>
             <span className="leads-badge">{leads.length} lead{leads.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
 
-        {/* COMPLETENESS WIDGET */}
-        <div className="completeness-card">
-          <div className="completeness-header">
-            <svg className="completeness-ring" viewBox="0 0 52 52">
-              <circle cx="26" cy="26" r="22" fill="none" stroke="#e2e8f0" strokeWidth="5" />
-              <circle
-                cx="26" cy="26" r="22" fill="none"
-                stroke={pct === 100 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#ef4444'}
-                strokeWidth="5"
-                strokeDasharray={`${2 * Math.PI * 22}`}
-                strokeDashoffset={`${2 * Math.PI * 22 * (1 - pct / 100)}`}
-                strokeLinecap="round"
-                transform="rotate(-90 26 26)"
-              />
-              <text x="26" y="31" textAnchor="middle" fill="#0f172a" fontSize="12" fontFamily="DM Sans, sans-serif" fontWeight="700">
-                {pct}%
-              </text>
-            </svg>
-            <div className="completeness-info">
-              <div className="completeness-pct">Listing Completeness</div>
-              {pct === 100
-                ? <div className="completeness-full">Listing is fully optimized!</div>
-                : <div className="completeness-label">{missing.length} field{missing.length !== 1 ? 's' : ''} missing — complete them to attract more leads</div>
-              }
-            </div>
-          </div>
-          <div className="progress-bar-track">
-            <div
-              className="progress-bar-fill"
-              style={{
-                width: `${pct}%`,
-                background: pct === 100 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#ef4444',
-              }}
-            />
-          </div>
-          {missing.length > 0 && (
-            <div className="missing-list">
-              {missing.map(m => (
-                <span key={m.label} className="missing-pill">Missing: {m.label}</span>
-              ))}
-            </div>
-          )}
+        {/* TABS */}
+        <div className="lp-tabs">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              className={`lp-tab${activeTab === t.id ? ' active' : ''}`}
+              onClick={() => setActiveTab(t.id)}
+            >
+              {t.label}
+              {t.id === 'type' && property.listing_type !== 'standard_rental' && (
+                <span style={{ marginLeft: '6px', fontSize: '10px', background: '#eff6ff', color: '#1d4ed8', borderRadius: '4px', padding: '1px 5px', fontWeight: 700 }}>
+                  {LISTING_TYPE_LABELS[property.listing_type]}
+                </span>
+              )}
+              {t.id === 'offer' && property.offer_amount && (
+                <span style={{ marginLeft: '6px', fontSize: '10px', background: '#fef9c3', color: '#92400e', borderRadius: '4px', padding: '1px 5px', fontWeight: 700 }}>ON</span>
+              )}
+            </button>
+          ))}
         </div>
 
-        {/* SECTION A: STATUS & AVAILABILITY */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Status &amp; Availability</span>
-            <a href={`${editBase}/availability`} className="btn-edit">Edit</a>
+        {/* ── OVERVIEW TAB ─────────────────────────────────────────────── */}
+        {activeTab === 'overview' && (
+          <>
+            {/* Completeness */}
+            <div className="lp-card">
+              <div className="lp-card-hdr">
+                <span className="lp-card-title">Listing Completeness</span>
+                <span style={{ fontSize: '18px', fontWeight: 700, color: pct===100?'#10b981':pct>=60?'#f59e0b':'#ef4444' }}>{pct}%</span>
+              </div>
+              <div className="lp-card-body">
+                <div className="comp-bar-track">
+                  <div className="comp-bar-fill" style={{ width: `${pct}%`, background: pct===100?'#10b981':pct>=60?'#f59e0b':'#ef4444' }} />
+                </div>
+                {missing.length > 0 ? (
+                  <div className="pill-list">
+                    {missing.map(m => <span key={m.label} className="missing-pill">Missing: {m.label}</span>)}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#10b981', fontWeight: 600 }}>Listing is fully optimized!</div>
+                )}
+              </div>
+            </div>
+
+            {/* Snapshot */}
+            <div className="lp-card">
+              <div className="lp-card-hdr"><span className="lp-card-title">Snapshot</span></div>
+              <div className="lp-card-body">
+                <div className="detail-row">
+                  <div className="detail-item">
+                    <div className="detail-label">Status</div>
+                    <span className={`badge ${property.is_active ? 'badge-green' : 'badge-grey'}`}>{property.is_active ? 'Active' : 'Inactive'}</span>
+                  </div>
+                  <div className="detail-item">
+                    <div className="detail-label">Listing Type</div>
+                    <span className={`badge ${property.listing_type === 'standard_rental' ? 'badge-green' : property.listing_type === 'sublease' ? 'badge-maroon' : 'badge-blue'}`}>
+                      {LISTING_TYPE_LABELS[property.listing_type] || property.listing_type}
+                    </span>
+                  </div>
+                  <div className="detail-item">
+                    <div className="detail-label">Price</div>
+                    <div className="detail-value">${property.price?.toLocaleString()}/mo</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="detail-label">Rooms</div>
+                    <div className="detail-value">{property.available} of {property.total_rooms} available</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="detail-label">Beds / Baths</div>
+                    <div className="detail-value">{property.beds}bd · {property.baths}ba</div>
+                  </div>
+                  <div className="detail-item">
+                    <div className="detail-label">ASU Distance</div>
+                    <div className="detail-value">{property.asu_distance ? `${property.asu_distance} mi` : '—'}</div>
+                  </div>
+                </div>
+                {(property.sublease_start_date || property.sublease_end_date) && (
+                  <div className="detail-row" style={{ marginTop: '12px' }}>
+                    <div className="detail-item">
+                      <div className="detail-label">Sublease Period</div>
+                      <div className="detail-value">
+                        {property.sublease_start_date ? new Date(property.sublease_start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}
+                        {' → '}
+                        {property.sublease_end_date ? new Date(property.sublease_end_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {property.tags?.length > 0 && (
+                  <div style={{ marginTop: '12px' }}>
+                    <div className="detail-label" style={{ marginBottom: '6px' }}>Tags</div>
+                    <div className="pill-list">{property.tags.map((t,i) => <span key={i} className="pill">{t}</span>)}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Photos */}
+            {property.images?.length > 0 && (
+              <div className="lp-card">
+                <div className="lp-card-hdr">
+                  <span className="lp-card-title">Photos ({property.images.length})</span>
+                  <a href={`/landlord/listings/${slug}/edit/media`} style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>Edit photos →</a>
+                </div>
+                <div className="lp-card-body">
+                  <div className="media-grid">
+                    {property.images.slice(0,6).map((img, i) => (
+                      <img key={i} src={img} alt="" className="media-thumb" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Leads */}
+            <div className="lp-card">
+              <div className="lp-card-hdr"><span className="lp-card-title">Leads ({leads.length})</span></div>
+              <div className="lp-card-body" style={{ padding: 0 }}>
+                {leads.length === 0 ? (
+                  <div style={{ padding: '20px 18px', fontSize: '13px', color: '#94a3b8' }}>No leads yet — get your listing live to start receiving interest.</div>
+                ) : (
+                  <table className="leads-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th><th>Email</th><th>Move-in</th><th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leads.map(l => (
+                        <tr key={l.id}>
+                          <td style={{ fontWeight: 500 }}>{l.first_name || '—'}</td>
+                          <td style={{ color: '#64748b', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.email}</td>
+                          <td style={{ color: '#64748b' }}>{l.move_in_date || '—'}</td>
+                          <td><span style={{ fontSize: '11px', background: '#f1f5f9', color: '#334155', borderRadius: '20px', padding: '2px 8px', fontWeight: 600 }}>{l.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── BASICS TAB ───────────────────────────────────────────────── */}
+        {activeTab === 'basics' && (
+          <div className="lp-card">
+            <div className="lp-card-hdr"><span className="lp-card-title">Core Details</span></div>
+            <div className="lp-card-body">
+              {basicsMsg && <div className={basicsMsg.ok ? 'alert-ok' : 'alert-err'}>{basicsMsg.text}</div>}
+              <div className="fg">
+                <label className="fl">Property Name</label>
+                <input className="fi" value={basics.name} onChange={e => setBasics(f=>({...f,name:e.target.value}))} placeholder="e.g. University Dr Palace" />
+              </div>
+              <div className="fg">
+                <label className="fl">Address</label>
+                <input className="fi" value={basics.address} onChange={e => setBasics(f=>({...f,address:e.target.value}))} placeholder="e.g. 820 W 9th St, Tempe AZ 85281" />
+              </div>
+              <div className="fg">
+                <label className="fl">Description</label>
+                <textarea className="ft" value={basics.description} onChange={e => setBasics(f=>({...f,description:e.target.value}))} placeholder="Describe your property — features, what's nearby, why students love it…" style={{ minHeight: 110 }} />
+              </div>
+              <div className="form-row">
+                <div className="fg">
+                  <label className="fl">Price per Month ($)</label>
+                  <input className="fi" type="number" min="0" value={basics.price} onChange={e => setBasics(f=>({...f,price:e.target.value}))} placeholder="699" />
+                </div>
+                <div className="fg">
+                  <label className="fl">Security Deposit ($)</label>
+                  <input className="fi" type="number" min="0" value={basics.security_deposit} onChange={e => setBasics(f=>({...f,security_deposit:e.target.value}))} placeholder="0 for none" />
+                  {basics.security_deposit === '0' && <div className="form-hint" style={{ color: '#10b981' }}>No deposit — shown as $0 on listing</div>}
+                </div>
+              </div>
+              <div className="form-row-3">
+                <div className="fg">
+                  <label className="fl">Bedrooms</label>
+                  <input className="fi" type="number" min="0" value={basics.beds} onChange={e => setBasics(f=>({...f,beds:e.target.value}))} placeholder="4" />
+                </div>
+                <div className="fg">
+                  <label className="fl">Bathrooms</label>
+                  <input className="fi" type="number" min="0" step="0.5" value={basics.baths} onChange={e => setBasics(f=>({...f,baths:e.target.value}))} placeholder="2" />
+                </div>
+                <div className="fg">
+                  <label className="fl">Sqft</label>
+                  <input className="fi" type="text" value={basics.sqft} onChange={e => setBasics(f=>({...f,sqft:e.target.value}))} placeholder="1200" />
+                </div>
+              </div>
+              <div className="fg" style={{ maxWidth: 220 }}>
+                <label className="fl">ASU Distance (miles)</label>
+                <input className="fi" type="number" min="0" step="0.1" value={basics.asu_distance} onChange={e => setBasics(f=>({...f,asu_distance:e.target.value}))} placeholder="0.4" />
+              </div>
+              <div className="form-actions">
+                <button className="btn-save" onClick={saveBasics} disabled={basicsSaving}>{basicsSaving ? 'Saving…' : 'Save Basics'}</button>
+              </div>
+            </div>
           </div>
-          <div className="section-card-body">
-            <div className="detail-row">
-              <div className="detail-item">
-                <div className="detail-label">Status</div>
-                <span className={`badge ${property.is_active ? 'badge-green' : 'badge-grey'}`}>
-                  {property.is_active ? 'Active' : 'Inactive'}
-                </span>
+        )}
+
+        {/* ── TYPE & AVAILABILITY TAB ──────────────────────────────────── */}
+        {activeTab === 'type' && (
+          <div className="lp-card">
+            <div className="lp-card-hdr"><span className="lp-card-title">Type &amp; Availability</span></div>
+            <div className="lp-card-body">
+              {typeMsg && <div className={typeMsg.ok ? 'alert-ok' : 'alert-err'}>{typeMsg.text}</div>}
+              <div className="fg">
+                <label className="fl">Listing Type</label>
+                <select className="fs" value={listingType} onChange={e => setListingType(e.target.value as typeof listingType)}>
+                  <option value="standard_rental">Standard Rental — fixed monthly rent</option>
+                  <option value="sublease">Sublease — transferring your lease to someone else</option>
+                  <option value="lease_transfer">Lease Transfer — someone takes over your full lease</option>
+                </select>
+                <div className="form-hint">
+                  {listingType === 'standard_rental' && 'Students rent directly from you month-to-month or with a new lease.'}
+                  {listingType === 'sublease' && 'You stay on the lease; a subletter pays you during a specific period.'}
+                  {listingType === 'lease_transfer' && 'You fully transfer your remaining lease obligations to a new tenant.'}
+                </div>
               </div>
-              <div className="detail-item">
-                <div className="detail-label">Available rooms</div>
-                <div className="detail-value">{property.available} of {property.total_rooms}</div>
-              </div>
-              {property.is_featured && (
-                <div className="detail-item">
-                  <div className="detail-label">Featured</div>
-                  <span className="badge badge-teal">Featured</span>
+              {isSublease && (
+                <div className="form-row" style={{ marginTop: '4px' }}>
+                  <div className="fg">
+                    <label className="fl">Start Date</label>
+                    <input className="fi" type="date" value={subleaseStart} onChange={e => setSubleaseStart(e.target.value)} />
+                  </div>
+                  <div className="fg">
+                    <label className="fl">End Date</label>
+                    <input className="fi" type="date" value={subleaseEnd} onChange={e => setSubleaseEnd(e.target.value)} />
+                  </div>
                 </div>
               )}
+              <div className="form-row" style={{ marginTop: isSublease ? '0' : '4px', maxWidth: 320 }}>
+                <div className="fg">
+                  <label className="fl">Total Rooms</label>
+                  <input className="fi" type="number" min="1" value={totalRooms} onChange={e => setTotalRooms(e.target.value)} placeholder="4" />
+                </div>
+                <div className="fg">
+                  <label className="fl">Available Rooms</label>
+                  <input className="fi" type="number" min="0" value={availableRooms} onChange={e => setAvailableRooms(e.target.value)} placeholder="2" />
+                </div>
+              </div>
+              <div className="form-actions">
+                <button className="btn-save" onClick={saveType} disabled={typeSaving}>{typeSaving ? 'Saving…' : 'Save Type & Availability'}</button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* SECTION B: CORE DETAILS */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Core Details</span>
-            <a href={`${editBase}/basics`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            <div className="detail-row">
-              <div className="detail-item" style={{ flex: '1 1 200px' }}>
-                <div className="detail-label">Name</div>
-                <div className="detail-value">{property.name || <span className="detail-value-muted">Not set</span>}</div>
-              </div>
-              <div className="detail-item" style={{ flex: '1 1 200px' }}>
-                <div className="detail-label">Address</div>
-                <div className="detail-value">{property.address || <span className="detail-value-muted">Not set</span>}</div>
-              </div>
-            </div>
-            <div className="detail-row" style={{ marginTop: '10px' }}>
-              <div className="detail-item">
-                <div className="detail-label">Price</div>
-                <div className="detail-value">${property.price?.toLocaleString()}/mo</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Beds</div>
-                <div className="detail-value">{property.beds || <span className="detail-value-muted">—</span>}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Baths</div>
-                <div className="detail-value">{property.baths || <span className="detail-value-muted">—</span>}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Sqft</div>
-                <div className="detail-value">{property.sqft || <span className="detail-value-muted">—</span>}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">ASU Distance</div>
-                <div className="detail-value">{property.asu_distance ? `${property.asu_distance} min` : <span className="detail-value-muted">—</span>}</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ── LOCATION & DETAILS TAB ───────────────────────────────────── */}
+        {activeTab === 'location' && (
+          <>
+            {locMsg && <div className={locMsg.ok ? 'alert-ok' : 'alert-err'}>{locMsg.text}</div>}
 
-        {/* SECTION C: DESCRIPTION */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Description</span>
-            <a href={`${editBase}/basics`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            {property.description ? (
-              <>
-                <p className={`desc-text${descExpanded ? '' : ' desc-clamped'}`}>
-                  {property.description}
-                </p>
-                {property.description.length > 120 && (
-                  <button className="desc-toggle" onClick={() => setDescExpanded(e => !e)}>
-                    {descExpanded ? 'Show less' : 'Read more'}
+            <div className="lp-card">
+              <div className="lp-card-hdr"><span className="lp-card-title">Map & Coordinates</span></div>
+              <div className="lp-card-body">
+                <div className="form-row">
+                  <div className="fg">
+                    <label className="fl">Latitude</label>
+                    <input className="fi" type="number" step="any" value={loc.lat} onChange={e => setLoc(l=>({...l,lat:e.target.value}))} placeholder="33.4152" />
+                  </div>
+                  <div className="fg">
+                    <label className="fl">Longitude</label>
+                    <input className="fi" type="number" step="any" value={loc.lng} onChange={e => setLoc(l=>({...l,lng:e.target.value}))} placeholder="-111.9090" />
+                  </div>
+                </div>
+                <div className="fg">
+                  <label className="fl">Map Embed URL</label>
+                  <input className="fi" type="url" value={loc.map_embed_url} onChange={e => setLoc(l=>({...l,map_embed_url:e.target.value}))} placeholder="https://maps.google.com/maps?..." />
+                </div>
+              </div>
+            </div>
+
+            <div className="lp-card">
+              <div className="lp-card-hdr"><span className="lp-card-title">Nearby Places</span></div>
+              <div className="lp-card-body">
+                <div className="list-editor">
+                  {nearby.map((n, i) => (
+                    <div key={i} className="list-row">
+                      <input className="fi" value={n.place} onChange={e => setNearby(arr => arr.map((x,j)=>j===i?{...x,place:e.target.value}:x))} placeholder="Place name (e.g. Chipotle)" />
+                      <input className="fi fi-sm" value={n.travel_time} onChange={e => setNearby(arr => arr.map((x,j)=>j===i?{...x,travel_time:e.target.value}:x))} placeholder="5 min walk" />
+                      <button className="btn-rm" onClick={() => setNearby(arr=>arr.filter((_,j)=>j!==i))}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn-add" onClick={() => setNearby(arr=>[...arr,{place:'',travel_time:''}])}>+ Add place</button>
+              </div>
+            </div>
+
+            <div className="lp-card">
+              <div className="lp-card-hdr"><span className="lp-card-title">ASU Highlights</span></div>
+              <div className="lp-card-body">
+                <div className="list-editor">
+                  {reasons.map((r, i) => (
+                    <div key={i} className="list-row">
+                      <input className="fi" value={r} onChange={e => setReasons(arr=>arr.map((x,j)=>j===i?e.target.value:x))} placeholder="e.g. 5-min walk to Sun Devil Stadium" />
+                      <button className="btn-rm" onClick={() => setReasons(arr=>arr.filter((_,j)=>j!==i))}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn-add" onClick={() => setReasons(arr=>[...arr,''])}>+ Add highlight</button>
+              </div>
+            </div>
+
+            <div className="lp-card">
+              <div className="lp-card-hdr"><span className="lp-card-title">Tags</span></div>
+              <div className="lp-card-body">
+                <div className="pill-list" style={{ marginBottom: '10px' }}>
+                  {tags.map((t, i) => (
+                    <span key={i} className="pill" style={{ cursor: 'pointer' }} onClick={() => setTags(arr=>arr.filter((_,j)=>j!==i))}>
+                      {t} ×
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input className="fi" value={newTag} onChange={e => setNewTag(e.target.value)} placeholder="e.g. Pool, Parking, Furnished" onKeyDown={e => { if (e.key==='Enter' && newTag.trim()) { setTags(arr=>[...arr,newTag.trim()]); setNewTag('') }}} style={{ maxWidth: 260 }} />
+                  <button className="btn-add" style={{ marginTop: 0 }} onClick={() => { if (newTag.trim()) { setTags(arr=>[...arr,newTag.trim()]); setNewTag('') }}}>Add</button>
+                </div>
+                <div className="form-hint">Press Enter or click Add. Click a tag to remove it.</div>
+              </div>
+            </div>
+
+            <div className="lp-card" style={{ border: '1.5px dashed #e2e8f0', background: '#fafafa' }}>
+              <div className="lp-card-hdr" style={{ borderBottom: 'none' }}>
+                <span className="lp-card-title">Photos</span>
+                <a href={`/landlord/listings/${slug}/edit/media`} className="btn-preview">Manage photos →</a>
+              </div>
+              <div className="lp-card-body" style={{ paddingTop: 0 }}>
+                {property.images?.length > 0 ? (
+                  <div className="media-grid">{property.images.slice(0,4).map((img,i)=><img key={i} src={img} alt="" className="media-thumb" />)}</div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#94a3b8' }}>No photos yet — photos significantly increase leads.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="form-actions" style={{ borderTop: 'none', paddingTop: 0 }}>
+              <button className="btn-save" onClick={saveLocation} disabled={locSaving}>{locSaving ? 'Saving…' : 'Save Location & Details'}</button>
+            </div>
+          </>
+        )}
+
+        {/* ── OFFER TAB ────────────────────────────────────────────────── */}
+        {activeTab === 'offer' && (
+          <div className="lp-card">
+            <div className="lp-card-hdr">
+              <span className="lp-card-title">Special Offer</span>
+              {offerAmount
+                ? <span className="badge badge-teal">Active</span>
+                : <span style={{ fontSize: '11px', color: '#94a3b8' }}>Optional</span>
+              }
+            </div>
+            <div className="lp-card-body">
+              <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.55, marginBottom: '18px' }}>
+                Add a cash credit offer to your listing. It shows as an eye-catching banner and pushes students to inquire faster.
+              </p>
+              {offerMsg && <div className={offerMsg.ok ? 'alert-ok' : 'alert-err'}>{offerMsg.text}</div>}
+              <div className="form-row">
+                <div className="fg">
+                  <label className="fl">Cash Credit Amount ($)</label>
+                  <input className="fi" type="number" min="0" value={offerAmount} onChange={e => setOfferAmount(e.target.value)} placeholder="e.g. 500" />
+                </div>
+                <div className="fg">
+                  <label className="fl">Sign-by Deadline</label>
+                  <input className="fi" type="date" value={offerDeadline} onChange={e => setOfferDeadline(e.target.value)} />
+                </div>
+              </div>
+              <div className="fg">
+                <label className="fl">Offer Description</label>
+                <input className="fi" type="text" value={offerDescription} onChange={e => setOfferDescription(e.target.value)} placeholder="e.g. Cash credit applied at lease signing" />
+              </div>
+              <div className="form-actions">
+                <button className="btn-save" onClick={saveOffer} disabled={offerSaving}>{offerSaving ? 'Saving…' : 'Save Offer'}</button>
+                {offerAmount && (
+                  <button onClick={() => { setOfferAmount(''); setOfferDeadline(''); setOfferDescription('') }} style={{ background: 'none', border: 'none', fontSize: '13px', color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline' }}>
+                    Remove offer
                   </button>
                 )}
-              </>
-            ) : (
-              <span className="detail-value-muted" style={{ fontSize: '13px' }}>No description yet — add one to attract more tenants.</span>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION D: PHOTOS */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Photos</span>
-            <a href={`${editBase}/media`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            {property.images?.[0]
-              ? <img src={property.images[0]} alt="Hero" className="photo-thumb" />
-              : <span className="detail-value-muted" style={{ fontSize: '13px' }}>No photos yet</span>
-            }
-            <div className="photo-count">
-              {property.images?.length > 0
-                ? `${property.images.length} photo${property.images.length !== 1 ? 's' : ''} · first is hero`
-                : 'No photos yet'
-              }
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION E: LOCATION */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Location</span>
-            <a href={`${editBase}/location`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            <div className="detail-row">
-              <div className="detail-item">
-                <div className="detail-label">ASU Distance</div>
-                <div className="detail-value">{property.asu_distance ? `${property.asu_distance} min walk` : <span className="detail-value-muted">Not set</span>}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Coordinates</div>
-                <div className="detail-value">
-                  {property.lat && property.lng
-                    ? `${property.lat.toFixed(4)}, ${property.lng.toFixed(4)}`
-                    : <span className="detail-value-muted">Not set</span>
-                  }
-                </div>
               </div>
             </div>
-            {property.map_embed_url
-              ? <div className="map-placeholder" style={{ marginTop: '10px' }}>Map embed configured ✓</div>
-              : <div className="map-placeholder">No map embed URL set</div>
-            }
           </div>
-        </div>
-
-        {/* SECTION F: NEARBY PLACES */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Nearby Places</span>
-            <a href={`${editBase}/details`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            {property.nearby?.length > 0 ? (
-              property.nearby.map((n, i) => (
-                <div key={i} className="nearby-item">
-                  <span className="nearby-place">{n.place}</span>
-                  <span className="nearby-time">{n.travel_time}</span>
-                </div>
-              ))
-            ) : (
-              <span className="detail-value-muted" style={{ fontSize: '13px' }}>No nearby places added yet</span>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION G: ASU HIGHLIGHTS */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">ASU Highlights</span>
-            <a href={`${editBase}/details`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            {property.asu_reasons?.length > 0 ? (
-              property.asu_reasons.map((r, i) => (
-                <div key={i} className="reason-item">
-                  <span className="reason-num">{i + 1}</span>
-                  <span>{r}</span>
-                </div>
-              ))
-            ) : (
-              <span className="detail-value-muted" style={{ fontSize: '13px' }}>No ASU highlights added yet</span>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION H: TAGS */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Tags</span>
-            <a href={`${editBase}/details`} className="btn-edit">Edit</a>
-          </div>
-          <div className="section-card-body">
-            {property.tags?.length > 0 ? (
-              <div className="pill-list">
-                {property.tags.map((tag, i) => (
-                  <span key={i} className="pill">{tag}</span>
-                ))}
-              </div>
-            ) : (
-              <span className="detail-value-muted" style={{ fontSize: '13px' }}>No tags added yet</span>
-            )}
-          </div>
-        </div>
-
-        {/* SECTION I: SPECIAL OFFER */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <span className="section-card-title">Special Offer</span>
-            {property.offer_amount ? (
-              <span className="badge badge-teal">Active</span>
-            ) : (
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>Optional</span>
-            )}
-          </div>
-          <div className="section-card-body">
-            <p style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5, marginBottom: '14px' }}>
-              Add a cash credit offer to attract tenants. It shows as an eye-catching banner on your listing and pushes them to inquire.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              <div>
-                <div className="detail-label" style={{ marginBottom: '5px' }}>Cash Credit Amount ($)</div>
-                <input
-                  type="number" min="0" placeholder="e.g. 500"
-                  value={offerAmount}
-                  onChange={e => { setOfferAmount(e.target.value); setOfferSaved(false) }}
-                  style={{ width: '100%', height: '36px', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '0 10px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
-                  onFocus={e => e.target.style.borderColor = '#10b981'}
-                  onBlur={e => e.target.style.borderColor = '#e2e8f0'}
-                />
-              </div>
-              <div>
-                <div className="detail-label" style={{ marginBottom: '5px' }}>Sign-by Deadline</div>
-                <input
-                  type="date"
-                  value={offerDeadline}
-                  onChange={e => { setOfferDeadline(e.target.value); setOfferSaved(false) }}
-                  style={{ width: '100%', height: '36px', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '0 10px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
-                  onFocus={e => e.target.style.borderColor = '#10b981'}
-                  onBlur={e => e.target.style.borderColor = '#e2e8f0'}
-                />
-              </div>
-            </div>
-            <div style={{ marginBottom: '12px' }}>
-              <div className="detail-label" style={{ marginBottom: '5px' }}>Offer Description</div>
-              <input
-                type="text" placeholder="e.g. Cash credit applied at lease signing"
-                value={offerDescription}
-                onChange={e => { setOfferDescription(e.target.value); setOfferSaved(false) }}
-                style={{ width: '100%', height: '36px', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '0 10px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
-                onFocus={e => e.target.style.borderColor = '#10b981'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
-              />
-            </div>
-            {offerError && <div style={{ fontSize: '12px', color: '#9f1239', marginBottom: '8px' }}>{offerError}</div>}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button
-                onClick={handleSaveOffer}
-                disabled={offerSaving}
-                style={{ height: '34px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '7px', padding: '0 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: offerSaving ? 0.7 : 1 }}
-              >
-                {offerSaving ? 'Saving…' : 'Save offer'}
-              </button>
-              {offerSaved && <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>✓ Saved</span>}
-              {offerAmount && (
-                <button
-                  onClick={() => { setOfferAmount(''); setOfferDeadline(''); setOfferDescription(''); setOfferSaved(false) }}
-                  style={{ background: 'none', border: 'none', fontSize: '12px', color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  Remove offer
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        )}
 
       </div>
     </>
