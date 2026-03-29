@@ -230,10 +230,20 @@ function HomePageInner() {
         /* ── SHIMMER ─────────────────────────────────────────────── */
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
-        /* ── FOOTER NUDGE ────────────────────────────────────────── */
-        .landlord-nudge { text-align: center; padding: 12px 0 56px; font-size: 13px; color: #9b9b9b; }
-        .landlord-nudge a { color: #6b6b6b; font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
-        .landlord-nudge a:hover { color: #1a1a1a; }
+        /* ── LIST CTA ────────────────────────────────────────────── */
+        .list-cta { background: #1a1a1a; border-radius: 16px; padding: 40px 40px; display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 56px; flex-wrap: wrap; }
+        .list-cta-left {}
+        .list-cta-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: rgba(255,255,255,0.35); margin-bottom: 8px; }
+        .list-cta-title { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 300; color: #fff; letter-spacing: -0.5px; line-height: 1.15; }
+        .list-cta-title em { font-style: italic; color: #FFC627; }
+        .list-cta-sub { font-size: 13px; color: rgba(255,255,255,0.45); margin-top: 8px; }
+        .list-cta-btn { background: #FFC627; color: #1a1a1a; font-size: 14px; font-weight: 700; padding: 14px 28px; border-radius: 9px; text-decoration: none; white-space: nowrap; font-family: 'DM Sans', sans-serif; transition: background 0.15s, transform 0.15s; flex-shrink: 0; }
+        .list-cta-btn:hover { background: #e6b320; transform: translateY(-1px); }
+        @media (max-width: 540px) {
+          .list-cta { padding: 28px 24px; }
+          .list-cta-title { font-size: 22px; }
+          .list-cta-btn { width: 100%; text-align: center; }
+        }
 
         /* ── RESPONSIVE ──────────────────────────────────────────── */
         @media (max-width: 860px) {
@@ -335,10 +345,14 @@ function HomePageInner() {
           </>
         )}
 
-        {/* LANDLORD NUDGE */}
-        <div className="landlord-nudge">
-          Subleasing or have a place to rent?{' '}
-          <a href="/for-landlords">List your place on HomeHive →</a>
+        {/* LIST YOUR PLACE CTA */}
+        <div className="list-cta">
+          <div className="list-cta-left">
+            <div className="list-cta-eyebrow">For landlords & students subleasing</div>
+            <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
+            <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
+          </div>
+          <a href="/for-landlords" className="list-cta-btn">List your place →</a>
         </div>
 
       </div>
