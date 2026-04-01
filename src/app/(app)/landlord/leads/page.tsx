@@ -3,9 +3,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getLeadsForOwner, getLeadById } from '@/lib/leads'
+import dynamic from 'next/dynamic'
+import { getLeadsForOwner } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
+
+const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,7 +51,21 @@ function initials(first: string | null, last: string | null): string {
   return ((first?.[0] || '') + (last?.[0] || '')).toUpperCase() || '?'
 }
 
-type Property = { slug: string; name: string }
+type Property = { slug: string; name: string; address: string }
+
+// ─── Free lead determination ───────────────────────────────────────────────────
+// The single oldest lead per property slug is always free.
+function computeFreeLeadIds(leads: Lead[]): Set<string> {
+  const oldestBySlug: Record<string, Lead> = {}
+  for (const lead of leads) {
+    if (!lead.property) continue
+    const prev = oldestBySlug[lead.property]
+    if (!prev || new Date(lead.created_at ?? 0) < new Date(prev.created_at ?? 0)) {
+      oldestBySlug[lead.property] = lead
+    }
+  }
+  return new Set(Object.values(oldestBySlug).map(l => l.id))
+}
 
 export default function LandlordLeadsPage() {
   const router = useRouter()
@@ -71,6 +88,22 @@ export default function LandlordLeadsPage() {
   // Reminder sending
   const [remindingId, setRemindingId] = useState<string | null>(null)
 
+  // ── Unlock state ──────────────────────────────────────────────────────────
+  // unlockedIds: lead IDs the landlord has already paid/unlocked (from lead_unlocks table)
+  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set())
+  // freeLeadIds: oldest lead per property — always visible without payment
+  const [freeLeadIds, setFreeLeadIds] = useState<Set<string>>(new Set())
+  // Which lead the unlock modal is open for
+  const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
+  // Track which leads are currently being auto-unlocked (free)
+  const [autoUnlockingId, setAutoUnlockingId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+
+  const isLeadVisible = (lead: Lead) =>
+    freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
   useEffect(() => {
@@ -83,36 +116,107 @@ export default function LandlordLeadsPage() {
   const loadLeads = useCallback(async () => {
     if (!userId) return
     setLoading(true)
-    const data = await getLeadsForOwner(userId)
-    // Sort by most recent first
-    data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-    setLeads(data)
 
-    // Extract unique properties
-    const props = Array.from(new Set(data.map(l => l.property).filter(Boolean))) as string[]
-    setProperties(props.map(slug => ({ slug, name: slug })))
+    // Fetch leads + existing unlocks in parallel
+    const [leadsData, { data: unlocks }] = await Promise.all([
+      getLeadsForOwner(userId),
+      supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
+    ])
+
+    leadsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    setLeads(leadsData)
+    setFreeLeadIds(computeFreeLeadIds(leadsData))
+    setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
+
+    const props = Array.from(new Set(leadsData.map(l => l.property).filter(Boolean))) as string[]
+    setProperties(props.map(slug => ({ slug, name: slug, address: '' })))
     setLoading(false)
   }, [userId])
 
-  // Also fetch property names from Supabase
   useEffect(() => {
     if (!userId) return
-    supabase.from('properties').select('slug, name').eq('owner_id', userId).then(({ data }) => {
+    supabase.from('properties').select('slug, name, address').eq('owner_id', userId).then(({ data }) => {
       if (data) setProperties(data)
     })
   }, [userId])
 
   useEffect(() => { loadLeads() }, [loadLeads])
 
-  const filteredLeads = leads.filter(l => {
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [search, statusFilter, propertyFilter])
+
+  // Auto-record free unlocks in DB silently (no payment needed, just DB tracking)
+  useEffect(() => {
+    if (!userId || freeLeadIds.size === 0) return
+    const toAutoUnlock = [...freeLeadIds].filter(id => !unlockedIds.has(id))
+    for (const leadId of toAutoUnlock) {
+      fetch(`/api/leads/${leadId}/unlock`, { method: 'POST' }).catch(() => {})
+    }
+  }, [userId, freeLeadIds]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Unlock a lead ─────────────────────────────────────────────────────────
+  const handleUnlockClick = async (lead: Lead, e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    // Free lead: auto-unlock via server, no payment needed
+    if (freeLeadIds.has(lead.id)) {
+      setAutoUnlockingId(lead.id)
+      try {
+        const res = await fetch(`/api/leads/${lead.id}/unlock`, { method: 'POST' })
+        const data = await res.json()
+        if (data.isUnlocked) {
+          setUnlockedIds(prev => new Set([...prev, lead.id]))
+          showToast('Lead unlocked!')
+        }
+      } catch {
+        showToast('Failed to unlock lead')
+      } finally {
+        setAutoUnlockingId(null)
+      }
+      return
+    }
+
+    // Paid lead: open modal
+    setUnlockModalLeadId(lead.id)
+  }
+
+  const handleUnlockSuccess = (unlockType: string) => {
+    if (unlockType === 'subscription') {
+      setUnlockedIds(new Set(leads.map(l => l.id)))
+      showToast('Plan activated! All leads now unlocked.')
+    } else if (unlockModalLeadId) {
+      setUnlockedIds(prev => new Set([...prev, unlockModalLeadId]))
+      showToast('Lead unlocked!')
+    }
+    setUnlockModalLeadId(null)
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Sort: visible (unlocked + free) first, then locked — each group by most recent
+  const sortedLeads = [...leads].sort((a, b) => {
+    const aVis = isLeadVisible(a), bVis = isLeadVisible(b)
+    const aFree = freeLeadIds.has(a.id), bFree = freeLeadIds.has(b.id)
+    // Priority: unlocked > free-eligible > locked
+    const rank = (l: Lead) => isLeadVisible(l) ? 0 : freeLeadIds.has(l.id) ? 1 : 2
+    if (rank(a) !== rank(b)) return rank(a) - rank(b)
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  })
+
+  const filteredLeads = sortedLeads.filter(l => {
     if (statusFilter !== 'all' && l.status !== statusFilter) return false
     if (propertyFilter !== 'all' && l.property !== propertyFilter) return false
     if (search) {
       const q = search.toLowerCase()
-      if (!((l.first_name || '').toLowerCase().includes(q) ||
-            (l.last_name || '').toLowerCase().includes(q) ||
-            (l.email || '').toLowerCase().includes(q) ||
-            (l.property || '').toLowerCase().includes(q))) return false
+      // For locked leads we only search by property/move-in (not exposing contact data in search)
+      if (isLeadVisible(l)) {
+        if (!((l.first_name || '').toLowerCase().includes(q) ||
+              (l.last_name || '').toLowerCase().includes(q) ||
+              (l.email || '').toLowerCase().includes(q) ||
+              (l.property || '').toLowerCase().includes(q))) return false
+      } else {
+        if (!(l.property || '').toLowerCase().includes(q)) return false
+      }
     }
     return true
   })
@@ -127,6 +231,13 @@ export default function LandlordLeadsPage() {
     return acc
   }, {})
   const needsPrescreen = leads.filter(l => ['new', 'contacted', 'engaged'].includes(l.status)).length
+  const lockedCount = leads.filter(l => !isLeadVisible(l)).length
+
+  const PAGE_SIZE = 10
+  const visibleFiltered = filteredLeads.filter(l => isLeadVisible(l))
+  const lockedFiltered = filteredLeads.filter(l => !isLeadVisible(l))
+  const totalPages = Math.max(1, Math.ceil(visibleFiltered.length / PAGE_SIZE))
+  const pagedVisible = visibleFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const sendReminder = async (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -135,11 +246,7 @@ export default function LandlordLeadsPage() {
       const res = await fetch(`/api/leads/${lead.id}/send-reminder`, { method: 'POST' })
       if (res.ok) {
         showToast(`Reminder sent to ${lead.first_name || lead.email}`)
-        ph?.capture('lead_reminder_sent', {
-          lead_id: lead.id,
-          property: lead.property,
-          lead_status: lead.status,
-        })
+        ph?.capture('lead_reminder_sent', { lead_id: lead.id, property: lead.property, lead_status: lead.status })
       } else showToast('Failed to send reminder')
     } catch { showToast('Failed to send reminder') }
     setRemindingId(null)
@@ -167,7 +274,7 @@ export default function LandlordLeadsPage() {
     setAddingLead(false)
   }
 
-  // ── No listings guard ─────────────────────────────────────────────────────
+  // ── No listings guard ──────────────────────────────────────────────────────
   if (!loading && properties.length === 0) {
     return (
       <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
@@ -203,20 +310,17 @@ export default function LandlordLeadsPage() {
 
         .ll-page { background: #f5f4f0; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
 
-        /* Header */
         .ll-header { background: #1a1a1a; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         .ll-title { font-size: 20px; font-weight: 700; color: #fff; }
         .ll-subtitle { font-size: 12px; color: #9b9b9b; margin-top: 2px; }
         .ll-header-right { display: flex; align-items: center; gap: 10px; }
 
-        /* Stats bar */
         .ll-stats { background: #fff; border-bottom: 1px solid #e8e5de; padding: 10px 28px; display: flex; gap: 24px; overflow-x: auto; }
         .ll-stat { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
         .ll-stat-num { font-size: 16px; font-weight: 700; color: #1a1a1a; }
         .ll-stat-label { font-size: 11px; color: #9b9b9b; }
         .ll-stat-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 
-        /* Filters */
         .ll-filters { background: #fff; border-bottom: 1px solid #e8e5de; padding: 10px 28px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .ll-search { padding: 8px 12px 8px 34px; border: 1.5px solid #e8e5de; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none; width: 220px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239b9b9b' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center; transition: border-color 0.15s; }
         .ll-search:focus { border-color: #8C1D40; }
@@ -229,20 +333,34 @@ export default function LandlordLeadsPage() {
         .ll-view-btn.active { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
         .ll-view-btn:not(.active) { background: transparent; color: #9b9b9b; }
 
-        /* List */
-        .ll-list { padding: 16px 28px; display: flex; flex-direction: column; gap: 6px; }
-        .ll-row { background: #fff; border: 1px solid #e8e5de; border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
-        .ll-row:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); border-color: #d0cdc7; }
-        .ll-avatar { width: 38px; height: 38px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; }
-        .ll-name { font-size: 14px; font-weight: 600; color: #1a1a1a; }
-        .ll-email { font-size: 12px; color: #9b9b9b; margin-top: 1px; }
-        .ll-prop { font-size: 12px; color: #6b6b6b; }
-        .ll-movein { font-size: 11px; color: #b0a898; }
+        /* Table */
+        .ll-table-wrap { background: #fff; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; margin: 12px 24px 0; }
+        .ll-table { width: 100%; border-collapse: collapse; }
+        .ll-table thead th { background: #faf9f6; padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; border-bottom: 1px solid #e8e5de; white-space: nowrap; }
+        .ll-table thead th:first-child { width: 44px; padding-left: 14px; }
+        .ll-table thead th:last-child { text-align: right; padding-right: 14px; }
+        .ll-table tbody tr { border-bottom: 1px solid #f5f4f0; transition: background 0.1s; }
+        .ll-table tbody tr:last-child { border-bottom: none; }
+        .ll-table tbody tr.ll-tr-link { cursor: pointer; }
+        .ll-table tbody tr.ll-tr-link:hover { background: #faf9f6; }
+        .ll-table td { padding: 9px 12px; vertical-align: middle; }
+        .ll-table td:first-child { padding-left: 14px; }
+        .ll-table td:last-child { padding-right: 14px; }
+        /* Pagination */
+        .ll-pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px 0; }
+        .ll-page-btn { padding: 5px 12px; border: 1.5px solid #e8e5de; border-radius: 6px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #4a4a4a; transition: all 0.15s; }
+        .ll-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .ll-page-btn:not(:disabled):hover { border-color: #8C1D40; color: #8C1D40; }
+        /* Keep avatar for pipeline view */
+        .ll-avatar { width: 32px; height: 32px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; }
+        .ll-name { font-size: 12px; font-weight: 600; color: #1a1a1a; }
+        .ll-email { font-size: 11px; color: #9b9b9b; margin-top: 1px; }
+        .ll-prop { font-size: 11px; color: #6b6b6b; }
+        .ll-movein { font-size: 10px; color: #b0a898; }
         .ll-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap; }
         .ll-time { font-size: 11px; color: #b0a898; white-space: nowrap; }
         .ll-action-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
 
-        /* Pipeline */
         .ll-pipeline { padding: 16px 28px; display: flex; gap: 12px; overflow-x: auto; }
         .ll-pcol { flex-shrink: 0; width: 210px; background: #fff; border-radius: 12px; border-top: 3px solid; overflow: hidden; }
         .ll-pcol-header { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f0ede6; }
@@ -250,9 +368,9 @@ export default function LandlordLeadsPage() {
         .ll-pcol-count { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
         .ll-pcard { margin: 8px 8px 0; padding: 12px; border: 1px solid #f0ede6; border-radius: 8px; cursor: pointer; transition: box-shadow 0.15s; }
         .ll-pcard:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .ll-pcard.locked { background: #fafaf9; cursor: default; }
         .ll-pcard:last-child { margin-bottom: 8px; }
 
-        /* Buttons */
         .btn-primary { background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; white-space: nowrap; }
         .btn-primary:hover { opacity: 0.88; }
         .btn-gold { background: #FFC627; color: #1a1a1a; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; white-space: nowrap; }
@@ -260,7 +378,6 @@ export default function LandlordLeadsPage() {
         .btn-ghost { background: transparent; color: #9b9b9b; border: 1.5px solid #e8e5de; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
         .btn-ghost:hover { border-color: #8C1D40; color: #8C1D40; }
 
-        /* Add Lead Modal */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 400; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(2px); }
         .modal-card { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 480px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
         .modal-title { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
@@ -271,13 +388,14 @@ export default function LandlordLeadsPage() {
         .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
         .field-col { display: flex; flex-direction: column; margin-bottom: 14px; }
 
-        /* Toast */
         .ll-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
         @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
 
-        /* Empty */
         .ll-empty { padding: 60px 28px; display: flex; justify-content: center; }
         .ll-empty-card { background: #fff; border: 1px dashed #e8e5de; border-radius: 16px; padding: 48px 40px; max-width: 440px; width: 100%; text-align: center; }
+
+        /* Locked placeholders */
+        .blur-line { background: #e0ddd7; border-radius: 3px; }
 
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         @media (max-width: 640px) {
@@ -291,7 +409,6 @@ export default function LandlordLeadsPage() {
 
       <div className="ll-page">
 
-        {/* Toast */}
         {toast && <div className="ll-toast">✓ {toast}</div>}
 
         {/* Header */}
@@ -301,6 +418,11 @@ export default function LandlordLeadsPage() {
             <div className="ll-subtitle">{leads.length} total · sorted by most recent</div>
           </div>
           <div className="ll-header-right">
+            {lockedCount > 0 && (
+              <span style={{ fontSize: '12px', color: '#FFC627', fontWeight: 600, background: 'rgba(255,198,39,0.12)', border: '1px solid rgba(255,198,39,0.3)', borderRadius: '20px', padding: '4px 12px' }}>
+                🔒 {lockedCount} lead{lockedCount !== 1 ? 's' : ''} locked
+              </span>
+            )}
             <a href="/landlord/leads/pipeline" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}>Pipeline guide →</a>
             <button className="btn-gold" onClick={() => setShowAddModal(true)}>+ Add Lead</button>
           </div>
@@ -373,88 +495,203 @@ export default function LandlordLeadsPage() {
           </div>
         )}
 
-        {/* ── LIST VIEW ── */}
+        {/* ── LIST VIEW — table ── */}
         {viewMode === 'list' && filteredLeads.length > 0 && (
-          <div className="ll-list">
-            {filteredLeads.map(lead => {
-              const heat = getHeat(lead.created_at)
-              const meta = STATUS_META[lead.status]
-              const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
-              const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
-              const prop = properties.find(p => p.slug === lead.property)
+          <>
+            <div className="ll-table-wrap">
+              <table className="ll-table">
+                <thead>
+                  <tr>
+                    <th />
+                    <th>Lead</th>
+                    <th>Listing</th>
+                    <th>Status</th>
+                    <th>Age</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
 
-              return (
-                <div
-                  key={lead.id}
-                  className="ll-row"
-                  onClick={() => router.push(`/landlord/leads/${lead.id}`)}
-                >
-                  {/* Avatar */}
-                  <div className="ll-avatar">{initials(lead.first_name, lead.last_name)}</div>
+                {/* ── Visible rows ── */}
+                {pagedVisible.length > 0 && (
+                  <tbody>
+                    {pagedVisible.map(lead => {
+                      const heat = getHeat(lead.created_at)
+                      const meta = STATUS_META[lead.status]
+                      const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
+                      const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
+                      const prop = properties.find(p => p.slug === lead.property)
+                      return (
+                        <tr
+                          key={lead.id}
+                          className="ll-tr-link"
+                          onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                        >
+                          <td>
+                            <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: '0.5px' }}>
+                              {initials(lead.first_name, lead.last_name)}
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a1a1a', lineHeight: 1.3 }}>
+                              {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
+                              {heat.icon && <span style={{ marginLeft: '4px', fontSize: '12px' }} title={heat.label}>{heat.icon}</span>}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{lead.email}</div>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: '12px', color: '#1a1a1a', fontWeight: 600 }}>{prop?.name || '—'}</div>
+                            {prop?.address && <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{prop.address}</div>}
+                            {lead.move_in_date && <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '1px' }}>Move-in: {lead.move_in_date}</div>}
+                          </td>
+                          <td>
+                            <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
+                              {meta.label}{lead.status === 'closed' && lead.closed_reason ? ` · ${lead.closed_reason}` : ''}
+                            </span>
+                            <div style={{ marginTop: '3px', fontSize: '10px', color: hasPrescreen ? '#10b981' : '#c5c1b8', fontWeight: hasPrescreen ? 600 : 400 }}>
+                              {hasPrescreen ? '✓ Pre-screened' : 'Needs pre-screen'}
+                            </div>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap', fontSize: '11px', color: '#b0a898' }}>
+                            {timeAgo(lead.created_at)}
+                          </td>
+                          <td onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
+                              {needsRemind && (
+                                <button
+                                  className="ll-action-btn"
+                                  style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
+                                  disabled={remindingId === lead.id}
+                                  onClick={e => sendReminder(lead, e)}
+                                >
+                                  {remindingId === lead.id ? '…' : '📧'}
+                                </button>
+                              )}
+                              <button
+                                className="ll-action-btn"
+                                style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
+                                onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                              >
+                                View →
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                )}
 
-                  {/* Name + email */}
-                  <div style={{ flex: '0 0 180px', minWidth: 0 }}>
-                    <div className="ll-name">
-                      {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-                      {heat.icon && <span style={{ marginLeft: '5px', fontSize: '13px' }} title={heat.label}>{heat.icon}</span>}
-                    </div>
-                    <div className="ll-email">{lead.email}</div>
-                  </div>
+                {/* ── Locked section — banner + preview rows ── */}
+                {lockedFiltered.length > 0 && (
+                  <tbody>
+                    {/* Banner */}
+                    <tr>
+                      <td colSpan={6} style={{ padding: 0 }}>
+                        <div style={{
+                          background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)',
+                          padding: '14px 18px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          gap: '16px', flexWrap: 'wrap',
+                          borderTop: pagedVisible.length > 0 ? '2px solid #e8e5de' : 'none',
+                        }}>
+                          <div>
+                            <div style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
+                              🔒 {lockedFiltered.length} lead{lockedFiltered.length !== 1 ? 's' : ''} locked
+                            </div>
+                            <div style={{ color: '#9b9b9b', fontSize: '11px', lineHeight: 1.7 }}>
+                              Unlock to see name, email & phone&nbsp;·&nbsp;
+                              <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> 1 listing&nbsp;·&nbsp;
+                              <span style={{ color: '#FFC627', fontWeight: 600 }}>$49.99/mo</span> unlimited listings&nbsp;·&nbsp;
+                              <span style={{ color: '#FFC627', fontWeight: 600 }}>$299</span> lifetime deal&nbsp;·&nbsp;
+                              <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setUnlockModalLeadId(lockedFiltered[0].id)}
+                            style={{
+                              background: '#FFC627', color: '#1a1a1a', border: 'none',
+                              borderRadius: '7px', padding: '9px 18px', fontSize: '13px',
+                              fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                              fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
+                            }}
+                          >
+                            Unlock Leads →
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
 
-                  {/* Property + move-in */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="ll-prop">{prop?.name || lead.property || '—'}</div>
-                    {lead.move_in_date && <div className="ll-movein">Move-in: {lead.move_in_date}</div>}
-                  </div>
+                    {/* 3 blurred preview rows */}
+                    {lockedFiltered.slice(0, 3).map(lead => {
+                      const meta = STATUS_META[lead.status]
+                      const prop = properties.find(p => p.slug === lead.property)
+                      return (
+                        <tr key={lead.id} style={{ background: '#fafaf8' }}>
+                          <td>
+                            <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#d4d0c8', filter: 'blur(3px)' }} />
+                          </td>
+                          <td>
+                            <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
+                              <div className="blur-line" style={{ width: '90px', height: '12px', marginBottom: '4px' }} />
+                              <div className="blur-line" style={{ width: '120px', height: '10px' }} />
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: '12px', color: '#1a1a1a', fontWeight: 600 }}>{prop?.name || '—'}</div>
+                            {prop?.address && <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{prop.address}</div>}
+                            {lead.move_in_date && <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '1px' }}>Move-in: {lead.move_in_date}</div>}
+                          </td>
+                          <td>
+                            <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
+                              {meta.label}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '11px', color: '#b0a898', whiteSpace: 'nowrap' }}>
+                            {timeAgo(lead.created_at)}
+                          </td>
+                          <td />
+                        </tr>
+                      )
+                    })}
 
-                  {/* Pre-screen badge */}
-                  <div style={{ flexShrink: 0 }}>
-                    {hasPrescreen ? (
-                      <span className="ll-badge" style={{ color: '#10b981', background: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)', fontSize: '10px' }}>
-                        ✓ Pre-screened
-                      </span>
-                    ) : (
-                      <span className="ll-badge" style={{ color: '#b0a898', background: '#faf9f6', borderColor: '#e8e5de', fontSize: '10px' }}>
-                        Needs pre-screen
-                      </span>
+                    {/* Pages indicator */}
+                    {lockedFiltered.length > 3 && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: '10px 18px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
+                          <span style={{ fontSize: '12px', color: '#9b9b9b' }}>
+                            +{lockedFiltered.length - 3} more lead{lockedFiltered.length - 3 !== 1 ? 's' : ''} across{' '}
+                            {Math.ceil(lockedFiltered.length / PAGE_SIZE)} more page{Math.ceil(lockedFiltered.length / PAGE_SIZE) !== 1 ? 's' : ''} —{' '}
+                          </span>
+                          <button
+                            onClick={() => setUnlockModalLeadId(lockedFiltered[0].id)}
+                            style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}
+                          >
+                            unlock all →
+                          </button>
+                        </td>
+                      </tr>
                     )}
-                  </div>
+                  </tbody>
+                )}
+              </table>
+            </div>
 
-                  {/* Status */}
-                  <div style={{ flexShrink: 0 }}>
-                    <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
-                      {meta.label}
-                      {lead.status === 'closed' && lead.closed_reason && ` · ${lead.closed_reason}`}
-                    </span>
-                  </div>
-
-                  {/* Time */}
-                  <div className="ll-time">{timeAgo(lead.created_at)}</div>
-
-                  {/* Actions */}
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                    {needsRemind && (
-                      <button
-                        className="ll-action-btn"
-                        style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
-                        disabled={remindingId === lead.id}
-                        onClick={e => sendReminder(lead, e)}
-                      >
-                        {remindingId === lead.id ? '…' : '📧 Remind'}
-                      </button>
-                    )}
-                    <button
-                      className="ll-action-btn"
-                      style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
-                      onClick={e => { e.stopPropagation(); router.push(`/landlord/leads/${lead.id}`) }}
-                    >
-                      View →
-                    </button>
-                  </div>
+            {/* Pagination — below the table */}
+            {totalPages > 1 && (
+              <div className="ll-pagination">
+                <span style={{ fontSize: '12px', color: '#9b9b9b' }}>
+                  {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, visibleFiltered.length)} of {visibleFiltered.length} leads
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button className="ll-page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+                  <span style={{ fontSize: '12px', color: '#6b6b6b', fontWeight: 600, minWidth: '80px', textAlign: 'center' }}>
+                    Page {page} of {totalPages}
+                  </span>
+                  <button className="ll-page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* ── PIPELINE VIEW ── */}
@@ -470,10 +707,28 @@ export default function LandlordLeadsPage() {
                     <span className="ll-pcol-count" style={{ background: meta.color }}>{colLeads.length}</span>
                   </div>
                   {colLeads.length === 0 && (
-                    <div style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: '#c5c1b8', borderBottom: 'none' }}>No leads</div>
+                    <div style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: '#c5c1b8' }}>No leads</div>
                   )}
                   {colLeads.map(lead => {
+                    const visible = isLeadVisible(lead)
                     const heat = getHeat(lead.created_at)
+                    const prop = properties.find(p => p.slug === lead.property)
+
+                    if (!visible) {
+                      return (
+                        <div key={lead.id} className="ll-pcard locked">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#d4d0c8', flexShrink: 0, filter: 'blur(3px)' }} />
+                            <div style={{ filter: 'blur(4px)', userSelect: 'none', flex: 1 }}>
+                              <div className="blur-line" style={{ width: '70px', height: '11px', marginBottom: '4px' }} />
+                              <div className="blur-line" style={{ width: '90px', height: '10px' }} />
+                            </div>
+                          </div>
+                          {prop && <div style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 500 }}>{prop.name}</div>}
+                        </div>
+                      )
+                    }
+
                     return (
                       <div
                         key={lead.id}
@@ -492,7 +747,12 @@ export default function LandlordLeadsPage() {
                             <div style={{ fontSize: '11px', color: '#9b9b9b' }}>{lead.email}</div>
                           </div>
                         </div>
-                        {lead.property && <div style={{ fontSize: '11px', color: '#6b6b6b', marginBottom: '4px' }}>{lead.property}</div>}
+                        {prop && (
+                          <div style={{ marginBottom: '4px' }}>
+                            <div style={{ fontSize: '11px', color: '#4a4a4a', fontWeight: 600 }}>{prop.name}</div>
+                            {prop.address && <div style={{ fontSize: '10px', color: '#9b9b9b' }}>{prop.address}</div>}
+                          </div>
+                        )}
                         <div style={{ fontSize: '10px', color: '#b0a898' }}>{timeAgo(lead.created_at)}</div>
                       </div>
                     )
@@ -569,6 +829,15 @@ export default function LandlordLeadsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── UNLOCK MODAL ── */}
+      {unlockModalLeadId && (
+        <UnlockModal
+          leadId={unlockModalLeadId}
+          onSuccess={handleUnlockSuccess}
+          onClose={() => setUnlockModalLeadId(null)}
+        />
       )}
     </>
   )
