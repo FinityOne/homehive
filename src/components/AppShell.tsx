@@ -37,10 +37,11 @@ const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
     { href: '/landlord/leases',    label: 'Leases',      icon: '📋' },
   ],
   admin: [
-    { href: '/admin',                    label: 'Overview',        icon: '⊞', exact: true },
-    { href: '/admin/users',              label: 'Users',           icon: '◎' },
-    { href: '/admin/properties',         label: 'Properties',      icon: '▣' },
-    { href: '/admin/leads',              label: 'Leads',           icon: '◉' },
+    { href: '/admin',                    label: 'Overview',         icon: '⊞', exact: true },
+    { href: '/admin/users',              label: 'Users',            icon: '◎' },
+    { href: '/admin/properties',         label: 'Properties',       icon: '▣' },
+    { href: '/admin/leads',              label: 'Leads',            icon: '◉' },
+    { href: '/admin/payments',           label: 'Payments',         icon: '💳' },
     { href: '/admin/upgrade-requests',   label: 'Upgrade Requests', icon: '⬆' },
   ],
 }

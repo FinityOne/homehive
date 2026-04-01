@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import {
   getPropertiesByOwner,
   updatePropertyCore,
@@ -13,6 +14,8 @@ import {
   Property,
 } from '@/lib/properties'
 import { getLeadsForOwner, Lead } from '@/lib/leads'
+
+const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -157,10 +160,12 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const { slug } = use(params)
   const router   = useRouter()
 
-  const [property, setProperty]   = useState<Property | null>(null)
-  const [leads, setLeads]         = useState<Lead[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const [property, setProperty]     = useState<Property | null>(null)
+  const [leads, setLeads]           = useState<Lead[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [activeTab, setActiveTab]   = useState<Tab>('overview')
+  const [hasPlan, setHasPlan]       = useState(false)
+  const [unlockedIds, setUnlockedIds] = useState<string[]>([])
 
   // ── Basics form ─────────────────────────────────────────────────────────────
   const [basics, setBasics] = useState({ name: '', address: '', description: '', price: '', security_deposit: '', beds: '', baths: '', sqft: '', asu_distance: '' })
@@ -198,15 +203,21 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      const [props, lds] = await Promise.all([
+      const [props, lds, { data: unlocks }, { data: plan }] = await Promise.all([
         getPropertiesByOwner(user.id),
         getLeadsForOwner(user.id),
+        supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', user.id),
+        supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', user.id).eq('status', 'active').maybeSingle(),
       ])
       const found = props.find(p => p.slug === slug)
       if (!found) { router.push('/landlord/listings'); return }
 
+      const slugLeads = lds.filter(l => l.property === slug)
+      const activePlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
       setProperty(found)
-      setLeads(lds.filter(l => l.property === slug))
+      setLeads(slugLeads)
+      setHasPlan(!!activePlan)
+      setUnlockedIds((unlocks || []).map((u: any) => u.lead_id))
 
       setBasics({
         name: found.name || '', address: found.address || '', description: found.description || '',
@@ -470,29 +481,18 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
 
             {/* Leads */}
             <div className="lp-card">
-              <div className="lp-card-hdr"><span className="lp-card-title">Leads ({leads.length})</span></div>
-              <div className="lp-card-body" style={{ padding: 0 }}>
-                {leads.length === 0 ? (
-                  <div style={{ padding: '20px 18px', fontSize: '13px', color: '#94a3b8' }}>No leads yet — get your listing live to start receiving interest.</div>
-                ) : (
-                  <table className="leads-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th><th>Email</th><th>Move-in</th><th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {leads.map(l => (
-                        <tr key={l.id}>
-                          <td style={{ fontWeight: 500 }}>{l.first_name || '—'}</td>
-                          <td style={{ color: '#64748b', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.email}</td>
-                          <td style={{ color: '#64748b' }}>{l.move_in_date || '—'}</td>
-                          <td><span style={{ fontSize: '11px', background: '#f1f5f9', color: '#334155', borderRadius: '20px', padding: '2px 8px', fontWeight: 600 }}>{l.status}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="lp-card-hdr">
+                <span className="lp-card-title">Leads ({leads.length})</span>
+                {leads.length > 0 && (
+                  <a href="/landlord/leads" style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>View all in CRM →</a>
                 )}
+              </div>
+              <div className="lp-card-body" style={{ padding: 0 }}>
+                <LeadsTable
+                  leads={leads}
+                  hasPlan={hasPlan}
+                  initialUnlockedIds={unlockedIds}
+                />
               </div>
             </div>
           </>

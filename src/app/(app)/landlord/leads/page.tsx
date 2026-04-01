@@ -117,16 +117,24 @@ export default function LandlordLeadsPage() {
     if (!userId) return
     setLoading(true)
 
-    // Fetch leads + existing unlocks in parallel
-    const [leadsData, { data: unlocks }] = await Promise.all([
+    // Fetch leads, existing unlocks, and active plan in parallel
+    const [leadsData, { data: unlocks }, { data: plan }] = await Promise.all([
       getLeadsForOwner(userId),
       supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
+      supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', userId).eq('status', 'active').maybeSingle(),
     ])
 
     leadsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
     setLeads(leadsData)
     setFreeLeadIds(computeFreeLeadIds(leadsData))
-    setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
+
+    const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
+    if (hasPlan) {
+      // Active plan unlocks all leads
+      setUnlockedIds(new Set(leadsData.map(l => l.id)))
+    } else {
+      setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
+    }
 
     const props = Array.from(new Set(leadsData.map(l => l.property).filter(Boolean))) as string[]
     setProperties(props.map(slug => ({ slug, name: slug, address: '' })))
