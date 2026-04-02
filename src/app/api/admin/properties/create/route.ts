@@ -10,6 +10,7 @@ const supabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY!)
 
 export async function POST(req: Request) {
+  try {
   const body = await req.json() as {
     name: string
     address: string
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
     total_rooms?: number
     available?: number
     asu_distance?: number
+    sublease_start_date?: string | null
     sublease_end_date?: string | null
     move_in_date?: string | null
     map_embed_url?: string
@@ -62,12 +64,13 @@ export async function POST(req: Request) {
       security_deposit: body.security_deposit ?? null,
       listing_type: body.listing_type || 'standard_rental',
       unit_type: body.unit_type ?? null,
-      beds: body.beds ?? 1,
-      baths: body.baths ?? 1,
+      beds: Math.round(body.beds ?? 1),
+      baths: Math.round(body.baths ?? 1),
       sqft: body.sqft ?? '',
       total_rooms: body.total_rooms ?? 1,
       available: body.available ?? 1,
       asu_distance: body.asu_distance ?? 0,
+      sublease_start_date: body.sublease_start_date ?? null,
       sublease_end_date: body.sublease_end_date ?? null,
       map_embed_url: body.map_embed_url ?? '',
       lat: body.lat ?? 0,
@@ -86,7 +89,8 @@ export async function POST(req: Request) {
     .single()
 
   if (insertErr || !row) {
-    return Response.json({ error: 'Failed to create property' }, { status: 500 })
+    console.error('[create-property] insert error:', insertErr)
+    return Response.json({ error: insertErr?.message ?? 'Failed to create property' }, { status: 500 })
   }
 
   const propertyId = row.id
@@ -165,4 +169,8 @@ export async function POST(req: Request) {
   const claimUrl = claim_token ? `${siteUrl}/claim/${claim_token}` : null
 
   return Response.json({ ok: true, id: propertyId, slug, claimUrl })
+  } catch (err) {
+    console.error('[create-property] unexpected error:', err)
+    return Response.json({ error: err instanceof Error ? err.message : 'Unexpected server error' }, { status: 500 })
+  }
 }

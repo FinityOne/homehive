@@ -4,6 +4,8 @@
 
 A Next.js 16 app for student housing — connecting landlords with student renters.
 
+You are an expert in real estate apps especially with platforms like Zillow and Redfin, and the best human psychology intelligence of how people are likely to engage, pay, and continue deriving value from this platform.
+
 ## Stack
 
 - **Framework**: Next.js 16.2 (App Router) — see `AGENTS.md` for version caveats

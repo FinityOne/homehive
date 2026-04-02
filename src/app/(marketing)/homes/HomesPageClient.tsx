@@ -201,53 +201,67 @@ const TYPE_CONFIG = {
 
 function fmtDate(d: string | null | undefined) {
   if (!d) return null
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 // ─── HOME CARD ───────────────────────────────────────────────────────────────
-function HomeCard({ home, onHover }: { home: Property; onHover: (id: string | null) => void }) {
-  const tc   = TYPE_CONFIG[home.listing_type] ?? TYPE_CONFIG.standard_rental
-  const start = fmtDate(home.sublease_start_date)
-  const end   = fmtDate(home.sublease_end_date)
-  const isSublease = home.listing_type === 'sublease' || home.listing_type === 'lease_transfer'
+function HomeCard({ home, onHover, featured = false }: { home: Property; onHover: (id: string | null) => void; featured?: boolean }) {
+  const tc      = TYPE_CONFIG[home.listing_type] ?? TYPE_CONFIG.standard_rental
+  const start   = fmtDate(home.sublease_start_date)
+  const end     = fmtDate(home.sublease_end_date)
+  const isSub   = home.listing_type === 'sublease' || home.listing_type === 'lease_transfer'
 
   return (
     <a
       href={`/homes/${home.slug}`}
-      className="hc2-card"
+      className={`hc2-card${featured ? ' hc2-featured' : ''}`}
       onMouseEnter={() => onHover(home.slug)}
       onMouseLeave={() => onHover(null)}
     >
       {/* Image */}
-      <div className="hc2-img-wrap">
+      <div className={`hc2-img-wrap${featured ? ' hc2-img-wrap--featured' : ''}`}>
         {home.images?.[0]
-          ? <img src={home.images[0]} alt={home.name} className="hc2-img" />
+          ? <img src={home.images[0]} alt={home.name} className="hc2-img" loading="lazy" />
           : <div className="hc2-img-placeholder" />
         }
-        {/* Type badge — top left */}
+        {/* Gradient overlay for featured */}
+        {featured && <div className="hc2-grad" />}
+
+        {/* Type badge */}
         <div className="hc2-type-badge" style={{ background: tc.bg, color: tc.color, border: `1px solid ${tc.border}` }}>
           {tc.label}
         </div>
-        {/* Price — bottom right */}
+
+        {/* Price chip */}
         <div className="hc2-price">
           ${home.price.toLocaleString()}<span>/mo</span>
         </div>
+
+        {/* Arrow affordance — signals clickability */}
+        <div className="hc2-arrow">↗</div>
       </div>
 
       {/* Body */}
       <div className="hc2-body">
         <div className="hc2-name">{home.name}</div>
         <div className="hc2-meta">
-          <span>📍 {home.asu_distance} mi to ASU</span>
-          <span className="hc2-sep" />
-          <span>{home.beds}bd · {home.baths}ba</span>
+          <span className="hc2-bed-pill">{home.beds} bed · {home.baths} bath</span>
+          {isSub && start && end && (
+            <span className="hc2-date-pill">{start} – {end}</span>
+          )}
         </div>
-        {isSublease && start && end && (
-          <div className="hc2-dates">{start} → {end}</div>
-        )}
-        <div className="hc2-cta">Explore →</div>
       </div>
     </a>
+  )
+}
+
+// ─── SECTION HEADING ─────────────────────────────────────────────────────────
+function SectionHeading({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="section-heading">
+      <span className="section-label">{label}</span>
+      <span className="section-count">{count}</span>
+    </div>
   )
 }
 
@@ -289,19 +303,20 @@ export default function HomesPageClient() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: #faf9f6; }
 
+        /* ── LAYOUT ── */
         .homes-page { display: flex; flex-direction: column; height: calc(100vh - 94px); overflow: hidden; }
         .homes-toolbar { background: #fff; border-bottom: 1px solid #e8e4db; padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; z-index: 10; }
 
-        /* SEARCH */
+        /* ── SEARCH ── */
         .search-box { display: flex; align-items: center; gap: 8px; background: #faf9f6; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 12px; height: 36px; min-width: 200px; flex: 1; max-width: 280px; }
         .search-box input { border: none; background: none; outline: none; font-size: 13px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; width: 100%; }
         .search-box input::placeholder { color: #c5c1b8; }
 
-        /* FILTER PILLS */
+        /* ── FILTER PILLS ── */
         .filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .filter-pill { display: flex; align-items: center; gap: 6px; background: #faf9f6; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 12px; height: 36px; font-size: 13px; color: #1a1a1a; cursor: pointer; white-space: nowrap; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s; }
         .filter-pill:hover { border-color: #8C1D40; }
@@ -316,37 +331,76 @@ export default function HomesPageClient() {
         .map-toggle:hover { background: #333; }
         .result-count { font-size: 13px; color: #9b9b9b; white-space: nowrap; }
 
-        /* BODY */
+        /* ── BODY ── */
         .homes-body { display: flex; flex: 1; overflow: hidden; }
 
-        /* LIST */
-        .homes-list { width: 50%; flex-shrink: 0; overflow-y: auto; padding: 16px; background: #faf9f6; }
+        /* ── LIST ── */
+        .homes-list { width: 50%; flex-shrink: 0; overflow-y: auto; padding: 20px 20px 40px; background: #faf9f6; }
         .homes-list.full { width: 100%; }
-        .homes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-        .homes-list.full .homes-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 
-        /* COMPACT CARD */
-        .hc2-card { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #e8e4db; border-radius: 14px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
-        .hc2-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(0,0,0,0.09); border-color: #d4c9b0; }
-        .hc2-img-wrap { position: relative; height: 148px; overflow: hidden; background: #f0ede6; }
-        .hc2-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s; }
-        .hc2-card:hover .hc2-img { transform: scale(1.06); }
-        .hc2-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8e4db,#f0ede6); }
-        .hc2-type-badge { position: absolute; top: 9px; left: 9px; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; backdrop-filter: blur(4px); letter-spacing: 0.2px; }
-        .hc2-price { position: absolute; bottom: 9px; right: 9px; background: rgba(26,26,26,0.9); color: #fff; font-family: 'Fraunces', serif; font-size: 16px; font-weight: 300; padding: 4px 10px; border-radius: 7px; backdrop-filter: blur(6px); letter-spacing: -0.2px; line-height: 1.3; }
-        .hc2-price span { font-family: 'DM Sans', sans-serif; font-size: 10px; opacity: 0.65; font-weight: 400; }
-        .hc2-body { padding: 11px 13px 13px; }
-        .hc2-name { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 300; color: #1a1a1a; margin-bottom: 4px; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .hc2-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6b6b6b; margin-bottom: 4px; }
-        .hc2-sep { width: 3px; height: 3px; border-radius: 50%; background: #d4c9b0; flex-shrink: 0; }
-        .hc2-dates { font-size: 10px; color: #8C1D40; font-weight: 600; background: #fdf2f5; border: 1px solid #f5c6d0; padding: 2px 8px; border-radius: 20px; display: inline-block; margin-bottom: 4px; }
-        .hc2-cta { font-size: 12px; font-weight: 600; color: #8C1D40; margin-top: 6px; }
-        .hc2-card:hover .hc2-cta { color: #c9973a; }
+        /* ── SECTION HEADING ── */
+        .section-heading { display: flex; align-items: center; gap: 10px; margin: 28px 0 14px; }
+        .section-heading:first-child { margin-top: 0; }
+        .section-label { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; color: #1a1a1a; font-style: italic; letter-spacing: -0.3px; }
+        .section-count { font-size: 12px; font-weight: 600; color: #9b9b9b; background: #f0ede6; padding: 2px 9px; border-radius: 20px; }
 
-        /* MAP */
+        /* ── GRID ── */
+        .homes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .homes-list.full .homes-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+
+        /* ── CARD ── */
+        .hc2-card {
+          display: block; text-decoration: none; color: inherit;
+          background: #fff; border-radius: 16px; overflow: hidden;
+          cursor: pointer;
+          transition: transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .hc2-card:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 20px 48px rgba(0,0,0,0.13), 0 6px 16px rgba(0,0,0,0.07);
+        }
+
+        /* ── FEATURED CARD ── */
+        .hc2-featured { grid-column: span 2; }
+        .hc2-img-wrap--featured { height: 280px !important; }
+
+        /* ── IMAGE ── */
+        .hc2-img-wrap { position: relative; height: 220px; overflow: hidden; background: #f0ede6; }
+        .hc2-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .hc2-card:hover .hc2-img { transform: scale(1.07); }
+        .hc2-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8e4db 0%,#f5f2ec 50%,#e8e4db 100%); }
+
+        /* Gradient overlay bottom of image — makes price readable */
+        .hc2-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.38) 0%, transparent 55%); pointer-events: none; }
+
+        /* ── OVERLAYS ── */
+        .hc2-type-badge { position: absolute; top: 11px; left: 11px; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 20px; backdrop-filter: blur(8px); letter-spacing: 0.3px; text-transform: uppercase; }
+        .hc2-price { position: absolute; bottom: 11px; left: 13px; color: #fff; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; text-shadow: 0 1px 4px rgba(0,0,0,0.25); }
+        .hc2-price span { font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 400; opacity: 0.85; }
+        .hc2-arrow {
+          position: absolute; bottom: 11px; right: 13px;
+          width: 30px; height: 30px; border-radius: 50%;
+          background: rgba(255,255,255,0.18); backdrop-filter: blur(6px);
+          border: 1px solid rgba(255,255,255,0.35);
+          color: #fff; font-size: 14px; font-weight: 600;
+          display: flex; align-items: center; justify-content: center;
+          opacity: 0; transform: scale(0.8);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .hc2-card:hover .hc2-arrow { opacity: 1; transform: scale(1); }
+
+        /* ── BODY ── */
+        .hc2-body { padding: 13px 14px 15px; }
+        .hc2-name { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 300; color: #1a1a1a; margin-bottom: 6px; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .hc2-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .hc2-bed-pill { font-size: 12px; font-weight: 500; color: #4a4a4a; background: #f4f1eb; padding: 3px 9px; border-radius: 20px; }
+        .hc2-date-pill { font-size: 11px; font-weight: 600; color: #8C1D40; background: #fdf2f5; border: 1px solid #f5c6d0; padding: 3px 9px; border-radius: 20px; }
+
+        /* ── MAP ── */
         .homes-map { width: 50%; flex-shrink: 0; position: sticky; top: 0; height: 100%; background: #e8e4db; }
 
-        /* EMPTY */
+        /* ── EMPTY ── */
         .empty-state { text-align: center; padding: 60px 20px; }
         .empty-title { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 300; color: #1a1a1a; margin-bottom: 8px; }
         .empty-sub { font-size: 14px; color: #9b9b9b; margin-bottom: 16px; }
@@ -354,17 +408,19 @@ export default function HomesPageClient() {
 
         @keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
 
+        /* ── RESPONSIVE ── */
         @media (max-width: 768px) {
           .homes-page { height: auto; overflow: visible; }
           .homes-body { flex-direction: column; }
-          .homes-list, .homes-list.full { width: 100%; }
-          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr 1fr; }
-          .homes-map { width: 100%; height: 340px; position: relative; }
+          .homes-list, .homes-list.full { width: 100%; padding: 16px 12px 40px; }
+          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr; gap: 14px; }
+          .hc2-featured { grid-column: span 1; }
+          .hc2-img-wrap { height: 240px; }
+          .hc2-img-wrap--featured { height: 240px !important; }
+          .homes-map { width: 100%; height: 300px; position: relative; }
           .search-box { max-width: 100%; }
           .toolbar-right { margin-left: 0; width: 100%; justify-content: space-between; }
-        }
-        @media (max-width: 480px) {
-          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr; }
+          .hc2-arrow { opacity: 1; transform: scale(1); }
         }
       `}</style>
 
@@ -476,12 +532,12 @@ export default function HomesPageClient() {
           <div className={`homes-list${!mapVisible ? ' full' : ''}`}>
             {loading ? (
               <div className="homes-grid">
-                {[0, 1, 2, 3].map(i => (
-                  <div key={i} style={{ background: '#fff', border: '1px solid #e8e4db', borderRadius: '14px', overflow: 'hidden' }}>
-                    <div style={{ height: '148px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
-                    <div style={{ padding: '11px 13px 13px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ height: '14px', width: '70%', background: '#f0ede6', borderRadius: '4px' }} />
-                      <div style={{ height: '11px', width: '50%', background: '#f0ede6', borderRadius: '4px' }} />
+                {[0, 1, 2, 3, 5, 6].map(i => (
+                  <div key={i} style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                    <div style={{ height: '220px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+                    <div style={{ padding: '13px 14px 15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ height: '15px', width: '65%', background: '#f0ede6', borderRadius: '4px' }} />
+                      <div style={{ height: '22px', width: '40%', background: '#f4f1eb', borderRadius: '20px' }} />
                     </div>
                   </div>
                 ))}
@@ -492,13 +548,64 @@ export default function HomesPageClient() {
                 <p className="empty-sub">Try widening your search — we're adding new listings regularly.</p>
                 <button className="reset-btn" onClick={() => setFilters(DEFAULT_FILTERS)}>Clear filters</button>
               </div>
-            ) : (
-              <div className="homes-grid">
-                {filtered.map(home => (
-                  <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              const featured    = filtered.filter(h => h.is_featured)
+              const rentals     = filtered.filter(h => !h.is_featured && h.listing_type === 'standard_rental')
+              const subleases   = filtered.filter(h => !h.is_featured && h.listing_type === 'sublease')
+              const transfers   = filtered.filter(h => !h.is_featured && h.listing_type === 'lease_transfer')
+
+              return (
+                <>
+                  {/* Featured */}
+                  {featured.length > 0 && (
+                    <>
+                      <SectionHeading label="Featured Picks" count={featured.length} />
+                      <div className="homes-grid">
+                        {featured.map((home, i) => (
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} featured={i === 0 && featured.length === 1} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* For Rent */}
+                  {rentals.length > 0 && (
+                    <>
+                      <SectionHeading label="For Rent" count={rentals.length} />
+                      <div className="homes-grid">
+                        {rentals.map(home => (
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Subleases */}
+                  {subleases.length > 0 && (
+                    <>
+                      <SectionHeading label="Subleases" count={subleases.length} />
+                      <div className="homes-grid">
+                        {subleases.map(home => (
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Lease Transfers */}
+                  {transfers.length > 0 && (
+                    <>
+                      <SectionHeading label="Lease Transfers" count={transfers.length} />
+                      <div className="homes-grid">
+                        {transfers.map(home => (
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )
+            })()}
           </div>
 
           {/* MAP */}

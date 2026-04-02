@@ -11,10 +11,13 @@ export type EmailType =
   | 'prescreen_reminder'
   | 'lead_qualified_landlord'
   | 'new_lead_landlord'
+  | 'admin_new_lead'
   | 'listing_submitted'
   | 'listing_approved'
   | 'listing_rejected'
   | 'admin_new_signup'
+  | 'admin_claim_notify'
+  | 'admin_daily_digest'
 
 export async function logEmail(
   leadId: string,

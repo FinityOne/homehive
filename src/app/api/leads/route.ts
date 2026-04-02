@@ -131,6 +131,49 @@ export async function POST(req: Request) {
     console.error('Admin notification email error:', emailError)
   }
 
+  // 3b. Admin CC — always notify admin regardless of landlord assignment
+  const adminEmail = process.env.ADMIN_EMAIL
+  if (adminEmail && adminEmail !== landlordEmail) {
+    const now = new Date().toLocaleString('en-US', {
+      timeZone: 'America/Phoenix', month: 'short', day: 'numeric',
+      year: 'numeric', hour: 'numeric', minute: '2-digit',
+    })
+    try {
+      await resend.emails.send({
+        from: 'HomeHive <hello@homehive.live>',
+        to: adminEmail,
+        subject: `[Lead] ${first_name} → ${propertyName}`,
+        html: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body style="margin:0;padding:0;background:#f8f9fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:480px;margin:0 auto;padding:32px 16px;">
+  <div style="background:#1a1a1a;border-radius:12px 12px 0 0;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;">
+    <span style="font-size:18px;font-weight:700;color:#fff;">Home<em style="color:#FFC627;font-style:italic;">Hive</em></span>
+    <span style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#FFC627;background:rgba(255,198,39,0.15);padding:4px 10px;border-radius:12px;border:1px solid rgba(255,198,39,0.3);">🔔 New Lead</span>
+  </div>
+  <div style="background:#fff;border:1px solid #e8e4db;border-top:none;border-radius:0 0 12px 12px;padding:24px;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:7px 0;color:#6b6b6b;width:110px;border-bottom:1px solid #f4f1eb;">Name</td><td style="padding:7px 0;font-weight:600;border-bottom:1px solid #f4f1eb;">${first_name}</td></tr>
+      <tr><td style="padding:7px 0;color:#6b6b6b;border-bottom:1px solid #f4f1eb;">Email</td><td style="padding:7px 0;border-bottom:1px solid #f4f1eb;"><a href="mailto:${email}" style="color:#8C1D40;text-decoration:none;">${email}</a></td></tr>
+      <tr><td style="padding:7px 0;color:#6b6b6b;border-bottom:1px solid #f4f1eb;">Phone</td><td style="padding:7px 0;border-bottom:1px solid #f4f1eb;">${phone || '—'}</td></tr>
+      <tr><td style="padding:7px 0;color:#6b6b6b;border-bottom:1px solid #f4f1eb;">Property</td><td style="padding:7px 0;font-weight:600;border-bottom:1px solid #f4f1eb;">${propertyName}</td></tr>
+      <tr><td style="padding:7px 0;color:#6b6b6b;border-bottom:1px solid #f4f1eb;">Move-in</td><td style="padding:7px 0;border-bottom:1px solid #f4f1eb;">${move_in_date || '—'}</td></tr>
+      <tr><td style="padding:7px 0;color:#6b6b6b;">Received</td><td style="padding:7px 0;">${now} MST</td></tr>
+    </table>
+    <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
+      <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/admin/leads" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 18px;border-radius:8px;">View all leads →</a>
+      <a href="${prescreenUrl}" style="display:inline-block;background:#fff;color:#1a1a1a;border:1.5px solid #e8e4db;text-decoration:none;font-size:13px;font-weight:500;padding:10px 18px;border-radius:8px;">Pre-screen link ↗</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>`,
+      })
+      await logEmail(leadId, 'admin_new_lead', `[Lead] ${first_name} → ${propertyName}`, adminEmail, { property: propertyName, leadEmail: email })
+    } catch (_) {}
+  }
+
   // 4. Send lead welcome email
   try {
     await resend.emails.send({
