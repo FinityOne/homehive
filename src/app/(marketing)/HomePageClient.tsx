@@ -18,14 +18,14 @@ const TYPE_CONFIG = {
 } as const
 
 // ─── CARD ─────────────────────────────────────────────────────────────────────
-function HomeCard({ home, wide = false }: { home: Property; wide?: boolean }) {
+function HomeCard({ home, wide = false, featured = false }: { home: Property; wide?: boolean; featured?: boolean }) {
   const tc    = TYPE_CONFIG[home.listing_type] ?? TYPE_CONFIG.standard_rental
   const start = fmtDate(home.sublease_start_date)
   const end   = fmtDate(home.sublease_end_date)
   const isSub = home.listing_type === 'sublease' || home.listing_type === 'lease_transfer'
 
   return (
-    <a href={`/homes/${home.slug}`} className={`hc-card${wide ? ' hc-card--wide' : ''}`}>
+    <a href={`/homes/${home.slug}`} className={`hc-card${wide ? ' hc-card--wide' : ''}${featured ? ' hc-card--featured' : ''}`}>
       <div className="hc-img-wrap">
         {home.images?.[0]
           ? <img src={home.images[0]} alt={home.name} className="hc-img" loading="lazy" />
@@ -63,22 +63,24 @@ function HomeCard({ home, wide = false }: { home: Property; wide?: boolean }) {
   )
 }
 
-// ─── FEATURED GRID (2-up, big cards) ─────────────────────────────────────────
+// ─── FEATURED GRID (full-bleed section) ──────────────────────────────────────
 function FeaturedGrid({ homes }: { homes: Property[] }) {
   if (homes.length === 0) return null
   return (
-    <div className="fg-wrap">
-      <div className="lr-hdr">
-        <div>
-          <div className="lr-title">✦ Featured Picks</div>
-          <div className="lr-sub">Handpicked by the HomeHive team</div>
+    <div className="fg-section">
+      <div className="wrap">
+        <div className="fg-hdr">
+          <div>
+            <div className="fg-eyebrow">✦ Handpicked by HomeHive</div>
+            <div className="fg-title">Featured Picks</div>
+          </div>
+          <a href="/homes" className="lr-view-all fg-view-all">Browse all →</a>
         </div>
-        <a href="/homes" className="lr-view-all">Browse all →</a>
-      </div>
-      <div className="fg-grid">
-        {homes.slice(0, 4).map((h, i) => (
-          <HomeCard key={h.slug} home={h} wide={homes.length === 1 || (i === 0 && homes.length >= 3)} />
-        ))}
+        <div className="fg-grid">
+          {homes.slice(0, 4).map((h) => (
+            <HomeCard key={h.slug} home={h} featured wide={homes.length === 1} />
+          ))}
+        </div>
       </div>
     </div>
   )

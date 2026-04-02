@@ -77,6 +77,9 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
   // Images — unified list of existing URLs + new file uploads
   const [images, setImages] = useState<ImageItem[]>([])
 
+  // Featured
+  const [isFeatured, setIsFeatured] = useState(false)
+
   // Offer fields
   const [offerAmount, setOfferAmount] = useState('')
   const [offerDeadline, setOfferDeadline] = useState('')
@@ -135,6 +138,7 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
       setOfferAmount(prop.offer_amount != null ? String(prop.offer_amount) : '')
       setOfferDeadline(prop.offer_deadline || '')
       setOfferDescription(prop.offer_description || '')
+      setIsFeatured(prop.is_featured ?? false)
 
       setLoading(false)
     }
@@ -251,6 +255,7 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         lng: Number(lng) || 0,
         owner_id: ownerId,
         is_claimable: isClaimable,
+        is_featured: isFeatured,
         offer_amount: offerAmount === '' ? null : Number(offerAmount),
         offer_deadline: offerDeadline || null,
         offer_description: offerDescription.trim() || null,
@@ -749,6 +754,29 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
         {/* ══ ADMIN ══ */}
         {activeTab === 'admin' && (
           <div className="anp-card">
+            <div className="anp-card-title" style={{ marginBottom: '12px' }}>Featured Listing</div>
+            <button
+              onClick={() => setIsFeatured(f => !f)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                background: isFeatured ? '#fffbeb' : '#faf9f6',
+                border: `2px solid ${isFeatured ? '#fde68a' : '#e8e4db'}`,
+                borderRadius: '10px', padding: '14px 16px', cursor: 'pointer',
+                width: '100%', textAlign: 'left', fontFamily: "'DM Sans', sans-serif",
+                transition: 'all 0.15s', marginBottom: '28px',
+              }}
+            >
+              <span style={{ fontSize: '22px' }}>{isFeatured ? '⭐' : '☆'}</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '14px', color: isFeatured ? '#92400e' : '#1a1a1a' }}>
+                  {isFeatured ? 'Featured' : 'Not featured'}
+                </div>
+                <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '2px' }}>
+                  Featured listings appear at the top of the homepage and /homes page
+                </div>
+              </div>
+            </button>
+
             <div className="anp-card-title">Owner Assignment</div>
             <div className="owner-toggle">
               <button className={`owner-opt${selectedOwnerId === 'claimable' ? ' selected' : ''}`} onClick={() => setSelectedOwnerId('claimable')}>

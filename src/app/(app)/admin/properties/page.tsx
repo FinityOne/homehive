@@ -59,6 +59,12 @@ export default function AdminPropertiesPage() {
     test:     listings.filter(l => l.admin_status === 'test').length,
     flagged:  listings.filter(l => l.admin_status === 'flagged').length,
     rejected: listings.filter(l => l.admin_status === 'rejected').length,
+    featured: listings.filter(l => l.is_featured).length,
+  }
+
+  const toggleFeatured = async (id: string, current: boolean) => {
+    const { error } = await supabase.from('properties').update({ is_featured: !current }).eq('id', id)
+    if (!error) setListings(prev => prev.map(l => l.id === id ? { ...l, is_featured: !current } : l))
   }
 
   const filtered = listings.filter(l => {
@@ -69,7 +75,7 @@ export default function AdminPropertiesPage() {
       return l.name?.toLowerCase().includes(q) || l.address?.toLowerCase().includes(q) || l.slug?.toLowerCase().includes(q) || l.owner_id?.toLowerCase().includes(q)
     }
     return true
-  })
+  }).sort((a, b) => (b.is_featured ? 1 : 0) - (a.is_featured ? 1 : 0))
 
   return (
     <>
@@ -77,7 +83,7 @@ export default function AdminPropertiesPage() {
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         .p-body { max-width: 1200px; margin: 0 auto; padding: 28px 24px 80px; font-family: 'DM Sans', sans-serif; }
-        .p-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+        .p-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
         .p-stat { background: #fff; border: 1px solid #e8e4db; border-radius: 10px; padding: 14px 16px; }
         .p-stat-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
         .p-stat-num { font-family: 'Fraunces', serif; font-size: 26px; font-weight: 300; letter-spacing: -0.8px; line-height: 1; }
@@ -102,9 +108,13 @@ export default function AdminPropertiesPage() {
         .p-addr { font-size: 11px; color: #9b9b9b; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .p-slug { font-family: monospace; font-size: 11px; color: #6b6b6b; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .test-pill { display: inline-block; background: #f5f3ff; color: #5b21b6; border: 1px solid #ddd6fe; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 5px; vertical-align: middle; }
+        .featured-star { display: inline-block; font-size: 13px; margin-left: 5px; vertical-align: middle; cursor: pointer; opacity: 0.85; transition: transform 0.1s; }
+        .featured-star:hover { transform: scale(1.2); opacity: 1; }
+        .p-table tbody tr.is-featured { background: #fffdf5; }
         .p-status-sel { border: none; background: transparent; font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; outline: none; padding: 0; }
         @media (max-width: 900px) {
           .p-stats { grid-template-columns: repeat(3, 1fr); }
+          .p-stats .p-stat:last-child { grid-column: span 3; }
           .col-type, .col-price, .col-slug { display: none; }
         }
         @media (max-width: 600px) { .p-body { padding: 20px 16px; } .p-stats { grid-template-columns: 1fr 1fr; } }
@@ -127,6 +137,10 @@ export default function AdminPropertiesPage() {
                 </div>
               )
             })}
+            <div className="p-stat" style={{ borderLeft: '3px solid #fde68a' }}>
+              <div className="p-stat-label">Featured</div>
+              <div className="p-stat-num" style={{ color: '#92400e' }}>{counts.featured}</div>
+            </div>
           </div>
         )}
 
@@ -177,9 +191,19 @@ export default function AdminPropertiesPage() {
                 const adminStatus = (l.admin_status ?? 'active') as AdminStatus
                 const cfg = ADMIN_STATUS_CFG[adminStatus] ?? ADMIN_STATUS_CFG.active
                 return (
-                  <tr key={l.id} onClick={() => router.push(`/admin/properties/${l.id}`)}>
+                  <tr key={l.id} className={l.is_featured ? 'is-featured' : ''} onClick={() => router.push(`/admin/properties/${l.id}`)}>
                     <td>
-                      <div className="p-name">{l.name}{l.is_test && <span className="test-pill">TEST</span>}</div>
+                      <div className="p-name">
+                        {l.name}
+                        {l.is_test && <span className="test-pill">TEST</span>}
+                        <span
+                          className="featured-star"
+                          title={l.is_featured ? 'Click to unfeature' : 'Click to feature'}
+                          onClick={e => { e.stopPropagation(); toggleFeatured(l.id, l.is_featured ?? false) }}
+                        >
+                          {l.is_featured ? '⭐' : '☆'}
+                        </span>
+                      </div>
                       <div className="p-addr">{l.address}</div>
                     </td>
                     <td className="col-slug"><span className="p-slug">{l.slug}</span></td>

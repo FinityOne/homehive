@@ -44,6 +44,7 @@ export async function PATCH(
     lng?: number
     owner_id?: string | null
     is_claimable?: boolean
+    is_featured?: boolean
     offer_amount?: number | null
     offer_deadline?: string | null
     offer_description?: string | null
@@ -77,6 +78,7 @@ export async function PATCH(
       lng: body.lng ?? 0,
       owner_id: body.owner_id ?? null,
       is_claimable: body.is_claimable ?? false,
+      is_featured: body.is_featured ?? false,
       offer_amount: body.offer_amount ?? null,
       offer_deadline: body.offer_deadline ?? null,
       offer_description: body.offer_description ?? null,
