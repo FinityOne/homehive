@@ -63,26 +63,36 @@ function HomeCard({ home, wide = false, featured = false }: { home: Property; wi
   )
 }
 
-// ─── FEATURED GRID (full-bleed section) ──────────────────────────────────────
+// ─── FEATURED GRID ───────────────────────────────────────────────────────────
 function FeaturedGrid({ homes }: { homes: Property[] }) {
   if (homes.length === 0) return null
+  const n = Math.min(homes.length, 4) as 1 | 2 | 3 | 4
   return (
     <div className="fg-section">
-      <div className="wrap">
-        <div className="fg-hdr">
-          <div>
-            <div className="fg-eyebrow">✦ Handpicked by HomeHive</div>
-            <div className="fg-title">Featured Picks</div>
-          </div>
-          <a href="/homes" className="lr-view-all fg-view-all">Browse all →</a>
+      <div className="fg-hdr">
+        <div>
+          <div className="fg-eyebrow">Handpicked</div>
+          <div className="fg-title">Featured Picks</div>
         </div>
-        <div className="fg-grid">
-          {homes.slice(0, 4).map((h) => (
-            <HomeCard key={h.slug} home={h} featured wide={homes.length === 1} />
-          ))}
-        </div>
+        <a href="/homes" className="fg-view-all">Browse all →</a>
+      </div>
+      <div className={`fg-grid fg-grid--${n}`}>
+        {homes.slice(0, n).map((h) => (
+          <HomeCard key={h.slug} home={h} featured />
+        ))}
       </div>
     </div>
+  )
+}
+
+// ─── RESEARCH BADGE (slim pill) ──────────────────────────────────────────────
+function ResearchBadge() {
+  return (
+    <a href="/blog/homehive-rated-number-one-asu-platform" className="rb-pill">
+      <span className="rb-pill-tag">#1 Rated</span>
+      <span className="rb-pill-text">HomeHive rated #1 off-campus housing platform for ASU students — Spring 2026</span>
+      <span className="rb-pill-arrow">→</span>
+    </a>
   )
 }
 
@@ -107,17 +117,6 @@ function ListingRow({ title, sub, homes, viewAllHref }: {
         {homes.map(h => <HomeCard key={h.slug} home={h} />)}
       </div>
     </div>
-  )
-}
-
-// ─── RESEARCH BADGE (slim pill) ──────────────────────────────────────────────
-function ResearchBadge() {
-  return (
-    <a href="/blog/homehive-rated-number-one-asu-platform" className="rb-pill">
-      <span className="rb-pill-tag">#1 Rated</span>
-      <span className="rb-pill-text">HomeHive rated #1 off-campus housing platform for ASU students — Spring 2026</span>
-      <span className="rb-pill-arrow">→</span>
-    </a>
   )
 }
 
@@ -208,15 +207,54 @@ function HomePageInner() {
         .hero-search-btn:hover { background: #6c0030; }
 
         /* ── RESEARCH PILL ── */
-        .rb-pill { display: inline-flex; align-items: center; gap: 10px; background: #0f2035; border-radius: 8px; padding: 9px 14px; text-decoration: none; color: inherit; margin-bottom: 28px; transition: background 0.15s; max-width: 100%; overflow: hidden; }
-        .rb-pill:hover { background: #1a3a5c; }
+        .rb-pill { display: inline-flex; align-items: center; gap: 10px; background: #1a1a1a; border-radius: 8px; padding: 8px 14px; text-decoration: none; color: inherit; margin-bottom: 32px; transition: background 0.15s; max-width: 100%; overflow: hidden; }
+        .rb-pill:hover { background: #2a2a2a; }
         .rb-pill-tag { flex-shrink: 0; background: #FFC627; color: #1a1a1a; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
-        .rb-pill-text { font-size: 12px; color: rgba(255,255,255,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rb-pill-arrow { flex-shrink: 0; font-size: 12px; color: #FFC627; font-weight: 600; }
+        .rb-pill-text { font-size: 12px; color: rgba(255,255,255,0.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rb-pill-arrow { flex-shrink: 0; font-size: 12px; color: rgba(255,255,255,0.4); font-weight: 500; }
 
-        /* ── FEATURED GRID ── */
-        .fg-wrap { margin-bottom: 52px; }
-        .fg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        /* ── FEATURED GRID SECTION ── */
+        .fg-section {
+          margin-bottom: 52px;
+          padding-top: 36px;
+          border-top: 1px solid #e8e4db;
+        }
+        .fg-hdr { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; gap: 12px; }
+        .fg-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: #8C1D40; margin-bottom: 5px; }
+        .fg-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1a1a1a; letter-spacing: -0.3px; }
+        .fg-view-all { font-size: 13px; font-weight: 500; color: #9b9b9b; text-decoration: none; white-space: nowrap; flex-shrink: 0; transition: color 0.15s; padding-bottom: 3px; }
+        .fg-view-all:hover { color: #1a1a1a; }
+
+        /* Featured grid — count-aware layouts */
+        .fg-grid { display: grid; gap: 14px; }
+        .fg-grid .hc-card { width: 100%; flex-shrink: unset; }
+
+        /* 1 card — full-width */
+        .fg-grid--1 { grid-template-columns: 1fr; }
+        .fg-grid--1 .hc-card .hc-img-wrap { height: 360px; }
+
+        /* 2 cards — equal split */
+        .fg-grid--2 { grid-template-columns: 1fr 1fr; }
+        .fg-grid--2 .hc-card .hc-img-wrap { height: 280px; }
+
+        /* 3 cards — tall hero left, 2 stacked right */
+        .fg-grid--3 { grid-template-columns: 1.4fr 1fr; }
+        .fg-grid--3 .hc-card:first-child { grid-row: span 2; align-self: stretch; height: 100%; display: flex; flex-direction: column; }
+        .fg-grid--3 .hc-card:first-child .hc-img-wrap { flex: 1; height: auto; min-height: 260px; }
+        .fg-grid--3 .hc-card:not(:first-child) .hc-img-wrap { height: 190px; }
+
+        /* 4 cards — 2×2 */
+        .fg-grid--4 { grid-template-columns: 1fr 1fr; }
+        .fg-grid--4 .hc-card .hc-img-wrap { height: 240px; }
+
+        /* Featured card — just a touch more shadow than regular */
+        .hc-card--featured {
+          box-shadow: 0 2px 12px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .hc-card--featured:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 16px 40px rgba(0,0,0,0.13), 0 4px 12px rgba(0,0,0,0.07);
+        }
 
         /* ── LISTING ROW ── */
         .lr-wrap { margin-bottom: 52px; }
@@ -225,13 +263,13 @@ function HomePageInner() {
         .lr-sub { font-size: 12px; color: #9b9b9b; }
         .lr-view-all { font-size: 13px; font-weight: 600; color: #8C1D40; text-decoration: none; white-space: nowrap; flex-shrink: 0; }
         .lr-view-all:hover { color: #c9973a; }
-        .lr-scroll { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 10px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+        .lr-scroll { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
         .lr-scroll::-webkit-scrollbar { display: none; }
 
         /* ── CARD ── */
         .hc-card {
-          flex-shrink: 0; width: 260px;
-          background: #fff; border-radius: 16px; overflow: hidden;
+          flex-shrink: 0; width: 230px;
+          background: #fff; border-radius: 14px; overflow: hidden;
           text-decoration: none; color: inherit;
           scroll-snap-align: start;
           cursor: pointer;
@@ -247,7 +285,7 @@ function HomePageInner() {
         .hc-card--wide .hc-img-wrap { height: 300px; }
 
         /* ── IMAGE ── */
-        .hc-img-wrap { position: relative; height: 200px; overflow: hidden; background: #f0ede6; }
+        .hc-img-wrap { position: relative; height: 172px; overflow: hidden; background: #f0ede6; }
         .hc-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
         .hc-card:hover .hc-img { transform: scale(1.07); }
         .hc-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8e4db 0%,#f5f2ec 50%,#e8e4db 100%); }
@@ -291,20 +329,26 @@ function HomePageInner() {
 
         /* ── RESPONSIVE ── */
         @media (max-width: 860px) {
-          .fg-grid { grid-template-columns: 1fr; }
-          .hc-card--wide { grid-column: span 1; }
-          .hc-card--wide .hc-img-wrap { height: 200px; }
-          .hc-card { width: 220px; }
-          .hc-img-wrap { height: 174px; }
+          .fg-grid--3 { grid-template-columns: 1fr; }
+          .fg-grid--3 .hc-card:first-child { grid-row: span 1; height: auto; flex-direction: column; }
+          .fg-grid--3 .hc-card:first-child .hc-img-wrap { flex: unset; height: 200px; min-height: unset; }
+          .fg-grid--3 .hc-card:not(:first-child) .hc-img-wrap { height: 200px; }
+          .fg-grid--4 .hc-card .hc-img-wrap { height: 200px; }
+          .hc-card { width: 210px; }
+          .hc-img-wrap { height: 158px; }
           .hc-arrow { opacity: 1; transform: scale(1); }
         }
         @media (max-width: 640px) {
           .hero { flex-direction: column; align-items: flex-start; gap: 12px; padding: 20px 0 18px; }
           .hero-title { font-size: 26px; letter-spacing: -0.8px; white-space: normal; }
           .hero-search { max-width: 100%; width: 100%; }
-          .fg-grid { grid-template-columns: 1fr; }
+          .fg-grid--2,
+          .fg-grid--4 { grid-template-columns: 1fr; }
+          .fg-grid--2 .hc-card .hc-img-wrap,
+          .fg-grid--4 .hc-card .hc-img-wrap { height: 200px; }
+          .fg-grid--1 .hc-card .hc-img-wrap { height: 240px; }
           .hc-card { width: 78vw; }
-          .hc-img-wrap { height: 190px; }
+          .hc-img-wrap { height: 172px; }
           .lr-title { font-size: 19px; }
           .rb-pill-text { font-size: 11px; }
           .list-cta { padding: 28px 24px; }
@@ -377,14 +421,24 @@ function HomePageInner() {
             <SkeletonRow />
           </>
         ) : properties.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 20px', marginBottom: '80px' }}>
-            <div style={{ fontSize: '32px', marginBottom: '12px' }}>🏠</div>
-            <div style={{ fontFamily: "'Fraunces', serif", fontSize: '22px', fontWeight: 300, color: '#1a1a1a', marginBottom: '8px' }}>No listings right now</div>
-            <div style={{ fontSize: '14px', color: '#9b9b9b' }}>Check back soon — new homes are added regularly.</div>
-          </div>
+          <>
+            <div style={{ textAlign: 'center', padding: '80px 20px', marginBottom: '48px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '12px' }}>🏠</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: '22px', fontWeight: 300, color: '#1a1a1a', marginBottom: '8px' }}>No listings right now</div>
+              <div style={{ fontSize: '14px', color: '#9b9b9b' }}>Check back soon — new homes are added regularly.</div>
+            </div>
+            <div className="list-cta">
+              <div>
+                <div className="list-cta-eyebrow">For landlords &amp; students subleasing</div>
+                <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
+                <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
+              </div>
+              <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
+            </div>
+          </>
         ) : (
           <>
-            {/* Featured grid — only shown when is_featured listings exist */}
+            {/* Featured grid */}
             {featuredPicks.length > 0 && <FeaturedGrid homes={featuredPicks} />}
 
             {/* For Rent */}
@@ -414,20 +468,21 @@ function HomePageInner() {
                 viewAllHref="/homes"
               />
             )}
+
+            {/* LIST YOUR PLACE CTA */}
+            <div className="list-cta">
+              <div>
+                <div className="list-cta-eyebrow">For landlords &amp; students subleasing</div>
+                <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
+                <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
+              </div>
+              <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
+            </div>
           </>
         )}
 
-        {/* LIST YOUR PLACE CTA */}
-        <div className="list-cta">
-          <div>
-            <div className="list-cta-eyebrow">For landlords &amp; students subleasing</div>
-            <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
-            <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
-          </div>
-          <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
-        </div>
-
       </div>
+
     </>
   )
 }
