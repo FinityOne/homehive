@@ -35,6 +35,7 @@ const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
     { href: '/landlord/leads',     label: 'Leads',       icon: '◉' },
     { href: '/landlord/tenants',   label: 'Tenants',     icon: '◎' },
     { href: '/landlord/leases',    label: 'Leases',      icon: '📋' },
+    { href: '/landlord/payments',  label: 'Payments',    icon: '💳' },
   ],
   admin: [
     { href: '/admin',                    label: 'Overview',         icon: '⊞', exact: true },
@@ -143,6 +144,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [pendingUpgradeCount, setPendingUpgradeCount] = useState(0)
+  const [overduePaymentsCount, setOverduePaymentsCount] = useState(0)
   const profileRef = useRef<HTMLDivElement>(null)
 
   // ── Auth ──
@@ -161,6 +163,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           .then((data: Array<{ status: string }>) => {
             setPendingUpgradeCount(data.filter(r => r.status === 'pending').length)
           })
+          .catch(() => {})
+      }
+      // Fetch overdue payment count for landlord badge
+      if (role === 'landlord' || role === 'admin') {
+        fetch('/api/payments/overdue-count')
+          .then(r => r.json())
+          .then((data: { count: number }) => setOverduePaymentsCount(data.count))
           .catch(() => {})
       }
     }
@@ -531,6 +540,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       {pendingUpgradeCount}
                     </span>
                   )}
+                  {item.href === '/landlord/payments' && overduePaymentsCount > 0 && (
+                    <span style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
+                      {overduePaymentsCount}
+                    </span>
+                  )}
                 </a>
               ))}
               {/* Landlord portal link for tenants who've been upgraded */}
@@ -571,9 +585,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={item.href}
               className={`mob-tab${isActive(item) ? ' active' : ''}`}
+              style={{ position: 'relative' }}
             >
               <span className="mob-tab-icon">{item.icon}</span>
               <span className="mob-tab-label">{item.label}</span>
+              {item.href === '/landlord/payments' && overduePaymentsCount > 0 && (
+                <span style={{ position: 'absolute', top: 6, right: '50%', marginRight: -18, background: '#ef4444', color: '#fff', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', minWidth: 16, textAlign: 'center' }}>
+                  {overduePaymentsCount}
+                </span>
+              )}
             </a>
           ))}
         </div>
