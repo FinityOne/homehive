@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
+import { notifyLandlord } from '@/lib/notifyLandlord'
 
 // Anon key for public lead inserts (RLS allows)
 const supabase = createClient(
@@ -41,8 +42,10 @@ export async function POST(req: Request) {
   let propertyName = property || 'the property'
   let propertyAddress = ''
   let propertyHeroImage = ''
-  let propertyPrice: number | null = null
+  let propertyPrice: number | null = null // kept for internal use, not shown in emails
   let landlordEmail = process.env.ADMIN_EMAIL!
+  let landlordFirstName = ''
+  let landlordId = ''
 
   if (property) {
     const { data: prop } = await supabase
@@ -55,14 +58,23 @@ export async function POST(req: Request) {
       propertyName = prop.name
       propertyAddress = prop.address
       propertyPrice = prop.price
+      landlordId = prop.owner_id || ''
       const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
       propertyHeroImage = imgs.sort((a, b) => a.position - b.position)[0]?.url || ''
 
-      // Look up landlord email via service role
+      // Look up landlord email + first name via service role
       if (prop.owner_id) {
         try {
           const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(prop.owner_id)
           if (user?.email) landlordEmail = user.email
+        } catch (_) {}
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('first_name')
+            .eq('id', prop.owner_id)
+            .single()
+          if (profile?.first_name) landlordFirstName = profile.first_name
         } catch (_) {}
       }
     }
@@ -99,7 +111,6 @@ export async function POST(req: Request) {
   <div style="background:#fff;padding:16px 28px;border-left:4px solid #8C1D40;${propertyHeroImage ? '' : 'border-radius:14px 14px 0 0;'}">
     <div style="font-size:16px;font-weight:700;color:#1a1a1a;">${propertyName}</div>
     ${propertyAddress ? `<div style="font-size:13px;color:#9b9b9b;margin-top:3px;">📍 ${propertyAddress}</div>` : ''}
-    ${propertyPrice ? `<div style="font-size:13px;color:#8C1D40;font-weight:600;margin-top:3px;">$${propertyPrice.toLocaleString()}/mo per room</div>` : ''}
   </div>
 
   <!-- Main card -->
@@ -175,11 +186,12 @@ export async function POST(req: Request) {
   }
 
   // 4. Send lead welcome email
+  const welcomeSubject = `${first_name}, let's get you to the front of the line at ${propertyName}`
   try {
     await resend.emails.send({
       from: 'HomeHive <hello@homehive.live>',
       to: email,
-      subject: `${first_name}, one quick step to hold your spot at ${propertyName}`,
+      subject: welcomeSubject,
       html: `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1.0" /></head>
@@ -213,20 +225,23 @@ export async function POST(req: Request) {
   <!-- Card -->
   <div style="background:#fff;border:1px solid #e8e5de;border-top:none;border-radius:0 0 14px 14px;padding:28px 28px 32px;">
 
+    <!-- Sent confirmation badge -->
+    <div style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;padding:5px 12px;margin-bottom:16px;">
+      <span style="font-size:11px;color:#166534;font-weight:600;letter-spacing:0.4px;">✓ Interest sent${landlordFirstName ? ` to ${landlordFirstName}` : ''}</span>
+    </div>
+
     <p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#1a1a1a;">
-      Hi ${first_name}! 👋
+      Let's get to know you, ${first_name}.
     </p>
     <p style="margin:0 0 20px;font-size:15px;color:#4a4a4a;line-height:1.7;">
-      Your interest in <strong>${propertyName}</strong>${propertyAddress ? ` at <strong>${propertyAddress}</strong>` : ''} was received!
-      We're already reviewing your timing and availability.
+      Your inquiry is in${landlordFirstName ? ` and <strong>${landlordFirstName}</strong> will see it shortly` : ''}. Now take 2 minutes to complete your pre-screen and move yourself to the top of the applicant list.
     </p>
 
-    <!-- Next step box -->
+    <!-- Urgency box -->
     <div style="background:#fdf2f5;border-left:4px solid #8C1D40;border-radius:0 10px 10px 0;padding:16px 20px;margin-bottom:24px;">
-      <div style="font-size:14px;font-weight:700;color:#8C1D40;margin-bottom:6px;">🏠 Move to the front of the line</div>
+      <div style="font-size:14px;font-weight:700;color:#8C1D40;margin-bottom:6px;">⚡ Move to the front of the line</div>
       <p style="margin:0;font-size:14px;color:#3a3a3a;line-height:1.65;">
-        Complete your quick pre-screen in under 2 minutes.
-        Landlords review pre-screened applicants <strong>first</strong> — spots fill up fast!
+        Landlords review pre-screened applicants <strong>first</strong>. It takes under 2 minutes and dramatically increases your chances.
       </p>
     </div>
 
@@ -250,9 +265,17 @@ export async function POST(req: Request) {
       </a>
     </div>
 
-    <p style="margin:16px 0 0;font-size:12px;color:#b0a898;text-align:center;line-height:1.6;">
-      This link is personal to you · Expires in 7 days · No account needed
+    <p style="margin:0 0 20px;font-size:12px;color:#b0a898;text-align:center;line-height:1.6;">
+      This link is personal to you · Takes 2 minutes · No commitment
     </p>
+
+    <!-- Already completed note -->
+    <div style="border-top:1px solid #f0ede6;padding-top:16px;">
+      <p style="margin:0;font-size:12px;color:#9b9b9b;line-height:1.65;text-align:center;">
+        Already filled out your pre-screen? You're all set — we'll be in touch soon to welcome you to your new home! 🎉
+      </p>
+    </div>
+
   </div>
 
   <!-- Footer -->
@@ -265,9 +288,21 @@ export async function POST(req: Request) {
 </html>`,
     })
     console.log('Welcome email sent to:', email)
-    await logEmail(leadId, 'lead_welcome', `${first_name}, one quick step to hold your spot at ${propertyName}`, email, { property: propertyName })
+    await logEmail(leadId, 'lead_welcome', welcomeSubject, email, { property: propertyName })
   } catch (emailError) {
     console.error('Welcome email error:', emailError)
+  }
+
+  // Notify landlord of new lead
+  if (landlordId) {
+    await notifyLandlord({
+      landlordId,
+      type: 'lead_in',
+      leadId,
+      title: `New lead: ${first_name || email}`,
+      body: `Interested in ${propertyName}`,
+      href: `/landlord/leads/${leadId}`,
+    }).catch(() => {})
   }
 
   return Response.json({ success: true, leadId })

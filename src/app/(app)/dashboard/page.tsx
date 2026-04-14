@@ -24,6 +24,16 @@ type Lead = {
   created_at: string
 }
 
+type TourRecord = {
+  id: string
+  lead_id: string
+  property_slug: string
+  scheduled_date: string
+  time_slot: string
+  custom_note: string | null
+  status: string
+}
+
 function getGreeting(name: string) {
   const h = new Date().getHours()
   if (h < 12) return `Good morning, ${name}`
@@ -52,6 +62,24 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function formatTourTime(slot: string): string {
+  const [h, m] = slot.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+function getTourCountdown(dateStr: string): { label: string; urgent: boolean } {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const tour = new Date(dateStr + 'T00:00:00')
+  const diff = Math.round((tour.getTime() - today.getTime()) / 86400000)
+  if (diff === 0) return { label: 'Today!', urgent: true }
+  if (diff === 1) return { label: 'Tomorrow', urgent: true }
+  if (diff < 0) return { label: 'Recently passed', urgent: false }
+  return { label: `In ${diff} days`, urgent: diff <= 3 }
+}
+
 function DashboardInner() {
   const router = useRouter()
 
@@ -59,6 +87,7 @@ function DashboardInner() {
   const [userRole, setUserRole]     = useState('tenant')
   const [leads, setLeads]           = useState<Lead[]>([])
   const [properties, setProperties] = useState<Property[]>([])
+  const [upcomingTourData, setUpcomingTourData] = useState<TourRecord | null>(null)
   const [loading, setLoading]       = useState(true)
 
   useEffect(() => {
@@ -75,8 +104,22 @@ function DashboardInner() {
       const fullName = profileRes.data?.full_name || user.user_metadata?.full_name || ''
       setUserName(fullName.split(' ')[0] || 'there')
       setUserRole(profileRes.data?.role || 'tenant')
-      setLeads((leadsRes.data as Lead[]) || [])
+      const fetchedLeads = (leadsRes.data as Lead[]) || []
+      setLeads(fetchedLeads)
       setProperties(propsRes)
+
+      // Fetch confirmed tour for any tour_scheduled lead
+      const tourLead = fetchedLeads.find(l => l.status === 'tour_scheduled')
+      if (tourLead) {
+        const { data: tourRow } = await supabase
+          .from('tours')
+          .select('*')
+          .eq('lead_id', tourLead.id)
+          .eq('status', 'confirmed')
+          .maybeSingle()
+        if (tourRow) setUpcomingTourData(tourRow as TourRecord)
+      }
+
       setLoading(false)
     }
     load()
@@ -97,7 +140,7 @@ function DashboardInner() {
     !inquiredSlugs.has(p.slug.toLowerCase())
   ).slice(0, 2)
 
-  const upcomingTour = leads.find(l => l.status === 'tour_scheduled')
+  const upcomingTourLead = leads.find(l => l.status === 'tour_scheduled')
 
   return (
     <>
@@ -110,10 +153,38 @@ function DashboardInner() {
         .db-greeting { font-family: 'Fraunces', serif; font-size: 27px; font-weight: 300; color: #1a1a1a; letter-spacing: -0.4px; line-height: 1.2; margin-bottom: 3px; }
         .db-sub { font-size: 13px; color: #9b9b9b; margin-bottom: 24px; }
 
-        /* ── TOUR ALERT ── */
-        .tour-alert { display: flex; align-items: center; gap: 10px; background: #fdf2f5; border: 1px solid #f4c9d5; border-radius: 10px; padding: 11px 14px; margin-bottom: 24px; }
-        .tour-alert-link { font-size: 12px; font-weight: 600; color: #8C1D40; text-decoration: none; white-space: nowrap; flex-shrink: 0; }
-        .tour-alert-link:hover { text-decoration: underline; }
+        /* ── TOUR CARD ── */
+        .tour-card {
+          background: linear-gradient(135deg, #1a1a1a 0%, #2d1520 100%);
+          border-radius: 16px; padding: 20px; margin-bottom: 24px;
+          position: relative; overflow: hidden;
+        }
+        .tour-card::before {
+          content: ''; position: absolute; top: -30px; right: -30px;
+          width: 120px; height: 120px; border-radius: 50%;
+          background: rgba(255,198,39,0.08);
+        }
+        .tour-card-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #FFC627; margin-bottom: 10px; }
+        .tour-card-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.3px; margin-bottom: 4px; line-height: 1.2; }
+        .tour-card-sub { font-size: 13px; color: rgba(255,255,255,0.55); margin-bottom: 16px; }
+        .tour-card-details { background: rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+        .tour-card-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(255,255,255,0.85); margin-bottom: 6px; }
+        .tour-card-row:last-child { margin-bottom: 0; }
+        .tour-card-row strong { color: #fff; }
+        .tour-card-countdown {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
+          margin-bottom: 16px;
+        }
+        .tour-card-cta {
+          display: inline-block; background: #FFC627; color: #1a1a1a;
+          text-decoration: none; font-size: 13px; font-weight: 700;
+          padding: 10px 20px; border-radius: 10px;
+        }
+        .tour-card-note {
+          margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);
+          font-size: 12px; color: rgba(255,255,255,0.5); font-style: italic; line-height: 1.5;
+        }
 
         /* ── SECTION LABEL ── */
         .sec-label { font-size: 10px; font-weight: 700; color: #b0a898; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
@@ -199,17 +270,55 @@ function DashboardInner() {
             : 'Find your next place near ASU'}
         </div>
 
-        {/* ── TOUR ALERT ── */}
-        {upcomingTour && (() => {
-          const prop = matchProperty(upcomingTour, properties)
+        {/* ── TOUR CARD ── */}
+        {upcomingTourLead && upcomingTourData && (() => {
+          const prop = matchProperty(upcomingTourLead, properties)
+          const countdown = getTourCountdown(upcomingTourData.scheduled_date)
+          const tourDate = new Date(upcomingTourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', {
+            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+          })
           return (
-            <div className="tour-alert">
-              <span style={{ fontSize: 15, flexShrink: 0 }}>📅</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#8C1D40' }}>Tour scheduled · {prop?.name || upcomingTour.property}</div>
-                <div style={{ fontSize: 11, color: '#b0697f', marginTop: 1 }}>Check your email for confirmation details</div>
+            <div className="tour-card">
+              <div className="tour-card-label">📅 Upcoming Tour</div>
+              <div className="tour-card-title">{prop?.name || upcomingTourLead.property}</div>
+              {prop?.address && <div className="tour-card-sub">📍 {prop.address}</div>}
+
+              <div className="tour-card-countdown" style={{
+                background: countdown.urgent ? 'rgba(255,198,39,0.2)' : 'rgba(255,255,255,0.1)',
+                color: countdown.urgent ? '#FFC627' : 'rgba(255,255,255,0.7)',
+                border: countdown.urgent ? '1px solid rgba(255,198,39,0.4)' : '1px solid rgba(255,255,255,0.15)',
+              }}>
+                {countdown.urgent ? '🔥' : '🗓'} {countdown.label}
               </div>
-              {prop && <a href={`/homes/${prop.slug}`} className="tour-alert-link">View →</a>}
+
+              <div className="tour-card-details">
+                <div className="tour-card-row">
+                  <span style={{ fontSize: 14 }}>📆</span>
+                  <span><strong>{tourDate}</strong></span>
+                </div>
+                <div className="tour-card-row">
+                  <span style={{ fontSize: 14 }}>⏰</span>
+                  <span><strong>{formatTourTime(upcomingTourData.time_slot)}</strong> · 30 minutes</span>
+                </div>
+                {prop?.address && (
+                  <div className="tour-card-row">
+                    <span style={{ fontSize: 14 }}>📍</span>
+                    <span>{prop.address}</span>
+                  </div>
+                )}
+              </div>
+
+              {prop && (
+                <a href={`/homes/${prop.slug}`} className="tour-card-cta">
+                  View Property →
+                </a>
+              )}
+
+              {upcomingTourData.custom_note && (
+                <div className="tour-card-note">
+                  Note from host: "{upcomingTourData.custom_note}"
+                </div>
+              )}
             </div>
           )
         })()}

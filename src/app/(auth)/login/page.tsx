@@ -16,7 +16,8 @@ function LoginForm() {
   const ph = usePostHog()
   const registered = searchParams.get('registered')
   const next = searchParams.get('next')
-  const [email, setEmail]       = useState('')
+  const prefillEmail = searchParams.get('email') || ''
+  const [email, setEmail]       = useState(prefillEmail)
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
   const [error, setError]       = useState('')

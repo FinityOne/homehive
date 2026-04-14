@@ -18,6 +18,13 @@ export type EmailType =
   | 'admin_new_signup'
   | 'admin_claim_notify'
   | 'admin_daily_digest'
+  | 'tour_invitation'
+  | 'tour_confirmation_tenant'
+  | 'tour_confirmation_landlord'
+  | 'tour_reminder'
+  | 'tour_cancellation_tenant'
+  | 'tour_cancellation_landlord'
+  | 'prescreen_done_followup'
 
 export async function logEmail(
   leadId: string,

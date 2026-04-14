@@ -36,10 +36,29 @@ type EmailLog = {
 }
 
 const EMAIL_TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
-  lead_welcome:            { label: 'Welcome email sent to lead',                icon: '👋', color: '#3b82f6' },
-  prescreen_reminder:      { label: 'Pre-screen reminder sent to lead',          icon: '⏰', color: '#f97316' },
-  lead_qualified_landlord: { label: 'Pre-screen completion sent to you',         icon: '✅', color: '#10b981' },
-  new_lead_landlord:       { label: 'New lead notification sent to you',         icon: '🔔', color: '#8b5cf6' },
+  lead_welcome:                { label: 'Welcome email sent to lead',            icon: '👋', color: '#3b82f6' },
+  prescreen_reminder:          { label: 'Pre-screen reminder sent to lead',      icon: '⏰', color: '#f97316' },
+  lead_qualified_landlord:     { label: 'Pre-screen completion sent to you',     icon: '✅', color: '#10b981' },
+  new_lead_landlord:           { label: 'New lead notification sent to you',     icon: '🔔', color: '#8b5cf6' },
+  tour_invitation:             { label: 'Tour invitation sent to lead',           icon: '🎉', color: '#8C1D40' },
+  tour_confirmation_tenant:    { label: 'Tour confirmation sent to lead',         icon: '📅', color: '#0ea5e9' },
+  tour_confirmation_landlord:  { label: 'Tour confirmation sent to you',          icon: '📅', color: '#0ea5e9' },
+  tour_reminder:               { label: 'Tour reminder sent to lead',             icon: '⏰', color: '#d97706' },
+  tour_cancellation_tenant:    { label: 'Tour cancellation sent to lead',         icon: '✕', color: '#ef4444' },
+  tour_cancellation_landlord:  { label: 'Tour cancellation sent to you',          icon: '✕', color: '#ef4444' },
+}
+
+type TourRecord = {
+  id: string
+  lead_id: string
+  property_slug: string
+  scheduled_date: string
+  time_slot: string
+  custom_note: string | null
+  booked_by: 'tenant' | 'landlord'
+  status: 'confirmed' | 'cancelled' | 'completed'
+  reminder_sent: boolean
+  created_at: string
 }
 
 function timeAgo(d: string): string {
@@ -82,6 +101,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [reminding, setReminding] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
+  // Tour state
+  const [tourData, setTourData] = useState<TourRecord | null>(null)
+  const [tourInviteSent, setTourInviteSent] = useState(false)
+  const [inviting, setInviting] = useState(false)
+  const [tourLinkCopied, setTourLinkCopied] = useState(false)
+  const [manualTourModal, setManualTourModal] = useState(false)
+  const [manualTourForm, setManualTourForm] = useState({ date: '', time_slot: '10:00', custom_note: '' })
+  const [manualTourSaving, setManualTourSaving] = useState(false)
+  const [sendingTourReminder, setSendingTourReminder] = useState(false)
+  const [cancelTourModal, setCancelTourModal] = useState(false)
+  const [cancelForm, setCancelForm] = useState({ reason: '', notes: '' })
+  const [cancelSaving, setCancelSaving] = useState(false)
+
   const [copied, setCopied] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', move_in_date: '', property: '' })
@@ -123,6 +155,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         setPrescreen(ps)
         setEmails(el || [])
       }
+
+      // Fetch tour data
+      const { data: tourRes } = await supabase
+        .from('tours').select('*').eq('lead_id', leadId).eq('status', 'confirmed').maybeSingle()
+      if (tourRes) setTourData(tourRes as TourRecord)
+      if ((leadData as Lead & { tour_invite_sent_at?: string }).tour_invite_sent_at) setTourInviteSent(true)
 
       // Fetch property
       if (leadData.property) {
@@ -204,6 +242,114 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       }
     } catch { showToast('Failed to send reminder', 'error') }
     setReminding(false)
+  }
+
+  const handleInviteToTour = async () => {
+    setInviting(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/leads/${leadId}/invite-to-tour`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` },
+      })
+      const body = await res.json()
+      if (res.ok) {
+        setTourInviteSent(true)
+        showToast('Tour invitation sent! 🎉')
+      } else {
+        showToast(body.error || 'Failed to send invitation', 'error')
+      }
+    } catch { showToast('Failed to send invitation', 'error') }
+    setInviting(false)
+  }
+
+  const handleManualTourSave = async () => {
+    if (!manualTourForm.date || !manualTourForm.time_slot) {
+      showToast('Please select a date and time', 'error'); return
+    }
+    setManualTourSaving(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/leads/${leadId}/manual-tour`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify(manualTourForm),
+      })
+      const body = await res.json()
+      if (res.ok) {
+        setTourData(body.tour as TourRecord)
+        setLead(prev => prev ? { ...prev, status: 'tour_scheduled' } : prev)
+        setManualTourModal(false)
+        showToast(`Tour booked for ${body.readableDate}`)
+        // Refresh emails
+        const activityRes = await fetch(`/api/leads/${leadId}/activity`)
+        if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
+      } else {
+        showToast(body.error || 'Failed to book tour', 'error')
+      }
+    } catch { showToast('Failed to book tour', 'error') }
+    setManualTourSaving(false)
+  }
+
+  const handleSendTourReminder = async () => {
+    if (!tourData) return
+    setSendingTourReminder(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/tours/${tourData.id}/reminder`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` },
+      })
+      if (res.ok) {
+        setTourData(prev => prev ? { ...prev, reminder_sent: true } : prev)
+        showToast('Tour reminder sent!')
+        const activityRes = await fetch(`/api/leads/${leadId}/activity`)
+        if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
+      } else {
+        const body = await res.json()
+        showToast(body.error || 'Failed to send reminder', 'error')
+      }
+    } catch { showToast('Failed to send reminder', 'error') }
+    setSendingTourReminder(false)
+  }
+
+  const handleCancelTour = async () => {
+    if (!tourData || !cancelForm.reason) return
+    setCancelSaving(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/tours/${tourData.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ reason: cancelForm.reason, notes: cancelForm.notes || undefined }),
+      })
+      const body = await res.json()
+      if (res.ok) {
+        setTourData(null)
+        setLead(prev => prev ? { ...prev, status: body.revertStatus } : prev)
+        setCancelTourModal(false)
+        setCancelForm({ reason: '', notes: '' })
+        showToast('Tour cancelled — confirmation emails sent')
+        const activityRes = await fetch(`/api/leads/${leadId}/activity`)
+        if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
+      } else {
+        showToast(body.error || 'Failed to cancel tour', 'error')
+      }
+    } catch { showToast('Failed to cancel tour', 'error') }
+    setCancelSaving(false)
+  }
+
+  // 30-min time slots from 7am–9pm for manual booking
+  const MANUAL_TIME_SLOTS: string[] = []
+  for (let h = 7; h < 21; h++) {
+    MANUAL_TIME_SLOTS.push(`${String(h).padStart(2,'0')}:00`)
+    MANUAL_TIME_SLOTS.push(`${String(h).padStart(2,'0')}:30`)
+  }
+  function fmtTime(slot: string): string {
+    const [h, m] = slot.split(':').map(Number)
+    const s = h >= 12 ? 'pm' : 'am'
+    const hr = h > 12 ? h - 12 : h === 0 ? 12 : h
+    return `${hr}:${String(m).padStart(2,'0')} ${s}`
   }
 
   if (loading) {
@@ -519,6 +665,136 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
           {/* RIGHT COLUMN */}
           <div>
 
+            {/* ── TOUR SCHEDULING CARD ── */}
+            <div className="ld-card">
+              <div className="ld-card-header">
+                <span className="ld-card-title">Tour Scheduling</span>
+                {tourData && (
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#8b5cf6', background: 'rgba(139,92,246,0.08)', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)' }}>📅 Booked</span>
+                )}
+              </div>
+              <div className="ld-card-body">
+                {tourData ? (
+                  /* Tour is booked */
+                  <>
+                    <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Confirmed Tour</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a', marginBottom: '3px' }}>
+                        {new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#6b6b6b' }}>
+                        {fmtTime(tourData.time_slot)} · 30 min · {tourData.booked_by === 'tenant' ? 'Tenant chose this time' : 'You booked this'}
+                      </div>
+                      {tourData.custom_note && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#4a4a4a', fontStyle: 'italic', borderTop: '1px solid #ede9fe', paddingTop: '8px' }}>
+                          Note: {tourData.custom_note}
+                        </div>
+                      )}
+                    </div>
+                    {/* Reminder */}
+                    <button
+                      onClick={handleSendTourReminder}
+                      disabled={sendingTourReminder}
+                      style={{
+                        width: '100%', padding: '10px', marginBottom: '8px',
+                        background: '#fff',
+                        color: '#1a1a1a',
+                        border: '1.5px solid #e8e5de',
+                        borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      {sendingTourReminder ? 'Sending…' : '⏰ Send Tour Reminder'}
+                    </button>
+                    {/* Reschedule / Cancel row */}
+                    <div style={{ display: 'flex', gap: '7px' }}>
+                      <button
+                        onClick={() => setManualTourModal(true)}
+                        style={{ flex: 1, padding: '8px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '12px', fontWeight: 500, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        ↺ Reschedule
+                      </button>
+                      <button
+                        onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }}
+                        style={{ flex: 1, padding: '8px', background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#dc2626', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        ✕ Cancel Tour
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  /* No tour yet */
+                  <>
+                    {/* Invite to Tour */}
+                    <div style={{ marginBottom: '12px' }}>
+                      <button
+                        onClick={handleInviteToTour}
+                        disabled={inviting}
+                        style={{
+                          width: '100%', padding: '13px', marginBottom: '8px',
+                          background: '#1a1a1a', color: '#FFC627',
+                          border: 'none', borderRadius: '10px',
+                          fontSize: '14px', fontWeight: 700, cursor: inviting ? 'not-allowed' : 'pointer',
+                          fontFamily: "'DM Sans', sans-serif", opacity: inviting ? 0.6 : 1,
+                        }}
+                      >
+                        {inviting ? 'Sending…' : tourInviteSent ? '🔄 Resend Tour Invitation' : '🎉 Invite to Tour'}
+                      </button>
+                      {tourInviteSent && (
+                        <div style={{ fontSize: '12px', color: '#10b981', textAlign: 'center', marginBottom: '8px' }}>
+                          ✓ Invitation sent — tenant selects their time
+                        </div>
+                      )}
+                      <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', lineHeight: 1.5 }}>
+                        Requires availability set in{' '}
+                        <a href={`/landlord/listings/${lead.property}/calendar`} style={{ color: '#8C1D40', textDecoration: 'none', fontWeight: 600 }}>
+                          Calendar tab →
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Tour link copy */}
+                    {tourInviteSent && (
+                      <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>Booking Link</div>
+                        <div style={{ fontSize: '11px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '6px', padding: '7px 10px', marginBottom: '8px' }}>
+                          {(process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live')}/book-tour/{leadId}
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/book-tour/${leadId}`)
+                            setTourLinkCopied(true)
+                            setTimeout(() => setTourLinkCopied(false), 2000)
+                          }}
+                          style={{ width: '100%', padding: '7px', background: tourLinkCopied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${tourLinkCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '6px', fontSize: '12px', fontWeight: 600, color: tourLinkCopied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                        >
+                          {tourLinkCopied ? '✓ Copied!' : '⎘ Copy Link'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Divider */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0' }}>
+                      <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
+                      <span style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 500 }}>or book manually</span>
+                      <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
+                    </div>
+
+                    {/* Manual booking */}
+                    <button
+                      onClick={() => setManualTourModal(true)}
+                      style={{ width: '100%', padding: '10px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '13px', fontWeight: 600, color: '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif' " }}
+                    >
+                      📋 Book Tour Manually
+                    </button>
+                    <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', marginTop: '6px' }}>
+                      You pick the time — sends confirmation email
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Quick Actions */}
             <div className="ld-card">
               <div className="ld-card-header"><span className="ld-card-title">Quick Actions</span></div>
@@ -639,6 +915,149 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
           </div>
         </div>
       </div>
+
+      {/* ── MANUAL TOUR MODAL ── */}
+      {manualTourModal && (
+        <div className="edit-overlay" onClick={() => setManualTourModal(false)}>
+          <div className="edit-sheet" onClick={e => e.stopPropagation()}>
+            <div className="edit-sheet-handle" />
+            <div className="edit-sheet-header">
+              <div>
+                <div className="edit-sheet-title">Book Tour Manually</div>
+                <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>
+                  You pick the time — a calendar confirmation is sent automatically.
+                </div>
+              </div>
+              <button onClick={() => setManualTourModal(false)} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+            <div className="edit-sheet-body">
+              <div className="edit-field">
+                <label className="edit-field-label">Date</label>
+                <input
+                  className="edit-input"
+                  type="date"
+                  value={manualTourForm.date}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => setManualTourForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="edit-field">
+                <label className="edit-field-label">Time (MST)</label>
+                <select
+                  className="edit-input"
+                  value={manualTourForm.time_slot}
+                  onChange={e => setManualTourForm(f => ({ ...f, time_slot: e.target.value }))}
+                >
+                  {MANUAL_TIME_SLOTS.map(t => (
+                    <option key={t} value={t}>{fmtTime(t)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="edit-field">
+                <label className="edit-field-label">Custom Note (optional)</label>
+                <textarea
+                  className="edit-input"
+                  rows={3}
+                  placeholder="e.g. Meet at the front gate. Parking is in the lot behind the building."
+                  value={manualTourForm.custom_note}
+                  onChange={e => setManualTourForm(f => ({ ...f, custom_note: e.target.value }))}
+                  style={{ resize: 'vertical', minHeight: '72px' }}
+                />
+                <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '4px' }}>
+                  This note will appear in the tenant's confirmation email.
+                </div>
+              </div>
+              <div style={{ background: '#fff8e6', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#4a3800', lineHeight: 1.5, marginBottom: '4px' }}>
+                📧 Confirmation emails with .ics calendar files will be sent to <strong>{lead?.email}</strong> and you.
+              </div>
+            </div>
+            <div className="edit-sheet-footer">
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setManualTourModal(false)}>Cancel</button>
+              <button
+                className="btn-gold"
+                style={{ flex: 2 }}
+                disabled={manualTourSaving || !manualTourForm.date}
+                onClick={handleManualTourSave}
+              >
+                {manualTourSaving ? 'Booking…' : '📅 Confirm & Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CANCEL TOUR MODAL ── */}
+      {cancelTourModal && (
+        <div className="edit-overlay" onClick={() => setCancelTourModal(false)}>
+          <div className="edit-sheet" onClick={e => e.stopPropagation()}>
+            <div className="edit-sheet-handle" />
+            <div className="edit-sheet-header">
+              <div>
+                <div className="edit-sheet-title">Cancel Tour</div>
+                <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>
+                  Cancellation emails with calendar removal will be sent to both parties.
+                </div>
+              </div>
+              <button onClick={() => setCancelTourModal(false)} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+            <div className="edit-sheet-body">
+              {/* Tour summary */}
+              {tourData && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '12px 14px', marginBottom: '18px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#dc2626', marginBottom: '4px' }}>
+                    {new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#6b6b6b' }}>
+                    {fmtTime(tourData.time_slot)} · {property?.name || lead?.property}
+                  </div>
+                </div>
+              )}
+              {/* Reason */}
+              <div className="edit-field">
+                <label className="edit-field-label">Reason for cancellation <span style={{ color: '#dc2626' }}>*</span></label>
+                <select
+                  className="edit-input"
+                  value={cancelForm.reason}
+                  onChange={e => setCancelForm(f => ({ ...f, reason: e.target.value }))}
+                >
+                  <option value="">Select a reason…</option>
+                  <option value="Scheduling conflict">Scheduling conflict</option>
+                  <option value="Property no longer available">Property no longer available</option>
+                  <option value="Tenant withdrew interest">Tenant withdrew interest</option>
+                  <option value="Maintenance / property issue">Maintenance / property issue</option>
+                  <option value="Already leased to someone else">Already leased to someone else</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              {/* Notes */}
+              <div className="edit-field">
+                <label className="edit-field-label">Additional message to tenant (optional)</label>
+                <textarea
+                  className="edit-input"
+                  rows={3}
+                  placeholder="e.g. We hope to reschedule soon — we'll reach out once the property is ready again."
+                  value={cancelForm.notes}
+                  onChange={e => setCancelForm(f => ({ ...f, notes: e.target.value }))}
+                  style={{ resize: 'vertical', minHeight: '72px' }}
+                />
+              </div>
+              <div style={{ background: '#fff8e6', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#4a3800', lineHeight: 1.5 }}>
+                📅 A calendar cancellation (.ics) will be attached to both emails so the event is automatically removed from their calendar.
+              </div>
+            </div>
+            <div className="edit-sheet-footer">
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setCancelTourModal(false)}>Back</button>
+              <button
+                disabled={cancelSaving || !cancelForm.reason}
+                onClick={handleCancelTour}
+                style={{ flex: 2, background: cancelSaving || !cancelForm.reason ? '#9b9b9b' : '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '13px', fontWeight: 700, cursor: cancelSaving || !cancelForm.reason ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              >
+                {cancelSaving ? 'Cancelling…' : '✕ Confirm Cancellation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── EDIT LEAD MODAL ── */}
       {editModal && (

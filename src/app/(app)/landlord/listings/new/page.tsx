@@ -84,6 +84,7 @@ export default function NewListingWizard() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormData>(INIT)
+  const [utilitiesIncluded, setUtilitiesIncluded] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -170,6 +171,7 @@ export default function NewListingWizard() {
       available: Number(form.available) || 1,
       asu_distance: Number(form.asu_distance) || 0,
       security_deposit: form.security_deposit === '' ? null : Number(form.security_deposit),
+      utilities_included: utilitiesIncluded,
     })
 
     if (error || !slug || !id) {
@@ -578,6 +580,23 @@ export default function NewListingWizard() {
                 )}
               </div>
               <div className="field-wrap">
+                <label className="field-label">Utilities</label>
+                <div
+                  onClick={() => setUtilitiesIncluded(v => !v)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', border: `1.5px solid ${utilitiesIncluded ? '#10b981' : '#ddbfc3'}`, borderRadius: '9px', cursor: 'pointer', background: utilitiesIncluded ? '#f0fdf4' : '#fff', transition: 'all 0.15s', userSelect: 'none' }}
+                >
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#191c1d' }}>
+                      {utilitiesIncluded ? 'Utilities included' : 'Utilities not included'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#897174', marginTop: '2px' }}>Water, electric, gas — covered in rent</div>
+                  </div>
+                  <div style={{ width: '42px', height: '24px', borderRadius: '12px', background: utilitiesIncluded ? '#10b981' : '#ddbfc3', transition: 'background 0.2s', position: 'relative', flexShrink: 0 }}>
+                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '3px', transition: 'left 0.2s', left: utilitiesIncluded ? '21px' : '3px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                  </div>
+                </div>
+              </div>
+              <div className="field-wrap">
                 <label className="field-label">
                   Available from <span style={{ textTransform: 'none', fontWeight: 400, color: '#ddbfc3' }}>(optional)</span>
                 </label>
@@ -694,6 +713,12 @@ export default function NewListingWizard() {
               <div className="review-row">
                 <span>Monthly rent</span>
                 <span className="review-val" style={{ color: '#10b981', fontWeight: 700 }}>${Number(form.price).toLocaleString()}/mo</span>
+              </div>
+              <div className="review-row">
+                <span>Utilities</span>
+                <span className="review-val" style={{ color: utilitiesIncluded ? '#10b981' : undefined }}>
+                  {utilitiesIncluded ? 'Included' : 'Not included'}
+                </span>
               </div>
               <div className="review-row">
                 <span>Security deposit</span>

@@ -22,13 +22,14 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Tab = 'overview' | 'basics' | 'type' | 'location' | 'offer'
+type Tab = 'overview' | 'basics' | 'type' | 'location' | 'offer' | 'calendar'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',  label: 'Overview'          },
   { id: 'basics',    label: 'Basics'             },
   { id: 'type',      label: 'Type & Availability'},
   { id: 'location',  label: 'Location & Details' },
   { id: 'offer',     label: 'Special Offer'      },
+  { id: 'calendar',  label: '📅 Tour Calendar'   },
 ]
 
 const LISTING_TYPE_LABELS: Record<string, string> = {
@@ -168,7 +169,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const [unlockedIds, setUnlockedIds] = useState<string[]>([])
 
   // ── Basics form ─────────────────────────────────────────────────────────────
-  const [basics, setBasics] = useState({ name: '', address: '', description: '', price: '', security_deposit: '', beds: '', baths: '', sqft: '', asu_distance: '' })
+  const [basics, setBasics] = useState({ name: '', address: '', description: '', price: '', security_deposit: '', beds: '', baths: '', sqft: '', asu_distance: '', utilities_included: false })
   const [basicsSaving, setBasicsSaving] = useState(false)
   const [basicsMsg, setBasicsMsg]       = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -224,6 +225,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
         price: found.price?.toString() || '', security_deposit: found.security_deposit?.toString() ?? '',
         beds: found.beds?.toString() || '', baths: found.baths?.toString() || '',
         sqft: found.sqft?.toString() || '', asu_distance: found.asu_distance?.toString() || '',
+        utilities_included: found.utilities_included ?? false,
       })
       setListingType(found.listing_type || 'standard_rental')
       setSubleaseStart(found.sublease_start_date || '')
@@ -257,10 +259,11 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       security_deposit: basics.security_deposit === '' ? null : parseInt(basics.security_deposit),
       beds: parseInt(basics.beds) || 0, baths: parseFloat(basics.baths) || 0,
       sqft: basics.sqft, asu_distance: parseFloat(basics.asu_distance) || 0,
+      utilities_included: basics.utilities_included,
     })
     setBasicsSaving(false)
     flash(setBasicsMsg, !error, error ? 'Failed to save. Try again.' : 'Basics saved!')
-    if (!error) setProperty(p => p ? { ...p, name: basics.name, address: basics.address, description: basics.description, price: parseFloat(basics.price)||0, beds: parseInt(basics.beds)||0, baths: parseFloat(basics.baths)||0, sqft: basics.sqft, asu_distance: parseFloat(basics.asu_distance)||0 } : p)
+    if (!error) setProperty(p => p ? { ...p, name: basics.name, address: basics.address, description: basics.description, price: parseFloat(basics.price)||0, beds: parseInt(basics.beds)||0, baths: parseFloat(basics.baths)||0, sqft: basics.sqft, asu_distance: parseFloat(basics.asu_distance)||0, utilities_included: basics.utilities_included } : p)
   }
 
   async function saveType() {
@@ -527,6 +530,23 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                   {basics.security_deposit === '0' && <div className="form-hint" style={{ color: '#10b981' }}>No deposit — shown as $0 on listing</div>}
                 </div>
               </div>
+              <div className="fg">
+                <label className="fl">Utilities</label>
+                <div
+                  onClick={() => setBasics(f => ({ ...f, utilities_included: !f.utilities_included }))}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 13px', border: `1.5px solid ${basics.utilities_included ? '#10b981' : '#e2e8f0'}`, borderRadius: '8px', cursor: 'pointer', background: basics.utilities_included ? '#f0fdf4' : '#fff', transition: 'all 0.15s', userSelect: 'none' }}
+                >
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                      {basics.utilities_included ? 'Utilities included' : 'Utilities not included'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Water, electric, gas — covered in rent</div>
+                  </div>
+                  <div style={{ width: '42px', height: '24px', borderRadius: '12px', background: basics.utilities_included ? '#10b981' : '#e2e8f0', transition: 'background 0.2s', position: 'relative', flexShrink: 0 }}>
+                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '3px', transition: 'left 0.2s', left: basics.utilities_included ? '21px' : '3px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                  </div>
+                </div>
+              </div>
               <div className="form-row-3">
                 <div className="fg">
                   <label className="fl">Bedrooms</label>
@@ -731,6 +751,29 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CALENDAR TAB ─────────────────────────────────────────────── */}
+        {activeTab === 'calendar' && property && (
+          <div className="lp-card">
+            <div className="lp-card-hdr">
+              <span className="lp-card-title">Tour Calendar</span>
+            </div>
+            <div className="lp-card-body">
+              <p style={{ fontSize: '14px', color: '#4a4a4a', lineHeight: 1.7, marginBottom: '20px' }}>
+                Set your available time slots for the next 7 days. Tenants you invite will be able to pick a 30-minute window to tour <strong>{property.name}</strong>.
+              </p>
+              <a
+                href={`/landlord/listings/${property.slug}/calendar`}
+                style={{ display: 'inline-block', background: '#1a1a1a', color: '#FFC627', textDecoration: 'none', fontSize: '15px', fontWeight: 700, padding: '14px 32px', borderRadius: '10px' }}
+              >
+                📅 Open Tour Calendar →
+              </a>
+              <p style={{ marginTop: '14px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
+                The calendar opens in a focused view for easy drag-and-select scheduling. Come back here when done.
+              </p>
             </div>
           </div>
         )}

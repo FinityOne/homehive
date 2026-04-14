@@ -170,16 +170,25 @@ export default function PropertyPageClient({
   const mainImage  = allImages[activePhoto] ?? ''
   const avail      = availabilityConfig(home.available, home.total_rooms)
   const isPopular  = (home.asu_score ?? 0) >= 8
-  const canSubmit  = formData.first_name.trim() !== '' && formData.email.trim() !== ''
+  const effectivePhone = loggedInUser?.phone || formData.phone.trim()
+  const canSubmit  = formData.first_name.trim() !== '' && formData.email.trim() !== '' && effectivePhone !== '' && formData.move_in_date !== ''
 
   const listingTypeCfg = home.listing_type === 'sublease'
     ? { label: 'Sublease', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' }
     : home.listing_type === 'lease_transfer'
       ? { label: 'Lease Transfer', color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' }
       : { label: 'Whole Home', color: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' }
-  const ctaCopy    = formData.first_name.trim()
+  const missingFields = [
+    !formData.first_name.trim() && 'name',
+    !formData.email.trim() && 'email',
+    !effectivePhone && 'phone',
+    !formData.move_in_date && 'move-in date',
+  ].filter(Boolean)
+  const ctaCopy = canSubmit
     ? `Check availability for ${formData.first_name.trim().split(' ')[0]} →`
-    : 'Check Availability →'
+    : missingFields.length === 4
+      ? 'Check Availability →'
+      : `Add your ${missingFields[0]} to continue`
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
@@ -291,39 +300,60 @@ export default function PropertyPageClient({
 
     // Post-submit state
     if (submitted) {
-      if (loggedInUser) {
-        return (
-          <div style={{ textAlign: 'center', padding: '22px 8px' }}>
-            <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', margin: '0 auto 14px' }}>✓</div>
-            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#1a1a1a', marginBottom: '8px' }}>You're on the list!</div>
-            <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '16px' }}>Taking you to your pre-screen…</p>
-            {submittedLeadId && (
-              <a href={`/pre-screen/${submittedLeadId}`} style={{ display: 'block', padding: '13px', background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', fontSize: '14px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 4px 16px rgba(255,198,39,0.45)' }}>
-                Start pre-screen now →
-              </a>
-            )}
-          </div>
-        )
-      }
+      const landlordName = landlordProfile?.first_name || null
       return (
-        <div style={{ textAlign: 'center', padding: '22px 8px' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', margin: '0 auto 14px' }}>✓</div>
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#1a1a1a', marginBottom: '6px' }}>You're on the list!</div>
-          <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '16px' }}>
-            Create an account to fill out your pre-screen and move to the front of the line.
+        <div style={{ padding: '18px 4px' }}>
+          {/* Sent confirmation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px 16px', marginBottom: '18px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>✓</div>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#166534' }}>
+                {landlordName ? `Sent to ${landlordName}!` : 'Interest sent!'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '2px' }}>
+                {landlordName ? `${landlordName} will review your inquiry shortly.` : 'The landlord will review your inquiry shortly.'}
+              </div>
+            </div>
+          </div>
+
+          {/* Pre-screen pitch */}
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '18px', color: '#1a1a1a', lineHeight: 1.3, marginBottom: '8px' }}>
+            Let's get to know you better.
+          </div>
+          <p style={{ fontSize: '13px', color: '#4a4a4a', lineHeight: 1.65, marginBottom: '14px' }}>
+            Your inquiry is in — now take 2 minutes to complete your pre-screen. Tenants who do are reviewed <strong>first</strong> and move to the top of the list.
           </p>
-          <a
-            href={`/signup?next=${encodeURIComponent(submittedLeadId ? `/pre-screen/${submittedLeadId}` : '/dashboard')}`}
-            style={{ display: 'block', padding: '13px', background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', fontSize: '14px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 4px 16px rgba(255,198,39,0.45)', marginBottom: '8px' }}
-          >
-            Create free account →
-          </a>
-          <a
-            href={`/login?next=${encodeURIComponent(submittedLeadId ? `/pre-screen/${submittedLeadId}` : '/dashboard')}`}
-            style={{ display: 'block', padding: '11px', background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}
-          >
-            Already have an account? Sign in
-          </a>
+
+          {/* What's in it */}
+          <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
+            {[
+              'A little about you (30 sec)',
+              'Your move-in plan & group size',
+              'Budget & lifestyle fit',
+            ].map((item, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12px', color: '#3a3a3a', marginBottom: i < 2 ? '7px' : 0 }}>
+                <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, color: '#1a1a1a', flexShrink: 0 }}>✓</div>
+                {item}
+              </div>
+            ))}
+          </div>
+
+          {/* CTA */}
+          {submittedLeadId && (
+            <a
+              href={`/pre-screen/${submittedLeadId}`}
+              style={{ display: 'block', padding: '14px', background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', fontSize: '15px', fontWeight: 800, textDecoration: 'none', textAlign: 'center', boxShadow: '0 4px 18px rgba(255,198,39,0.45)', marginBottom: '10px' }}
+            >
+              Complete my pre-screen →
+            </a>
+          )}
+
+          {loggedInUser && (
+            <p style={{ fontSize: '11px', color: '#b0a898', textAlign: 'center', margin: 0 }}>Taking you there automatically…</p>
+          )}
+          {!loggedInUser && (
+            <p style={{ fontSize: '11px', color: '#b0a898', textAlign: 'center', margin: 0 }}>No account needed · Takes 2 minutes · No commitment</p>
+          )}
         </div>
       )
     }
@@ -398,18 +428,20 @@ export default function PropertyPageClient({
                 onBlur={e => e.target.style.borderColor = '#e8e5de'}
               />
             )}
-            {/* Move-in date — always shown */}
+            {/* Move-in date — required */}
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: '#6b6b6b', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>When do you want to move in?</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: '#6b6b6b', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                When do you want to move in? <span style={{ color: '#8C1D40' }}>*</span>
+              </div>
               <input
                 name="move_in_date"
                 type="date"
                 value={formData.move_in_date}
                 onChange={handleChange}
                 min={new Date().toISOString().split('T')[0]}
-                style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
                 onFocus={e => e.target.style.borderColor = '#8C1D40'}
-                onBlur={e => e.target.style.borderColor = '#e8e5de'}
+                onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : '#e8e5de'}
               />
             </div>
           </div>
@@ -440,23 +472,28 @@ export default function PropertyPageClient({
           <input
             name="phone"
             type="tel"
-            placeholder="Phone (optional)"
+            placeholder="Phone number *"
             value={formData.phone}
             onChange={handleChange}
-            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.phone ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
             onFocus={e => e.target.style.borderColor = '#8C1D40'}
-            onBlur={e => e.target.style.borderColor = '#e8e5de'}
+            onBlur={e => e.target.style.borderColor = formData.phone ? '#1a1a1a' : '#e8e5de'}
           />
-          <input
-            name="move_in_date"
-            type="date"
-            value={formData.move_in_date}
-            onChange={handleChange}
-            min={new Date().toISOString().split('T')[0]}
-            style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
-            onFocus={e => e.target.style.borderColor = '#8C1D40'}
-            onBlur={e => e.target.style.borderColor = '#e8e5de'}
-          />
+          <div>
+            <input
+              name="move_in_date"
+              type="date"
+              value={formData.move_in_date}
+              onChange={handleChange}
+              min={new Date().toISOString().split('T')[0]}
+              style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+              onFocus={e => e.target.style.borderColor = '#8C1D40'}
+              onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : '#e8e5de'}
+            />
+            {!formData.move_in_date && (
+              <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '4px', paddingLeft: '2px' }}>When do you want to move in? *</div>
+            )}
+          </div>
         </div>
       )}
 
@@ -806,8 +843,7 @@ export default function PropertyPageClient({
               <div className="section-label">Transparent Pricing</div>
               {[
                 ['Monthly rent (per room)', `$${home.price.toLocaleString()}`, false],
-                ['Utilities (water, electric, gas)', 'Included', true],
-                ['High-speed WiFi', 'Included', true],
+                ['Utilities (water, electric, gas)', home.utilities_included ? 'Included' : 'Not included', home.utilities_included],
                 ['Move-in fee', '$0', true],
                 ['Broker / agency fee', '$0', true],
                 ['Security deposit',

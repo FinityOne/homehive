@@ -40,6 +40,7 @@ export type Property = {
   offer_amount: number | null
   offer_deadline: string | null
   offer_description: string | null
+  utilities_included: boolean
   // joined
   tags: string[]
   images: string[]
@@ -63,6 +64,7 @@ export type NewPropertyInput = {
   available?: number
   asu_distance?: number
   security_deposit?: number | null
+  utilities_included?: boolean
 }
 
 export async function createProperty(
@@ -98,6 +100,7 @@ export async function createProperty(
       available: data.available ?? 1,
       asu_distance: data.asu_distance ?? 0,
       security_deposit: data.security_deposit ?? null,
+      utilities_included: data.utilities_included ?? false,
       is_active: false,
       admin_status: 'pending',
       is_featured: false,
@@ -284,7 +287,7 @@ export async function updatePropertyOffer(
 
 export async function updatePropertyCore(
   id: string,
-  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'>>
+  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'|'utilities_included'>>
 ): Promise<{ error: any }> {
   const { error } = await supabase
     .from('properties')

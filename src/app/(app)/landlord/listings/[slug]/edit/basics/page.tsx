@@ -31,6 +31,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
     sqft: '',
     asu_distance: '',
     asu_score: '',
+    utilities_included: false,
   })
 
   useEffect(() => {
@@ -54,6 +55,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
         sqft: found.sqft?.toString() || '',
         asu_distance: found.asu_distance?.toString() || '',
         asu_score: found.asu_score?.toString() || '',
+        utilities_included: found.utilities_included ?? false,
       })
       setLoading(false)
     }
@@ -77,6 +79,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
       sqft: form.sqft,
       asu_distance: parseFloat(form.asu_distance) || 0,
       asu_score: parseFloat(form.asu_score) || 0,
+      utilities_included: form.utilities_included,
     }
 
     const { error } = await updatePropertyCore(property.id, updates)
@@ -208,6 +211,24 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
             {form.security_deposit === '0' && (
               <div style={{ fontSize: '12px', color: '#10b981', marginTop: '4px' }}>No deposit — shown as $0 on listing</div>
             )}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Utilities</label>
+          <div
+            onClick={() => setForm(f => ({ ...f, utilities_included: !f.utilities_included }))}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', border: `1.5px solid ${form.utilities_included ? '#10b981' : '#e2e8f0'}`, borderRadius: '8px', cursor: 'pointer', background: form.utilities_included ? '#f0fdf4' : '#fff', transition: 'all 0.15s', userSelect: 'none' }}
+          >
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                {form.utilities_included ? 'Utilities included' : 'Utilities not included'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Water, electric, gas — covered in rent</div>
+            </div>
+            <div style={{ width: '42px', height: '24px', borderRadius: '12px', background: form.utilities_included ? '#10b981' : '#e2e8f0', transition: 'background 0.2s', position: 'relative', flexShrink: 0 }}>
+              <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '3px', transition: 'left 0.2s', left: form.utilities_included ? '21px' : '3px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+            </div>
           </div>
         </div>
 

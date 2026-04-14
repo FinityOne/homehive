@@ -20,8 +20,18 @@ function getInitials(email: string, fullName?: string): string {
   return email[0].toUpperCase()
 }
 
-// ─── NAV ITEMS ────────────────────────────────────────────────────────────────
+// ─── TYPES ─────────────────────────────────────────────────────────────────────
 type NavItem = { href: string; label: string; icon: string; exact?: boolean }
+
+type Notification = {
+  id: string
+  type: string
+  title: string
+  body: string | null
+  href: string | null
+  is_read: boolean
+  created_at: string
+}
 
 const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
   tenant: [
@@ -33,6 +43,7 @@ const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
     { href: '/landlord/dashboard', label: 'Overview',    icon: '⊞', exact: true },
     { href: '/landlord/listings',  label: 'My Listings', icon: '▣' },
     { href: '/landlord/leads',     label: 'Leads',       icon: '◉' },
+    { href: '/landlord/calendar',  label: 'Calendar',    icon: '📅' },
     { href: '/landlord/tenants',   label: 'Tenants',     icon: '◎' },
     { href: '/landlord/leases',    label: 'Leases',      icon: '📋' },
     { href: '/landlord/payments',  label: 'Payments',    icon: '💳' },
@@ -143,9 +154,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
   const [pendingUpgradeCount, setPendingUpgradeCount] = useState(0)
   const [overduePaymentsCount, setOverduePaymentsCount] = useState(0)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const profileRef = useRef<HTMLDivElement>(null)
+  const notifRef = useRef<HTMLDivElement>(null)
 
   // ── Auth ──
   useEffect(() => {
@@ -172,6 +187,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           .then((data: { count: number }) => setOverduePaymentsCount(data.count))
           .catch(() => {})
       }
+      // Fetch notifications for landlord
+      if (role === 'landlord') {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          fetch('/api/notifications', { headers: { Authorization: `Bearer ${session.access_token}` } })
+            .then(r => r.json())
+            .then((data: { notifications?: Notification[] }) => {
+              const notifs = data.notifications || []
+              setNotifications(notifs)
+              setUnreadCount(notifs.filter(n => !n.is_read).length)
+            })
+            .catch(() => {})
+        }
+      }
     }
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) loadUser(user.id, user.email || '', user.user_metadata?.full_name || '')
@@ -194,7 +223,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [profileOpen])
 
-  useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [pathname])
+  // Close notif dropdown on outside click
+  useEffect(() => {
+    if (!notifOpen) return
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [notifOpen])
+
+  const handleNotifOpen = async () => {
+    setNotifOpen(o => !o)
+    if (!notifOpen && unreadCount > 0) {
+      // Mark all as read
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        fetch('/api/notifications', {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }).then(() => {
+          setUnreadCount(0)
+          setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+        }).catch(() => {})
+      }
+    }
+  }
+
+  useEffect(() => { setSidebarOpen(false); setProfileOpen(false); setNotifOpen(false) }, [pathname])
   useEffect(() => {
     document.body.style.overflow = sidebarOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
@@ -283,6 +340,67 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         /* Spacer pushes profile to the right */
         .tb-spacer { flex: 1; }
+
+        /* Notification bell */
+        .tb-notif {
+          position: relative; flex-shrink: 0; margin-right: 8px;
+        }
+        .tb-notif-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 36px; height: 36px; border-radius: 8px;
+          background: none; border: none; cursor: pointer;
+          font-size: 17px; position: relative;
+          transition: background 0.15s;
+        }
+        .tb-notif-btn:hover { background: var(--nav-hover-bg); }
+        .tb-notif-badge {
+          position: absolute; top: 4px; right: 4px;
+          background: #ef4444; color: #fff;
+          font-size: 9px; font-weight: 700;
+          min-width: 15px; height: 15px; border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          padding: 0 3px; font-family: 'DM Sans', sans-serif;
+          border: 2px solid var(--tb-bg);
+        }
+        .tb-notif-panel {
+          position: absolute; top: calc(100% + 8px); right: 0;
+          width: 320px; max-height: 400px; overflow-y: auto;
+          background: var(--dd-bg); border: 1px solid var(--tb-border);
+          border-radius: 12px; box-shadow: var(--dd-shadow); z-index: 300;
+        }
+        .tb-notif-header {
+          padding: 12px 16px 10px; border-bottom: 1px solid var(--divider);
+          font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+          color: var(--user-sub); font-family: 'DM Sans', sans-serif;
+        }
+        .tb-notif-item {
+          display: flex; align-items: flex-start; gap: 10px;
+          padding: 12px 16px; border-bottom: 1px solid var(--divider);
+          text-decoration: none; transition: background 0.15s;
+        }
+        .tb-notif-item:hover { background: var(--nav-hover-bg); }
+        .tb-notif-item:last-child { border-bottom: none; }
+        .tb-notif-dot {
+          width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex-shrink: 0;
+        }
+        .tb-notif-content { flex: 1; min-width: 0; }
+        .tb-notif-title {
+          font-size: 13px; font-weight: 600; color: var(--user-text);
+          font-family: 'DM Sans', sans-serif; line-height: 1.4;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .tb-notif-body {
+          font-size: 12px; color: var(--user-sub); font-family: 'DM Sans', sans-serif;
+          margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .tb-notif-time {
+          font-size: 11px; color: var(--user-sub); font-family: 'DM Sans', sans-serif;
+          margin-top: 3px;
+        }
+        .tb-notif-empty {
+          padding: 24px 16px; text-align: center; font-size: 13px;
+          color: var(--user-sub); font-family: 'DM Sans', sans-serif;
+        }
 
         /* Mobile hamburger — hidden on desktop */
         .tb-hamburger {
@@ -484,6 +602,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           )}
 
           <div className="tb-spacer" />
+
+          {/* Notification bell — landlord only */}
+          {user && currentPortal === 'landlord' && (
+            <div className="tb-notif" ref={notifRef}>
+              <button className="tb-notif-btn" onClick={handleNotifOpen} aria-label="Notifications">
+                🔔
+                {unreadCount > 0 && (
+                  <span className="tb-notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                )}
+              </button>
+              {notifOpen && (
+                <div className="tb-notif-panel">
+                  <div className="tb-notif-header">Notifications</div>
+                  {notifications.length === 0 ? (
+                    <div className="tb-notif-empty">No notifications yet</div>
+                  ) : (
+                    notifications.map(n => {
+                      const ICON: Record<string, string> = { lead_in: '◉', prescreen_filled: '📋', tour_booked: '📅' }
+                      const DOT: Record<string, string> = { lead_in: '#10b981', prescreen_filled: '#3b82f6', tour_booked: '#f59e0b' }
+                      const diff = Date.now() - new Date(n.created_at).getTime()
+                      const mins = Math.floor(diff / 60000)
+                      const timeAgo = mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.floor(mins / 60)}h ago` : `${Math.floor(mins / 1440)}d ago`
+                      const inner = (
+                        <>
+                          <span className="tb-notif-dot" style={{ background: DOT[n.type] || '#6b6b6b' }} />
+                          <div className="tb-notif-content">
+                            <div className="tb-notif-title">{ICON[n.type] || '•'} {n.title}</div>
+                            {n.body && <div className="tb-notif-body">{n.body}</div>}
+                            <div className="tb-notif-time">{timeAgo}</div>
+                          </div>
+                        </>
+                      )
+                      return n.href ? (
+                        <a key={n.id} href={n.href} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }} onClick={() => setNotifOpen(false)}>{inner}</a>
+                      ) : (
+                        <div key={n.id} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }}>{inner}</div>
+                      )
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Profile dropdown */}
           {user && (

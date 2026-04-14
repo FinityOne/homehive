@@ -143,12 +143,12 @@ function RolePicker({ onPick }: { onPick: (role: Role) => void }) {
 
 // ─── SIGNUP FORM ─────────────────────────────────────────────────────────────
 
-function SignupForm({ initialRole, onBack, next = '' }: { initialRole: Role; onBack: () => void; next?: string }) {
+function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { initialRole: Role; onBack: () => void; next?: string; prefillEmail?: string }) {
   const router = useRouter()
   const ph = usePostHog()
 
   const [role, setRole] = useState<Role>(initialRole)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' })
+  const [form, setForm] = useState({ name: '', email: prefillEmail, phone: '', password: '', confirm: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -429,6 +429,7 @@ function SignupFlow() {
   const searchParams = useSearchParams()
   const roleParam = searchParams.get('role')
   const next = searchParams.get('next') || ''
+  const prefillEmail = searchParams.get('email') || ''
 
   // If a role is pre-set via URL (e.g. from landlord CTA links), skip the picker
   const [step, setStep] = useState<Step>(roleParam === 'landlord' || roleParam === 'student' ? 'form' : 'pick')
@@ -440,7 +441,7 @@ function SignupFlow() {
   }
 
   if (step === 'pick') return <RolePicker onPick={handlePick} />
-  return <SignupForm initialRole={role} onBack={() => setStep('pick')} next={next} />
+  return <SignupForm initialRole={role} onBack={() => setStep('pick')} next={next} prefillEmail={prefillEmail} />
 }
 
 export default function SignupPage() {

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getLeadById } from '@/lib/leads'
 import { logEmail } from '@/lib/emailLog'
+import { notifyLandlord } from '@/lib/notifyLandlord'
 
 // Use service role key on server-side routes to bypass RLS
 const supabase = createClient(
@@ -124,6 +125,7 @@ export async function POST(
   let propertyAddress = ''
   let propertyHeroImage = ''
   let landlordEmail = process.env.ADMIN_EMAIL!
+  let landlordId = ''
 
   if (lead?.property) {
     const { data: prop } = await supabase
@@ -135,6 +137,7 @@ export async function POST(
     if (prop) {
       propertyName = prop.name
       propertyAddress = prop.address
+      landlordId = prop.owner_id || ''
       const imgs2 = (prop.property_images as { url: string; position: number }[] | null) ?? []
       propertyHeroImage = imgs2.sort((a, b) => a.position - b.position)[0]?.url || ''
 
@@ -177,6 +180,18 @@ export async function POST(
     await logEmail(leadId, 'lead_qualified_landlord', `✅ Pre-screen completed: ${lead?.first_name || 'Applicant'} — ${propertyName}`, landlordEmail, { property: propertyName, first_name: lead?.first_name })
   } catch (e) {
     console.error('Landlord pre-screen notification error:', e)
+  }
+
+  // Notify landlord of prescreen completion
+  if (landlordId) {
+    await notifyLandlord({
+      landlordId,
+      type: 'prescreen_filled',
+      leadId,
+      title: `Pre-screen filled: ${lead?.first_name || 'Applicant'}`,
+      body: `Completed their application for ${propertyName}`,
+      href: `/landlord/leads/${leadId}`,
+    }).catch(() => {})
   }
 
   return Response.json({ success: true })
