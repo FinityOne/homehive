@@ -25,6 +25,7 @@ export type EmailType =
   | 'tour_cancellation_tenant'
   | 'tour_cancellation_landlord'
   | 'prescreen_done_followup'
+  | 'reservation_sent'
 
 export async function logEmail(
   leadId: string,

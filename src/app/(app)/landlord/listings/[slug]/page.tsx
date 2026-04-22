@@ -11,6 +11,7 @@ import {
   replacePropertyTags,
   replacePropertyNearby,
   replacePropertyAsuReasons,
+  replacePropertyRooms,
   Property,
 } from '@/lib/properties'
 import { getLeadsForOwner, Lead } from '@/lib/leads'
@@ -151,9 +152,32 @@ const SHARED_CSS = `
   .media-grid { display: flex; flex-wrap: wrap; gap: 8px; }
   .media-thumb { width: 80px; height: 60px; object-fit: cover; border-radius: 7px; border: 1px solid #e2e8f0; }
 
+  /* RENTAL MODE SELECTOR */
+  .rent-mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+  .rent-mode-opt { border: 2px solid #e2e8f0; border-radius: 10px; padding: 13px 14px; cursor: pointer; text-align: left; background: #fff; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, background 0.15s; width: 100%; }
+  .rent-mode-opt:hover { border-color: #94a3b8; }
+  .rent-mode-opt.selected { border-color: #10b981; background: #f0fdf4; }
+  .rent-mode-title { font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 2px; }
+  .rent-mode-opt.selected .rent-mode-title { color: #166534; }
+  .rent-mode-desc { font-size: 11px; color: #64748b; line-height: 1.4; }
+
+  /* ROOM BUILDER */
+  .room-builder { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 6px; }
+  .room-builder-hdr { display: grid; grid-template-columns: 1fr 110px 80px 30px; gap: 8px; margin-bottom: 7px; padding: 0 2px; }
+  .room-col-lbl { font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; }
+  .room-build-row { display: grid; grid-template-columns: 1fr 110px 80px 30px; gap: 8px; align-items: center; margin-bottom: 7px; }
+  .room-avail-toggle { padding: 7px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1.5px solid; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: all 0.15s; }
+  .room-avail-toggle.open { border-color: #10b981; background: #f0fdf4; color: #10b981; }
+  .room-avail-toggle.filled { border-color: #e2e8f0; background: #fff; color: #94a3b8; }
+  .room-summary-bar { display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+  .room-price-readonly { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: #0f172a; font-weight: 500; }
+
   @media (max-width: 560px) {
     .lp-header { flex-direction: column; }
     .form-row, .form-row-3 { grid-template-columns: 1fr; }
+    .rent-mode-grid { grid-template-columns: 1fr; }
+    .room-builder-hdr { grid-template-columns: 1fr 90px; }
+    .room-build-row { grid-template-columns: 1fr 90px; }
   }
 `
 
@@ -181,6 +205,11 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const [availableRooms, setAvailableRooms]     = useState('')
   const [typeSaving, setTypeSaving]             = useState(false)
   const [typeMsg, setTypeMsg]                   = useState<{ ok: boolean; text: string } | null>(null)
+
+  // ── Rental mode & room builder ───────────────────────────────────────────────
+  type RoomRow = { name: string; price: string; is_available: boolean }
+  const [rentalMode, setRentalMode]             = useState<'whole_home' | 'by_room'>('whole_home')
+  const [rooms, setRooms]                       = useState<RoomRow[]>([{ name: '', price: '', is_available: true }])
 
   // ── Location & Details form ──────────────────────────────────────────────────
   const [loc, setLoc] = useState({ lat: '', lng: '', map_embed_url: '' })
@@ -232,6 +261,10 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       setSubleaseEnd(found.sublease_end_date || '')
       setTotalRooms(found.total_rooms?.toString() || '')
       setAvailableRooms(found.available?.toString() || '')
+      setRentalMode(found.rental_mode ?? 'whole_home')
+      if (found.rooms && found.rooms.length > 0) {
+        setRooms(found.rooms.map(r => ({ name: r.name, price: r.price.toString(), is_available: r.is_available })))
+      }
       setLoc({ lat: found.lat?.toString() || '', lng: found.lng?.toString() || '', map_embed_url: found.map_embed_url || '' })
       setNearby(found.nearby || [])
       setReasons(found.asu_reasons || [])
@@ -269,16 +302,58 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   async function saveType() {
     if (!property) return
     setTypeSaving(true)
-    const { error } = await supabase.from('properties').update({
-      listing_type:         listingType,
-      sublease_start_date:  listingType !== 'standard_rental' ? subleaseStart || null : null,
-      sublease_end_date:    listingType !== 'standard_rental' ? subleaseEnd   || null : null,
-      total_rooms:          parseInt(totalRooms) || 1,
-      available:            parseInt(availableRooms) || 0,
-    }).eq('id', property.id)
-    setTypeSaving(false)
-    flash(setTypeMsg, !error, error ? 'Failed to save. Try again.' : 'Saved!')
-    if (!error) setProperty(p => p ? { ...p, listing_type: listingType, total_rooms: parseInt(totalRooms)||1, available: parseInt(availableRooms)||0 } : p)
+
+    const baseUpdate = {
+      listing_type:        listingType,
+      sublease_start_date: listingType !== 'standard_rental' ? subleaseStart || null : null,
+      sublease_end_date:   listingType !== 'standard_rental' ? subleaseEnd   || null : null,
+      rental_mode:         rentalMode,
+    }
+
+    if (rentalMode === 'by_room') {
+      const validRooms = rooms.filter(r => Number(r.price) > 0)
+      if (validRooms.length === 0) {
+        flash(setTypeMsg, false, 'Add at least one room with a price.')
+        setTypeSaving(false)
+        return
+      }
+      const [modeRes, roomsRes] = await Promise.all([
+        supabase.from('properties').update(baseUpdate).eq('id', property.id),
+        replacePropertyRooms(
+          property.id,
+          validRooms.map((r, i) => ({
+            name: r.name.trim() || `Room ${i + 1}`,
+            price: Number(r.price),
+            is_available: r.is_available,
+          })),
+          true  // sync price/total_rooms/available on property
+        ),
+      ])
+      const err = modeRes.error || roomsRes.error
+      setTypeSaving(false)
+      flash(setTypeMsg, !err, err ? 'Failed to save. Try again.' : 'Rooms & availability saved!')
+      if (!err) {
+        const minPrice = Math.min(...validRooms.map(r => Number(r.price)).filter(p => p > 0))
+        setProperty(p => p ? {
+          ...p,
+          listing_type: listingType,
+          rental_mode: 'by_room',
+          total_rooms: validRooms.length,
+          available: validRooms.filter(r => r.is_available).length,
+          price: minPrice || p.price,
+          rooms: validRooms.map((r, i) => ({ id: '', property_id: p.id, name: r.name.trim() || `Room ${i + 1}`, price: Number(r.price), is_available: r.is_available, position: i })),
+        } : p)
+      }
+    } else {
+      const { error } = await supabase.from('properties').update({
+        ...baseUpdate,
+        total_rooms: parseInt(totalRooms) || 1,
+        available:   parseInt(availableRooms) || 0,
+      }).eq('id', property.id)
+      setTypeSaving(false)
+      flash(setTypeMsg, !error, error ? 'Failed to save. Try again.' : 'Saved!')
+      if (!error) setProperty(p => p ? { ...p, listing_type: listingType, rental_mode: 'whole_home', total_rooms: parseInt(totalRooms)||1, available: parseInt(availableRooms)||0 } : p)
+    }
   }
 
   async function saveLocation() {
@@ -428,8 +503,18 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                     </span>
                   </div>
                   <div className="detail-item">
+                    <div className="detail-label">Rental Type</div>
+                    <span className={`badge ${property.rental_mode === 'by_room' ? 'badge-blue' : 'badge-teal'}`}>
+                      {property.rental_mode === 'by_room' ? 'By room' : 'Entire property'}
+                    </span>
+                  </div>
+                  <div className="detail-item">
                     <div className="detail-label">Price</div>
-                    <div className="detail-value">${property.price?.toLocaleString()}/mo</div>
+                    <div className="detail-value">
+                      {property.rental_mode === 'by_room'
+                        ? `from $${property.price?.toLocaleString()}/mo`
+                        : `$${property.price?.toLocaleString()}/mo`}
+                    </div>
                   </div>
                   <div className="detail-item">
                     <div className="detail-label">Rooms</div>
@@ -464,6 +549,55 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                 )}
               </div>
             </div>
+
+            {/* Room breakdown — by_room mode */}
+            {property.rental_mode === 'by_room' && property.rooms && property.rooms.length > 0 && (
+              <div className="lp-card">
+                <div className="lp-card-hdr">
+                  <span className="lp-card-title">Rooms / Units ({property.rooms.length})</span>
+                  <button onClick={() => setActiveTab('type')} style={{ fontSize: '12px', color: '#10b981', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>Edit rooms →</button>
+                </div>
+                <div className="lp-card-body" style={{ padding: '0' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#94a3b8', padding: '10px 18px', textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>Room / Unit</th>
+                        <th style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#94a3b8', padding: '10px 18px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>Price/mo</th>
+                        <th style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#94a3b8', padding: '10px 18px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {property.rooms.map((room, i) => (
+                        <tr key={room.id || i}>
+                          <td style={{ fontSize: '13px', color: '#0f172a', padding: '10px 18px', borderBottom: i < property.rooms.length - 1 ? '1px solid #f9fafb' : 'none', fontWeight: 500 }}>
+                            {room.name || `Room ${i + 1}`}
+                          </td>
+                          <td style={{ fontSize: '13px', color: '#0f172a', padding: '10px 18px', textAlign: 'right', borderBottom: i < property.rooms.length - 1 ? '1px solid #f9fafb' : 'none', fontWeight: 600 }}>
+                            ${room.price.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px 18px', textAlign: 'center', borderBottom: i < property.rooms.length - 1 ? '1px solid #f9fafb' : 'none' }}>
+                            <span className={`badge ${room.is_available ? 'badge-green' : 'badge-grey'}`}>
+                              {room.is_available ? 'Open' : 'Filled'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: '2px solid #e2e8f0' }}>
+                        <td style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', padding: '10px 18px' }}>
+                          {property.rooms.filter(r => r.is_available).length} of {property.rooms.length} available
+                        </td>
+                        <td style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', padding: '10px 18px', textAlign: 'right' }}>
+                          ${property.rooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo total
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Photos */}
             {property.images?.length > 0 && (
@@ -522,7 +656,16 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               <div className="form-row">
                 <div className="fg">
                   <label className="fl">Price per Month ($)</label>
-                  <input className="fi" type="number" min="0" value={basics.price} onChange={e => setBasics(f=>({...f,price:e.target.value}))} placeholder="699" />
+                  {rentalMode === 'by_room' ? (
+                    <>
+                      <div className="room-price-readonly">
+                        {property && property.price > 0 ? `from $${property.price.toLocaleString()}` : '—'}
+                      </div>
+                      <div className="form-hint">Auto-calculated from room prices — edit in <button onClick={() => setActiveTab('type')} style={{ color: '#10b981', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', padding: 0, textDecoration: 'underline' }}>Type &amp; Availability</button></div>
+                    </>
+                  ) : (
+                    <input className="fi" type="number" min="0" value={basics.price} onChange={e => setBasics(f=>({...f,price:e.target.value}))} placeholder="699" />
+                  )}
                 </div>
                 <div className="fg">
                   <label className="fl">Security Deposit ($)</label>
@@ -578,6 +721,8 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             <div className="lp-card-hdr"><span className="lp-card-title">Type &amp; Availability</span></div>
             <div className="lp-card-body">
               {typeMsg && <div className={typeMsg.ok ? 'alert-ok' : 'alert-err'}>{typeMsg.text}</div>}
+
+              {/* Listing type */}
               <div className="fg">
                 <label className="fl">Listing Type</label>
                 <select className="fs" value={listingType} onChange={e => setListingType(e.target.value as typeof listingType)}>
@@ -591,6 +736,8 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                   {listingType === 'lease_transfer' && 'You fully transfer your remaining lease obligations to a new tenant.'}
                 </div>
               </div>
+
+              {/* Sublease dates */}
               {isSublease && (
                 <div className="form-row" style={{ marginTop: '4px' }}>
                   <div className="fg">
@@ -603,16 +750,124 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                   </div>
                 </div>
               )}
-              <div className="form-row" style={{ marginTop: isSublease ? '0' : '4px', maxWidth: 320 }}>
-                <div className="fg">
-                  <label className="fl">Total Rooms</label>
-                  <input className="fi" type="number" min="1" value={totalRooms} onChange={e => setTotalRooms(e.target.value)} placeholder="4" />
+
+              {/* Rental mode — only for standard rentals */}
+              {listingType === 'standard_rental' && (
+                <div className="fg" style={{ marginTop: '8px' }}>
+                  <label className="fl">How do you charge rent?</label>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>Works for single rooms, whole houses, and apartment complexes.</div>
+                  <div className="rent-mode-grid">
+                    <button
+                      className={`rent-mode-opt${rentalMode === 'whole_home' ? ' selected' : ''}`}
+                      onClick={() => setRentalMode('whole_home')}
+                    >
+                      <div className="rent-mode-title">Entire property</div>
+                      <div className="rent-mode-desc">One price for the whole unit. You control total & available room counts.</div>
+                    </button>
+                    <button
+                      className={`rent-mode-opt${rentalMode === 'by_room' ? ' selected' : ''}`}
+                      onClick={() => setRentalMode('by_room')}
+                    >
+                      <div className="rent-mode-title">By room / by unit</div>
+                      <div className="rent-mode-desc">Each bedroom or unit has its own name and price. Total & available auto-calculate.</div>
+                    </button>
+                  </div>
                 </div>
-                <div className="fg">
-                  <label className="fl">Available Rooms</label>
-                  <input className="fi" type="number" min="0" value={availableRooms} onChange={e => setAvailableRooms(e.target.value)} placeholder="2" />
+              )}
+
+              {/* Whole-home: simple room count inputs */}
+              {(rentalMode === 'whole_home' || listingType !== 'standard_rental') && (
+                <div className="form-row" style={{ maxWidth: 320, marginTop: '8px' }}>
+                  <div className="fg">
+                    <label className="fl">Total Rooms</label>
+                    <input className="fi" type="number" min="1" value={totalRooms} onChange={e => setTotalRooms(e.target.value)} placeholder="4" />
+                  </div>
+                  <div className="fg">
+                    <label className="fl">Available Rooms</label>
+                    <input className="fi" type="number" min="0" value={availableRooms} onChange={e => setAvailableRooms(e.target.value)} placeholder="2" />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* By-room: full room builder */}
+              {rentalMode === 'by_room' && listingType === 'standard_rental' && (
+                <div className="fg" style={{ marginTop: '8px' }}>
+                  <label className="fl">Rooms / Units</label>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+                    Name each room or unit (optional) and set its monthly price. Toggle Open/Filled to track availability.
+                  </div>
+                  <div className="room-builder">
+                    {/* Column headers */}
+                    <div className="room-builder-hdr">
+                      <div className="room-col-lbl">Room / Unit name</div>
+                      <div className="room-col-lbl">Price/mo ($)</div>
+                      <div className="room-col-lbl">Status</div>
+                      <div />
+                    </div>
+
+                    {rooms.map((room, i) => (
+                      <div key={i} className="room-build-row">
+                        <input
+                          className="fi"
+                          type="text"
+                          placeholder={i === 0 ? 'e.g. Master Bedroom' : i === 1 ? 'e.g. Room B' : `e.g. Unit ${101 + i}`}
+                          value={room.name}
+                          onChange={e => setRooms(rs => rs.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                        />
+                        <input
+                          className="fi"
+                          type="number"
+                          min="1"
+                          placeholder="700"
+                          value={room.price}
+                          onChange={e => setRooms(rs => rs.map((r, j) => j === i ? { ...r, price: e.target.value } : r))}
+                        />
+                        <button
+                          className={`room-avail-toggle ${room.is_available ? 'open' : 'filled'}`}
+                          onClick={() => setRooms(rs => rs.map((r, j) => j === i ? { ...r, is_available: !r.is_available } : r))}
+                          title="Toggle availability"
+                        >
+                          {room.is_available ? 'Open' : 'Filled'}
+                        </button>
+                        {rooms.length > 1 ? (
+                          <button className="btn-rm" onClick={() => setRooms(rs => rs.filter((_, j) => j !== i))} title="Remove">×</button>
+                        ) : (
+                          <div />
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      className="btn-add"
+                      style={{ width: '100%', marginTop: '4px' }}
+                      onClick={() => setRooms(rs => [...rs, { name: '', price: '', is_available: true }])}
+                    >
+                      + Add room / unit
+                    </button>
+
+                    {/* Running summary */}
+                    {rooms.some(r => Number(r.price) > 0) && (() => {
+                      const valid = rooms.filter(r => Number(r.price) > 0)
+                      const total = valid.reduce((s, r) => s + Number(r.price), 0)
+                      const minP  = Math.min(...valid.map(r => Number(r.price)))
+                      const avail = rooms.filter(r => r.is_available).length
+                      return (
+                        <div className="room-summary-bar">
+                          <div>
+                            <div style={{ fontSize: '12px', color: '#64748b' }}>{avail} of {rooms.length} rooms available</div>
+                            <div style={{ fontSize: '11px', color: '#10b981', marginTop: '2px' }}>Listing shows "from ${minP.toLocaleString()}/mo"</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Total potential rent</div>
+                            <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>${total.toLocaleString()}/mo</div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+              )}
+
               <div className="form-actions">
                 <button className="btn-save" onClick={saveType} disabled={typeSaving}>{typeSaving ? 'Saving…' : 'Save Type & Availability'}</button>
               </div>

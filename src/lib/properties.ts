@@ -5,6 +5,15 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+export type PropertyRoom = {
+  id: string
+  property_id: string
+  name: string
+  price: number
+  is_available: boolean
+  position: number
+}
+
 export type Property = {
   id: string
   slug: string
@@ -41,11 +50,13 @@ export type Property = {
   offer_deadline: string | null
   offer_description: string | null
   utilities_included: boolean
+  rental_mode: 'whole_home' | 'by_room'
   // joined
   tags: string[]
   images: string[]
   nearby: { place: string; travel_time: string }[]
   asu_reasons: string[]
+  rooms: PropertyRoom[]
 }
 
 export type NewPropertyInput = {
@@ -65,13 +76,54 @@ export type NewPropertyInput = {
   asu_distance?: number
   security_deposit?: number | null
   utilities_included?: boolean
+  rental_mode?: 'whole_home' | 'by_room'
+}
+
+const PROPERTY_SELECT = `
+  *,
+  property_tags ( tag ),
+  property_images ( url, position ),
+  property_nearby ( place, travel_time ),
+  property_asu_reasons ( reason, position ),
+  property_rooms ( id, property_id, name, price, is_available, position )
+`
+
+function mapRooms(raw: any[], propertyId: string): PropertyRoom[] {
+  return raw
+    .sort((a, b) => a.position - b.position)
+    .map(r => ({
+      id: r.id,
+      property_id: propertyId,
+      name: r.name,
+      price: r.price,
+      is_available: r.is_available,
+      position: r.position,
+    }))
+}
+
+function mapProperty(p: any): Property {
+  return {
+    ...p,
+    rental_mode: (p.rental_mode ?? 'whole_home') as 'whole_home' | 'by_room',
+    tags: p.property_tags.map((t: any) => t.tag),
+    images: p.property_images
+      .sort((a: any, b: any) => a.position - b.position)
+      .map((i: any) => i.url),
+    nearby: p.property_nearby.map((n: any) => ({
+      place: n.place,
+      travel_time: n.travel_time,
+    })),
+    asu_reasons: p.property_asu_reasons
+      .sort((a: any, b: any) => a.position - b.position)
+      .map((r: any) => r.reason),
+    rooms: mapRooms(p.property_rooms ?? [], p.id),
+  }
 }
 
 export async function createProperty(
   ownerId: string,
   data: NewPropertyInput
 ): Promise<{ slug: string | null; id: string | null; error: any }> {
-  // Generate a slug from the name + random suffix
   const base = data.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -101,6 +153,7 @@ export async function createProperty(
       asu_distance: data.asu_distance ?? 0,
       security_deposit: data.security_deposit ?? null,
       utilities_included: data.utilities_included ?? false,
+      rental_mode: data.rental_mode ?? 'whole_home',
       is_active: false,
       admin_status: 'pending',
       is_featured: false,
@@ -121,13 +174,7 @@ export type AdminStatus = 'pending' | 'active' | 'inactive' | 'test' | 'flagged'
 export async function getAllPropertiesForAdmin(): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')
-    .select(`
-      *,
-      property_tags ( tag ),
-      property_images ( url, position ),
-      property_nearby ( place, travel_time ),
-      property_asu_reasons ( reason, position )
-    `)
+    .select(PROPERTY_SELECT)
     .order('created_at', { ascending: false })
 
   if (error || !data) {
@@ -135,48 +182,18 @@ export async function getAllPropertiesForAdmin(): Promise<Property[]> {
     return []
   }
 
-  return data.map(p => ({
-    ...p,
-    tags:       p.property_tags.map((t: any) => t.tag),
-    images:     p.property_images
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((i: any) => i.url),
-    nearby:     p.property_nearby.map((n: any) => ({
-                  place: n.place,
-                  travel_time: n.travel_time,
-                })),
-    asu_reasons: p.property_asu_reasons
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((r: any) => r.reason),
-  }))
+  return data.map(mapProperty)
 }
 
 export async function getPropertyByIdForAdmin(id: string): Promise<Property | null> {
   const { data, error } = await supabase
     .from('properties')
-    .select(`
-      *,
-      property_tags ( tag ),
-      property_images ( url, position ),
-      property_nearby ( place, travel_time ),
-      property_asu_reasons ( reason, position )
-    `)
+    .select(PROPERTY_SELECT)
     .eq('id', id)
     .single()
 
   if (error || !data) return null
-
-  return {
-    ...data,
-    tags: data.property_tags.map((t: any) => t.tag),
-    images: data.property_images
-              .sort((a: any, b: any) => a.position - b.position)
-              .map((i: any) => i.url),
-    nearby: data.property_nearby.map((n: any) => ({ place: n.place, travel_time: n.travel_time })),
-    asu_reasons: data.property_asu_reasons
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((r: any) => r.reason),
-  }
+  return mapProperty(data)
 }
 
 export async function updatePropertyAdminStatus(
@@ -207,13 +224,7 @@ export async function getTotalPropertyCount(): Promise<number> {
 export async function getProperties(): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')
-    .select(`
-      *,
-      property_tags ( tag ),
-      property_images ( url, position ),
-      property_nearby ( place, travel_time ),
-      property_asu_reasons ( reason, position )
-    `)
+    .select(PROPERTY_SELECT)
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
@@ -224,32 +235,13 @@ export async function getProperties(): Promise<Property[]> {
     return []
   }
 
-  return data.map(p => ({
-    ...p,
-    tags:       p.property_tags.map((t: any) => t.tag),
-    images:     p.property_images
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((i: any) => i.url),
-    nearby:     p.property_nearby.map((n: any) => ({
-                  place: n.place,
-                  travel_time: n.travel_time,
-                })),
-    asu_reasons: p.property_asu_reasons
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((r: any) => r.reason),
-  }))
+  return data.map(mapProperty)
 }
 
 export async function getPropertiesByOwner(userId: string): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')
-    .select(`
-      *,
-      property_tags ( tag ),
-      property_images ( url, position ),
-      property_nearby ( place, travel_time ),
-      property_asu_reasons ( reason, position )
-    `)
+    .select(PROPERTY_SELECT)
     .eq('owner_id', userId)
     .order('created_at', { ascending: true })
 
@@ -258,20 +250,7 @@ export async function getPropertiesByOwner(userId: string): Promise<Property[]> 
     return []
   }
 
-  return data.map(p => ({
-    ...p,
-    tags:       p.property_tags.map((t: any) => t.tag),
-    images:     p.property_images
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((i: any) => i.url),
-    nearby:     p.property_nearby.map((n: any) => ({
-                  place: n.place,
-                  travel_time: n.travel_time,
-                })),
-    asu_reasons: p.property_asu_reasons
-                  .sort((a: any, b: any) => a.position - b.position)
-                  .map((r: any) => r.reason),
-  }))
+  return data.map(mapProperty)
 }
 
 export async function updatePropertyOffer(
@@ -287,13 +266,56 @@ export async function updatePropertyOffer(
 
 export async function updatePropertyCore(
   id: string,
-  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'|'utilities_included'>>
+  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'|'utilities_included'|'rental_mode'>>
 ): Promise<{ error: any }> {
   const { error } = await supabase
     .from('properties')
     .update(updates)
     .eq('id', id)
   return { error }
+}
+
+export async function replacePropertyRooms(
+  propertyId: string,
+  rooms: { name: string; price: number; is_available: boolean }[],
+  syncProperty: boolean = true
+): Promise<{ error: any }> {
+  const { error: delError } = await supabase
+    .from('property_rooms')
+    .delete()
+    .eq('property_id', propertyId)
+  if (delError) return { error: delError }
+
+  if (rooms.length > 0) {
+    const { error: insError } = await supabase
+      .from('property_rooms')
+      .insert(
+        rooms.map((r, i) => ({
+          property_id: propertyId,
+          name: r.name,
+          price: r.price,
+          is_available: r.is_available,
+          position: i,
+        }))
+      )
+    if (insError) return { error: insError }
+  }
+
+  if (syncProperty && rooms.length > 0) {
+    const availableCount = rooms.filter(r => r.is_available).length
+    const minPrice = Math.min(...rooms.map(r => r.price))
+    const { error: syncErr } = await supabase
+      .from('properties')
+      .update({
+        price: minPrice,
+        total_rooms: rooms.length,
+        available: availableCount,
+      })
+      .eq('id', propertyId)
+    return { error: syncErr }
+  }
+
+  return { error: null }
 }
 
 export async function replacePropertyTags(propertyId: string, tags: string[]): Promise<{ error: any }> {
@@ -378,7 +400,6 @@ export async function deletePropertyImage(propertyId: string, url: string): Prom
     .eq('property_id', propertyId)
     .eq('url', url)
   if (delError) return { error: delError }
-  // Re-sequence positions
   const { data } = await supabase
     .from('property_images')
     .select('id')
@@ -395,63 +416,23 @@ export async function deletePropertyImage(propertyId: string, url: string): Prom
 export async function getPropertyByClaimToken(token: string): Promise<Property | null> {
   const { data, error } = await supabase
     .from('properties')
-    .select(`
-      *,
-      property_tags ( tag ),
-      property_images ( url, position ),
-      property_nearby ( place, travel_time ),
-      property_asu_reasons ( reason, position )
-    `)
+    .select(PROPERTY_SELECT)
     .eq('claim_token', token)
     .single()
 
   if (error || !data) return null
-
-  return {
-    ...data,
-    tags:        data.property_tags.map((t: any) => t.tag),
-    images:      data.property_images
-                   .sort((a: any, b: any) => a.position - b.position)
-                   .map((i: any) => i.url),
-    nearby:      data.property_nearby.map((n: any) => ({
-                   place: n.place,
-                   travel_time: n.travel_time,
-                 })),
-    asu_reasons: data.property_asu_reasons
-                   .sort((a: any, b: any) => a.position - b.position)
-                   .map((r: any) => r.reason),
-  }
+  return mapProperty(data)
 }
 
 export async function getPropertyBySlug(slug: string): Promise<Property | null> {
   const { data, error } = await supabase
     .from('properties')
-    .select(`
-      *,
-      property_tags ( tag ),
-      property_images ( url, position ),
-      property_nearby ( place, travel_time ),
-      property_asu_reasons ( reason, position )
-    `)
+    .select(PROPERTY_SELECT)
     .eq('slug', slug)
     .eq('is_active', true)
     .eq('is_test', false)
     .single()
 
   if (error || !data) return null
-
-  return {
-    ...data,
-    tags:        data.property_tags.map((t: any) => t.tag),
-    images:      data.property_images
-                   .sort((a: any, b: any) => a.position - b.position)
-                   .map((i: any) => i.url),
-    nearby:      data.property_nearby.map((n: any) => ({
-                   place: n.place,
-                   travel_time: n.travel_time,
-                 })),
-    asu_reasons: data.property_asu_reasons
-                   .sort((a: any, b: any) => a.position - b.position)
-                   .map((r: any) => r.reason),
-  }
+  return mapProperty(data)
 }

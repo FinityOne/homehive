@@ -365,10 +365,19 @@ export default function PropertyPageClient({
       {/* Price header */}
       <div style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '2px' }}>
-          <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: '30px', color: '#1a1a1a', letterSpacing: '-0.5px' }}>${home.price.toLocaleString()}</span>
-          <span style={{ fontSize: '13px', color: '#9b9b9b' }}>/mo per room</span>
+          <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: '30px', color: '#1a1a1a', letterSpacing: '-0.5px' }}>
+            {home.rental_mode === 'by_room' ? `from $${home.price.toLocaleString()}` : `$${home.price.toLocaleString()}`}
+          </span>
+          <span style={{ fontSize: '13px', color: '#9b9b9b' }}>
+            {home.rental_mode === 'by_room' ? '/mo per room' : '/mo'}
+          </span>
         </div>
-        <div style={{ fontSize: '12px', color: '#6b6b6b' }}>Est. all-in: <strong style={{ color: '#1a1a1a' }}>${home.price + 65}–${home.price + 140}/mo</strong> <span style={{ color: '#c5c1b8' }}>incl. utilities</span></div>
+        {!home.utilities_included && (
+          <div style={{ fontSize: '12px', color: '#6b6b6b' }}>Est. all-in: <strong style={{ color: '#1a1a1a' }}>${home.price + 65}–${home.price + 140}/mo</strong> <span style={{ color: '#c5c1b8' }}>incl. utilities</span></div>
+        )}
+        {home.utilities_included && (
+          <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 500 }}>✓ Utilities included</div>
+        )}
       </div>
 
       {/* Availability badge */}
@@ -841,30 +850,87 @@ export default function PropertyPageClient({
             {/* PRICING */}
             <div className="section">
               <div className="section-label">Transparent Pricing</div>
-              {[
-                ['Monthly rent (per room)', `$${home.price.toLocaleString()}`, false],
-                ['Utilities (water, electric, gas)', home.utilities_included ? 'Included' : 'Not included', home.utilities_included],
-                ['Move-in fee', '$0', true],
-                ['Broker / agency fee', '$0', true],
-                ['Security deposit',
-                  home.security_deposit === 0 ? '$0 — No deposit required' :
-                  home.security_deposit != null ? `$${home.security_deposit.toLocaleString()} (refundable)` :
-                  `$${home.price.toLocaleString()} (refundable)`,
-                  home.security_deposit === 0],
-              ].map(([l, v, g]) => (
-                <div className="pricing-row" key={String(l)}>
-                  <span className="pricing-label">{l}</span>
-                  <span className={`pricing-val${g ? ' green' : ''}`}>{v}</span>
-                </div>
-              ))}
-              <div className="pricing-total">
-                <span>Total to move in</span>
-                <span>
-                  {home.security_deposit === 0
-                    ? `$${home.price.toLocaleString()}`
-                    : `$${(home.price + (home.security_deposit ?? home.price)).toLocaleString()}`}
-                </span>
-              </div>
+
+              {home.rental_mode === 'by_room' && home.rooms.length > 0 ? (
+                /* ── By-room: show each room with price ── */
+                <>
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Room / Unit Pricing</div>
+                    {home.rooms.map(room => (
+                      <div className="pricing-row" key={room.id}>
+                        <span className="pricing-label" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: room.is_available ? '#16a34a' : '#9b9b9b', display: 'inline-block', flexShrink: 0 }} />
+                          {room.name}
+                          {!room.is_available && <span style={{ fontSize: '11px', color: '#9b9b9b', fontStyle: 'italic' }}>(filled)</span>}
+                        </span>
+                        <span className={`pricing-val${room.is_available ? ' green' : ''}`}>
+                          ${room.price.toLocaleString()}/mo
+                        </span>
+                      </div>
+                    ))}
+                    <div className="pricing-row" style={{ borderTop: '2px solid #1a1a1a', paddingTop: '10px', fontWeight: 600, fontSize: '15px' }}>
+                      <span>Total potential rent</span>
+                      <span style={{ color: '#1a1a1a' }}>
+                        ${home.rooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo
+                      </span>
+                    </div>
+                  </div>
+                  {[
+                    ['Utilities (water, electric, gas)', home.utilities_included ? 'Included' : 'Not included', home.utilities_included] as const,
+                    ['Move-in fee', '$0', true] as const,
+                    ['Broker / agency fee', '$0', true] as const,
+                    ['Security deposit',
+                      home.security_deposit === 0 ? '$0 — No deposit required' :
+                      home.security_deposit != null ? `$${home.security_deposit.toLocaleString()} (refundable)` :
+                      'Contact landlord',
+                      home.security_deposit === 0] as const,
+                  ].map(([l, v, g]) => (
+                    <div className="pricing-row" key={l}>
+                      <span className="pricing-label">{l}</span>
+                      <span className={`pricing-val${g ? ' green' : ''}`}>{v}</span>
+                    </div>
+                  ))}
+                  <div className="pricing-total">
+                    <span>Move-in cost (1 room)</span>
+                    <span>
+                      {home.security_deposit === 0
+                        ? `from $${home.price.toLocaleString()}`
+                        : home.security_deposit != null
+                          ? `from $${(home.price + home.security_deposit).toLocaleString()}`
+                          : `from $${home.price.toLocaleString()}`}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                /* ── Whole home: single price ── */
+                <>
+                  {[
+                    ['Monthly rent', `$${home.price.toLocaleString()}`, false],
+                    ['Utilities (water, electric, gas)', home.utilities_included ? 'Included' : 'Not included', home.utilities_included],
+                    ['Move-in fee', '$0', true],
+                    ['Broker / agency fee', '$0', true],
+                    ['Security deposit',
+                      home.security_deposit === 0 ? '$0 — No deposit required' :
+                      home.security_deposit != null ? `$${home.security_deposit.toLocaleString()} (refundable)` :
+                      `$${home.price.toLocaleString()} (refundable)`,
+                      home.security_deposit === 0],
+                  ].map(([l, v, g]) => (
+                    <div className="pricing-row" key={String(l)}>
+                      <span className="pricing-label">{l}</span>
+                      <span className={`pricing-val${g ? ' green' : ''}`}>{v}</span>
+                    </div>
+                  ))}
+                  <div className="pricing-total">
+                    <span>Total to move in</span>
+                    <span>
+                      {home.security_deposit === 0
+                        ? `$${home.price.toLocaleString()}`
+                        : `$${(home.price + (home.security_deposit ?? home.price)).toLocaleString()}`}
+                    </span>
+                  </div>
+                </>
+              )}
+
               <p style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '10px', lineHeight: 1.5 }}>The price you see is the price you pay. No hidden charges at signing. Deposit fully refunded at move-out.</p>
             </div>
 
@@ -956,8 +1022,12 @@ export default function PropertyPageClient({
         ) : (
           <div className="mobile-bar-inner">
             <div className="mobile-bar-price">
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', lineHeight: 1 }}>${home.price.toLocaleString()}</div>
-              <div style={{ fontSize: '11px', color: '#9b9b9b' }}>/mo per room</div>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', lineHeight: 1 }}>
+                {home.rental_mode === 'by_room' ? `from $${home.price.toLocaleString()}` : `$${home.price.toLocaleString()}`}
+              </div>
+              <div style={{ fontSize: '11px', color: '#9b9b9b' }}>
+                {home.rental_mode === 'by_room' ? '/mo per room' : '/mo'}
+              </div>
             </div>
             <button className="mobile-bar-cta" onClick={() => setMobileFormOpen(true)}>
               Check Availability →

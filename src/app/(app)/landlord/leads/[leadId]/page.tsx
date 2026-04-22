@@ -46,6 +46,7 @@ const EMAIL_TYPE_META: Record<string, { label: string; icon: string; color: stri
   tour_reminder:               { label: 'Tour reminder sent to lead',             icon: '⏰', color: '#d97706' },
   tour_cancellation_tenant:    { label: 'Tour cancellation sent to lead',         icon: '✕', color: '#ef4444' },
   tour_cancellation_landlord:  { label: 'Tour cancellation sent to you',          icon: '✕', color: '#ef4444' },
+  reservation_sent:            { label: 'Reservation offer sent to lead',         icon: '🔒', color: '#8C1D40' },
 }
 
 type TourRecord = {
@@ -114,6 +115,22 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [cancelForm, setCancelForm] = useState({ reason: '', notes: '' })
   const [cancelSaving, setCancelSaving] = useState(false)
 
+  // Reservation state
+  type RoomOption = { id: string; name: string; price: number }
+  const [reserveModal, setReserveModal] = useState(false)
+  const [reserveRooms, setReserveRooms] = useState<RoomOption[]>([])
+  const [reserveForm, setReserveForm] = useState({
+    room_id: '',         // '' = entire property
+    discount_type: '' as '' | 'dollars' | 'percent',
+    discount_amount: '',
+    expires_mode: '24h' as '24h' | '48h' | '72h' | 'custom',
+    custom_expires: '',
+  })
+  const [reserveSending, setReserveSending] = useState(false)
+  const [reserveSent, setReserveSent] = useState(false)
+  const [activeReservation, setActiveReservation] = useState<{ accept_token: string; expires_at?: string } | null>(null)
+  const [reserveLinkCopied, setReserveLinkCopied] = useState(false)
+
   const [copied, setCopied] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', move_in_date: '', property: '' })
@@ -162,16 +179,33 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       if (tourRes) setTourData(tourRes as TourRecord)
       if ((leadData as Lead & { tour_invite_sent_at?: string }).tour_invite_sent_at) setTourInviteSent(true)
 
-      // Fetch property
+      // Fetch property + rooms for reservation
       if (leadData.property) {
         const { data: prop } = await supabase
           .from('properties')
-          .select('name, address, price, property_images(url, position)')
+          .select('id, name, address, price, rental_mode, property_images(url, position), property_rooms(id, name, price, is_available, position)')
           .eq('slug', leadData.property)
           .single()
         if (prop) {
           const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
           setProperty({ name: prop.name, address: prop.address, price: prop.price, heroImage: imgs.sort((a, b) => a.position - b.position)[0]?.url || '' })
+          if (prop.rental_mode === 'by_room' && prop.property_rooms?.length) {
+            const rooms = (prop.property_rooms as { id: string; name: string; price: number; is_available: boolean; position: number }[])
+              .filter(r => r.is_available)
+              .sort((a, b) => a.position - b.position)
+              .map(r => ({ id: r.id, name: r.name || `Room ${r.position + 1}`, price: r.price }))
+            setReserveRooms(rooms)
+          }
+          // Check for existing pending reservation
+          const { data: existingRes } = await supabase
+            .from('lead_reservations')
+            .select('accept_token, expires_at, status')
+            .eq('lead_id', leadId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (existingRes) setActiveReservation({ accept_token: existingRes.accept_token, expires_at: existingRes.expires_at })
         }
       }
 
@@ -339,6 +373,50 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     setCancelSaving(false)
   }
 
+  const handleSendReservation = async () => {
+    setReserveSending(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      // Calculate expires_at
+      let expiresAt: Date
+      if (reserveForm.expires_mode === 'custom' && reserveForm.custom_expires) {
+        expiresAt = new Date(reserveForm.custom_expires)
+      } else {
+        const hours = reserveForm.expires_mode === '24h' ? 24 : reserveForm.expires_mode === '48h' ? 48 : 72
+        expiresAt = new Date(Date.now() + hours * 3600 * 1000)
+      }
+
+      const payload: Record<string, unknown> = {
+        room_id: reserveForm.room_id || null,
+        expires_at: expiresAt.toISOString(),
+      }
+      if (reserveForm.discount_type && reserveForm.discount_amount) {
+        payload.discount_type = reserveForm.discount_type
+        payload.discount_amount = parseInt(reserveForm.discount_amount, 10)
+      }
+
+      const res = await fetch(`/api/leads/${leadId}/reserve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify(payload),
+      })
+      const body = await res.json()
+      if (res.ok) {
+        setActiveReservation({ accept_token: body.accept_token, expires_at: expiresAt.toISOString() })
+        setReserveSent(true)
+        setReserveModal(false)
+        showToast('Reservation email sent! 🔒')
+        // Refresh emails
+        const activityRes = await fetch(`/api/leads/${leadId}/activity`)
+        if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
+      } else {
+        showToast(body.error || 'Failed to send reservation', 'error')
+      }
+    } catch { showToast('Failed to send reservation', 'error') }
+    setReserveSending(false)
+  }
+
   // 30-min time slots from 7am–9pm for manual booking
   const MANUAL_TIME_SLOTS: string[] = []
   for (let h = 7; h < 21; h++) {
@@ -464,6 +542,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         /* Toast */
         .ld-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
         @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+        /* Reservation */
+        .reserve-mode-opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1.5px solid #e8e5de; border-radius: 10px; cursor: pointer; transition: all 0.15s; background: #fff; width: 100%; font-family: 'DM Sans', sans-serif; text-align: left; }
+        .reserve-mode-opt.selected { border-color: #8C1D40; background: #fdf2f5; }
+        .reserve-mode-opt:hover:not(.selected) { border-color: #ccc; }
+        .reserve-discount-toggle { display: flex; gap: 8px; }
+        .reserve-discount-opt { flex: 1; padding: 9px; border: 1.5px solid #e8e5de; border-radius: 8px; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #3a3a3a; transition: all 0.15s; }
+        .reserve-discount-opt.selected { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; }
 
         @media (max-width: 860px) {
           .ld-grid { grid-template-columns: 1fr; }
@@ -795,6 +881,76 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               </div>
             </div>
 
+            {/* ── RESERVATION CARD ── */}
+            <div className="ld-card">
+              <div className="ld-card-header">
+                <span className="ld-card-title">Send Reservation</span>
+                {(activeReservation || reserveSent) && (
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#8C1D40', background: 'rgba(140,29,64,0.08)', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(140,29,64,0.25)' }}>🔒 Sent</span>
+                )}
+              </div>
+              <div className="ld-card-body">
+                {activeReservation ? (
+                  <>
+                    <div style={{ background: 'rgba(140,29,64,0.05)', border: '1.5px solid rgba(140,29,64,0.2)', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>Active Reservation</div>
+                      <div style={{ fontSize: '13px', color: '#3a3a3a', marginBottom: '4px' }}>Reservation sent — waiting for lead to accept.</div>
+                      {activeReservation.expires_at && (
+                        <div style={{ fontSize: '12px', color: '#9b9b9b' }}>
+                          Expires {new Date(activeReservation.expires_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </div>
+                    {/* Copy accept link */}
+                    <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>Accept Link</div>
+                      <div style={{ fontSize: '11px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '6px', padding: '7px 10px', marginBottom: '8px' }}>
+                        {(process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live')}/reserve/{activeReservation.accept_token}
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/reserve/${activeReservation.accept_token}`)
+                          setReserveLinkCopied(true)
+                          setTimeout(() => setReserveLinkCopied(false), 2000)
+                        }}
+                        style={{ width: '100%', padding: '7px', background: reserveLinkCopied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${reserveLinkCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '6px', fontSize: '12px', fontWeight: 600, color: reserveLinkCopied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        {reserveLinkCopied ? '✓ Copied!' : '⎘ Copy Accept Link'}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setReserveModal(true)}
+                      style={{ width: '100%', padding: '9px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                    >
+                      🔄 Send New Reservation
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: '14px', fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6 }}>
+                      Hold a spot for this lead with a time-limited reservation. Creates urgency and accelerates conversion.
+                    </div>
+                    <button
+                      onClick={() => setReserveModal(true)}
+                      style={{
+                        width: '100%', padding: '13px',
+                        background: 'linear-gradient(135deg, #8C1D40, #a02050)',
+                        color: '#fff', border: 'none', borderRadius: '10px',
+                        fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                        boxShadow: '0 4px 18px rgba(140,29,64,0.3)',
+                      }}
+                    >
+                      🔒 Reserve a Spot for This Lead
+                    </button>
+                    <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', marginTop: '7px', lineHeight: 1.5 }}>
+                      Sends a personalized email with a 24-hour hold
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Quick Actions */}
             <div className="ld-card">
               <div className="ld-card-header"><span className="ld-card-title">Quick Actions</span></div>
@@ -1118,6 +1274,154 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setEditModal(false)}>Cancel</button>
               <button className="btn-gold" style={{ flex: 2 }} disabled={editSaving} onClick={handleEditSave}>
                 {editSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RESERVATION MODAL ── */}
+      {reserveModal && (
+        <div className="edit-overlay" onClick={() => setReserveModal(false)}>
+          <div className="edit-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <div className="edit-sheet-handle" />
+            <div className="edit-sheet-header">
+              <div>
+                <div className="edit-sheet-title">🔒 Send Reservation</div>
+                <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>
+                  Hold a spot for {lead?.first_name || 'this lead'} — creates urgency, accelerates close.
+                </div>
+              </div>
+              <button onClick={() => setReserveModal(false)} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+
+            <div className="edit-sheet-body">
+
+              {/* Room selector (only if by_room) */}
+              {reserveRooms.length > 0 && (
+                <div className="edit-field">
+                  <label className="edit-field-label">Reserve Which Spot?</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button
+                      className={`reserve-mode-opt${reserveForm.room_id === '' ? ' selected' : ''}`}
+                      onClick={() => setReserveForm(f => ({ ...f, room_id: '' }))}
+                    >
+                      <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: reserveForm.room_id === '' ? 'rgba(140,29,64,0.1)' : '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🏠</div>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>Entire Property</div>
+                        <div style={{ fontSize: '12px', color: '#9b9b9b' }}>${property?.price?.toLocaleString()}/mo</div>
+                      </div>
+                    </button>
+                    {reserveRooms.map(room => (
+                      <button
+                        key={room.id}
+                        className={`reserve-mode-opt${reserveForm.room_id === room.id ? ' selected' : ''}`}
+                        onClick={() => setReserveForm(f => ({ ...f, room_id: room.id }))}
+                      >
+                        <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: reserveForm.room_id === room.id ? 'rgba(140,29,64,0.1)' : '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🛏</div>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
+                          <div style={{ fontSize: '12px', color: '#9b9b9b' }}>${room.price.toLocaleString()}/mo</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Discount */}
+              <div className="edit-field">
+                <label className="edit-field-label">Offer a Discount? (optional)</label>
+                <div className="reserve-discount-toggle" style={{ marginBottom: '8px' }}>
+                  <button
+                    className={`reserve-discount-opt${reserveForm.discount_type === '' ? ' selected' : ''}`}
+                    onClick={() => setReserveForm(f => ({ ...f, discount_type: '', discount_amount: '' }))}
+                  >
+                    No discount
+                  </button>
+                  <button
+                    className={`reserve-discount-opt${reserveForm.discount_type === 'dollars' ? ' selected' : ''}`}
+                    onClick={() => setReserveForm(f => ({ ...f, discount_type: 'dollars' }))}
+                  >
+                    $ Off
+                  </button>
+                  <button
+                    className={`reserve-discount-opt${reserveForm.discount_type === 'percent' ? ' selected' : ''}`}
+                    onClick={() => setReserveForm(f => ({ ...f, discount_type: 'percent' }))}
+                  >
+                    % Off
+                  </button>
+                </div>
+                {reserveForm.discount_type && (
+                  <input
+                    className="edit-input"
+                    type="number"
+                    min="1"
+                    max={reserveForm.discount_type === 'percent' ? '100' : undefined}
+                    placeholder={reserveForm.discount_type === 'dollars' ? 'e.g. 100' : 'e.g. 10'}
+                    value={reserveForm.discount_amount}
+                    onChange={e => setReserveForm(f => ({ ...f, discount_amount: e.target.value }))}
+                  />
+                )}
+                {reserveForm.discount_type && reserveForm.discount_amount && (() => {
+                  const basePrice = reserveRooms.find(r => r.id === reserveForm.room_id)?.price ?? property?.price ?? 0
+                  const disc = parseInt(reserveForm.discount_amount, 10)
+                  const final = reserveForm.discount_type === 'dollars'
+                    ? Math.max(0, basePrice - disc)
+                    : Math.round(basePrice * (1 - disc / 100))
+                  return (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#8C1D40', fontWeight: 600 }}>
+                      Offer: ${basePrice.toLocaleString()} → <strong>${final.toLocaleString()}/mo</strong>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Expiration */}
+              <div className="edit-field">
+                <label className="edit-field-label">Reservation Window</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  {(['24h', '48h', '72h', 'custom'] as const).map(opt => (
+                    <button
+                      key={opt}
+                      className={`reserve-discount-opt${reserveForm.expires_mode === opt ? ' selected' : ''}`}
+                      onClick={() => setReserveForm(f => ({ ...f, expires_mode: opt }))}
+                    >
+                      {opt === '24h' ? '24 hours' : opt === '48h' ? '48 hours' : opt === '72h' ? '72 hours' : '📅 Custom'}
+                    </button>
+                  ))}
+                </div>
+                {reserveForm.expires_mode === 'custom' && (
+                  <input
+                    className="edit-input"
+                    type="datetime-local"
+                    value={reserveForm.custom_expires}
+                    min={new Date().toISOString().slice(0, 16)}
+                    onChange={e => setReserveForm(f => ({ ...f, custom_expires: e.target.value }))}
+                  />
+                )}
+              </div>
+
+              {/* Preview */}
+              <div style={{ background: 'rgba(140,29,64,0.04)', border: '1.5px solid rgba(140,29,64,0.15)', borderRadius: '10px', padding: '14px 16px', fontSize: '12px', color: '#4a4a4a', lineHeight: 1.65 }}>
+                📧 A personalized reservation email will be sent to <strong>{lead?.email}</strong> with an exclusive accept link. No changes are made to the listing.
+              </div>
+            </div>
+
+            <div className="edit-sheet-footer">
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setReserveModal(false)}>Cancel</button>
+              <button
+                disabled={reserveSending || (reserveForm.expires_mode === 'custom' && !reserveForm.custom_expires)}
+                onClick={handleSendReservation}
+                style={{
+                  flex: 2, background: reserveSending ? '#9b9b9b' : 'linear-gradient(135deg, #8C1D40, #a02050)',
+                  color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px',
+                  fontSize: '14px', fontWeight: 700, cursor: reserveSending ? 'not-allowed' : 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  boxShadow: reserveSending ? 'none' : '0 4px 16px rgba(140,29,64,0.3)',
+                }}
+              >
+                {reserveSending ? 'Sending…' : '🔒 Send Reservation'}
               </button>
             </div>
           </div>
