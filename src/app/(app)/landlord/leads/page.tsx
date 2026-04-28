@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { getLeadsForOwner } from '@/lib/leads'
+import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
+import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 
 const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
 
@@ -53,8 +54,6 @@ function initials(first: string | null, last: string | null): string {
 
 type Property = { slug: string; name: string; address: string }
 
-// ─── Free lead determination ───────────────────────────────────────────────────
-// The single oldest lead per property slug is always free.
 function computeFreeLeadIds(leads: Lead[]): Set<string> {
   const oldestBySlug: Record<string, Lead> = {}
   for (const lead of leads) {
@@ -88,21 +87,19 @@ export default function LandlordLeadsPage() {
   // Reminder sending
   const [remindingId, setRemindingId] = useState<string | null>(null)
 
-  // ── Unlock state ──────────────────────────────────────────────────────────
-  // unlockedIds: lead IDs the landlord has already paid/unlocked (from lead_unlocks table)
+  // Inline status change
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
+  const [closeModal, setCloseModal] = useState<{ leadId: string } | null>(null)
+
+  // Unlock state
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set())
-  // freeLeadIds: oldest lead per property — always visible without payment
   const [freeLeadIds, setFreeLeadIds] = useState<Set<string>>(new Set())
-  // Which lead the unlock modal is open for
   const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
-  // Track which leads are currently being auto-unlocked (free)
   const [autoUnlockingId, setAutoUnlockingId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
   const isLeadVisible = (lead: Lead) =>
     freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
-
-  // ─────────────────────────────────────────────────────────────────────────
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -117,35 +114,41 @@ export default function LandlordLeadsPage() {
     if (!userId) return
     setLoading(true)
 
-    // Fetch leads, existing unlocks, and active plan in parallel
-    const [leadsData, { data: unlocks }, { data: plan }] = await Promise.all([
-      getLeadsForOwner(userId),
+    // Round 1: fetch properties, unlocks, and plan in parallel — no duplicate fetches
+    const [
+      { data: propertiesData },
+      { data: unlocks },
+      { data: plan },
+    ] = await Promise.all([
+      supabase.from('properties').select('slug, name, address').eq('owner_id', userId),
       supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
       supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', userId).eq('status', 'active').maybeSingle(),
     ])
 
+    const props = (propertiesData || []) as Property[]
+    setProperties(props)
+    const slugs = props.map(p => p.slug).filter(Boolean) as string[]
+
+    if (slugs.length === 0) {
+      setLeads([])
+      setLoading(false)
+      return
+    }
+
+    // Round 2: fetch leads using slugs already retrieved
+    const leadsData = await getLeadsForSlugs(slugs)
     leadsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
     setLeads(leadsData)
     setFreeLeadIds(computeFreeLeadIds(leadsData))
 
     const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
     if (hasPlan) {
-      // Active plan unlocks all leads
       setUnlockedIds(new Set(leadsData.map(l => l.id)))
     } else {
       setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
     }
 
-    const props = Array.from(new Set(leadsData.map(l => l.property).filter(Boolean))) as string[]
-    setProperties(props.map(slug => ({ slug, name: slug, address: '' })))
     setLoading(false)
-  }, [userId])
-
-  useEffect(() => {
-    if (!userId) return
-    supabase.from('properties').select('slug, name, address').eq('owner_id', userId).then(({ data }) => {
-      if (data) setProperties(data)
-    })
   }, [userId])
 
   useEffect(() => { loadLeads() }, [loadLeads])
@@ -153,7 +156,7 @@ export default function LandlordLeadsPage() {
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [search, statusFilter, propertyFilter])
 
-  // Auto-record free unlocks in DB silently (no payment needed, just DB tracking)
+  // Auto-record free unlocks silently
   useEffect(() => {
     if (!userId || freeLeadIds.size === 0) return
     const toAutoUnlock = [...freeLeadIds].filter(id => !unlockedIds.has(id))
@@ -162,11 +165,47 @@ export default function LandlordLeadsPage() {
     }
   }, [userId, freeLeadIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Unlock a lead ─────────────────────────────────────────────────────────
+  // ── Inline status change ─────────────────────────────────────────────────
+  const handleStatusChange = async (lead: Lead, newStatus: Lead['status']) => {
+    if (newStatus === lead.status) return
+    if (newStatus === 'closed') {
+      setCloseModal({ leadId: lead.id })
+      return
+    }
+    setUpdatingStatusId(lead.id)
+    // Optimistic update
+    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: newStatus } : l))
+    const { error } = await updateLeadStatus(lead.id, newStatus)
+    if (error) {
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: lead.status } : l))
+      showToast('Failed to update status')
+    } else {
+      showToast(`Status → ${STATUS_META[newStatus].label}`)
+      ph?.capture('lead_status_changed', { lead_id: lead.id, from: lead.status, to: newStatus })
+    }
+    setUpdatingStatusId(null)
+  }
+
+  const handleCloseWithReason = async (reason: 'leased' | 'lost') => {
+    if (!closeModal) return
+    const leadId = closeModal.leadId
+    setCloseModal(null)
+    setUpdatingStatusId(leadId)
+    const lead = leads.find(l => l.id === leadId)
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: 'closed', closed_reason: reason } : l))
+    const { error } = await updateLeadStatus(leadId, 'closed', reason)
+    if (error) {
+      if (lead) setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: lead.status, closed_reason: lead.closed_reason } : l))
+      showToast('Failed to update status')
+    } else {
+      showToast(`Closed · ${reason === 'leased' ? 'Leased ✓' : 'Lost'}`)
+    }
+    setUpdatingStatusId(null)
+  }
+
+  // ── Unlock ────────────────────────────────────────────────────────────────
   const handleUnlockClick = async (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
-
-    // Free lead: auto-unlock via server, no payment needed
     if (freeLeadIds.has(lead.id)) {
       setAutoUnlockingId(lead.id)
       try {
@@ -176,15 +215,10 @@ export default function LandlordLeadsPage() {
           setUnlockedIds(prev => new Set([...prev, lead.id]))
           showToast('Lead unlocked!')
         }
-      } catch {
-        showToast('Failed to unlock lead')
-      } finally {
-        setAutoUnlockingId(null)
-      }
+      } catch { showToast('Failed to unlock lead') }
+      setAutoUnlockingId(null)
       return
     }
-
-    // Paid lead: open modal
     setUnlockModalLeadId(lead.id)
   }
 
@@ -199,13 +233,8 @@ export default function LandlordLeadsPage() {
     setUnlockModalLeadId(null)
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // Sort: visible (unlocked + free) first, then locked — each group by most recent
+  // ── Derived state ─────────────────────────────────────────────────────────
   const sortedLeads = [...leads].sort((a, b) => {
-    const aVis = isLeadVisible(a), bVis = isLeadVisible(b)
-    const aFree = freeLeadIds.has(a.id), bFree = freeLeadIds.has(b.id)
-    // Priority: unlocked > free-eligible > locked
     const rank = (l: Lead) => isLeadVisible(l) ? 0 : freeLeadIds.has(l.id) ? 1 : 2
     if (rank(a) !== rank(b)) return rank(a) - rank(b)
     return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
@@ -216,7 +245,6 @@ export default function LandlordLeadsPage() {
     if (propertyFilter !== 'all' && l.property !== propertyFilter) return false
     if (search) {
       const q = search.toLowerCase()
-      // For locked leads we only search by property/move-in (not exposing contact data in search)
       if (isLeadVisible(l)) {
         if (!((l.first_name || '').toLowerCase().includes(q) ||
               (l.last_name || '').toLowerCase().includes(q) ||
@@ -282,7 +310,7 @@ export default function LandlordLeadsPage() {
     setAddingLead(false)
   }
 
-  // ── No listings guard ──────────────────────────────────────────────────────
+  // ── Guards ────────────────────────────────────────────────────────────────
   if (!loading && properties.length === 0) {
     return (
       <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
@@ -298,7 +326,6 @@ export default function LandlordLeadsPage() {
     )
   }
 
-  // ── Loading skeleton ───────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ padding: '32px', fontFamily: "'DM Sans', sans-serif" }}>
@@ -341,7 +368,6 @@ export default function LandlordLeadsPage() {
         .ll-view-btn.active { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
         .ll-view-btn:not(.active) { background: transparent; color: #9b9b9b; }
 
-        /* Table */
         .ll-table-wrap { background: #fff; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; margin: 12px 24px 0; }
         .ll-table { width: 100%; border-collapse: collapse; }
         .ll-table thead th { background: #faf9f6; padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; border-bottom: 1px solid #e8e5de; white-space: nowrap; }
@@ -354,20 +380,19 @@ export default function LandlordLeadsPage() {
         .ll-table td { padding: 9px 12px; vertical-align: middle; }
         .ll-table td:first-child { padding-left: 14px; }
         .ll-table td:last-child { padding-right: 14px; }
-        /* Pagination */
+
         .ll-pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px 0; }
         .ll-page-btn { padding: 5px 12px; border: 1.5px solid #e8e5de; border-radius: 6px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #4a4a4a; transition: all 0.15s; }
         .ll-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .ll-page-btn:not(:disabled):hover { border-color: #8C1D40; color: #8C1D40; }
-        /* Keep avatar for pipeline view */
+
         .ll-avatar { width: 32px; height: 32px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; }
-        .ll-name { font-size: 12px; font-weight: 600; color: #1a1a1a; }
-        .ll-email { font-size: 11px; color: #9b9b9b; margin-top: 1px; }
-        .ll-prop { font-size: 11px; color: #6b6b6b; }
-        .ll-movein { font-size: 10px; color: #b0a898; }
         .ll-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap; }
-        .ll-time { font-size: 11px; color: #b0a898; white-space: nowrap; }
         .ll-action-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
+
+        /* Inline status select styled as a badge */
+        .ll-status-select { padding: 3px 22px 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; cursor: pointer; font-family: 'DM Sans', sans-serif; outline: none; transition: opacity 0.15s; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; }
+        .ll-status-select:disabled { opacity: 0.55; cursor: not-allowed; }
 
         .ll-pipeline { padding: 16px 28px; display: flex; gap: 12px; overflow-x: auto; }
         .ll-pcol { flex-shrink: 0; width: 210px; background: #fff; border-radius: 12px; border-top: 3px solid; overflow: hidden; }
@@ -402,15 +427,12 @@ export default function LandlordLeadsPage() {
         .ll-empty { padding: 60px 28px; display: flex; justify-content: center; }
         .ll-empty-card { background: #fff; border: 1px dashed #e8e5de; border-radius: 16px; padding: 48px 40px; max-width: 440px; width: 100%; text-align: center; }
 
-        /* Locked placeholders */
         .blur-line { background: #e0ddd7; border-radius: 3px; }
 
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         @media (max-width: 640px) {
           .ll-header { padding: 16px; }
           .ll-filters { padding: 10px 16px; }
-          .ll-list { padding: 12px 16px; }
-          .ll-row { flex-wrap: wrap; }
           .field-row { grid-template-columns: 1fr; }
         }
       `}</style>
@@ -503,7 +525,7 @@ export default function LandlordLeadsPage() {
           </div>
         )}
 
-        {/* ── LIST VIEW — table ── */}
+        {/* ── LIST VIEW ── */}
         {viewMode === 'list' && filteredLeads.length > 0 && (
           <>
             <div className="ll-table-wrap">
@@ -528,6 +550,7 @@ export default function LandlordLeadsPage() {
                       const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
                       const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
                       const prop = properties.find(p => p.slug === lead.property)
+                      const phone = formatPhoneDisplay(lead.phone)
                       return (
                         <tr
                           key={lead.id}
@@ -545,16 +568,36 @@ export default function LandlordLeadsPage() {
                               {heat.icon && <span style={{ marginLeft: '4px', fontSize: '12px' }} title={heat.label}>{heat.icon}</span>}
                             </div>
                             <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{lead.email}</div>
+                            {phone && (
+                              <div style={{ fontSize: '11px', color: '#6b9af0', marginTop: '1px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <span style={{ fontSize: '10px' }}>📞</span>
+                                <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} style={{ color: '#6b9af0', textDecoration: 'none' }}>
+                                  🇺🇸 +1 {phone}
+                                </a>
+                              </div>
+                            )}
                           </td>
                           <td>
                             <div style={{ fontSize: '12px', color: '#1a1a1a', fontWeight: 600 }}>{prop?.name || '—'}</div>
                             {prop?.address && <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{prop.address}</div>}
                             {lead.move_in_date && <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '1px' }}>Move-in: {lead.move_in_date}</div>}
                           </td>
-                          <td>
-                            <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
-                              {meta.label}{lead.status === 'closed' && lead.closed_reason ? ` · ${lead.closed_reason}` : ''}
-                            </span>
+                          <td onClick={e => e.stopPropagation()}>
+                            <select
+                              className="ll-status-select"
+                              value={lead.status}
+                              disabled={updatingStatusId === lead.id}
+                              onChange={e => handleStatusChange(lead, e.target.value as Lead['status'])}
+                              style={{
+                                color: meta.color,
+                                background: meta.bg,
+                                borderColor: meta.border,
+                              }}
+                            >
+                              {STATUS_ORDER.map(s => (
+                                <option key={s} value={s}>{STATUS_META[s].label}</option>
+                              ))}
+                            </select>
                             <div style={{ marginTop: '3px', fontSize: '10px', color: hasPrescreen ? '#10b981' : '#c5c1b8', fontWeight: hasPrescreen ? 600 : 400 }}>
                               {hasPrescreen ? '✓ Pre-screened' : 'Needs pre-screen'}
                             </div>
@@ -589,10 +632,9 @@ export default function LandlordLeadsPage() {
                   </tbody>
                 )}
 
-                {/* ── Locked section — banner + preview rows ── */}
+                {/* ── Locked section ── */}
                 {lockedFiltered.length > 0 && (
                   <tbody>
-                    {/* Banner */}
                     <tr>
                       <td colSpan={6} style={{ padding: 0 }}>
                         <div style={{
@@ -629,7 +671,6 @@ export default function LandlordLeadsPage() {
                       </td>
                     </tr>
 
-                    {/* 3 blurred preview rows */}
                     {lockedFiltered.slice(0, 3).map(lead => {
                       const meta = STATUS_META[lead.status]
                       const prop = properties.find(p => p.slug === lead.property)
@@ -662,7 +703,6 @@ export default function LandlordLeadsPage() {
                       )
                     })}
 
-                    {/* Pages indicator */}
                     {lockedFiltered.length > 3 && (
                       <tr>
                         <td colSpan={6} style={{ padding: '10px 18px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
@@ -684,7 +724,6 @@ export default function LandlordLeadsPage() {
               </table>
             </div>
 
-            {/* Pagination — below the table */}
             {totalPages > 1 && (
               <div className="ll-pagination">
                 <span style={{ fontSize: '12px', color: '#9b9b9b' }}>
@@ -753,6 +792,7 @@ export default function LandlordLeadsPage() {
                               {heat.icon && <span style={{ marginLeft: '4px' }}>{heat.icon}</span>}
                             </div>
                             <div style={{ fontSize: '11px', color: '#9b9b9b' }}>{lead.email}</div>
+                            {lead.phone && <div style={{ fontSize: '10px', color: '#6b9af0' }}>🇺🇸 {formatPhoneDisplay(lead.phone)}</div>}
                           </div>
                         </div>
                         {prop && (
@@ -772,6 +812,35 @@ export default function LandlordLeadsPage() {
         )}
 
       </div>
+
+      {/* ── CLOSE REASON MODAL ── */}
+      {closeModal && (
+        <div className="modal-overlay" onClick={() => setCloseModal(null)}>
+          <div className="modal-card" style={{ maxWidth: '360px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">Close this lead</div>
+            <div className="modal-sub">How did this lead end?</div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                className="btn-primary"
+                style={{ flex: 1, background: '#10b981' }}
+                onClick={() => handleCloseWithReason('leased')}
+              >
+                ✓ Leased
+              </button>
+              <button
+                className="btn-ghost"
+                style={{ flex: 1 }}
+                onClick={() => handleCloseWithReason('lost')}
+              >
+                ✗ Lost
+              </button>
+            </div>
+            <button style={{ marginTop: '12px', width: '100%', background: 'none', border: 'none', color: '#9b9b9b', fontSize: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setCloseModal(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── ADD LEAD MODAL ── */}
       {showAddModal && (
@@ -804,7 +873,10 @@ export default function LandlordLeadsPage() {
             <div className="field-row" style={{ marginTop: '14px' }}>
               <div className="field-col" style={{ marginBottom: 0 }}>
                 <label className="field-label">Phone</label>
-                <input className="field-input" type="tel" placeholder="(480) 000-0000" value={addForm.phone} onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))} />
+                <PhoneInput
+                  value={addForm.phone}
+                  onChange={e164 => setAddForm(f => ({ ...f, phone: e164 }))}
+                />
               </div>
               <div className="field-col" style={{ marginBottom: 0 }}>
                 <label className="field-label">Property *</label>

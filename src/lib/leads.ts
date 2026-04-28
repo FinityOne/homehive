@@ -81,6 +81,23 @@ export async function getLeadsForOwner(userId: string): Promise<Lead[]> {
   return data as Lead[]
 }
 
+export async function getLeadsForSlugs(slugs: string[]): Promise<Lead[]> {
+  if (slugs.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .in('property', slugs)
+    .order('created_at', { ascending: false })
+
+  if (error || !data) {
+    console.error('Error fetching leads for slugs:', error)
+    return []
+  }
+
+  return data as Lead[]
+}
+
 export async function getLeadById(leadId: string): Promise<Lead | null> {
   const { data, error } = await supabase
     .from('leads')

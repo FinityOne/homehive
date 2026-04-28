@@ -5,6 +5,7 @@ import { usePostHog } from 'posthog-js/react'
 import { createBrowserClient } from '@supabase/ssr'
 import { getPropertyBySlug, Property } from '@/lib/properties'
 import { notFound } from 'next/navigation'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -426,15 +427,11 @@ export default function PropertyPageClient({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {/* Phone — only show if not on profile */}
             {!loggedInUser.phone && (
-              <input
-                name="phone"
-                type="tel"
-                placeholder="Phone number (optional)"
+              <PhoneInput
                 value={formData.phone}
-                onChange={handleChange}
-                style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-                onFocus={e => e.target.style.borderColor = '#8C1D40'}
-                onBlur={e => e.target.style.borderColor = '#e8e5de'}
+                onChange={e164 => setFormData(prev => ({ ...prev, phone: e164 }))}
+                placeholder="(555) 000-0000 (optional)"
+                borderRadius="9px"
               />
             )}
             {/* Move-in date — required */}
@@ -478,15 +475,12 @@ export default function PropertyPageClient({
             onFocus={e => e.target.style.borderColor = '#8C1D40'}
             onBlur={e => e.target.style.borderColor = formData.email ? '#1a1a1a' : '#e8e5de'}
           />
-          <input
-            name="phone"
-            type="tel"
-            placeholder="Phone number *"
+          <PhoneInput
             value={formData.phone}
-            onChange={handleChange}
-            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.phone ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-            onFocus={e => e.target.style.borderColor = '#8C1D40'}
-            onBlur={e => e.target.style.borderColor = formData.phone ? '#1a1a1a' : '#e8e5de'}
+            onChange={e164 => setFormData(prev => ({ ...prev, phone: e164 }))}
+            placeholder="Phone number *"
+            required
+            borderRadius="9px"
           />
           <div>
             <input

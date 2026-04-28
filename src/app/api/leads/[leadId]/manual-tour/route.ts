@@ -57,7 +57,9 @@ function toUtcStamp(date: string, timeSlot: string): string {
 }
 
 function formatReadableDate(date: string, timeSlot: string): string {
-  const d = new Date(`${date}T${timeSlot}:00`)
+  // Suffix -07:00 so the Date is parsed as MST (Phoenix = UTC-7, no DST)
+  // Without it, Node on UTC servers misinterprets the time as UTC → wrong display
+  const d = new Date(`${date}T${timeSlot}:00-07:00`)
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Phoenix' })
     + ' at '
     + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Phoenix' })

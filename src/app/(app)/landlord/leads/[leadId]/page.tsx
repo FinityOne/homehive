@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
+import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -606,7 +607,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               {heat.icon && <span title={heat.label} style={{ fontSize: '16px' }}>{heat.icon}</span>}
             </div>
             <div className="ld-lead-sub">
-              {lead.email}{lead.phone ? ` · ${lead.phone}` : ''} · Submitted {lead.created_at ? timeAgo(lead.created_at) : '—'}
+              {lead.email}{lead.phone ? ` · 🇺🇸 +1 ${formatPhoneDisplay(lead.phone)}` : ''} · Submitted {lead.created_at ? timeAgo(lead.created_at) : '—'}
             </div>
           </div>
           <div style={{ flexShrink: 0, textAlign: 'right' }}>
@@ -645,7 +646,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               <div className="ld-card-body">
                 <div className="info-row"><span className="info-label">Full Name</span><span className="info-value">{lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}</span></div>
                 <div className="info-row"><span className="info-label">Email</span><span className="info-value"><a href={`mailto:${lead.email}`} style={{ color: '#8C1D40', textDecoration: 'none' }}>{lead.email}</a></span></div>
-                <div className="info-row"><span className="info-label">Phone</span><span className="info-value">{lead.phone || '—'}</span></div>
+                <div className="info-row"><span className="info-label">Phone</span><span className="info-value">{lead.phone ? `🇺🇸 +1 ${formatPhoneDisplay(lead.phone)}` : '—'}</span></div>
                 <div className="info-row"><span className="info-label">Property</span><span className="info-value">{property?.name || lead.property || '—'}</span></div>
                 <div className="info-row"><span className="info-label">Move-in</span><span className="info-value">{lead.move_in_date ? new Date(lead.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'}</span></div>
                 <div className="info-row"><span className="info-label">Submitted</span><span className="info-value">{lead.created_at ? new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</span></div>
@@ -1006,7 +1007,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                     className="btn-ghost"
                     style={{ display: 'block', textAlign: 'center', textDecoration: 'none', color: '#3a3a3a', padding: '9px 14px', fontSize: '13px' }}
                   >
-                    📞 Call {lead.phone}
+                    📞 Call 🇺🇸 +1 {formatPhoneDisplay(lead.phone)}
                   </a>
                 )}
                 {!['tour_scheduled', 'closed'].includes(lead.status) && (
@@ -1247,7 +1248,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
               <div className="edit-field">
                 <label className="edit-field-label">Phone</label>
-                <input className="edit-input" type="tel" value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+1 (555) 000-0000" />
+                <PhoneInput
+                  value={editForm.phone}
+                  onChange={e164 => setEditForm(f => ({ ...f, phone: e164 }))}
+                />
               </div>
 
               <div className="edit-field">

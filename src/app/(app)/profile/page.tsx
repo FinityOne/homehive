@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -150,7 +151,10 @@ function ProfileTab({ profile, avatarUrl, setAvatarUrl, showToast }: {
           </div>
           <div className="field-wrap">
             <label className="field-label">Phone Number</label>
-            <input className="field-input" type="tel" placeholder="(480) 000-0000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+            <PhoneInput
+              value={form.phone || ''}
+              onChange={e164 => setForm(f => ({ ...f, phone: e164 }))}
+            />
           </div>
           {(profile.role === 'landlord' || profile.role === 'admin') && (
             <div className="field-wrap">
