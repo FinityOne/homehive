@@ -1031,21 +1031,34 @@ function TenantDetailView({
   const totalCollected    = paid.reduce((s, sp) => s + sp.paid_amount, 0)
   const totalExpectedPast = pastDue.reduce((s, sp) => s + sp.amount, 0)
   const totalUpcoming     = upcoming.reduce((s, sp) => s + sp.amount, 0)
-  const rentOwedNow       = overdue.reduce((s, sp) => s + sp.amount, 0) + missed.reduce((s, sp) => s + sp.amount, 0)
-  // Late fees that were incurred on payments the tenant has since paid
-  const lateFeesCollected = rule
-    ? paid
-        .filter(sp => sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) > 0)
-        .reduce((s, sp) => s + computeLateFeesByDate(rule, sp.due_date, sp.paid_date!), 0)
-    : 0
-  // Per-payment late fee map so we can use it in both the metrics and table rows
-  const lateFeeMap = new Map<string, number>()
+  const rentOwedNow = overdue.reduce((s, sp) => s + sp.amount, 0) + missed.reduce((s, sp) => s + sp.amount, 0)
+
+  // Per-payment late fee map: tracks fee total, how much was collected, and how much wasn't
+  type LateFeeEntry = { fee: number; collected: number; uncollected: number }
+  const lateFeeMap = new Map<string, LateFeeEntry>()
   if (rule) {
-    for (const sp of overdue) lateFeeMap.set(sp.id, computeLateFees(rule, sp.due_date))
+    // Unpaid past-due: fee accrues as of today, none collected
+    for (const sp of [...overdue, ...missed]) {
+      const fee = computeLateFees(rule, sp.due_date)
+      if (fee > 0) lateFeeMap.set(sp.id, { fee, collected: 0, uncollected: fee })
+    }
+    // Paid late: fee frozen at paid_date; check if paid_amount covered rent + fee
+    for (const sp of paid) {
+      if (!sp.paid_date) continue
+      const dl = daysLateByDate(sp.due_date, sp.paid_date)
+      if (dl <= 0) continue
+      const fee = computeLateFeesByDate(rule, sp.due_date, sp.paid_date)
+      if (fee <= 0) continue
+      const surplus     = sp.paid_amount - sp.amount
+      const collected   = Math.min(fee, Math.max(0, surplus))
+      const uncollected = fee - collected
+      lateFeeMap.set(sp.id, { fee, collected, uncollected })
+    }
   }
-  const lateFeesPending = Array.from(lateFeeMap.values()).reduce((s, v) => s + v, 0)
-  // True balance the tenant owes right now = unpaid rent + ALL accrued late fees
-  const totalOwedNow = rentOwedNow + lateFeesPending
+  const lateFeesCollected = Array.from(lateFeeMap.values()).reduce((s, v) => s + v.collected, 0)
+  // Pending = fees on unpaid payments + fees not covered by paid-rent-only payments
+  const lateFeesPending   = Array.from(lateFeeMap.values()).reduce((s, v) => s + v.uncollected, 0)
+  const totalOwedNow      = rentOwedNow + lateFeesPending
   const totalDaysLate =
     paid.filter(sp => sp.paid_date).reduce((s, sp) => s + daysLateByDate(sp.due_date, sp.paid_date!), 0) +
     overdue.reduce((s, sp) => s + daysLate(sp.due_date), 0)
@@ -1178,8 +1191,9 @@ function TenantDetailView({
           const allPaid        = monthSPs.every(sp => sp.status === 'paid')
           const anyLate        = monthSPs.some(sp => isOverdue(sp) || (sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) > 0))
 
-          const monthOverdue   = monthSPs.filter(sp => isOverdue(sp))
-          const monthLateFees  = rule ? monthOverdue.reduce((s, sp) => s + computeLateFees(rule, sp.due_date), 0) : 0
+          const monthOverdue    = monthSPs.filter(sp => isOverdue(sp))
+          // Include uncollected fees from both overdue AND paid-but-late payments
+          const monthLateFees   = monthSPs.reduce((s, sp) => s + (lateFeeMap.get(sp.id)?.uncollected ?? 0), 0)
           const monthBalanceDue = monthOverdue.reduce((s, sp) => s + sp.amount, 0) + monthLateFees
 
           return (
@@ -1198,11 +1212,13 @@ function TenantDetailView({
               </div>
 
               {monthSPs.map(sp => {
-                const effSt      = getEffectiveStatus(sp)
-                const dlDisp     = sp.paid_date ? daysLateByDate(sp.due_date, sp.paid_date) : daysLate(sp.due_date)
-                const lfDisp     = rule ? (sp.paid_date ? computeLateFeesByDate(rule, sp.due_date, sp.paid_date) : (dlDisp > 0 ? computeLateFees(rule, sp.due_date) : 0)) : 0
-                const shortfall  = sp.amount + lfDisp - sp.paid_amount
-                const stCfg      = STATUS_CFG[effSt] ?? STATUS_CFG.pending
+                const effSt         = getEffectiveStatus(sp)
+                const dlDisp        = sp.paid_date ? daysLateByDate(sp.due_date, sp.paid_date) : daysLate(sp.due_date)
+                const lateFeeEntry  = lateFeeMap.get(sp.id)
+                const lfDisp        = lateFeeEntry?.fee ?? 0
+                const lfUncollected = lateFeeEntry?.uncollected ?? 0
+                const shortfall     = sp.amount + lfDisp - sp.paid_amount
+                const stCfg         = STATUS_CFG[effSt] ?? STATUS_CFG.pending
 
                 return (
                   <div
@@ -1218,11 +1234,11 @@ function TenantDetailView({
                       {sp.paid_date && <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: 6 }}>paid {fmtDate(sp.paid_date)}</span>}
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      {isOverdue(sp) && lfDisp > 0 ? (
+                      {lfDisp > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
                           <span style={{ fontSize: '11px', color: '#64748b' }}>{fmtCurrency(sp.amount)} rent</span>
                           <span style={{ fontSize: '11px', color: '#c2410c' }}>+{fmtCurrency(lfDisp)} fee</span>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#dc2626' }}>{fmtCurrency(sp.amount + lfDisp)}</span>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: lfUncollected > 0 ? '#dc2626' : '#16a34a' }}>{fmtCurrency(sp.amount + lfDisp)}</span>
                         </div>
                       ) : (
                         <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(sp.amount)}</span>
@@ -1241,9 +1257,13 @@ function TenantDetailView({
                         : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      {lfDisp > 0
-                        ? <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 6px', borderRadius: '5px' }}>🚩 {fmtCurrency(lfDisp)}</span>
-                        : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
+                      {lfDisp > 0 ? (
+                        lfUncollected > 0
+                          ? <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 6px', borderRadius: '5px' }}>🚩 {fmtCurrency(lfUncollected)}</span>
+                          : <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 6px', borderRadius: '5px' }}>✓ {fmtCurrency(lfDisp)}</span>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
+                      )}
                     </div>
                   </div>
                 )
