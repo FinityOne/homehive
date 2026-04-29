@@ -79,6 +79,7 @@ export default function LandlordLeadsPage() {
   const [propertyFilter, setPropertyFilter] = useState('all')
   const [toast, setToast] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'insights' | 'leads'>('overview')
+  const [emailPreview, setEmailPreview] = useState<{ lead: Lead; subject: string; html: string } | null>(null)
 
   // Add lead modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -410,6 +411,27 @@ export default function LandlordLeadsPage() {
   const urgentCount = suggestions.filter(s => s.priority === 'urgent').length
 
   // ── Guards ────────────────────────────────────────────────────────────────
+  // ── Email preview builder (mirrors send-reminder route, no images needed for preview) ──
+  function buildPreviewEmail(lead: Lead, propName: string): { subject: string; html: string } {
+    const prescreenDone = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const prescreenUrl = `${siteUrl}/pre-screen/${lead.id}`
+    const firstName = lead.first_name || 'there'
+
+    const header = `<div style="background:#1a1a1a;border-radius:14px 14px 0 0;padding:20px 28px;"><div style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-0.3px;">Home<span style="color:#FFC627;font-style:italic;">Hive</span></div><div style="font-size:12px;color:#9b9b9b;margin-top:4px;">Student Housing Near ASU</div></div>`
+    const footer = `<div style="margin-top:24px;text-align:center;font-size:12px;color:#9b9b9b;">HomeHive Team · <a href="mailto:hello@homehive.live" style="color:#8C1D40;text-decoration:none;">hello@homehive.live</a></div>`
+
+    if (prescreenDone) {
+      const subject = `${firstName}, you're already in — we'll be in touch soon! 🎉`
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0;padding:0;background:#f5f4f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><div style="max-width:540px;margin:0 auto;padding:32px 16px;">${header}<div style="background:#fff;border:1px solid #e8e5de;border-top:none;border-radius:0 0 14px 14px;padding:28px 28px 32px;"><div style="text-align:center;margin-bottom:20px;"><div style="width:64px;height:64px;border-radius:50%;background:#FFC627;display:inline-flex;align-items:center;justify-content:center;font-size:26px;">🎉</div></div><p style="margin:0 0 8px;font-size:20px;font-weight:700;color:#1a1a1a;text-align:center;">You're all set, ${firstName}!</p><p style="margin:0 0 20px;font-size:15px;color:#4a4a4a;line-height:1.7;text-align:center;">Thanks for completing your pre-screen for <strong>${propName}</strong>. Our team is reviewing your profile and we'll be in touch soon!</p><div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;"><div style="font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">What happens next</div>${['A HomeHive rep reviews your full profile', "We'll reach out within 24 hours", 'Schedule a tour and get the keys 🗝️'].map((s, i) => `<div style="display:flex;align-items:center;gap:10px;font-size:13px;color:#166534;margin-bottom:${i < 2 ? '8px' : '0'};"><div style="width:20px;height:20px;border-radius:50%;background:#10b981;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i + 1}</div>${s}</div>`).join('')}</div></div>${footer}</div></body></html>`
+      return { subject, html }
+    }
+
+    const subject = `${firstName}, your spot at ${propName} is still waiting`
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0;padding:0;background:#f5f4f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><div style="max-width:540px;margin:0 auto;padding:32px 16px;">${header}<div style="background:#fff;border:1px solid #e8e5de;border-top:none;border-radius:0 0 14px 14px;padding:28px 28px 32px;"><div style="display:inline-flex;align-items:center;gap:6px;background:#fef3c7;border:1px solid #fde68a;border-radius:20px;padding:4px 12px;margin-bottom:16px;"><span style="font-size:11px;color:#92400e;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">⏰ Gentle reminder</span></div><p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#1a1a1a;">Hey ${firstName}!</p><p style="margin:0 0 20px;font-size:15px;color:#4a4a4a;line-height:1.7;">Your spot at <strong>${propName}</strong> is still available, but rooms are filling up fast. You're just a 2-minute pre-screen away from locking it in. 🏠</p><div style="background:#fdf2f5;border-left:4px solid #8C1D40;border-radius:0 10px 10px 0;padding:16px 20px;margin-bottom:24px;"><div style="font-size:14px;font-weight:700;color:#8C1D40;margin-bottom:4px;">Don't lose your spot</div><p style="margin:0;font-size:14px;color:#3a3a3a;line-height:1.65;">Pre-screened applicants are reviewed first. It takes under 2 minutes and dramatically increases your chances.</p></div><div style="text-align:center;margin:24px 0;"><a href="${prescreenUrl}" style="display:inline-block;background:#FFC627;color:#1a1a1a;text-decoration:none;font-size:16px;font-weight:800;padding:16px 40px;border-radius:10px;">Complete My Pre-Screen →</a></div><p style="margin:0;font-size:12px;color:#b0a898;text-align:center;">This link is personal to you · Takes 2 minutes · No commitment</p></div>${footer}</div></body></html>`
+    return { subject, html }
+  }
+
   if (!loading && properties.length === 0) {
     return (
       <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
@@ -770,19 +792,28 @@ export default function LandlordLeadsPage() {
                             <span style={{ fontSize: 11, color: '#94a3b8' }}>{s.propName}</span>
                             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                               {s.cta === 'remind' && (
-                                <button
-                                  style={{ fontSize: 12, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                  disabled={remindingId === s.lead.id}
-                                  onClick={async (e) => { e.stopPropagation(); await sendReminder(s.lead, e) }}
-                                >
-                                  {remindingId === s.lead.id ? 'Sending…' : '📧 Send reminder'}
-                                </button>
+                                <>
+                                  <button
+                                    style={{ fontSize: 12, fontWeight: 600, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                                    onClick={() => { const { subject, html } = buildPreviewEmail(s.lead, s.propName); setEmailPreview({ lead: s.lead, subject, html }) }}
+                                    title="Preview email"
+                                  >
+                                    👁 Preview
+                                  </button>
+                                  <button
+                                    style={{ fontSize: 12, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                                    disabled={remindingId === s.lead.id}
+                                    onClick={async (e) => { e.stopPropagation(); await sendReminder(s.lead, e) }}
+                                  >
+                                    {remindingId === s.lead.id ? 'Sending…' : '📧 Send'}
+                                  </button>
+                                </>
                               )}
                               <button
                                 style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                                 onClick={() => router.push(`/landlord/leads/${s.lead.id}`)}
                               >
-                                View lead →
+                                View →
                               </button>
                             </div>
                           </div>
@@ -1221,6 +1252,61 @@ export default function LandlordLeadsPage() {
         )}
 
       </div>
+
+      {/* ── EMAIL PREVIEW MODAL ── */}
+      {emailPreview && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(2px)' }}
+          onClick={() => setEmailPreview(null)}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 3 }}>Email Preview</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                  To: <strong style={{ color: '#0f172a' }}>{emailPreview.lead.email}</strong>
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                  Subject: <strong style={{ color: '#0f172a' }}>{emailPreview.subject}</strong>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button
+                  style={{ fontSize: 13, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                  disabled={remindingId === emailPreview.lead.id}
+                  onClick={async (e) => {
+                    const lead = emailPreview.lead
+                    setEmailPreview(null)
+                    await sendReminder(lead, e)
+                  }}
+                >
+                  {remindingId === emailPreview.lead.id ? 'Sending…' : '📧 Send now'}
+                </button>
+                <button
+                  style={{ fontSize: 13, color: '#64748b', background: 'none', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                  onClick={() => setEmailPreview(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            {/* Rendered email */}
+            <div style={{ flex: 1, overflow: 'auto', background: '#f5f4f0' }}>
+              <iframe
+                srcDoc={emailPreview.html}
+                style={{ width: '100%', border: 'none', display: 'block' }}
+                height={560}
+                title="Email preview"
+                sandbox="allow-same-origin"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── CLOSE REASON MODAL ── */}
       {closeModal && (
