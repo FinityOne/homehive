@@ -1032,7 +1032,12 @@ function TenantDetailView({
   const totalExpectedPast = pastDue.reduce((s, sp) => s + sp.amount, 0)
   const totalUpcoming     = upcoming.reduce((s, sp) => s + sp.amount, 0)
   const rentOwedNow       = overdue.reduce((s, sp) => s + sp.amount, 0) + missed.reduce((s, sp) => s + sp.amount, 0)
-  const lateFeesCollected = paid.reduce((s, sp) => s + (sp.late_fees_applied || 0), 0)
+  // Late fees that were incurred on payments the tenant has since paid
+  const lateFeesCollected = rule
+    ? paid
+        .filter(sp => sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) > 0)
+        .reduce((s, sp) => s + computeLateFeesByDate(rule, sp.due_date, sp.paid_date!), 0)
+    : 0
   // Per-payment late fee map so we can use it in both the metrics and table rows
   const lateFeeMap = new Map<string, number>()
   if (rule) {
