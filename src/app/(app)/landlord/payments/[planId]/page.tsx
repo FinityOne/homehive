@@ -967,13 +967,276 @@ function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: 
   )
 }
 
+// ─── TENANT RATING HELPERS ────────────────────────────────────────────────────
+
+function computeTenantRating(sps: ScheduledPayment[]) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const evaluable = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') < today)
+  if (evaluable.length === 0) return { score: null, grade: 'No history', color: '#94a3b8', label: 'N/A' }
+
+  const paid    = evaluable.filter(sp => ['paid', 'partial'].includes(sp.status))
+  const missed  = evaluable.filter(sp => sp.status === 'missed')
+  const overdue = evaluable.filter(sp => ['pending', 'late'].includes(sp.status))
+
+  const onTime  = paid.filter(sp => sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) === 0)
+  const latePaid = paid.filter(sp => sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) > 0)
+
+  const totalDaysLate =
+    latePaid.reduce((s, sp) => s + (sp.paid_date ? daysLateByDate(sp.due_date, sp.paid_date) : 0), 0) +
+    overdue.reduce((s, sp) => s + daysLate(sp.due_date), 0) +
+    missed.reduce((s, sp) => s + daysLate(sp.due_date), 0)
+
+  const n = evaluable.length
+  // Component 1 — payment completion rate (40 pts)
+  const comp1 = (paid.length / n) * 40
+  // Component 2 — on-time rate of paid (35 pts)
+  const comp2 = paid.length > 0 ? (onTime.length / paid.length) * 35 : 0
+  // Component 3 — days late severity (25 pts), avg > 60 days = 0
+  const avgDays = totalDaysLate / n
+  const comp3   = Math.max(0, 25 - (avgDays / 60) * 25)
+
+  const score = Math.min(100, Math.max(0, Math.round(comp1 + comp2 + comp3)))
+
+  let grade: string, color: string, label: string
+  if (score >= 92) { grade = 'Excellent'; color = '#16a34a'; label = 'A+' }
+  else if (score >= 85) { grade = 'Great';      color = '#059669'; label = 'A'  }
+  else if (score >= 75) { grade = 'Good';       color = '#0284c7'; label = 'B'  }
+  else if (score >= 60) { grade = 'Fair';       color = '#d97706'; label = 'C'  }
+  else if (score >= 40) { grade = 'Poor';       color = '#dc2626'; label = 'D'  }
+  else                  { grade = 'Critical';   color = '#991b1b'; label = 'F'  }
+
+  return { score, grade, color, label, onTime: onTime.length, latePaid: latePaid.length, missed: missed.length, overdue: overdue.length, totalDaysLate, n }
+}
+
+// ─── TENANT DETAIL VIEW ───────────────────────────────────────────────────────
+
+function TenantDetailView({
+  tenant, sps, rule, onBack, onUpdatePayment,
+}: {
+  tenant: PaymentPlanTenant
+  sps: ScheduledPayment[]
+  rule: PaymentPlan['late_fee_rule']
+  onBack: () => void
+  onUpdatePayment: (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => void
+}) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+
+  // ── Computed metrics ──────────────────────────────────────────────────────
+  const pastDue   = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') < today)
+  const upcoming  = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') >= today && sp.status === 'pending')
+  const paid      = sps.filter(sp => ['paid', 'partial'].includes(sp.status))
+  const overdue   = sps.filter(sp => ['pending', 'late'].includes(sp.status) && new Date(sp.due_date + 'T00:00:00') < today)
+  const missed    = sps.filter(sp => sp.status === 'missed')
+
+  const totalCollected    = paid.reduce((s, sp) => s + sp.paid_amount, 0)
+  const totalExpectedPast = pastDue.reduce((s, sp) => s + sp.amount, 0)
+  const totalUpcoming     = upcoming.reduce((s, sp) => s + sp.amount, 0)
+  const totalOwedNow      = overdue.reduce((s, sp) => s + sp.amount, 0) + missed.reduce((s, sp) => s + sp.amount, 0)
+  const lateFeesCollected = paid.reduce((s, sp) => s + (sp.late_fees_applied || 0), 0)
+  const lateFeesPending   = rule
+    ? overdue.reduce((s, sp) => s + computeLateFees(rule, sp.due_date), 0)
+    : 0
+  const totalDaysLate =
+    paid.filter(sp => sp.paid_date).reduce((s, sp) => s + daysLateByDate(sp.due_date, sp.paid_date!), 0) +
+    overdue.reduce((s, sp) => s + daysLate(sp.due_date), 0)
+
+  const rating = computeTenantRating(sps)
+
+  // ── Rating arc SVG ────────────────────────────────────────────────────────
+  const R = 38, cx = 46, cy = 46
+  const circ = 2 * Math.PI * R
+  const arc  = rating.score !== null ? (rating.score / 100) * circ : 0
+
+  // ── Group payments by month for the table ─────────────────────────────────
+  const byMonth: Record<string, ScheduledPayment[]> = {}
+  for (const sp of [...sps].sort((a, b) => b.due_date.localeCompare(a.due_date))) {
+    const key = sp.due_date.slice(0, 7)
+    if (!byMonth[key]) byMonth[key] = []
+    byMonth[key].push(sp)
+  }
+
+  const statCard = (label: string, value: string, sub: string, accent: string, bg: string) => (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 18px', flex: '1 1 140px', minWidth: 0 }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: '22px', fontWeight: 800, color: accent, letterSpacing: '-0.5px', lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: 4 }}>{sub}</div>
+    </div>
+  )
+
+  const TABLE_COLS = '90px 90px 1fr 90px 90px 70px 90px'
+
+  return (
+    <div>
+      {/* Back + header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+        <button
+          onClick={onBack}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          ← Tenants
+        </button>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
+          {tenant.name[0].toUpperCase()}
+        </div>
+        <div>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' }}>{tenant.name}</div>
+          {tenant.email && <div style={{ fontSize: '12px', color: '#64748b' }}>{tenant.email}</div>}
+        </div>
+      </div>
+
+      {/* Snapshot + Rating */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 20, flexWrap: 'wrap', alignItems: 'stretch' }}>
+
+        {/* Metric cards */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1 }}>
+          {statCard('Collected', fmtCurrency(totalCollected), `of ${fmtCurrency(totalExpectedPast)} billed`, '#0f172a', '#f8fafc')}
+          {statCard('Currently Owed', fmtCurrency(totalOwedNow), `${overdue.length + missed.length} payment${(overdue.length + missed.length) !== 1 ? 's' : ''} past due`, totalOwedNow > 0 ? '#dc2626' : '#0f172a', '#fff')}
+          {statCard('Upcoming', fmtCurrency(totalUpcoming), `${upcoming.length} payment${upcoming.length !== 1 ? 's' : ''} scheduled`, '#0284c7', '#fff')}
+          {statCard('Late Fees Owed', fmtCurrency(lateFeesPending), `${fmtCurrency(lateFeesCollected)} collected`, lateFeesPending > 0 ? '#c2410c' : '#0f172a', '#fff')}
+          {statCard('Days Late Total', String(totalDaysLate), `across ${sps.length} payment${sps.length !== 1 ? 's' : ''}`, totalDaysLate > 0 ? '#d97706' : '#0f172a', '#fff')}
+        </div>
+
+        {/* Rating card */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', minWidth: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Payment Rating</div>
+
+          {/* Arc gauge */}
+          <div style={{ position: 'relative', width: 92, height: 92, marginBottom: 8 }}>
+            <svg width="92" height="92" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx={cx} cy={cy} r={R} fill="none" stroke="#f1f5f9" strokeWidth="8" />
+              {rating.score !== null && (
+                <circle cx={cx} cy={cy} r={R} fill="none" stroke={rating.color} strokeWidth="8"
+                  strokeDasharray={`${arc} ${circ}`} strokeLinecap="round"
+                  style={{ transition: 'stroke-dasharray 0.6s ease' }}
+                />
+              )}
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ fontSize: rating.score !== null ? '22px' : '14px', fontWeight: 800, color: rating.color, lineHeight: 1 }}>
+                {rating.score !== null ? rating.score : '—'}
+              </div>
+              {rating.score !== null && <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>/100</div>}
+            </div>
+          </div>
+
+          <div style={{ fontSize: '14px', fontWeight: 700, color: rating.color }}>{rating.grade}</div>
+
+          {/* Mini breakdown */}
+          {rating.score !== null && 'onTime' in rating && (
+            <div style={{ marginTop: 10, width: '100%', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {[
+                { label: 'On time',   value: rating.onTime,   color: '#16a34a' },
+                { label: 'Late',      value: rating.latePaid, color: '#d97706' },
+                { label: 'Overdue',   value: rating.overdue,  color: '#ef4444' },
+                { label: 'Missed',    value: rating.missed,   color: '#9d174d' },
+              ].map(row => (
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                  <span style={{ color: '#64748b' }}>{row.label}</span>
+                  <span style={{ fontWeight: 700, color: row.value > 0 ? row.color : '#cbd5e1' }}>{row.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Payment history table */}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '13px', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Payment History</div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>{sps.length} total · {paid.length} paid · {overdue.length + missed.length} outstanding</div>
+        </div>
+
+        {/* Table header */}
+        <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '8px 18px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+          {['Month', 'Due Date', 'Period', 'Expected', 'Collected', 'Days Late', 'Late Fee'].map((h, i) => (
+            <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: i >= 3 ? 'right' : 'left' }}>{h}</div>
+          ))}
+        </div>
+
+        {/* Rows grouped by month (newest first) */}
+        {Object.entries(byMonth).map(([monthKey, monthSPs]) => {
+          const monthPaid      = monthSPs.reduce((s, sp) => s + sp.paid_amount, 0)
+          const monthExpected  = monthSPs.reduce((s, sp) => s + sp.amount, 0)
+          const allPaid        = monthSPs.every(sp => sp.status === 'paid')
+          const anyLate        = monthSPs.some(sp => isOverdue(sp) || (sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) > 0))
+
+          return (
+            <div key={monthKey}>
+              {/* Month sub-header */}
+              <div style={{ padding: '7px 18px', background: '#fafafa', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{fmtMonth(monthKey + '-01')}</span>
+                {allPaid && !anyLate && <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>All on time ✓</span>}
+                {allPaid && anyLate  && <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>Paid late</span>}
+                <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#94a3b8' }}>{fmtCurrency(monthPaid)} / {fmtCurrency(monthExpected)}</span>
+              </div>
+
+              {monthSPs.map(sp => {
+                const effSt      = getEffectiveStatus(sp)
+                const dlDisp     = sp.paid_date ? daysLateByDate(sp.due_date, sp.paid_date) : daysLate(sp.due_date)
+                const lfDisp     = rule ? (sp.paid_date ? computeLateFeesByDate(rule, sp.due_date, sp.paid_date) : (dlDisp > 0 ? computeLateFees(rule, sp.due_date) : 0)) : 0
+                const shortfall  = sp.amount + lfDisp - sp.paid_amount
+                const stCfg      = STATUS_CFG[effSt] ?? STATUS_CFG.pending
+
+                return (
+                  <div
+                    key={sp.id}
+                    style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '10px 18px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isOverdue(sp) ? '#fefefe' : '#fff' }}
+                  >
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>{new Date(sp.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</div>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>{fmtDate(sp.due_date)}</div>
+                    <div>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: stCfg.bg, color: stCfg.color, fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: stCfg.dot, flexShrink: 0 }} />{stCfg.label}
+                      </span>
+                      {sp.paid_date && <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: 6 }}>paid {fmtDate(sp.paid_date)}</span>}
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(sp.amount)}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      {sp.paid_amount > 0 ? (
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>{fmtCurrency(sp.paid_amount)}</span>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      {dlDisp > 0
+                        ? <span style={{ fontSize: '11px', fontWeight: 700, color: sp.paid_date ? '#d97706' : '#ef4444', background: sp.paid_date ? '#fff7ed' : '#fef2f2', padding: '2px 6px', borderRadius: '5px' }}>{dlDisp}d</span>
+                        : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      {lfDisp > 0
+                        ? <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 6px', borderRadius: '5px' }}>🚩 {fmtCurrency(lfDisp)}</span>
+                        : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+
+        {/* Totals footer */}
+        <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '12px 18px', background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+          <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Totals</div>
+          <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(sps.reduce((s, sp) => s + sp.amount, 0))}</div>
+          <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: totalCollected > 0 ? '#16a34a' : '#cbd5e1' }}>{fmtCurrency(totalCollected)}</div>
+          <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: totalDaysLate > 0 ? '#d97706' : '#cbd5e1' }}>{totalDaysLate}d</div>
+          <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: lateFeesPending > 0 ? '#c2410c' : '#cbd5e1' }}>{lateFeesPending > 0 ? `🚩 ${fmtCurrency(lateFeesPending)}` : '—'}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function PlanDetailPage({ params }: { params: Promise<{ planId: string }> }) {
   const { planId } = use(params)
-  const [plan,    setPlan]    = useState<PaymentPlan | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [tab,     setTab]     = useState<Tab>('schedule')
+  const [plan,             setPlan]             = useState<PaymentPlan | null>(null)
+  const [loading,          setLoading]          = useState(true)
+  const [tab,              setTab]              = useState<Tab>('schedule')
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -1186,14 +1449,33 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
         )}
 
         {/* ── TENANTS TAB ── */}
-        {tab === 'tenants' && (
+        {tab === 'tenants' && selectedTenantId && (() => {
+          const tenant    = plan.tenants.find(t => t.id === selectedTenantId)
+          const tenantSPs = sps.filter(sp => sp.plan_tenant_id === selectedTenantId)
+          if (!tenant) return null
+          return (
+            <TenantDetailView
+              tenant={tenant}
+              sps={tenantSPs}
+              rule={plan.late_fee_rule}
+              onBack={() => setSelectedTenantId(null)}
+              onUpdatePayment={handleUpdateScheduled}
+            />
+          )
+        })()}
+        {tab === 'tenants' && !selectedTenantId && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
             {plan.tenants.map(t => {
               const tenantSPs     = sps.filter(sp => sp.plan_tenant_id === t.id)
               const tenantOverdue = tenantSPs.filter(p => isOverdue(p)).length
               const tenantPaid    = tenantSPs.filter(p => p.status === 'paid').length
+              const rating        = computeTenantRating(tenantSPs)
               return (
-                <div key={t.id} style={{ background: '#fff', borderRadius: '13px', border: tenantOverdue > 0 ? '1.5px solid #fca5a5' : '1px solid #e2e8f0', padding: '20px 22px' }}>
+                <div key={t.id} style={{ background: '#fff', borderRadius: '13px', border: tenantOverdue > 0 ? '1.5px solid #fca5a5' : '1px solid #e2e8f0', padding: '20px 22px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+                  onClick={() => setSelectedTenantId(t.id)}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = 'none'}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                     <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
                       {t.name[0].toUpperCase()}
@@ -1239,27 +1521,38 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                     />
                   </div>
 
-                  {/* Quick stats */}
-                  <div style={{ display: 'flex', gap: 14, background: '#f8fafc', borderRadius: '8px', padding: '10px 12px', marginBottom: 2 }}>
-                    <div style={{ textAlign: 'center' }}>
+                  {/* Quick stats + rating */}
+                  <div style={{ display: 'flex', gap: 10, background: '#f8fafc', borderRadius: '8px', padding: '10px 12px', marginBottom: 10, alignItems: 'center' }}>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
                       <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981' }}>{tenantPaid}</div>
                       <div style={{ fontSize: '10px', color: '#94a3b8' }}>Paid</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
                       <div style={{ fontSize: '16px', fontWeight: 700, color: tenantOverdue > 0 ? '#ef4444' : '#94a3b8' }}>{tenantOverdue}</div>
                       <div style={{ fontSize: '10px', color: '#94a3b8' }}>Overdue</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
                       <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{tenantSPs.length}</div>
                       <div style={{ fontSize: '10px', color: '#94a3b8' }}>Total</div>
                     </div>
+                    <div style={{ width: '1px', background: '#e2e8f0', alignSelf: 'stretch' }} />
+                    <div style={{ textAlign: 'center', paddingLeft: 4 }}>
+                      <div style={{ fontSize: '16px', fontWeight: 800, color: rating.color }}>{rating.score ?? '—'}</div>
+                      <div style={{ fontSize: '10px', color: rating.color, fontWeight: 600 }}>{rating.label}</div>
+                    </div>
+                  </div>
+
+                  {/* View payments link */}
+                  <div style={{ textAlign: 'right', marginBottom: 8 }}>
+                    <span style={{ fontSize: '12px', color: '#0284c7', fontWeight: 600, cursor: 'pointer' }}>
+                      View payments →
+                    </span>
                   </div>
 
                   <TenantRentEditor
                     tenant={t}
                     sps={tenantSPs}
                     onSaved={() => {
-                      // Optimistically update plan state so UI reflects new amount immediately
                       setPlan(prev => prev ? {
                         ...prev,
                         tenants: prev.tenants.map(pt =>
