@@ -905,7 +905,7 @@ export default function LandlordLeadsPage() {
 
             <div className="field-col" style={{ marginTop: '14px' }}>
               <label className="field-label">Email *</label>
-              <input className="field-input" type="email" placeholder="jordan@asu.edu" value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} />
+              <input className="field-input" type="email" placeholder="tenant@email.com" value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} />
             </div>
 
             <div className="field-row" style={{ marginTop: '14px' }}>

@@ -23,33 +23,36 @@ type LeadInfo = {
   prescreen_completed: boolean
 }
 
-// Dynamic next 6 months
 function getMoveInOptions(): string[] {
   return [
-    ...Array.from({ length: 6 }, (_, i) => {
+    ...Array.from({ length: 8 }, (_, i) => {
       const d = new Date()
       d.setDate(1)
       d.setMonth(d.getMonth() + i)
       return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     }),
-    'Flexible',
+    'Flexible / no set date',
   ]
 }
+
+const OCCUPATION_OPTIONS = [
+  { value: 'Student', label: '🎓 Student', sub: 'Currently enrolled' },
+  { value: 'Working Professional', label: '💼 Professional', sub: 'Employed / self-employed' },
+  { value: 'Parent / Guardian', label: '👨‍👩‍👧 Parent', sub: 'Leasing for a dependent' },
+  { value: 'Other', label: '👤 Other', sub: 'Something else' },
+]
 
 const LIFESTYLE_OPTIONS = [
   { value: 'Early riser / quiet', label: '☀️ Early riser', sub: 'Up early, quiet evenings' },
   { value: 'Night owl / social', label: '🌙 Night owl', sub: 'Late nights, social vibe' },
   { value: 'Balanced', label: '⚖️ Balanced', sub: 'Mix of both' },
-  { value: 'Remote / grad student', label: '💻 Remote/Grad', sub: 'Work from home' },
+  { value: 'Work from home', label: '💻 Work from home', sub: 'Remote worker / grad student' },
+  { value: 'Family-oriented', label: '🏡 Family routines', sub: 'Quiet home, consistent schedule' },
 ]
 
 const GENDER_OPTIONS = ['Man', 'Woman', 'Non-binary', 'Prefer not to say']
 
-export default function PreScreenPage({
-  params,
-}: {
-  params: Promise<{ leadId: string }>
-}) {
+export default function PreScreenPage({ params }: { params: Promise<{ leadId: string }> }) {
   const { leadId } = use(params)
   const ph = usePostHog()
 
@@ -59,12 +62,12 @@ export default function PreScreenPage({
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [step, setStep] = useState<Step>(1)
-  const [authed, setAuthed] = useState<boolean | null>(null) // null = checking
+  const [authed, setAuthed] = useState<boolean | null>(null)
 
   const [form, setForm] = useState({
     // Step 1 — About you
-    is_student: '' as '' | 'yes' | 'no',
-    university: 'Arizona State University',
+    occupation: '' as string,
+    school_or_employer: '',
     birthdate: '',
     gender: '',
     // Step 2 — Your move
@@ -80,7 +83,6 @@ export default function PreScreenPage({
   })
 
   useEffect(() => {
-    // Check auth and load lead info in parallel
     Promise.all([
       supabase.auth.getSession().then(({ data }) => setAuthed(!!data.session)),
       fetch(`/api/leads/${leadId}/prescreen`)
@@ -88,9 +90,7 @@ export default function PreScreenPage({
         .then(data => {
           if (data.error) { setNotFound(true); return }
           setLeadInfo(data)
-          if (data.move_in_date) {
-            setForm(f => ({ ...f, move_in_date: data.move_in_date }))
-          }
+          if (data.move_in_date) setForm(f => ({ ...f, move_in_date: data.move_in_date }))
           ph?.capture('prescreen_started', {
             lead_id: leadId,
             property: data.property,
@@ -106,10 +106,9 @@ export default function PreScreenPage({
     setForm(f => ({ ...f, [key]: value }))
 
   const step1Valid =
-    form.is_student !== '' &&
+    form.occupation !== '' &&
     form.birthdate !== '' &&
-    form.gender !== '' &&
-    (form.is_student === 'no' || form.university.trim() !== '')
+    form.gender !== ''
 
   const step2Valid =
     form.move_in_date !== '' &&
@@ -126,12 +125,14 @@ export default function PreScreenPage({
     if (!step3Valid || submitting) return
     setSubmitting(true)
     try {
+      const isStudent = form.occupation === 'Student'
       const res = await fetch(`/api/leads/${leadId}/prescreen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          is_student: form.is_student === 'yes',
-          university: form.is_student === 'yes' ? form.university : '',
+          occupation: form.occupation,
+          is_student: isStudent,
+          university: isStudent ? form.school_or_employer : null,
           birthdate: form.birthdate,
           gender: form.gender,
           move_in_date: form.move_in_date,
@@ -148,7 +149,8 @@ export default function PreScreenPage({
           lead_id: leadId,
           property: leadInfo?.property,
           property_name: leadInfo?.property_name,
-          is_student: form.is_student === 'yes',
+          occupation: form.occupation,
+          is_student: isStudent,
           is_group: form.is_group === 'group',
           group_size: form.is_group === 'solo' ? 1 : form.group_size,
           monthly_budget: form.monthly_budget ? parseInt(form.monthly_budget) : null,
@@ -164,28 +166,24 @@ export default function PreScreenPage({
     setSubmitting(false)
   }
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-          @keyframes spin { to { transform: rotate(360deg); } }
-        `}</style>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{ width: '36px', height: '36px', border: '3px solid #e8e4db', borderTopColor: '#8C1D40', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
   }
 
-  // ── Not found ──────────────────────────────────────────────────────────────
   if (notFound) {
     return (
       <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap');`}</style>
         <div style={{ background: '#fff', borderRadius: '16px', padding: '48px 36px', maxWidth: '420px', width: '100%', textAlign: 'center', border: '1px solid #e8e5de' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fdf2f5', color: '#8C1D40', fontSize: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>✕</div>
-          <h2 style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: 700, color: '#1a1a1a' }}>This link has expired</h2>
-          <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#6b6b6b', lineHeight: 1.65 }}>This pre-screen link is no longer valid. It may have already been used or expired after 7 days.</p>
+          <h2 style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: 700, color: '#1a1a1a' }}>Link not found</h2>
+          <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#6b6b6b', lineHeight: 1.65 }}>This pre-screen link is no longer valid or may have expired.</p>
           <a href="mailto:hello@homehive.live" style={{ fontSize: '13px', color: '#8C1D40', textDecoration: 'none' }}>Contact us → hello@homehive.live</a>
         </div>
       </div>
@@ -203,14 +201,14 @@ export default function PreScreenPage({
             You&apos;re all set{leadInfo?.first_name ? `, ${leadInfo.first_name}` : ''}!
           </h2>
           <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
-            We already have your pre-screen on file. Our team is reviewing your profile and will be in touch soon.
+            We already have your application on file. The landlord is reviewing your profile and will be in touch soon.
           </p>
           <div style={{ background: '#f0fdf8', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '16px 20px', textAlign: 'left' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
-            {["A HomeHive rep will review your profile", "We'll be in touch within 24 hours", "Get ready for a tour!"].map((step, i) => (
+            {['The landlord reviews your profile', 'They\'ll be in touch within 24 hours', 'Get ready to schedule a tour!'].map((s, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a', marginBottom: i < 2 ? '8px' : 0 }}>
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#10b981', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
-                {step}
+                {s}
               </div>
             ))}
           </div>
@@ -229,18 +227,16 @@ export default function PreScreenPage({
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
         <div style={{ background: '#fff', borderRadius: '20px', padding: '48px 32px', maxWidth: '460px', width: '100%', textAlign: 'center', border: '1px solid #e8e5de', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 24px', boxShadow: '0 4px 20px rgba(255,198,39,0.4)' }}>🎉</div>
-          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '28px', fontWeight: 400, color: '#1a1a1a' }}>
-            You&apos;re in the running!
-          </h2>
+          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '28px', fontWeight: 400, color: '#1a1a1a' }}>You&apos;re in the running!</h2>
           <p style={{ margin: '0 0 20px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
-            {leadInfo?.first_name ? `Nice work, ${leadInfo.first_name}.` : 'Nice work!'} Your pre-screen is complete and you&apos;ve been moved to the top of the list.
+            {leadInfo?.first_name ? `Nice work, ${leadInfo.first_name}.` : 'Nice work!'} Your application is complete and you&apos;ve moved to the top of the list.
           </p>
           <div style={{ background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: '10px', padding: '16px 20px', marginBottom: '24px', textAlign: 'left' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
-            {['A HomeHive rep will review your profile', 'We\'ll be in touch within 24 hours', 'Get ready for a tour!'].map((step, i) => (
+            {['The landlord reviews your profile', 'They\'ll be in touch within 24 hours', 'Get ready to schedule a tour!'].map((s, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a', marginBottom: i < 2 ? '8px' : 0 }}>
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#8C1D40', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
-                {step}
+                {s}
               </div>
             ))}
           </div>
@@ -270,10 +266,8 @@ export default function PreScreenPage({
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-          body { background: #f5f4f0; font-family: 'DM Sans', sans-serif; }
         `}</style>
 
-        {/* Hero image strip */}
         {heroImage && (
           <div style={{ position: 'relative', height: '260px', overflow: 'hidden', background: '#1e293b' }}>
             <img src={heroImage} alt={propName} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.85 }} />
@@ -286,7 +280,6 @@ export default function PreScreenPage({
           </div>
         )}
 
-        {/* Auth gate card */}
         <div style={{ maxWidth: '480px', margin: '0 auto', padding: '32px 24px 60px' }}>
           {!heroImage && propName !== 'your property' && (
             <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '12px', padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -299,25 +292,22 @@ export default function PreScreenPage({
           )}
 
           <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '16px', padding: '32px 28px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
-            {/* Lock icon */}
             <div style={{ width: '52px', height: '52px', borderRadius: '12px', background: '#fdf2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', marginBottom: '20px' }}>🔒</div>
-
             <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', lineHeight: 1.25, marginBottom: '10px' }}>
-              One quick step before your pre-screen
+              One quick step before your application
             </div>
             <p style={{ fontSize: '14px', color: '#4a4a4a', lineHeight: 1.7, marginBottom: '6px' }}>
-              {firstName ? `Hey ${firstName} — we` : 'We'}&apos;re excited you&apos;re interested. To keep HomeHive scam-free and verified, we ask everyone to have a free account before filling out a pre-screen.
+              {firstName ? `Hey ${firstName} — we` : 'We'}&apos;re excited you&apos;re interested. A free account keeps HomeHive verified and lets you track your application status.
             </p>
             <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.65, marginBottom: '24px' }}>
-              It takes under a minute. Once you&apos;re in, you&apos;ll land right back here to finish up.
+              Takes under a minute. You&apos;ll land right back here to finish up.
             </p>
 
-            {/* Trust points */}
             <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '14px 16px', marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {[
-                ['✓', 'Keeps our platform scam-free and verified'],
+                ['✓', 'Keeps listings verified and scam-free'],
                 ['✓', 'Your info is never shared without permission'],
-                ['✓', 'Access your pre-screen status anytime'],
+                ['✓', 'Access your application status anytime'],
               ].map(([icon, text]) => (
                 <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a' }}>
                   <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>{icon}</span>
@@ -326,9 +316,8 @@ export default function PreScreenPage({
               ))}
             </div>
 
-            {/* CTAs */}
             <a
-              href={`/signup?role=student&next=${encodeURIComponent(preScreenPath)}`}
+              href={`/signup?next=${encodeURIComponent(preScreenPath)}`}
               style={{ display: 'block', width: '100%', background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '10px', padding: '14px', fontSize: '15px', fontWeight: 700, textAlign: 'center', textDecoration: 'none', marginBottom: '10px', fontFamily: "'DM Sans', sans-serif" }}
             >
               Create a free account →
@@ -355,12 +344,10 @@ export default function PreScreenPage({
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
         body { background: #f5f4f0; font-family: 'DM Sans', sans-serif; }
 
         .ps-wrap { max-width: 520px; margin: 0 auto; padding: 0 0 60px; }
 
-        /* Property header */
         .ps-prop-header { position: relative; width: 100%; height: 180px; overflow: hidden; background: #8C1D40; }
         .ps-prop-header img { width: 100%; height: 100%; object-fit: cover; }
         .ps-prop-header-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(26,26,26,0.3) 0%, rgba(26,26,26,0.75) 100%); }
@@ -368,7 +355,6 @@ export default function PreScreenPage({
         .ps-prop-logo { position: absolute; top: 14px; left: 20px; font-size: 16px; font-weight: 700; color: #fff; letter-spacing: -0.2px; }
         .ps-prop-logo span { color: #FFC627; font-style: italic; }
 
-        /* Progress */
         .ps-progress { background: #fff; padding: 14px 20px; border-bottom: 1px solid #f0ede6; display: flex; align-items: center; gap: 14px; }
         .ps-steps { display: flex; align-items: center; gap: 6px; }
         .ps-step-dot { width: 28px; height: 28px; border-radius: 50%; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
@@ -376,10 +362,8 @@ export default function PreScreenPage({
         .ps-step-label { font-size: 13px; font-weight: 600; color: #1a1a1a; }
         .ps-step-sub { font-size: 11px; color: #9b9b9b; margin-top: 1px; }
 
-        /* Card */
         .ps-card { background: #fff; margin: 0 16px; border-radius: 16px; padding: 28px 24px; border: 1px solid #e8e5de; margin-top: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.05); }
 
-        /* Fields */
         .ps-label { display: block; font-size: 12px; font-weight: 700; color: #1a1a1a; margin-bottom: 7px; letter-spacing: 0.2px; }
         .ps-hint { font-size: 11px; color: #9b9b9b; margin-top: 4px; }
         .ps-input {
@@ -394,13 +378,19 @@ export default function PreScreenPage({
         .ps-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239b9b9b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; cursor: pointer; }
         .ps-textarea { resize: none; height: 90px; line-height: 1.6; }
 
-        /* Pill selects */
+        /* Occupation cards — 2×2 grid */
+        .occ-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .occ-card { padding: 14px 12px; border: 1.5px solid #e8e5de; border-radius: 12px; cursor: pointer; transition: all 0.15s; background: #fff; }
+        .occ-card:hover { border-color: #8C1D40; background: #fdf2f5; }
+        .occ-card.active { border-color: #8C1D40; background: #fdf2f5; }
+        .occ-card-label { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
+        .occ-card-sub { font-size: 11px; color: #9b9b9b; line-height: 1.3; }
+
         .pill-group { display: flex; gap: 8px; flex-wrap: wrap; }
         .pill { padding: 9px 16px; border: 1.5px solid #e8e5de; border-radius: 22px; font-size: 13px; font-weight: 500; color: #3a3a3a; cursor: pointer; transition: all 0.15s; background: #fff; white-space: nowrap; }
         .pill:hover { border-color: #8C1D40; color: #8C1D40; }
         .pill.active { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; font-weight: 600; }
 
-        /* Card selects (large tap targets) */
         .card-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .sel-card { padding: 16px 12px; border: 1.5px solid #e8e5de; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.15s; background: #fff; }
         .sel-card:hover { border-color: #8C1D40; background: #fdf2f5; }
@@ -409,10 +399,8 @@ export default function PreScreenPage({
         .sel-card-title { font-size: 13px; font-weight: 600; color: #1a1a1a; }
         .sel-card-sub { font-size: 11px; color: #9b9b9b; margin-top: 3px; line-height: 1.4; }
 
-        /* Section divider */
         .ps-divider { height: 1px; background: #f0ede6; margin: 20px 0; }
 
-        /* Buttons */
         .ps-btn-next { width: 100%; padding: 14px; background: #8C1D40; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
         .ps-btn-next:disabled { opacity: 0.45; cursor: not-allowed; }
         .ps-btn-next:not(:disabled):hover { opacity: 0.9; }
@@ -422,7 +410,6 @@ export default function PreScreenPage({
         .ps-btn-back { background: none; border: none; font-size: 13px; color: #9b9b9b; cursor: pointer; font-family: 'DM Sans', sans-serif; padding: 0; text-decoration: underline; margin-top: 12px; display: block; text-align: center; width: 100%; }
         .ps-btn-back:hover { color: #3a3a3a; }
 
-        /* Group size stepper */
         .stepper { display: flex; align-items: center; gap: 0; border: 1.5px solid #e8e5de; border-radius: 9px; overflow: hidden; width: fit-content; }
         .stepper-btn { width: 40px; height: 40px; background: #faf9f6; border: none; font-size: 18px; cursor: pointer; color: #3a3a3a; display: flex; align-items: center; justify-content: center; transition: background 0.1s; flex-shrink: 0; }
         .stepper-btn:hover { background: #f0ede6; }
@@ -430,25 +417,25 @@ export default function PreScreenPage({
 
         @media (max-width: 500px) {
           .ps-card { margin: 0 12px; padding: 22px 18px; }
-          .card-group { grid-template-columns: 1fr 1fr; }
+          .occ-grid { grid-template-columns: 1fr 1fr; }
         }
       `}</style>
 
       <div className="ps-wrap">
 
-        {/* ── Property header ───────────────────────── */}
+        {/* ── Property header ─────────────────────────── */}
         <div className="ps-prop-header">
           {heroImage && <img src={heroImage} alt={propName} />}
           <div className="ps-prop-header-overlay" />
           <div className="ps-prop-logo">Home<span>Hive</span></div>
           <div className="ps-prop-header-content">
-            <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#FFC627', marginBottom: '4px' }}>Pre-Screen Application</div>
+            <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#FFC627', marginBottom: '4px' }}>Rental Application</div>
             <div style={{ fontSize: '17px', fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>{propName}</div>
             {propAddress && <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginTop: '3px' }}>📍 {propAddress}</div>}
           </div>
         </div>
 
-        {/* ── Progress bar ──────────────────────────── */}
+        {/* ── Progress bar ────────────────────────────── */}
         <div className="ps-progress">
           <div className="ps-steps">
             {[1, 2, 3].map((n, i) => (
@@ -456,16 +443,14 @@ export default function PreScreenPage({
                 <div
                   className="ps-step-dot"
                   style={{
-                    background: step > n ? '#8C1D40' : step === n ? '#8C1D40' : '#f0ede6',
+                    background: step >= n ? '#8C1D40' : '#f0ede6',
                     color: step >= n ? '#fff' : '#9b9b9b',
                     boxShadow: step === n ? '0 0 0 3px rgba(140,29,64,0.15)' : 'none',
                   }}
                 >
                   {step > n ? '✓' : n}
                 </div>
-                {i < 2 && (
-                  <div className="ps-step-line" style={{ background: step > n ? '#8C1D40' : '#e8e5de' }} />
-                )}
+                {i < 2 && <div className="ps-step-line" style={{ background: step > n ? '#8C1D40' : '#e8e5de' }} />}
               </div>
             ))}
           </div>
@@ -473,11 +458,11 @@ export default function PreScreenPage({
             <div className="ps-step-label">
               {step === 1 ? 'About you' : step === 2 ? 'Your move' : 'Budget & lifestyle'}
             </div>
-            <div className="ps-step-sub">Step {step} of 3 · ~{step === 1 ? '1' : step === 2 ? '1' : '1'} min</div>
+            <div className="ps-step-sub">Step {step} of 3 · ~1 min</div>
           </div>
         </div>
 
-        {/* ── Step 1: About you ─────────────────────── */}
+        {/* ── Step 1: About you ───────────────────────── */}
         {step === 1 && (
           <div className="ps-card">
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#8C1D40', marginBottom: '6px' }}>Step 1 of 3</div>
@@ -485,33 +470,35 @@ export default function PreScreenPage({
               {firstName ? `Hey ${firstName}! 👋` : 'Tell us about yourself'}
             </h1>
             <p style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '24px', lineHeight: 1.5 }}>
-              Quick intro so the landlord knows who&apos;s applying. Takes about a minute.
+              A quick intro so the landlord knows who&apos;s applying. Takes about a minute.
             </p>
 
-            {/* Student */}
+            {/* Occupation */}
             <div style={{ marginBottom: '20px' }}>
-              <label className="ps-label">Are you currently a student? *</label>
-              <div className="pill-group">
-                <div
-                  className={`pill${form.is_student === 'yes' ? ' active' : ''}`}
-                  onClick={() => set('is_student', 'yes')}
-                >🎓 Yes, I&apos;m a student</div>
-                <div
-                  className={`pill${form.is_student === 'no' ? ' active' : ''}`}
-                  onClick={() => set('is_student', 'no')}
-                >💼 Not a student</div>
+              <label className="ps-label">What best describes you? *</label>
+              <div className="occ-grid">
+                {OCCUPATION_OPTIONS.map(opt => (
+                  <div
+                    key={opt.value}
+                    className={`occ-card${form.occupation === opt.value ? ' active' : ''}`}
+                    onClick={() => set('occupation', opt.value)}
+                  >
+                    <div className="occ-card-label">{opt.label}</div>
+                    <div className="occ-card-sub">{opt.sub}</div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* University — only if student */}
-            {form.is_student === 'yes' && (
+            {/* School — only for students */}
+            {form.occupation === 'Student' && (
               <div style={{ marginBottom: '20px' }}>
-                <label className="ps-label">Which university? *</label>
+                <label className="ps-label">Which school or university?</label>
                 <input
                   className="ps-input"
-                  value={form.university}
-                  onChange={e => set('university', e.target.value)}
-                  placeholder="Arizona State University"
+                  value={form.school_or_employer}
+                  onChange={e => set('school_or_employer', e.target.value)}
+                  placeholder="e.g. Arizona State University"
                 />
               </div>
             )}
@@ -528,7 +515,7 @@ export default function PreScreenPage({
                 onChange={e => set('birthdate', e.target.value)}
                 max={new Date().toISOString().split('T')[0]}
               />
-              <div className="ps-hint">Required for lease verification purposes</div>
+              <div className="ps-hint">Required for lease verification</div>
             </div>
 
             {/* Gender */}
@@ -549,7 +536,7 @@ export default function PreScreenPage({
               className="ps-btn-next"
               disabled={!step1Valid}
               onClick={() => {
-                ph?.capture('prescreen_step_completed', { step: 1, lead_id: leadId, property: leadInfo?.property })
+                ph?.capture('prescreen_step_completed', { step: 1, lead_id: leadId, property: leadInfo?.property, occupation: form.occupation })
                 setStep(2)
               }}
             >
@@ -562,7 +549,7 @@ export default function PreScreenPage({
           </div>
         )}
 
-        {/* ── Step 2: Your move ─────────────────────── */}
+        {/* ── Step 2: Your move ───────────────────────── */}
         {step === 2 && (
           <div className="ps-card">
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#8C1D40', marginBottom: '6px' }}>Step 2 of 3</div>
@@ -580,7 +567,7 @@ export default function PreScreenPage({
                 onChange={e => set('move_in_date', e.target.value)}
                 style={{ color: form.move_in_date ? '#1a1a1a' : '#b0a898' }}
               >
-                <option value="">Select a month</option>
+                <option value="">Select a timeframe</option>
                 {getMoveInOptions().map(o => <option key={o}>{o}</option>)}
               </select>
             </div>
@@ -589,7 +576,7 @@ export default function PreScreenPage({
 
             {/* Solo or group */}
             <div style={{ marginBottom: '20px' }}>
-              <label className="ps-label">Are you moving solo or with a group? *</label>
+              <label className="ps-label">Are you moving solo or with others? *</label>
               <div className="card-group">
                 <div
                   className={`sel-card${form.is_group === 'solo' ? ' active' : ''}`}
@@ -597,38 +584,30 @@ export default function PreScreenPage({
                 >
                   <div className="sel-card-icon">🙋</div>
                   <div className="sel-card-title">Just me</div>
-                  <div className="sel-card-sub">I&apos;m looking for a room solo</div>
+                  <div className="sel-card-sub">Moving solo</div>
                 </div>
                 <div
                   className={`sel-card${form.is_group === 'group' ? ' active' : ''}`}
                   onClick={() => set('is_group', 'group')}
                 >
                   <div className="sel-card-icon">👥</div>
-                  <div className="sel-card-title">With a group</div>
-                  <div className="sel-card-sub">We&apos;re moving together</div>
+                  <div className="sel-card-title">With others</div>
+                  <div className="sel-card-sub">Moving together</div>
                 </div>
               </div>
             </div>
 
-            {/* Group size — only if group */}
+            {/* Group size */}
             {form.is_group === 'group' && (
               <div style={{ marginBottom: '20px' }}>
-                <label className="ps-label">How many people total (including you)? *</label>
+                <label className="ps-label">How many people total (including you)?</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="stepper">
-                    <button
-                      className="stepper-btn"
-                      onClick={() => set('group_size', Math.max(2, Number(form.group_size) - 1))}
-                    >−</button>
+                    <button className="stepper-btn" onClick={() => set('group_size', Math.max(2, Number(form.group_size) - 1))}>−</button>
                     <div className="stepper-val">{form.group_size}</div>
-                    <button
-                      className="stepper-btn"
-                      onClick={() => set('group_size', Math.min(10, Number(form.group_size) + 1))}
-                    >+</button>
+                    <button className="stepper-btn" onClick={() => set('group_size', Math.min(10, Number(form.group_size) + 1))}>+</button>
                   </div>
-                  <span style={{ fontSize: '13px', color: '#6b6b6b' }}>
-                    {form.group_size === 2 ? '2 people' : `${form.group_size} people`}
-                  </span>
+                  <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{form.group_size} people</span>
                 </div>
               </div>
             )}
@@ -640,7 +619,7 @@ export default function PreScreenPage({
               <label className="ps-label">Tell us a bit about yourself *</label>
               <textarea
                 className="ps-input ps-textarea"
-                placeholder="e.g. I'm a junior at ASU studying Business. I love cooking and hiking, and I keep a clean, chill space. Great with roommates — I'm respectful of shared areas!"
+                placeholder="Share a bit about yourself — your work or studies, daily routine, what you value in a home, and what kind of neighbor you are."
                 value={form.about}
                 onChange={e => set('about', e.target.value)}
               />
@@ -661,18 +640,18 @@ export default function PreScreenPage({
           </div>
         )}
 
-        {/* ── Step 3: Budget & lifestyle ────────────── */}
+        {/* ── Step 3: Budget & lifestyle ──────────────── */}
         {step === 3 && (
           <div className="ps-card">
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#8C1D40', marginBottom: '6px' }}>Step 3 of 3 — Almost done!</div>
             <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1a1a1a', marginBottom: '4px' }}>Budget & lifestyle</h1>
             <p style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '24px', lineHeight: 1.5 }}>
-              Last step! This helps the landlord confirm you&apos;re a great fit.
+              Last step — this helps the landlord confirm you&apos;re a great fit.
             </p>
 
             {/* Budget */}
             <div style={{ marginBottom: '20px' }}>
-              <label className="ps-label">Total monthly budget *</label>
+              <label className="ps-label">Monthly budget *</label>
               <div style={{ position: 'relative' }}>
                 <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', fontWeight: 600, color: '#3a3a3a', pointerEvents: 'none' }}>$</div>
                 <input
@@ -680,13 +659,13 @@ export default function PreScreenPage({
                   type="number"
                   min="100"
                   max="9999"
-                  placeholder="750"
+                  placeholder="850"
                   value={form.monthly_budget}
                   onChange={e => set('monthly_budget', e.target.value)}
                   style={{ paddingLeft: '28px' }}
                 />
               </div>
-              <div className="ps-hint">Your all-in budget including rent, utilities, and any fees</div>
+              <div className="ps-hint">Your all-in monthly budget including rent, utilities, and fees</div>
             </div>
 
             {/* Lease length */}
@@ -699,9 +678,12 @@ export default function PreScreenPage({
                 style={{ color: form.lease_length ? '#1a1a1a' : '#b0a898' }}
               >
                 <option value="">Select preference</option>
-                <option value="1 semester">1 semester (~5 months)</option>
-                <option value="Academic year">Academic year (~10 months)</option>
+                <option value="Month-to-month">Month-to-month</option>
+                <option value="3 months">Short-term (3 months)</option>
+                <option value="6 months">6 months</option>
                 <option value="1 year">1 year (12 months)</option>
+                <option value="Academic year">Academic year (~10 months)</option>
+                <option value="2+ years">Long-term (2+ years)</option>
                 <option value="Flexible">Flexible / open to discuss</option>
               </select>
             </div>
@@ -710,7 +692,7 @@ export default function PreScreenPage({
 
             {/* Lifestyle */}
             <div style={{ marginBottom: '20px' }}>
-              <label className="ps-label">Your lifestyle vibe *</label>
+              <label className="ps-label">Your lifestyle *</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {LIFESTYLE_OPTIONS.map(opt => (
                   <div
@@ -744,7 +726,7 @@ export default function PreScreenPage({
               <label className="ps-label">Anything else you&apos;d like us to know? <span style={{ fontWeight: 400, color: '#9b9b9b' }}>(optional)</span></label>
               <textarea
                 className="ps-input ps-textarea"
-                placeholder="Pets, parking needs, specific room questions, special circumstances..."
+                placeholder="Pets, parking needs, specific questions about the unit, special circumstances..."
                 value={form.notes}
                 onChange={e => set('notes', e.target.value)}
               />
@@ -755,7 +737,7 @@ export default function PreScreenPage({
               disabled={!step3Valid || submitting}
               onClick={handleSubmit}
             >
-              {submitting ? 'Submitting…' : `Submit My Pre-Screen →`}
+              {submitting ? 'Submitting…' : 'Submit My Application →'}
             </button>
 
             <button className="ps-btn-back" onClick={() => setStep(2)}>← Back</button>

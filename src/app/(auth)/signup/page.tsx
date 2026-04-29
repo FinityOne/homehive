@@ -97,7 +97,7 @@ function RolePicker({ onPick }: { onPick: (role: Role) => void }) {
               <div className="pick-card-label" style={{ color: '#8C1D40' }}>For renters</div>
               <div className="pick-card-title">Find a place</div>
               <div className="pick-card-desc">
-                Browse student-friendly housing near ASU, contact landlords directly, and secure your next home — all in one place.
+                Browse quality housing, contact landlords directly, and secure your next home — all in one place.
               </div>
               <div className="pick-card-features">
                 <div className="pick-card-feature"><span className="pick-card-feature-dot" />Browse verified listings near campus</div>
@@ -118,7 +118,7 @@ function RolePicker({ onPick }: { onPick: (role: Role) => void }) {
               <div className="pick-card-label" style={{ color: '#0369a1' }}>For landlords &amp; subleases</div>
               <div className="pick-card-title">List a place</div>
               <div className="pick-card-desc">
-                Whether you own a property or are a student subleasing for the summer, reach thousands of renters actively looking near ASU.
+                Whether you own a property or are subleasing for the summer, reach thousands of renters actively looking for their next home.
               </div>
               <div className="pick-card-features">
                 <div className="pick-card-feature"><span className="pick-card-feature-dot" />Create and manage your listing for free</div>
@@ -317,7 +317,7 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
             </span>
           </a>
           <div style={{ fontSize: '14px', color: '#9b9b9b', marginBottom: '28px' }}>
-            {isLandlord ? 'List your place near ASU' : 'Find your perfect place near ASU'}
+            {isLandlord ? 'List your place on HomeHive' : 'Find your perfect place on HomeHive'}
           </div>
 
           {/* Role toggle */}
@@ -371,8 +371,8 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
               <input name="name" placeholder="Your name" value={form.name} onChange={handleChange} />
             </div>
             <div>
-              <label>{isLandlord ? 'Email' : 'ASU email'}</label>
-              <input name="email" type="email" placeholder={isLandlord ? 'you@email.com' : 'you@asu.edu'} value={form.email} onChange={handleChange} />
+              <label>Email</label>
+              <input name="email" type="email" placeholder="you@email.com" value={form.email} onChange={handleChange} />
             </div>
             {isLandlord && (
               <div>

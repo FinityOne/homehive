@@ -48,7 +48,7 @@ export type Lead = {
 }
 
 export type PrescreenData = {
-  is_student: boolean
+  occupation: string
   university: string
   birthdate: string
   gender: string
@@ -59,6 +59,8 @@ export type PrescreenData = {
   lease_length: string
   lifestyle: string
   notes: string
+  // derived from occupation for backward compat
+  is_student: boolean
 }
 
 export async function getLeadsForOwner(userId: string): Promise<Lead[]> {

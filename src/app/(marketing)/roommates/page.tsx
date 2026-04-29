@@ -266,8 +266,8 @@ export default function RoommatesPage() {
                     </div>
                     <div className="form-grid-2">
                       <div>
-                        <label className="form-label">ASU email</label>
-                        <input className="form-input" name="email" type="email" placeholder="jlee@asu.edu" value={formData.email} onChange={handleChange} />
+                        <label className="form-label">Email</label>
+                        <input className="form-input" name="email" type="email" placeholder="you@email.com" value={formData.email} onChange={handleChange} />
                       </div>
                       <div>
                         <label className="form-label">Phone</label>

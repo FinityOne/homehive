@@ -24,7 +24,7 @@ const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: st
 
 type Prescreen = {
   id: string; lead_id: string; created_at: string
-  is_student: boolean | null; university: string | null
+  occupation: string | null; is_student: boolean | null; university: string | null
   birthdate: string | null; gender: string | null
   move_in_date: string | null; group_size: number | null
   about: string | null; monthly_budget: number | null
@@ -682,10 +682,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                       <div className="ps-about">"{prescreen.about}"</div>
                     )}
                     <div className="ps-grid">
-                      {prescreen.is_student !== null && (
+                      {(prescreen.occupation || prescreen.is_student !== null) && (
                         <div className="ps-item">
-                          <div className="ps-item-label">Student</div>
-                          <div className="ps-item-value">{prescreen.is_student ? `Yes — ${prescreen.university || 'Unknown uni'}` : 'No'}</div>
+                          <div className="ps-item-label">Occupation</div>
+                          <div className="ps-item-value">
+                            {prescreen.occupation || (prescreen.is_student ? 'Student' : 'Non-student')}
+                            {(prescreen.occupation === 'Student' || prescreen.is_student) && prescreen.university ? ` — ${prescreen.university}` : ''}
+                          </div>
                         </div>
                       )}
                       {prescreen.gender && (

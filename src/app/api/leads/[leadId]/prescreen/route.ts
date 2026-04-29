@@ -82,7 +82,7 @@ export async function POST(
   const body = await req.json()
 
   const {
-    is_student, university, birthdate, gender,
+    occupation, is_student, university, birthdate, gender,
     move_in_date, group_size, about,
     monthly_budget, lease_length, lifestyle, notes,
   } = body
@@ -93,8 +93,9 @@ export async function POST(
     .upsert(
       [{
         lead_id: leadId,
-        is_student: !!is_student,
-        university: is_student ? (university || null) : null,
+        occupation: occupation || null,
+        is_student: occupation ? occupation === 'Student' : !!is_student,
+        university: (occupation === 'Student' || is_student) ? (university || null) : null,
         birthdate: birthdate || null,
         gender: gender || null,
         move_in_date: move_in_date || null,
@@ -165,8 +166,9 @@ export async function POST(
         propertyAddress,
         propertyHeroImage,
         moveInDate: move_in_date || '—',
-        isStudent: !!is_student,
-        university: is_student ? university : null,
+        occupation: occupation || null,
+        isStudent: occupation ? occupation === 'Student' : !!is_student,
+        university: (occupation === 'Student' || is_student) ? university : null,
         groupSize: group_size || 1,
         about: about || '—',
         monthlyBudget: monthly_budget || null,
@@ -200,7 +202,7 @@ export async function POST(
 function buildLandlordPrescreenEmail(d: {
   firstName: string; email: string; phone: string
   propertyName: string; propertyAddress: string; propertyHeroImage: string
-  moveInDate: string; isStudent: boolean; university: string | null
+  moveInDate: string; occupation: string | null; isStudent: boolean; university: string | null
   groupSize: number; about: string; monthlyBudget: number | null
   leaseLength: string; lifestyle: string; gender: string; notes: string | null
   leadId: string
@@ -250,7 +252,7 @@ function buildLandlordPrescreenEmail(d: {
         <tr><td style="padding:4px 0;color:#6b6b6b;">Email</td><td style="padding:4px 0;"><a href="mailto:${d.email}" style="color:#8C1D40;text-decoration:none;">${d.email}</a></td></tr>
         <tr><td style="padding:4px 0;color:#6b6b6b;">Phone</td><td style="padding:4px 0;">${d.phone}</td></tr>
         <tr><td style="padding:4px 0;color:#6b6b6b;">Gender</td><td style="padding:4px 0;">${d.gender}</td></tr>
-        ${d.isStudent ? `<tr><td style="padding:4px 0;color:#6b6b6b;">Student</td><td style="padding:4px 0;">Yes — ${d.university || 'University not specified'}</td></tr>` : '<tr><td style="padding:4px 0;color:#6b6b6b;">Student</td><td style="padding:4px 0;">No</td></tr>'}
+        <tr><td style="padding:4px 0;color:#6b6b6b;">Occupation</td><td style="padding:4px 0;">${d.occupation || (d.isStudent ? 'Student' : '—')}${d.university ? ` — ${d.university}` : ''}</td></tr>
       </table>
     </div>
 

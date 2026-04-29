@@ -212,7 +212,7 @@ function LoginForm() {
             Welcome back.
           </div>
           <div style={{ fontSize: '13px', color: '#9b9b9b', lineHeight: 1.55, marginBottom: '28px' }}>
-            Your next home near ASU is waiting — sign in to pick up where you left off.
+            Your next home is waiting — sign in to pick up where you left off.
           </div>
 
           {/* Alerts */}
@@ -254,7 +254,7 @@ function LoginForm() {
               type="email"
               autoComplete="email"
               autoCapitalize="none"
-              placeholder="you@asu.edu"
+              placeholder="you@email.com"
               value={email}
               onChange={e => { setEmail(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
@@ -310,7 +310,7 @@ function LoginForm() {
 
           {/* Trust signals */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #f0ede6' }}>
-            {['✓ Verified ASU housing', '✓ No broker fees', '✓ Flexible move-in'].map(t => (
+            {['✓ Verified listings', '✓ No broker fees', '✓ Flexible move-in'].map(t => (
               <span key={t} style={{ fontSize: '11px', color: '#b5b0a6' }}>{t}</span>
             ))}
           </div>
