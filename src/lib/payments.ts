@@ -501,6 +501,32 @@ export async function addSpecialPayment(
   return { error }
 }
 
+// Bulk-update scheduled payment amounts for one tenant across their lease
+export async function updateTenantScheduleAmount(
+  planTenantId: string,
+  newAmount: number,
+  applyTo: 'unpaid' | 'all',
+): Promise<{ error: any; updatedCount: number }> {
+  // Keep monthly_total in sync on the tenant record
+  const { error: tenantErr } = await supabase
+    .from('payment_plan_tenants')
+    .update({ monthly_total: newAmount })
+    .eq('id', planTenantId)
+  if (tenantErr) return { error: tenantErr, updatedCount: 0 }
+
+  let query = supabase
+    .from('scheduled_payments')
+    .update({ amount: newAmount, updated_at: new Date().toISOString() })
+    .eq('plan_tenant_id', planTenantId)
+
+  if (applyTo === 'unpaid') {
+    query = query.in('status', ['pending', 'late'])
+  }
+
+  const { data, error: spErr } = await query.select('id')
+  return { error: spErr, updatedCount: data?.length ?? 0 }
+}
+
 // Count of pending payments past their due date (for nav badge)
 export async function getOverduePaymentCount(ownerId: string): Promise<number> {
   const { data: plans } = await supabase

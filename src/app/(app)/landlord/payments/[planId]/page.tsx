@@ -2,11 +2,12 @@
 
 import { useEffect, useState, use } from 'react'
 import {
-  getPlanById, updateScheduledPayment, updateSpecialPayment, addSpecialPayment,
+  getPlanById, updateScheduledPayment, updateSpecialPayment, addSpecialPayment, updateTenantScheduleAmount,
   getEffectiveStatus, isOverdue, computeLateFees, computeLateFeesByDate, daysLate, daysLateByDate,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES,
   type PaymentPlan, type ScheduledPayment, type SpecialPayment, type PaymentStatus, type SpecialCategory,
+  type PaymentPlanTenant,
 } from '@/lib/payments'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -315,6 +316,138 @@ function MonthGroup({
   )
 }
 
+// ─── TENANT RENT EDITOR ───────────────────────────────────────────────────────
+
+function TenantRentEditor({
+  tenant, sps, onSaved,
+}: {
+  tenant: PaymentPlanTenant
+  sps: ScheduledPayment[]
+  onSaved: () => void
+}) {
+  const [open,    setOpen]    = useState(false)
+  const [newAmt,  setNewAmt]  = useState(String(tenant.monthly_total))
+  const [applyTo, setApplyTo] = useState<'unpaid' | 'all'>('unpaid')
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
+
+  const unpaidCount = sps.filter(sp => ['pending', 'late'].includes(sp.status)).length
+  const allCount    = sps.length
+  const preview     = applyTo === 'unpaid' ? unpaidCount : allCount
+  const parsedAmt   = parseFloat(newAmt)
+  const changed     = !isNaN(parsedAmt) && parsedAmt > 0 && Math.abs(parsedAmt - tenant.monthly_total) > 0.005
+
+  const iS: React.CSSProperties = {
+    padding: '8px 11px', fontSize: '13px', border: '1.5px solid #e2e8f0', borderRadius: '8px',
+    outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a',
+    boxSizing: 'border-box',
+  }
+
+  const save = async () => {
+    if (!changed) return
+    setSaving(true)
+    const { error } = await updateTenantScheduleAmount(tenant.id, parsedAmt, applyTo)
+    setSaving(false)
+    if (!error) {
+      setSaved(true)
+      onSaved()
+      setTimeout(() => { setOpen(false); setSaved(false); setNewAmt(String(parsedAmt)) }, 1200)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{ marginTop: 12, width: '100%', padding: '8px 0', border: '1.5px dashed #cbd5e1', borderRadius: '8px', background: 'none', color: '#64748b', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'border-color 0.15s, color 0.15s' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#94a3b8'; (e.currentTarget as HTMLElement).style.color = '#0f172a' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#cbd5e1'; (e.currentTarget as HTMLElement).style.color = '#64748b' }}
+      >
+        ✏ Edit rent amount
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 12, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px' }}>
+      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>Update rent for entire lease</div>
+
+      {/* New amount */}
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>New monthly amount ($)</label>
+        <input
+          style={{ ...iS, width: '100%', fontSize: '16px', fontWeight: 700, color: '#0f172a' }}
+          type="number" min={0} step="0.01"
+          value={newAmt}
+          onChange={e => setNewAmt(e.target.value)}
+        />
+        {changed && (
+          <div style={{ marginTop: 5, fontSize: '11px', color: parsedAmt > tenant.monthly_total ? '#059669' : '#d97706', fontWeight: 600 }}>
+            {parsedAmt > tenant.monthly_total
+              ? `↑ Increase of ${fmtCurrency(parsedAmt - tenant.monthly_total)}/mo from current ${fmtCurrency(tenant.monthly_total)}`
+              : `↓ Decrease of ${fmtCurrency(tenant.monthly_total - parsedAmt)}/mo from current ${fmtCurrency(tenant.monthly_total)}`}
+          </div>
+        )}
+      </div>
+
+      {/* Apply to */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Apply to</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {([
+            { value: 'unpaid', label: 'Unpaid payments only', sub: `${unpaidCount} pending or late payment${unpaidCount !== 1 ? 's' : ''}` },
+            { value: 'all',    label: 'All payments (entire lease)', sub: `${allCount} total payment${allCount !== 1 ? 's' : ''}, including already-paid` },
+          ] as const).map(opt => (
+            <label
+              key={opt.value}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', borderRadius: '8px', border: `1.5px solid ${applyTo === opt.value ? '#0f172a' : '#e2e8f0'}`, background: applyTo === opt.value ? '#f1f5f9' : '#fff', cursor: 'pointer' }}
+            >
+              <input
+                type="radio" name={`applyTo-${tenant.id}`} value={opt.value}
+                checked={applyTo === opt.value}
+                onChange={() => setApplyTo(opt.value)}
+                style={{ marginTop: 2, accentColor: '#0f172a', flexShrink: 0 }}
+              />
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>{opt.label}</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: 1 }}>{opt.sub}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Preview */}
+      {changed && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '7px', padding: '9px 12px', marginBottom: 12, fontSize: '12px', color: '#1d4ed8' }}>
+          Will update <strong>{preview} payment{preview !== 1 ? 's' : ''}</strong> to <strong>{fmtCurrency(parsedAmt)}/mo</strong>
+        </div>
+      )}
+
+      {saved && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '7px', padding: '9px 12px', marginBottom: 12, fontSize: '12px', color: '#166534', fontWeight: 600 }}>
+          ✓ Updated successfully
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={save} disabled={saving || !changed || saved}
+          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving || !changed ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: (saving || !changed) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          {saving ? 'Saving…' : `Update ${preview} payment${preview !== 1 ? 's' : ''}`}
+        </button>
+        <button
+          onClick={() => { setOpen(false); setNewAmt(String(tenant.monthly_total)) }}
+          style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── ADD SPECIAL CHARGE FORM ──────────────────────────────────────────────────
 
 function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: PaymentPlan['tenants']; onAdded: () => void }) {
@@ -618,11 +751,11 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
 
         {/* ── TENANTS TAB ── */}
         {tab === 'tenants' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
             {plan.tenants.map(t => {
-              const tenantSPs    = sps.filter(sp => sp.plan_tenant_id === t.id)
+              const tenantSPs     = sps.filter(sp => sp.plan_tenant_id === t.id)
               const tenantOverdue = tenantSPs.filter(p => isOverdue(p)).length
-              const tenantPaid   = tenantSPs.filter(p => p.status === 'paid').length
+              const tenantPaid    = tenantSPs.filter(p => p.status === 'paid').length
               return (
                 <div key={t.id} style={{ background: '#fff', borderRadius: '13px', border: tenantOverdue > 0 ? '1.5px solid #fca5a5' : '1px solid #e2e8f0', padding: '20px 22px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -650,7 +783,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                   </div>
 
                   {/* Quick stats */}
-                  <div style={{ display: 'flex', gap: 14, background: '#f8fafc', borderRadius: '8px', padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', gap: 14, background: '#f8fafc', borderRadius: '8px', padding: '10px 12px', marginBottom: 2 }}>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981' }}>{tenantPaid}</div>
                       <div style={{ fontSize: '10px', color: '#94a3b8' }}>Paid</div>
@@ -664,6 +797,21 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                       <div style={{ fontSize: '10px', color: '#94a3b8' }}>Total</div>
                     </div>
                   </div>
+
+                  <TenantRentEditor
+                    tenant={t}
+                    sps={tenantSPs}
+                    onSaved={() => {
+                      // Optimistically update plan state so UI reflects new amount immediately
+                      setPlan(prev => prev ? {
+                        ...prev,
+                        tenants: prev.tenants.map(pt =>
+                          pt.id === t.id ? { ...pt, monthly_total: parseFloat(String(t.monthly_total)) } : pt
+                        ),
+                      } : prev)
+                      load()
+                    }}
+                  />
                 </div>
               )
             })}
