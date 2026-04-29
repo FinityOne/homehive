@@ -13,7 +13,9 @@ const supabase = createBrowserClient(
 const LEAD_STATUS_CONFIG: Record<Lead['status'], { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',            color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
   contacted:      { label: 'Contacted',      color: '#c9973a', bg: '#fefce8', border: '#fde68a' },
+  follow_up:      { label: 'Follow Up',      color: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
   engaged:        { label: 'Engaged',        color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  cold:           { label: 'Cold',           color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
   qualified:      { label: 'Qualified',      color: '#166534', bg: '#f0fdf4', border: '#bbf7d0' },
   tour_scheduled: { label: 'Tour Scheduled', color: '#0e7490', bg: '#ecfeff', border: '#a5f3fc' },
   closed:         { label: 'Closed',         color: '#fff',    bg: '#8C1D40', border: '#8C1D40' },

@@ -11,12 +11,14 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'engaged', 'qualified', 'tour_scheduled', 'closed']
+const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'cold', 'qualified', 'tour_scheduled', 'closed']
 
 const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: string; border: string; desc: string; icon: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: '#eff6ff',   border: '#bfdbfe', desc: 'Just submitted — needs outreach',          icon: '📩' },
   contacted:      { label: 'Contacted',     color: '#f97316', bg: '#fff7ed',   border: '#fed7aa', desc: 'You\'ve reached out, awaiting response',    icon: '📞' },
+  follow_up:      { label: 'Follow Up',     color: '#c2410c', bg: '#fff7ed',   border: '#fed7aa', desc: 'Needs a follow-up touch',                  icon: '🔄' },
   engaged:        { label: 'Engaged',       color: '#d97706', bg: '#fffbeb',   border: '#fde68a', desc: 'In active conversation',                    icon: '💬' },
+  cold:           { label: 'Cold',          color: '#64748b', bg: '#f8fafc',   border: '#e2e8f0', desc: 'No response — may need reactivation',       icon: '❄️' },
   qualified:      { label: 'Qualified',     color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
   tour_scheduled: { label: 'Tour Scheduled',color: '#8b5cf6', bg: '#f5f3ff',   border: '#ddd6fe', desc: 'Tour booked — prepare the property',         icon: '📅' },
   closed:         { label: 'Closed',        color: '#6b7280', bg: '#f9fafb',   border: '#e5e7eb', desc: 'Lead closed out',                           icon: '🏁' },

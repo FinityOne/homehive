@@ -42,7 +42,7 @@ export type Lead = {
   last_name: string | null
   phone: string | null
   move_in_date: string | null
-  status: 'new' | 'contacted' | 'engaged' | 'qualified' | 'tour_scheduled' | 'closed'
+  status: 'new' | 'contacted' | 'follow_up' | 'engaged' | 'cold' | 'qualified' | 'tour_scheduled' | 'closed'
   closed_reason: 'leased' | 'lost' | null
   property: string | null // stores property slug
 }

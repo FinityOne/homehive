@@ -26,7 +26,9 @@ type OverviewData = {
 const LEAD_STATUS_CONFIG: Record<Lead['status'], { label: string; color: string }> = {
   new:            { label: 'New',            color: '#1d4ed8' },
   contacted:      { label: 'Contacted',      color: '#c9973a' },
+  follow_up:      { label: 'Follow Up',      color: '#c2410c' },
   engaged:        { label: 'Engaged',        color: '#7c3aed' },
+  cold:           { label: 'Cold',           color: '#64748b' },
   qualified:      { label: 'Qualified',      color: '#166534' },
   tour_scheduled: { label: 'Tour Scheduled', color: '#0e7490' },
   closed:         { label: 'Closed',         color: '#8C1D40' },

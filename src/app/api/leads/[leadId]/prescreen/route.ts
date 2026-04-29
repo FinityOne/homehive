@@ -25,7 +25,7 @@ export async function GET(
   }
 
   // Mark as engaged when they open the pre-screen link
-  if (lead.status === 'new' || lead.status === 'contacted') {
+  if (['new', 'contacted', 'follow_up', 'cold'].includes(lead.status)) {
     await supabase
       .from('leads')
       .update({ status: 'engaged' })

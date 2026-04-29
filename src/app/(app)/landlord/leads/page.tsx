@@ -16,15 +16,29 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'engaged', 'qualified', 'tour_scheduled', 'closed']
+const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'cold', 'qualified', 'tour_scheduled', 'closed']
 
 const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
   contacted:      { label: 'Contacted',     color: '#f97316', bg: 'rgba(249,115,22,0.08)',   border: 'rgba(249,115,22,0.25)' },
+  follow_up:      { label: 'Follow Up',     color: '#c2410c', bg: 'rgba(194,65,12,0.08)',    border: 'rgba(194,65,12,0.25)' },
   engaged:        { label: 'Engaged',       color: '#eab308', bg: 'rgba(234,179,8,0.08)',    border: 'rgba(234,179,8,0.3)' },
+  cold:           { label: 'Cold',          color: '#64748b', bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.25)' },
   qualified:      { label: 'Qualified',     color: '#10b981', bg: 'rgba(16,185,129,0.08)',   border: 'rgba(16,185,129,0.25)' },
   tour_scheduled: { label: 'Tour Sched.',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   border: 'rgba(139,92,246,0.25)' },
   closed:         { label: 'Closed',        color: '#6b7280', bg: 'rgba(107,114,128,0.08)',  border: 'rgba(107,114,128,0.25)' },
+}
+
+// Status to advance to after sending a reminder from Insights
+function insightNextStatus(current: Lead['status']): Lead['status'] | null {
+  const map: Partial<Record<Lead['status'], Lead['status']>> = {
+    new:       'contacted',
+    contacted: 'follow_up',
+    follow_up: 'cold',
+    engaged:   'follow_up',
+    cold:      'follow_up',   // trying again — reactivate into follow-up queue
+  }
+  return map[current] ?? null
 }
 
 function getHeat(createdAt: string | null) {
@@ -111,6 +125,38 @@ export default function LandlordLeadsPage() {
   const [autoUnlockingId, setAutoUnlockingId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
+  // leadId -> ISO timestamp of last outreach email (within 24h window)
+  const [lastContactedAt, setLastContactedAt] = useState<Record<string, string>>({})
+
+  // Manually dismissed insight suggestion IDs (persisted to localStorage with 7-day TTL)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('hh_dismissed_insights')
+      if (!raw) return
+      const entries: { id: string; expires: number }[] = JSON.parse(raw)
+      const now = Date.now()
+      const valid = entries.filter(e => e.expires > now)
+      setDismissedIds(new Set(valid.map(e => e.id)))
+      if (valid.length !== entries.length) {
+        localStorage.setItem('hh_dismissed_insights', JSON.stringify(valid))
+      }
+    } catch {}
+  }, [])
+
+  const dismissSuggestion = (id: string) => {
+    setDismissedIds(prev => new Set([...prev, id]))
+    try {
+      const raw = localStorage.getItem('hh_dismissed_insights')
+      const entries: { id: string; expires: number }[] = raw ? JSON.parse(raw) : []
+      const expires = Date.now() + 7 * 24 * 60 * 60 * 1000
+      const updated = entries.filter(e => e.id !== id && e.expires > Date.now())
+      updated.push({ id, expires })
+      localStorage.setItem('hh_dismissed_insights', JSON.stringify(updated))
+    } catch {}
+  }
+
   const isLeadVisible = (lead: Lead) =>
     freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
 
@@ -148,15 +194,46 @@ export default function LandlordLeadsPage() {
       return
     }
 
-    // Round 2: fetch leads using slugs already retrieved
+    // Round 2: fetch leads (slugs known from round 1)
     const leadsData = await getLeadsForSlugs(slugs)
     leadsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-    setLeads(leadsData)
-    setFreeLeadIds(computeFreeLeadIds(leadsData))
+
+    const leadIds = leadsData.map(l => l.id)
+
+    // Round 3: sync statuses + fetch recent contacts in parallel (both use service-role via API routes)
+    const [syncRes, contactsRes] = await Promise.all([
+      fetch('/api/leads/sync-email-statuses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds }),
+      }),
+      fetch('/api/leads/recent-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds }),
+      }),
+    ])
+
+    // If sync advanced any statuses, re-fetch leads so we have accurate data
+    let finalLeads = leadsData
+    if (syncRes.ok) {
+      const { updated } = await syncRes.json()
+      if (updated > 0) {
+        finalLeads = await getLeadsForSlugs(slugs)
+        finalLeads.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+      }
+    }
+
+    setLeads(finalLeads)
+    setFreeLeadIds(computeFreeLeadIds(finalLeads))
+
+    // Build last-contacted map from service-role API (bypasses RLS on email_logs)
+    const lastContactMap: Record<string, string> = contactsRes.ok ? await contactsRes.json() : {}
+    setLastContactedAt(lastContactMap)
 
     const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
     if (hasPlan) {
-      setUnlockedIds(new Set(leadsData.map(l => l.id)))
+      setUnlockedIds(new Set(finalLeads.map(l => l.id)))
     } else {
       setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
     }
@@ -301,6 +378,32 @@ export default function LandlordLeadsPage() {
     setRemindingId(null)
   }
 
+  // Insights-specific send: advances lead status + marks as recently contacted so the card disappears immediately
+  const sendInsightReminder = async (lead: Lead, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setRemindingId(lead.id)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/send-reminder`, { method: 'POST' })
+      if (res.ok) {
+        // Mark as recently contacted — suppresses the card even if status update is delayed
+        setLastContactedAt(prev => ({ ...prev, [lead.id]: new Date().toISOString() }))
+        const nextStatus = insightNextStatus(lead.status)
+        if (nextStatus) {
+          // Optimistic status update — card vanishes from Insights immediately
+          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: nextStatus } : l))
+          await updateLeadStatus(lead.id, nextStatus)
+          showToast(`Email sent · Moved to ${STATUS_META[nextStatus].label}`)
+          ph?.capture('lead_insight_sent', { lead_id: lead.id, property: lead.property, from_status: lead.status, to_status: nextStatus })
+        } else {
+          showToast(`Email sent to ${lead.first_name || lead.email}`)
+        }
+      } else {
+        showToast('Failed to send email')
+      }
+    } catch { showToast('Failed to send email') }
+    setRemindingId(null)
+  }
+
   const handleAddLead = async () => {
     if (!addForm.first_name || !addForm.email || !addForm.property) return
     setAddingLead(true)
@@ -326,7 +429,7 @@ export default function LandlordLeadsPage() {
   // ─── Lead scoring ──────────────────────────────────────────────────────────
   function leadScore(lead: Lead): number {
     const statusRank: Record<string, number> = {
-      new: 10, contacted: 25, engaged: 45, qualified: 75, tour_scheduled: 90, closed: 0
+      new: 10, contacted: 25, follow_up: 20, engaged: 45, cold: 5, qualified: 75, tour_scheduled: 90, closed: 0
     }
     const daysOld = (Date.now() - new Date(lead.created_at || 0).getTime()) / 86400000
     const decayFactor = Math.max(0, 1 - daysOld / 30)
@@ -346,16 +449,30 @@ export default function LandlordLeadsPage() {
     const byStatus = STATUS_ORDER.reduce((acc, s) => { acc[s] = propLeads.filter(l => l.status === s).length; return acc }, {} as Record<string, number>)
     const qualified = (byStatus.qualified || 0) + (byStatus.tour_scheduled || 0)
     const conversionRate = propLeads.length > 0 ? Math.round((qualified / propLeads.length) * 100) : 0
-    const hotLeads = active.filter(l => leadScore(l) >= 50)
-    return { slug: prop.slug, name: prop.name, totalLeads: propLeads.length, activeLeads: active.length, byStatus, conversionRate, hotLeadCount: hotLeads.length }
+    const scored = active
+      .filter(l => isLeadVisible(l))
+      .map(l => ({ lead: l, score: leadScore(l), days: staleDays(l) }))
+      .sort((a, b) => b.score - a.score)
+    const hotLeads = scored.filter(l => l.score >= 50)
+    const topLeads = scored.slice(0, 3)
+    return { slug: prop.slug, name: prop.name, totalLeads: propLeads.length, activeLeads: active.length, byStatus, conversionRate, hotLeadCount: hotLeads.length, topLeads }
   })
 
-  // ─── Top leads by score ─────────────────────────────────────────────────────
+  // ─── Top leads by score (all properties) ────────────────────────────────────
   const topLeads = [...leads]
     .filter(l => l.status !== 'closed' && isLeadVisible(l))
     .map(l => ({ lead: l, score: leadScore(l), days: staleDays(l) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 6)
+
+  // ─── Overview KPIs ───────────────────────────────────────────────────────────
+  const activeLeads = leads.filter(l => l.status !== 'closed')
+  const newThisWeek = leads.filter(l => staleDays(l) <= 7).length
+  const qualifiedPlus = leads.filter(l => ['qualified', 'tour_scheduled'].includes(l.status)).length
+  const leasedCount = leads.filter(l => l.status === 'closed' && l.closed_reason === 'leased').length
+  const respondedCount = leads.filter(l => ['engaged', 'qualified', 'tour_scheduled'].includes(l.status)).length
+  const responseRate = leads.length > 0 ? Math.round((respondedCount / leads.length) * 100) : 0
+  const coldCount = leads.filter(l => l.status === 'cold').length
 
   // ─── Suggestion engine ──────────────────────────────────────────────────────
   type Suggestion = {
@@ -373,31 +490,44 @@ export default function LandlordLeadsPage() {
   const visibleActiveLeads = leads.filter(l => l.status !== 'closed' && isLeadVisible(l))
 
   for (const lead of visibleActiveLeads) {
+    // Suppress if an email was sent in the last 24h, unless the lead is now hot (submitted pre-screen)
+    const isHot = ['qualified', 'tour_scheduled'].includes(lead.status)
+    if (!isHot && lastContactedAt[lead.id]) {
+      const hoursAgo = (Date.now() - new Date(lastContactedAt[lead.id]).getTime()) / 3600000
+      if (hoursAgo < 24) continue
+    }
+
     const days = staleDays(lead)
     const prop = properties.find(p => p.slug === lead.property)
     const propName = prop?.name || lead.property || 'your property'
     const firstName = lead.first_name || 'This lead'
 
     if (lead.status === 'new' && days >= 1 && days < 3) {
-      suggestions.push({ id: lead.id + '_new_warm', priority: 'medium', emoji: '📬', headline: `${firstName} just came in — reach out now`, body: `New leads contacted within the first hour are 7× more likely to respond. ${firstName} signed up ${days === 1 ? 'yesterday' : `${days} days ago`} for ${propName}.`, lead, cta: 'remind', propName })
+      suggestions.push({ id: lead.id + '_new_warm', priority: 'medium', emoji: '📬', headline: `${firstName} just came in — send first outreach`, body: `New leads contacted within the first hour are 7× more likely to respond. ${firstName} signed up ${days === 1 ? 'yesterday' : `${days} days ago`} for ${propName}. Sending will move them to Contacted.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'new' && days >= 3 && days < 7) {
-      suggestions.push({ id: lead.id + '_new_stale', priority: 'urgent', emoji: '🔥', headline: `${firstName} has been waiting ${days} days — send pre-screen now`, body: `Leads that go 3+ days without contact drop off 60% of the time. One nudge can recover them. They're interested in ${propName}.`, lead, cta: 'remind', propName })
+      suggestions.push({ id: lead.id + '_new_stale', priority: 'urgent', emoji: '🔥', headline: `${firstName} is waiting ${days} days — contact now`, body: `Leads without contact after 3 days drop off 60% of the time. Sending the pre-screen nudge will move them to Contacted.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'new' && days >= 7) {
-      suggestions.push({ id: lead.id + '_new_lost', priority: 'urgent', emoji: '⚠️', headline: `${firstName} may be going cold — final follow-up`, body: `It's been ${days} days since ${firstName} showed interest in ${propName}. Send one last outreach or close as lost.`, lead, cta: 'remind', propName })
+      suggestions.push({ id: lead.id + '_new_lost', priority: 'urgent', emoji: '⚠️', headline: `${firstName} is going cold — final outreach`, body: `${days} days with no contact. One message now moves them to Contacted — or close as lost to keep your pipeline clean.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'contacted' && days >= 2 && days < 5) {
-      suggestions.push({ id: lead.id + '_contacted_follow', priority: 'medium', emoji: '📞', headline: `Follow up with ${firstName} — ${days}d since first contact`, body: `You reached out to ${firstName} about ${propName}. A second touch-point increases reply rates by 3×.`, lead, cta: 'view', propName })
+      suggestions.push({ id: lead.id + '_contacted_follow', priority: 'medium', emoji: '📞', headline: `Follow up with ${firstName} — ${days}d since first contact`, body: `A second touch-point increases reply rates by 3×. Sending will move them to Follow Up so you can track this separately.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'contacted' && days >= 5 && days < 14) {
-      suggestions.push({ id: lead.id + '_contacted_urgent', priority: 'urgent', emoji: '⏰', headline: `${firstName} hasn't responded in ${days} days`, body: `${firstName} is interested in ${propName} but hasn't moved forward. Try a different channel (phone, text) before this one slips away.`, lead, cta: 'view', propName })
+      suggestions.push({ id: lead.id + '_contacted_urgent', priority: 'urgent', emoji: '⏰', headline: `${firstName} hasn't responded in ${days} days`, body: `Try a different channel (phone, text) or send another email. Sending moves them to Follow Up — keeping New leads fresh.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'contacted' && days >= 14) {
-      suggestions.push({ id: lead.id + '_contacted_final', priority: 'urgent', emoji: '🚨', headline: `At risk: ${firstName} has been stale for ${days} days`, body: `This lead is nearly cold. One final personal message can turn it around — or mark it lost and keep your pipeline clean.`, lead, cta: 'view', propName })
+      suggestions.push({ id: lead.id + '_contacted_final', priority: 'urgent', emoji: '🚨', headline: `${firstName} may be lost — final follow-up`, body: `${days} days of silence. One last send moves them to Follow Up. No response after that → mark Cold or close as lost.`, lead, cta: 'remind', propName })
+    } else if (lead.status === 'follow_up' && days < 14) {
+      suggestions.push({ id: lead.id + '_followup_check', priority: 'medium', emoji: '🔄', headline: `${firstName} is in follow-up — send another nudge`, body: `You've already reached out. One more send keeps the conversation going. No reply after this → they'll move to Cold.`, lead, cta: 'remind', propName })
+    } else if (lead.status === 'follow_up' && days >= 14) {
+      suggestions.push({ id: lead.id + '_followup_cold', priority: 'urgent', emoji: '❄️', headline: `${firstName} is going cold — last attempt`, body: `${days} days in the follow-up queue with no response. Sending this final message moves them to Cold. Keep your pipeline honest.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'engaged' && days >= 4 && days < 10) {
-      suggestions.push({ id: lead.id + '_engaged_push', priority: 'medium', emoji: '💬', headline: `Push ${firstName} to complete their pre-screen`, body: `${firstName} engaged with your listing ${days} days ago. The pre-screen separates serious applicants — nudge them to finish it.`, lead, cta: 'remind', propName })
+      suggestions.push({ id: lead.id + '_engaged_push', priority: 'medium', emoji: '💬', headline: `Push ${firstName} to complete their pre-screen`, body: `${firstName} engaged ${days} days ago. The pre-screen separates serious applicants — nudge them to finish it. Sending moves them to Follow Up.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'engaged' && days >= 10) {
-      suggestions.push({ id: lead.id + '_engaged_reactivate', priority: 'urgent', emoji: '🔔', headline: `Re-activate ${firstName} — ${days}d stalled at Engaged`, body: `${firstName} showed real interest in ${propName} but stopped. Ask if they're still looking — a short reply reopens the conversation.`, lead, cta: 'remind', propName })
+      suggestions.push({ id: lead.id + '_engaged_reactivate', priority: 'urgent', emoji: '🔔', headline: `Re-activate ${firstName} — ${days}d stalled at Engaged`, body: `They showed real interest but stopped. One message reopens the conversation and moves them to Follow Up.`, lead, cta: 'remind', propName })
+    } else if (lead.status === 'cold' && days < 30) {
+      suggestions.push({ id: lead.id + '_cold_reactivate', priority: 'low', emoji: '🌱', headline: `Try reactivating ${firstName}`, body: `${firstName} went cold ${days} days ago. Market conditions change — a short "still looking?" note costs nothing and sometimes works. Sending moves them back to Follow Up.`, lead, cta: 'remind', propName })
     } else if (lead.status === 'qualified' && days >= 2 && days < 7) {
       suggestions.push({ id: lead.id + '_qual_tour', priority: 'medium', emoji: '🏠', headline: `Invite ${firstName} to tour ${propName}`, body: `${firstName} completed their pre-screen ${days} days ago — they're your most serious candidate. Strike while they're warm.`, lead, cta: 'view', propName })
     } else if (lead.status === 'qualified' && days >= 7) {
-      suggestions.push({ id: lead.id + '_qual_urgent', priority: 'urgent', emoji: '⚡', headline: `${firstName} qualified ${days}d ago — close the deal`, body: `This lead is your best chance at filling ${propName}. They pre-screened, they're interested. Don't let another landlord swoop in — book the tour today.`, lead, cta: 'view', propName })
+      suggestions.push({ id: lead.id + '_qual_urgent', priority: 'urgent', emoji: '⚡', headline: `${firstName} qualified ${days}d ago — close the deal`, body: `Pre-screened and interested. Don't let another landlord swoop in — book the tour today.`, lead, cta: 'view', propName })
     }
   }
 
@@ -408,7 +538,9 @@ export default function LandlordLeadsPage() {
     return staleDays(b.lead) - staleDays(a.lead)
   })
 
-  const urgentCount = suggestions.filter(s => s.priority === 'urgent').length
+  const visibleSuggestions = suggestions.filter(s => !dismissedIds.has(s.id))
+  const urgentCount = visibleSuggestions.filter(s => s.priority === 'urgent').length
+  const needsActionCount = urgentCount
 
   // ── Guards ────────────────────────────────────────────────────────────────
   // ── Email preview builder (mirrors send-reminder route, no images needed for preview) ──
@@ -616,129 +748,250 @@ export default function LandlordLeadsPage() {
 
         {/* ── OVERVIEW TAB ── */}
         {activeTab === 'overview' && (
-          <div style={{ padding: '20px 24px' }}>
-            {/* Summary row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
-              {[
-                { label: 'Total Leads',     value: leads.length,                                      sub: `${leads.filter(l => l.status !== 'closed').length} active` },
-                { label: 'Qualified+',      value: leads.filter(l => ['qualified','tour_scheduled'].includes(l.status)).length, sub: 'ready for tour or lease', accent: '#10b981' },
-                { label: 'Avg. Conversion', value: leads.length > 0 ? `${Math.round((leads.filter(l => ['qualified','tour_scheduled'].includes(l.status)).length / leads.length) * 100)}%` : '—', sub: 'new → qualified' },
-                { label: 'Action Needed',   value: urgentCount,                                       sub: `${suggestions.length} total suggestions`, accent: urgentCount > 0 ? '#dc2626' : '#94a3b8' },
-              ].map(card => (
-                <div key={card.label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 6 }}>{card.label}</div>
-                  <div style={{ fontSize: 26, fontWeight: 700, color: card.accent || '#0f172a', lineHeight: 1, marginBottom: 4 }}>{card.value}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{card.sub}</div>
-                </div>
-              ))}
-            </div>
+          <div style={{ padding: '20px 24px', maxWidth: 960, margin: '0 auto' }}>
 
-            {/* Property breakdown */}
-            {propertyAnalytics.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 12 }}>By Property</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {propertyAnalytics.map(pa => (
-                    <div key={pa.slug} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-                        <div>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{pa.name}</span>
-                          <span style={{ marginLeft: 10, fontSize: 11, color: '#94a3b8' }}>{pa.totalLeads} lead{pa.totalLeads !== 1 ? 's' : ''} · {pa.activeLeads} active</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          {pa.hotLeadCount > 0 && (
-                            <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 20, padding: '2px 10px' }}>
-                              🔥 {pa.hotLeadCount} hot
-                            </span>
-                          )}
-                          <span style={{ fontSize: 12, fontWeight: 700, color: pa.conversionRate >= 30 ? '#16a34a' : pa.conversionRate >= 15 ? '#d97706' : '#dc2626' }}>
-                            {pa.conversionRate}% conv.
-                          </span>
-                        </div>
-                      </div>
-                      {/* Funnel bar */}
-                      <div style={{ display: 'flex', gap: 4, marginBottom: 8, height: 8 }}>
-                        {STATUS_ORDER.filter(s => s !== 'closed').map(s => {
-                          const count = pa.byStatus[s] || 0
-                          const pct = pa.totalLeads > 0 ? (count / pa.totalLeads) * 100 : 0
-                          const colors: Record<string, string> = { new: '#3b82f6', contacted: '#f97316', engaged: '#eab308', qualified: '#10b981', tour_scheduled: '#8b5cf6' }
-                          return pct > 0 ? (
-                            <div key={s} style={{ width: `${pct}%`, background: colors[s], borderRadius: 4, minWidth: 6 }} title={`${STATUS_META[s].label}: ${count}`} />
-                          ) : null
-                        })}
-                      </div>
-                      {/* Funnel labels */}
-                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        {STATUS_ORDER.filter(s => s !== 'closed').map(s => {
-                          const count = pa.byStatus[s] || 0
-                          if (count === 0) return null
-                          const colors: Record<string, string> = { new: '#3b82f6', contacted: '#f97316', engaged: '#eab308', qualified: '#10b981', tour_scheduled: '#8b5cf6' }
-                          return (
-                            <span key={s} style={{ fontSize: 11, color: colors[s], fontWeight: 600 }}>
-                              {count} {STATUS_META[s].label}
-                            </span>
-                          )
-                        })}
-                        {pa.byStatus.closed > 0 && (
-                          <span style={{ fontSize: 11, color: '#94a3b8' }}>{pa.byStatus.closed} closed</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Hottest leads */}
-            {topLeads.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 12 }}>
-                  Hottest Leads — ranked by status + recency
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-                  {topLeads.map(({ lead, score, days }, i) => {
-                    const meta = STATUS_META[lead.status]
-                    const prop = properties.find(p => p.slug === lead.property)
-                    const scoreColor = score >= 70 ? '#dc2626' : score >= 50 ? '#d97706' : score >= 30 ? '#10b981' : '#94a3b8'
-                    return (
-                      <div key={lead.id} onClick={() => router.push(`/landlord/leads/${lead.id}`)} style={{ background: '#fff', border: `1px solid ${i === 0 ? '#fecaca' : '#e2e8f0'}`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              {initials(lead.first_name, lead.last_name)}
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
-                                {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-                                {i === 0 && <span style={{ marginLeft: 4 }}>🔥</span>}
-                              </div>
-                              <div style={{ fontSize: 11, color: '#94a3b8' }}>{prop?.name || '—'}</div>
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: scoreColor }}>{score}</div>
-                            <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>score</div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: 20, padding: '2px 8px' }}>
-                            {meta.label}
-                          </span>
-                          <span style={{ fontSize: 11, color: '#94a3b8' }}>{days}d old</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {leads.length === 0 && (
+            {leads.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>No leads yet</div>
                 <div style={{ fontSize: 13 }}>They'll appear here once tenants inquire about your properties.</div>
               </div>
+            ) : (
+              <>
+                {/* ── Urgent action banner ── */}
+                {needsActionCount > 0 && (
+                  <div
+                    onClick={() => setActiveTab('insights')}
+                    style={{ background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 18 }}>🚨</span>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626' }}>{needsActionCount} lead{needsActionCount !== 1 ? 's' : ''} need urgent attention today</div>
+                        <div style={{ fontSize: 12, color: '#b91c1c' }}>These are at risk of going cold. Go to Insights to act on them.</div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', whiteSpace: 'nowrap' }}>Go to Insights →</span>
+                  </div>
+                )}
+
+                {/* ── KPI row ── */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 24 }}>
+                  {[
+                    {
+                      label: 'Active Leads',
+                      value: activeLeads.length,
+                      sub: `${newThisWeek} new this week`,
+                      accent: '#0f172a',
+                      tip: 'All leads not yet closed.',
+                    },
+                    {
+                      label: 'New This Week',
+                      value: newThisWeek,
+                      sub: newThisWeek === 0 ? 'none yet' : newThisWeek === 1 ? 'respond within 1 hour' : 'respond fast — speed wins',
+                      accent: newThisWeek > 0 ? '#3b82f6' : '#94a3b8',
+                      tip: 'Leads contacted within 1 hour are 7× more likely to respond.',
+                    },
+                    {
+                      label: 'Qualified / Tour',
+                      value: qualifiedPlus,
+                      sub: qualifiedPlus > 0 ? 'ready to lease' : 'none yet — keep pushing',
+                      accent: qualifiedPlus > 0 ? '#10b981' : '#94a3b8',
+                      tip: 'Completed pre-screen or tour scheduled.',
+                    },
+                    {
+                      label: 'Response Rate',
+                      value: `${responseRate}%`,
+                      sub: responseRate >= 20 ? 'solid engagement' : responseRate >= 10 ? 'room to improve' : 'follow up more',
+                      accent: responseRate >= 20 ? '#10b981' : responseRate >= 10 ? '#d97706' : '#dc2626',
+                      tip: 'Leads who engaged, qualified, or scheduled a tour ÷ total leads.',
+                    },
+                    {
+                      label: 'Leased',
+                      value: leasedCount,
+                      sub: coldCount > 0 ? `${coldCount} cold — may need reactivation` : 'no cold leads',
+                      accent: leasedCount > 0 ? '#8b5cf6' : '#94a3b8',
+                      tip: 'Successfully leased units.',
+                    },
+                  ].map(card => (
+                    <div key={card.label} title={card.tip} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', cursor: 'default' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 6 }}>{card.label}</div>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: card.accent, lineHeight: 1, marginBottom: 4 }}>{card.value}</div>
+                      <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>{card.sub}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── Pipeline funnel ── */}
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 14 }}>Pipeline Breakdown</div>
+                  <div style={{ display: 'flex', gap: 3, height: 10, borderRadius: 6, overflow: 'hidden', marginBottom: 14 }}>
+                    {STATUS_ORDER.map(s => {
+                      const count = leads.filter(l => l.status === s).length
+                      const pct = leads.length > 0 ? (count / leads.length) * 100 : 0
+                      const colors: Record<string, string> = {
+                        new: '#3b82f6', contacted: '#f97316', follow_up: '#c2410c',
+                        engaged: '#eab308', cold: '#94a3b8', qualified: '#10b981',
+                        tour_scheduled: '#8b5cf6', closed: '#e2e8f0',
+                      }
+                      return pct > 0 ? (
+                        <div key={s} style={{ flex: pct, background: colors[s], minWidth: 4 }} title={`${STATUS_META[s].label}: ${count}`} />
+                      ) : null
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {STATUS_ORDER.map(s => {
+                      const count = leads.filter(l => l.status === s).length
+                      if (count === 0) return null
+                      const colors: Record<string, string> = {
+                        new: '#3b82f6', contacted: '#f97316', follow_up: '#c2410c',
+                        engaged: '#eab308', cold: '#94a3b8', qualified: '#10b981',
+                        tour_scheduled: '#8b5cf6', closed: '#6b7280',
+                      }
+                      const descriptions: Record<string, string> = {
+                        new: 'need first contact',
+                        contacted: 'waiting on response',
+                        follow_up: 'in follow-up queue',
+                        engaged: 'pre-screen not done',
+                        cold: 'no response — reactivate?',
+                        qualified: 'ready for tour',
+                        tour_scheduled: 'tour booked',
+                        closed: 'done',
+                      }
+                      return (
+                        <div
+                          key={s}
+                          onClick={() => { setActiveTab('leads'); setStatusFilter(s) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
+                        >
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors[s], flexShrink: 0 }} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: colors[s] }}>{count}</span>
+                          <span style={{ fontSize: 12, color: '#64748b' }}>{STATUS_META[s].label}</span>
+                          <span style={{ fontSize: 11, color: '#94a3b8' }}>— {descriptions[s]}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* ── Per-property deep dive ── */}
+                {propertyAnalytics.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Properties</div>
+                    {propertyAnalytics.map(pa => {
+                      const funnelColors: Record<string, string> = {
+                        new: '#3b82f6', contacted: '#f97316', follow_up: '#c2410c',
+                        engaged: '#eab308', cold: '#94a3b8', qualified: '#10b981',
+                        tour_scheduled: '#8b5cf6',
+                      }
+                      const convColor = pa.conversionRate >= 25 ? '#16a34a' : pa.conversionRate >= 10 ? '#d97706' : '#dc2626'
+                      return (
+                        <div key={pa.slug} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
+                          {/* Property header */}
+                          <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                            <div>
+                              <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{pa.name}</span>
+                              <span style={{ marginLeft: 10, fontSize: 12, color: '#94a3b8' }}>
+                                {pa.totalLeads} total · {pa.activeLeads} active · {pa.byStatus.closed || 0} closed
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              {pa.hotLeadCount > 0 && (
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 20, padding: '3px 10px' }}>
+                                  🔥 {pa.hotLeadCount} hot lead{pa.hotLeadCount !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                              <span style={{ fontSize: 12, fontWeight: 700, color: convColor, background: convColor + '15', border: `1px solid ${convColor}30`, borderRadius: 20, padding: '3px 10px' }}>
+                                {pa.conversionRate}% conversion
+                              </span>
+                              <button
+                                onClick={() => { setActiveTab('leads'); setPropertyFilter(pa.slug) }}
+                                style={{ fontSize: 11, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                              >
+                                View all →
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ padding: '14px 18px' }}>
+                            {/* Funnel bar */}
+                            <div style={{ display: 'flex', gap: 3, height: 8, borderRadius: 5, overflow: 'hidden', marginBottom: 10 }}>
+                              {STATUS_ORDER.filter(s => s !== 'closed').map(s => {
+                                const count = pa.byStatus[s] || 0
+                                const pct = pa.activeLeads > 0 ? (count / pa.activeLeads) * 100 : 0
+                                return pct > 0 ? (
+                                  <div key={s} style={{ flex: pct, background: funnelColors[s] || '#e2e8f0', minWidth: 4 }} title={`${STATUS_META[s].label}: ${count}`} />
+                                ) : null
+                              })}
+                            </div>
+                            {/* Status pills */}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: pa.topLeads.length > 0 ? 16 : 0 }}>
+                              {STATUS_ORDER.filter(s => s !== 'closed').map(s => {
+                                const count = pa.byStatus[s] || 0
+                                if (!count) return null
+                                return (
+                                  <span
+                                    key={s}
+                                    onClick={() => { setActiveTab('leads'); setPropertyFilter(pa.slug); setStatusFilter(s) }}
+                                    style={{ fontSize: 11, fontWeight: 600, color: funnelColors[s] || '#64748b', background: (funnelColors[s] || '#e2e8f0') + '18', border: `1px solid ${funnelColors[s] || '#e2e8f0'}40`, borderRadius: 20, padding: '2px 9px', cursor: 'pointer' }}
+                                  >
+                                    {count} {STATUS_META[s].label}
+                                  </span>
+                                )
+                              })}
+                              {(pa.byStatus.closed || 0) > 0 && (
+                                <span style={{ fontSize: 11, color: '#94a3b8', padding: '2px 6px' }}>{pa.byStatus.closed} closed</span>
+                              )}
+                            </div>
+
+                            {/* Hottest leads for this property */}
+                            {pa.topLeads.length > 0 && (
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 8 }}>
+                                  Hottest Leads — click to view
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  {pa.topLeads.map(({ lead, score, days }, i) => {
+                                    const meta = STATUS_META[lead.status]
+                                    const scoreColor = score >= 70 ? '#dc2626' : score >= 50 ? '#d97706' : score >= 30 ? '#10b981' : '#94a3b8'
+                                    return (
+                                      <div
+                                        key={lead.id}
+                                        onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? '#fefce8' : '#f8fafc', border: `1px solid ${i === 0 ? '#fde68a' : '#e2e8f0'}`, borderRadius: 9, padding: '9px 12px', cursor: 'pointer' }}
+                                      >
+                                        <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                          {initials(lead.first_name, lead.last_name)}
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
+                                            {i === 0 && <span>🔥</span>}
+                                          </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                            <span style={{ fontSize: 10, fontWeight: 600, color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: 20, padding: '1px 7px' }}>
+                                              {meta.label}
+                                            </span>
+                                            <span style={{ fontSize: 11, color: '#94a3b8' }}>{days === 0 ? 'today' : `${days}d ago`}</span>
+                                          </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                          <div style={{ fontSize: 18, fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{score}</div>
+                                          <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>score</div>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -746,7 +999,7 @@ export default function LandlordLeadsPage() {
         {/* ── INSIGHTS TAB ── */}
         {activeTab === 'insights' && (
           <div style={{ padding: '20px 24px' }}>
-            {suggestions.length === 0 ? (
+            {visibleSuggestions.length === 0 ? (
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 14, padding: '32px', textAlign: 'center' }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>🎉</div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: '#166534', marginBottom: 6 }}>You're all caught up!</div>
@@ -767,7 +1020,7 @@ export default function LandlordLeadsPage() {
 
                 {/* Suggestion cards */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
-                  {suggestions.map(s => {
+                  {visibleSuggestions.map(s => {
                     const borderColors = { urgent: '#fecaca', medium: '#fed7aa', low: '#bbf7d0' }
                     const accentColors = { urgent: '#dc2626', medium: '#d97706', low: '#16a34a' }
                     const bgColors     = { urgent: '#fef2f2', medium: '#fffbeb', low: '#f0fdf4' }
@@ -803,7 +1056,7 @@ export default function LandlordLeadsPage() {
                                   <button
                                     style={{ fontSize: 12, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                                     disabled={remindingId === s.lead.id}
-                                    onClick={async (e) => { e.stopPropagation(); await sendReminder(s.lead, e) }}
+                                    onClick={async (e) => { e.stopPropagation(); await sendInsightReminder(s.lead, e) }}
                                   >
                                     {remindingId === s.lead.id ? 'Sending…' : '📧 Send'}
                                   </button>
@@ -814,6 +1067,13 @@ export default function LandlordLeadsPage() {
                                 onClick={() => router.push(`/landlord/leads/${s.lead.id}`)}
                               >
                                 View →
+                              </button>
+                              <button
+                                style={{ fontSize: 12, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                                onClick={() => { dismissSuggestion(s.id); showToast('Marked as done') }}
+                                title="Already handled — remove from insights"
+                              >
+                                ✓ Done
                               </button>
                             </div>
                           </div>
