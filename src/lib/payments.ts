@@ -501,6 +501,44 @@ export async function addSpecialPayment(
   return { error }
 }
 
+// ─── LINE ITEM MUTATIONS ──────────────────────────────────────────────────────
+
+export async function updateLineItem(
+  id: string,
+  updates: Partial<{ label: string; amount: number; category: string }>
+): Promise<{ error: any }> {
+  const { error } = await supabase.from('payment_line_items').update(updates).eq('id', id)
+  return { error }
+}
+
+export async function addLineItem(
+  planTenantId: string,
+  item: { category: string; label: string; amount: number }
+): Promise<{ error: any; id: string | null }> {
+  const { data, error } = await supabase
+    .from('payment_line_items')
+    .insert({ plan_tenant_id: planTenantId, ...item })
+    .select('id')
+    .single()
+  return { error, id: data?.id ?? null }
+}
+
+export async function deleteLineItem(id: string): Promise<{ error: any }> {
+  const { error } = await supabase.from('payment_line_items').delete().eq('id', id)
+  return { error }
+}
+
+export async function updateTenantMonthlyTotal(
+  planTenantId: string,
+  monthlyTotal: number
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('payment_plan_tenants')
+    .update({ monthly_total: monthlyTotal })
+    .eq('id', planTenantId)
+  return { error }
+}
+
 // Bulk-update scheduled payment amounts for one tenant across their lease
 export async function updateTenantScheduleAmount(
   planTenantId: string,

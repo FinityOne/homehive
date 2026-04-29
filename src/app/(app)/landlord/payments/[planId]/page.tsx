@@ -2,12 +2,13 @@
 
 import { useEffect, useState, use } from 'react'
 import {
-  getPlanById, updateScheduledPayment, updateSpecialPayment, addSpecialPayment, updateTenantScheduleAmount,
+  getPlanById, updateScheduledPayment, updateSpecialPayment, addSpecialPayment,
+  updateTenantScheduleAmount, updateLineItem, addLineItem, deleteLineItem, updateTenantMonthlyTotal,
   getEffectiveStatus, isOverdue, computeLateFees, computeLateFeesByDate, daysLate, daysLateByDate,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES,
   type PaymentPlan, type ScheduledPayment, type SpecialPayment, type PaymentStatus, type SpecialCategory,
-  type PaymentPlanTenant,
+  type PaymentPlanTenant, type PaymentLineItem,
 } from '@/lib/payments'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -312,6 +313,226 @@ function MonthGroup({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── LINE ITEM EDITOR ─────────────────────────────────────────────────────────
+
+type DraftItem = { id: string | null; category: string; label: string; amount: string; isNew?: boolean }
+
+function LineItemEditor({
+  tenant, onSaved,
+}: {
+  tenant: PaymentPlanTenant
+  onSaved: (newTotal: number) => void
+}) {
+  const [editing, setEditing]   = useState(false)
+  const [saving,  setSaving]    = useState(false)
+  const [draft,   setDraft]     = useState<DraftItem[]>([])
+  const [totalOverride, setTotalOverride] = useState('')
+  const [totalMode,     setTotalMode]     = useState<'sum' | 'custom'>('sum')
+
+  const openEdit = () => {
+    setDraft(tenant.line_items.map(li => ({
+      id: li.id, category: li.category, label: li.label, amount: String(li.amount),
+    })))
+    const sum = tenant.line_items.reduce((s, li) => s + li.amount, 0)
+    setTotalOverride(String(tenant.monthly_total))
+    setTotalMode(Math.abs(sum - tenant.monthly_total) < 0.005 ? 'sum' : 'custom')
+    setEditing(true)
+  }
+
+  const cancel = () => { setEditing(false); setDraft([]) }
+
+  const updateDraft = (idx: number, key: keyof DraftItem, val: string) => {
+    setDraft(prev => prev.map((item, i) => i === idx ? { ...item, [key]: val } : item))
+  }
+
+  const addRow = () => {
+    setDraft(prev => [...prev, { id: null, category: 'rent', label: 'Rent', amount: '', isNew: true }])
+  }
+
+  const removeRow = (idx: number) => {
+    setDraft(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const lineSum = draft.reduce((s, li) => s + (parseFloat(li.amount) || 0), 0)
+  const finalTotal = totalMode === 'sum' ? lineSum : (parseFloat(totalOverride) || lineSum)
+  const mismatch = totalMode === 'custom' && Math.abs(finalTotal - lineSum) > 0.005
+
+  const iS: React.CSSProperties = {
+    padding: '6px 9px', fontSize: '12px', border: '1.5px solid #e2e8f0', borderRadius: '6px',
+    outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a',
+    boxSizing: 'border-box',
+  }
+
+  const save = async () => {
+    setSaving(true)
+
+    // 1. Handle deletions — items in original that are gone from draft
+    const originalIds = new Set(tenant.line_items.map(li => li.id))
+    const draftIds    = new Set(draft.filter(d => d.id).map(d => d.id!))
+    const toDelete    = [...originalIds].filter(id => !draftIds.has(id))
+    for (const id of toDelete) await deleteLineItem(id)
+
+    // 2. Update existing + insert new
+    for (const item of draft) {
+      const amt = parseFloat(item.amount) || 0
+      if (item.id) {
+        await updateLineItem(item.id, { label: item.label, amount: amt, category: item.category })
+      } else {
+        await addLineItem(tenant.id, { category: item.category, label: item.label, amount: amt })
+      }
+    }
+
+    // 3. Update monthly_total
+    await updateTenantMonthlyTotal(tenant.id, finalTotal)
+
+    setSaving(false)
+    setEditing(false)
+    onSaved(finalTotal)
+  }
+
+  const iS2: React.CSSProperties = { ...iS, fontSize: '13px', padding: '7px 10px' }
+
+  if (!editing) {
+    return (
+      <button
+        onClick={openEdit}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4, padding: '5px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f8fafc', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'border-color 0.15s, color 0.15s' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#94a3b8'; (e.currentTarget as HTMLElement).style.color = '#0f172a' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'; (e.currentTarget as HTMLElement).style.color = '#475569' }}
+      >
+        ✏ Edit breakdown
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 10, background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '14px' }}>
+      <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Edit line items</div>
+
+      {/* Column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, marginBottom: 4 }}>
+        {['Category', 'Label', 'Amount', ''].map(h => (
+          <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{h}</div>
+        ))}
+      </div>
+
+      {/* Line item rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+        {draft.map((item, idx) => (
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
+            <select
+              style={{ ...iS, width: '100%' }}
+              value={item.category}
+              onChange={e => {
+                const cat = LINE_ITEM_CATEGORIES.find(c => c.value === e.target.value)
+                updateDraft(idx, 'category', e.target.value)
+                if (cat) updateDraft(idx, 'label', cat.label)
+              }}
+            >
+              {LINE_ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            <input
+              style={{ ...iS, width: '100%' }}
+              value={item.label}
+              onChange={e => updateDraft(idx, 'label', e.target.value)}
+              placeholder="Label"
+            />
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: '#94a3b8', pointerEvents: 'none' }}>$</span>
+              <input
+                style={{ ...iS, width: '100%', paddingLeft: 18 }}
+                type="number" min={0} step="0.01"
+                value={item.amount}
+                onChange={e => updateDraft(idx, 'amount', e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <button
+              onClick={() => removeRow(idx)}
+              style={{ width: 26, height: 26, border: 'none', borderRadius: '5px', background: 'none', color: '#94a3b8', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fef2f2' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'none' }}
+              title="Remove"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add row */}
+      <button
+        onClick={addRow}
+        style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', background: 'none', border: '1px dashed #cbd5e1', borderRadius: '5px', padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: 12 }}
+      >
+        + Add line item
+      </button>
+
+      {/* Sum + total */}
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+        {/* Auto-sum row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: '12px', color: '#64748b' }}>Sum of line items</span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(lineSum)}</span>
+        </div>
+
+        {/* Total mode toggle */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          {(['sum', 'custom'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => {
+                setTotalMode(mode)
+                if (mode === 'custom') setTotalOverride(String(finalTotal))
+              }}
+              style={{ flex: 1, padding: '6px 0', borderRadius: '6px', border: `1.5px solid ${totalMode === mode ? '#0f172a' : '#e2e8f0'}`, background: totalMode === mode ? '#0f172a' : '#fff', color: totalMode === mode ? '#fff' : '#64748b', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+            >
+              {mode === 'sum' ? 'Use sum' : 'Custom total'}
+            </button>
+          ))}
+        </div>
+
+        {totalMode === 'custom' ? (
+          <div>
+            <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Monthly total ($)</label>
+            <input
+              style={{ ...iS2, width: '100%', fontWeight: 700 }}
+              type="number" min={0} step="0.01"
+              value={totalOverride}
+              onChange={e => setTotalOverride(e.target.value)}
+            />
+            {mismatch && (
+              <div style={{ marginTop: 5, fontSize: '11px', color: '#d97706' }}>
+                ⚠ Total ({fmtCurrency(finalTotal)}) differs from sum ({fmtCurrency(lineSum)}) by {fmtCurrency(Math.abs(finalTotal - lineSum))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ background: '#f1f5f9', borderRadius: '7px', padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Monthly total</span>
+            <span style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>{fmtCurrency(finalTotal)}</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button
+          onClick={save} disabled={saving}
+          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+        <button
+          onClick={cancel}
+          style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
@@ -769,17 +990,38 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                   </div>
 
                   {/* Line items */}
-                  <div style={{ marginBottom: 14 }}>
+                  <div style={{ marginBottom: 10 }}>
                     {t.line_items.map(li => (
-                      <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f8fafc' }}>
+                      <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f8fafc' }}>
                         <span style={{ fontSize: '13px', color: '#475569' }}>{li.label}</span>
                         <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(li.amount)}</span>
                       </div>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8 }}>
+                    {t.line_items.length > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #e2e8f0' }}>
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sum</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{fmtCurrency(t.line_items.reduce((s, li) => s + li.amount, 0))}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 6 }}>
                       <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Monthly total</span>
-                      <span style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(t.monthly_total)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {t.line_items.length > 0 && Math.abs(t.line_items.reduce((s, li) => s + li.amount, 0) - t.monthly_total) > 0.005 && (
+                          <span style={{ fontSize: '10px', color: '#d97706', background: '#fff7ed', border: '1px solid #fed7aa', padding: '1px 6px', borderRadius: '4px' }}>custom</span>
+                        )}
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(t.monthly_total)}</span>
+                      </div>
                     </div>
+                    <LineItemEditor
+                      tenant={t}
+                      onSaved={newTotal => {
+                        setPlan(prev => prev ? {
+                          ...prev,
+                          tenants: prev.tenants.map(pt => pt.id === t.id ? { ...pt, monthly_total: newTotal } : pt),
+                        } : prev)
+                        load()
+                      }}
+                    />
                   </div>
 
                   {/* Quick stats */}
