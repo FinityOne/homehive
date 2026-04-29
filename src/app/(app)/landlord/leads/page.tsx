@@ -84,6 +84,17 @@ export default function LandlordLeadsPage() {
   const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
   const [addingLead, setAddingLead] = useState(false)
 
+  // Copy to clipboard — key format: `${leadId}:email` or `${leadId}:phone`
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
+  const handleCopy = (e: React.MouseEvent, key: string, value: string) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 1500)
+    })
+  }
+
   // Reminder sending
   const [remindingId, setRemindingId] = useState<string | null>(null)
 
@@ -387,6 +398,12 @@ export default function LandlordLeadsPage() {
         .ll-page-btn:not(:disabled):hover { border-color: #8C1D40; color: #8C1D40; }
 
         .ll-avatar { width: 32px; height: 32px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; }
+
+        /* Copy button */
+        .ll-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 1px 3px; border-radius: 3px; opacity: 0; transition: opacity 0.12s, background 0.12s; vertical-align: middle; margin-left: 3px; }
+        .ll-copy-btn:hover { background: #e8e5de; opacity: 1 !important; }
+        .ll-copy-btn.copied { opacity: 1 !important; }
+        tr:hover .ll-copy-btn { opacity: 0.45; }
         .ll-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap; }
         .ll-action-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
 
@@ -567,13 +584,34 @@ export default function LandlordLeadsPage() {
                               {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
                               {heat.icon && <span style={{ marginLeft: '4px', fontSize: '12px' }} title={heat.label}>{heat.icon}</span>}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{lead.email}</div>
+                            <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px', display: 'flex', alignItems: 'center' }}>
+                              <span>{lead.email}</span>
+                              <button
+                                className={`ll-copy-btn${copiedKey === `${lead.id}:email` ? ' copied' : ''}`}
+                                onClick={e => handleCopy(e, `${lead.id}:email`, lead.email)}
+                                title="Copy email"
+                              >
+                                {copiedKey === `${lead.id}:email`
+                                  ? <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700 }}>✓</span>
+                                  : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9b9b9b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                }
+                              </button>
+                            </div>
                             {phone && (
                               <div style={{ fontSize: '11px', color: '#6b9af0', marginTop: '1px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                <span style={{ fontSize: '10px' }}>📞</span>
                                 <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} style={{ color: '#6b9af0', textDecoration: 'none' }}>
                                   🇺🇸 +1 {phone}
                                 </a>
+                                <button
+                                  className={`ll-copy-btn${copiedKey === `${lead.id}:phone` ? ' copied' : ''}`}
+                                  onClick={e => handleCopy(e, `${lead.id}:phone`, phone)}
+                                  title="Copy phone"
+                                >
+                                  {copiedKey === `${lead.id}:phone`
+                                    ? <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700 }}>✓</span>
+                                    : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b9af0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                  }
+                                </button>
                               </div>
                             )}
                           </td>
