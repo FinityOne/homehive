@@ -1031,11 +1031,16 @@ function TenantDetailView({
   const totalCollected    = paid.reduce((s, sp) => s + sp.paid_amount, 0)
   const totalExpectedPast = pastDue.reduce((s, sp) => s + sp.amount, 0)
   const totalUpcoming     = upcoming.reduce((s, sp) => s + sp.amount, 0)
-  const totalOwedNow      = overdue.reduce((s, sp) => s + sp.amount, 0) + missed.reduce((s, sp) => s + sp.amount, 0)
+  const rentOwedNow       = overdue.reduce((s, sp) => s + sp.amount, 0) + missed.reduce((s, sp) => s + sp.amount, 0)
   const lateFeesCollected = paid.reduce((s, sp) => s + (sp.late_fees_applied || 0), 0)
-  const lateFeesPending   = rule
-    ? overdue.reduce((s, sp) => s + computeLateFees(rule, sp.due_date), 0)
-    : 0
+  // Per-payment late fee map so we can use it in both the metrics and table rows
+  const lateFeeMap = new Map<string, number>()
+  if (rule) {
+    for (const sp of overdue) lateFeeMap.set(sp.id, computeLateFees(rule, sp.due_date))
+  }
+  const lateFeesPending = Array.from(lateFeeMap.values()).reduce((s, v) => s + v, 0)
+  // True balance the tenant owes right now = unpaid rent + ALL accrued late fees
+  const totalOwedNow = rentOwedNow + lateFeesPending
   const totalDaysLate =
     paid.filter(sp => sp.paid_date).reduce((s, sp) => s + daysLateByDate(sp.due_date, sp.paid_date!), 0) +
     overdue.reduce((s, sp) => s + daysLate(sp.due_date), 0)
@@ -1090,9 +1095,16 @@ function TenantDetailView({
         {/* Metric cards */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1 }}>
           {statCard('Collected', fmtCurrency(totalCollected), `of ${fmtCurrency(totalExpectedPast)} billed`, '#0f172a', '#f8fafc')}
-          {statCard('Currently Owed', fmtCurrency(totalOwedNow), `${overdue.length + missed.length} payment${(overdue.length + missed.length) !== 1 ? 's' : ''} past due`, totalOwedNow > 0 ? '#dc2626' : '#0f172a', '#fff')}
+          {statCard(
+            'Currently Owed',
+            fmtCurrency(totalOwedNow),
+            lateFeesPending > 0
+              ? `${fmtCurrency(rentOwedNow)} rent + ${fmtCurrency(lateFeesPending)} fees`
+              : `${overdue.length + missed.length} payment${(overdue.length + missed.length) !== 1 ? 's' : ''} past due`,
+            totalOwedNow > 0 ? '#dc2626' : '#0f172a', '#fff'
+          )}
           {statCard('Upcoming', fmtCurrency(totalUpcoming), `${upcoming.length} payment${upcoming.length !== 1 ? 's' : ''} scheduled`, '#0284c7', '#fff')}
-          {statCard('Late Fees Owed', fmtCurrency(lateFeesPending), `${fmtCurrency(lateFeesCollected)} collected`, lateFeesPending > 0 ? '#c2410c' : '#0f172a', '#fff')}
+          {statCard('Late Fees Owed', fmtCurrency(lateFeesPending), lateFeesCollected > 0 ? `${fmtCurrency(lateFeesCollected)} already collected` : 'none collected yet', lateFeesPending > 0 ? '#c2410c' : '#0f172a', '#fff')}
           {statCard('Days Late Total', String(totalDaysLate), `across ${sps.length} payment${sps.length !== 1 ? 's' : ''}`, totalDaysLate > 0 ? '#d97706' : '#0f172a', '#fff')}
         </div>
 
@@ -1161,6 +1173,10 @@ function TenantDetailView({
           const allPaid        = monthSPs.every(sp => sp.status === 'paid')
           const anyLate        = monthSPs.some(sp => isOverdue(sp) || (sp.paid_date && daysLateByDate(sp.due_date, sp.paid_date) > 0))
 
+          const monthOverdue   = monthSPs.filter(sp => isOverdue(sp))
+          const monthLateFees  = rule ? monthOverdue.reduce((s, sp) => s + computeLateFees(rule, sp.due_date), 0) : 0
+          const monthBalanceDue = monthOverdue.reduce((s, sp) => s + sp.amount, 0) + monthLateFees
+
           return (
             <div key={monthKey}>
               {/* Month sub-header */}
@@ -1168,6 +1184,11 @@ function TenantDetailView({
                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{fmtMonth(monthKey + '-01')}</span>
                 {allPaid && !anyLate && <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>All on time ✓</span>}
                 {allPaid && anyLate  && <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>Paid late</span>}
+                {monthBalanceDue > 0 && (
+                  <span style={{ fontSize: '10px', background: '#fee2e2', color: '#991b1b', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>
+                    Balance due: {fmtCurrency(monthBalanceDue)}{monthLateFees > 0 ? ` (incl. ${fmtCurrency(monthLateFees)} fees)` : ''}
+                  </span>
+                )}
                 <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#94a3b8' }}>{fmtCurrency(monthPaid)} / {fmtCurrency(monthExpected)}</span>
               </div>
 
@@ -1191,7 +1212,17 @@ function TenantDetailView({
                       </span>
                       {sp.paid_date && <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: 6 }}>paid {fmtDate(sp.paid_date)}</span>}
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(sp.amount)}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      {isOverdue(sp) && lfDisp > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                          <span style={{ fontSize: '11px', color: '#64748b' }}>{fmtCurrency(sp.amount)} rent</span>
+                          <span style={{ fontSize: '11px', color: '#c2410c' }}>+{fmtCurrency(lfDisp)} fee</span>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#dc2626' }}>{fmtCurrency(sp.amount + lfDisp)}</span>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(sp.amount)}</span>
+                      )}
+                    </div>
                     <div style={{ textAlign: 'right' }}>
                       {sp.paid_amount > 0 ? (
                         <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>{fmtCurrency(sp.paid_amount)}</span>
@@ -1217,12 +1248,24 @@ function TenantDetailView({
         })}
 
         {/* Totals footer */}
-        <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '12px 18px', background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-          <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Totals</div>
-          <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(sps.reduce((s, sp) => s + sp.amount, 0))}</div>
-          <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: totalCollected > 0 ? '#16a34a' : '#cbd5e1' }}>{fmtCurrency(totalCollected)}</div>
-          <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: totalDaysLate > 0 ? '#d97706' : '#cbd5e1' }}>{totalDaysLate}d</div>
-          <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: lateFeesPending > 0 ? '#c2410c' : '#cbd5e1' }}>{lateFeesPending > 0 ? `🚩 ${fmtCurrency(lateFeesPending)}` : '—'}</div>
+        <div style={{ borderTop: '2px solid #e2e8f0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '12px 18px', background: '#f8fafc' }}>
+            <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Totals</div>
+            <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(sps.reduce((s, sp) => s + sp.amount, 0))}</div>
+            <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: totalCollected > 0 ? '#16a34a' : '#cbd5e1' }}>{fmtCurrency(totalCollected)}</div>
+            <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: totalDaysLate > 0 ? '#d97706' : '#cbd5e1' }}>{totalDaysLate}d</div>
+            <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: lateFeesPending > 0 ? '#c2410c' : '#cbd5e1' }}>{lateFeesPending > 0 ? `🚩 ${fmtCurrency(lateFeesPending)}` : '—'}</div>
+          </div>
+          {totalOwedNow > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '10px 18px', background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
+              <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>⚠</span> Balance Due
+                {lateFeesPending > 0 && <span style={{ fontSize: '11px', fontWeight: 500, color: '#b91c1c' }}>({fmtCurrency(rentOwedNow)} rent + {fmtCurrency(lateFeesPending)} fees)</span>}
+              </div>
+              <div style={{ gridColumn: '4 / 5', textAlign: 'right', fontSize: '15px', fontWeight: 800, color: '#dc2626' }}>{fmtCurrency(totalOwedNow)}</div>
+              <div style={{ gridColumn: '5 / -1' }} />
+            </div>
+          )}
         </div>
       </div>
     </div>
