@@ -151,6 +151,31 @@ export function computeLateFees(rule: Pick<LateFeeRule, 'grace_period_days' | 'f
   return rule.max_total_fees !== null ? Math.min(total, rule.max_total_fees) : total
 }
 
+// Compute late fees as of a specific date (e.g. when tenant actually paid)
+export function computeLateFeesByDate(
+  rule: Pick<LateFeeRule, 'grace_period_days' | 'fee_amount' | 'frequency_days' | 'max_total_fees'>,
+  dueDate: string,
+  asOfDate: string,
+): number {
+  const asOf = new Date(asOfDate + 'T00:00:00')
+  const due  = new Date(dueDate  + 'T00:00:00')
+  const cutoff = new Date(due)
+  cutoff.setDate(cutoff.getDate() + rule.grace_period_days)
+  if (asOf <= cutoff) return 0
+  const daysOver = Math.floor((asOf.getTime() - cutoff.getTime()) / 86_400_000)
+  const periods  = Math.floor(daysOver / rule.frequency_days)
+  const total    = periods * rule.fee_amount
+  return rule.max_total_fees !== null ? Math.min(total, rule.max_total_fees) : total
+}
+
+// Days between due_date and paid_date (0 if paid on time)
+export function daysLateByDate(dueDate: string, paidDate: string): number {
+  const paid = new Date(paidDate + 'T00:00:00')
+  const due  = new Date(dueDate  + 'T00:00:00')
+  if (paid <= due) return 0
+  return Math.floor((paid.getTime() - due.getTime()) / 86_400_000)
+}
+
 // Generate array of due-date strings for each month of a lease
 export function generateScheduleDates(
   leaseStart: string,

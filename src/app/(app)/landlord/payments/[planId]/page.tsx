@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from 'react'
 import {
   getPlanById, updateScheduledPayment, updateSpecialPayment, addSpecialPayment,
-  getEffectiveStatus, isOverdue, computeLateFees, daysLate,
+  getEffectiveStatus, isOverdue, computeLateFees, computeLateFeesByDate, daysLate, daysLateByDate,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES,
   type PaymentPlan, type ScheduledPayment, type SpecialPayment, type PaymentStatus, type SpecialCategory,
@@ -35,6 +35,8 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── PAYMENT ROW (schedule) ───────────────────────────────────────────────────
 
+const ROW_COLS = '1fr 88px 88px 110px 68px 96px'
+
 function PaymentRow({
   payment, rule, onUpdate,
 }: {
@@ -42,31 +44,52 @@ function PaymentRow({
   rule?: { grace_period_days: number; fee_amount: number; frequency_days: number; max_total_fees: number | null } | null
   onUpdate: (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => void
 }) {
-  const [open,       setOpen]       = useState(false)
-  const [saving,     setSaving]     = useState(false)
-  const [paidAmt,    setPaidAmt]    = useState(String(payment.paid_amount || payment.amount))
-  const [paidDate,   setPaidDate]   = useState(payment.paid_date ?? new Date().toISOString().split('T')[0])
-  const [notes,      setNotes]      = useState(payment.notes ?? '')
-  const [newStatus,  setNewStatus]  = useState<PaymentStatus>(payment.status)
+  const [open,      setOpen]      = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [paidAmt,   setPaidAmt]   = useState(payment.paid_amount > 0 ? String(payment.paid_amount) : '')
+  const [paidDate,  setPaidDate]  = useState(payment.paid_date ?? new Date().toISOString().split('T')[0])
+  const [notes,     setNotes]     = useState(payment.notes ?? '')
+  const [newStatus, setNewStatus] = useState<PaymentStatus>(payment.status)
 
-  const effStatus  = getEffectiveStatus(payment)
-  const dl         = daysLate(payment.due_date)
-  const lateFee    = rule && dl > 0 ? computeLateFees(rule, payment.due_date) : 0
+  const effStatus = getEffectiveStatus(payment)
+  const isPaidOrPartial = ['paid', 'partial'].includes(newStatus)
+
+  // Late days: use paid_date for paid/partial, today for unpaid late
+  const dlRow = payment.paid_date
+    ? daysLateByDate(payment.due_date, payment.paid_date)
+    : daysLate(payment.due_date)
+
+  // Late fee in row: use paid_date if paid, today otherwise
+  const lateFeeRow = rule
+    ? (payment.paid_date
+        ? computeLateFeesByDate(rule, payment.due_date, payment.paid_date)
+        : (dlRow > 0 ? computeLateFees(rule, payment.due_date) : 0))
+    : 0
+
+  // Reactive late fee in the edit panel: use the paidDate input field when paid/partial
+  const editDl = isPaidOrPartial
+    ? daysLateByDate(payment.due_date, paidDate)
+    : daysLate(payment.due_date)
+  const editLateFee = rule && editDl > 0
+    ? (isPaidOrPartial
+        ? computeLateFeesByDate(rule, payment.due_date, paidDate)
+        : computeLateFees(rule, payment.due_date))
+    : 0
+
+  const collectedAmt  = payment.paid_amount
+  const expectedTotal = payment.amount + lateFeeRow
+  const shortfall     = expectedTotal - collectedAmt
 
   const save = async () => {
     setSaving(true)
-    const amt = parseFloat(paidAmt) || 0
-    const finalStatus: PaymentStatus = newStatus === 'paid' ? 'paid'
-      : newStatus === 'partial' ? 'partial'
-      : newStatus === 'missed'  ? 'missed'
-      : newStatus === 'late'    ? 'late'
-      : newStatus
+    const amt         = parseFloat(paidAmt) || 0
+    const finalStatus = newStatus as PaymentStatus
     await onUpdate(payment.id, {
-      status:      finalStatus,
-      paid_amount: amt,
-      paid_date:   ['paid', 'partial'].includes(finalStatus) ? paidDate : null,
-      notes:       notes || undefined,
-      ...(lateFee > 0 ? { late_fees_applied: lateFee } : {}),
+      status:             finalStatus,
+      paid_amount:        amt,
+      paid_date:          isPaidOrPartial ? paidDate : null,
+      notes:              notes || undefined,
+      ...(editLateFee > 0 ? { late_fees_applied: editLateFee } : {}),
     })
     setSaving(false)
     setOpen(false)
@@ -76,7 +99,8 @@ function PaymentRow({
 
   return (
     <div style={{ borderBottom: '1px solid #f1f5f9' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 110px 100px 100px', gap: 8, alignItems: 'center', padding: '12px 16px', cursor: 'pointer', transition: 'background 0.1s' }}
+      <div
+        style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, alignItems: 'center', padding: '11px 16px', cursor: 'pointer', transition: 'background 0.1s' }}
         onClick={() => setOpen(v => !v)}
         onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#fafafa'}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
@@ -92,9 +116,20 @@ function PaymentRow({
           </div>
         </div>
 
-        {/* Amount */}
-        <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', textAlign: 'right' }}>
+        {/* Expected */}
+        <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', textAlign: 'right' }}>
           {fmtCurrency(payment.amount)}
+        </div>
+
+        {/* Collected */}
+        <div style={{ textAlign: 'right' }}>
+          {collectedAmt > 0 ? (
+            <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>
+              {fmtCurrency(collectedAmt)}
+            </span>
+          ) : (
+            <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
+          )}
         </div>
 
         {/* Status */}
@@ -102,14 +137,22 @@ function PaymentRow({
           <StatusBadge status={effStatus} />
         </div>
 
-        {/* Paid / Late info */}
-        <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
-          {payment.paid_date ? fmtDate(payment.paid_date) : dl > 0 ? <span style={{ color: '#ef4444', fontWeight: 600 }}>{dl}d late</span> : '—'}
+        {/* Days late (from paid_date, not today) */}
+        <div style={{ textAlign: 'right' }}>
+          {dlRow > 0
+            ? <span style={{ fontSize: '11px', fontWeight: 700, color: payment.paid_date ? '#d97706' : '#ef4444', background: payment.paid_date ? '#fff7ed' : '#fef2f2', padding: '2px 6px', borderRadius: '5px' }}>{dlRow}d</span>
+            : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
         </div>
 
-        {/* Accrued late fee */}
-        <div style={{ fontSize: '12px', textAlign: 'right' }}>
-          {lateFee > 0 ? <span style={{ color: '#ef4444', fontWeight: 600 }}>+{fmtCurrency(lateFee)}</span> : <span style={{ color: '#cbd5e1' }}>—</span>}
+        {/* Late fee flag */}
+        <div style={{ textAlign: 'right' }}>
+          {lateFeeRow > 0 ? (
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 7px', borderRadius: '5px' }}>
+              🚩 {fmtCurrency(lateFeeRow)}
+            </span>
+          ) : (
+            <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
+          )}
         </div>
       </div>
 
@@ -128,23 +171,81 @@ function PaymentRow({
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>PAID AMOUNT</label>
-              <input style={iS} type="number" step="0.01" value={paidAmt} onChange={e => setPaidAmt(e.target.value)} />
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>AMOUNT COLLECTED ($)</label>
+              <input
+                style={iS} type="number" step="0.01" min={0}
+                placeholder={fmtCurrency(payment.amount).replace('$', '')}
+                value={paidAmt}
+                onChange={e => setPaidAmt(e.target.value)}
+              />
             </div>
             <div>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>DATE PAID</label>
-              <input style={iS} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} />
+              <input style={iS} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} disabled={!isPaidOrPartial} />
             </div>
           </div>
+
+          {/* Late fee analysis — reactive */}
+          {editLateFee > 0 && (
+            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '9px', padding: '12px 14px', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span>🚩</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#c2410c' }}>
+                  {isPaidOrPartial ? `Paid ${editDl} day${editDl !== 1 ? 's' : ''} late` : `${editDl} day${editDl !== 1 ? 's' : ''} overdue`} — Expected late fee: <strong>{fmtCurrency(editLateFee)}</strong>
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div style={{ background: '#fff', borderRadius: '7px', padding: '8px 10px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Rent Due</div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(payment.amount)}</div>
+                </div>
+                <div style={{ background: '#fff', borderRadius: '7px', padding: '8px 10px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Late Fee</div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#c2410c' }}>+{fmtCurrency(editLateFee)}</div>
+                </div>
+                <div style={{ background: '#fff', borderRadius: '7px', padding: '8px 10px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Total Expected</div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(payment.amount + editLateFee)}</div>
+                </div>
+              </div>
+              {/* Gap between collected and expected */}
+              {(() => {
+                const collected = parseFloat(paidAmt) || 0
+                const gap = (payment.amount + editLateFee) - collected
+                if (gap > 0.01 && collected > 0) return (
+                  <div style={{ marginTop: 8, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '7px', padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', color: '#991b1b', fontWeight: 600 }}>Late fees not collected</span>
+                    <span style={{ fontSize: '14px', fontWeight: 800, color: '#dc2626' }}>{fmtCurrency(gap)}</span>
+                  </div>
+                )
+                if (collected >= payment.amount + editLateFee) return (
+                  <div style={{ marginTop: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '7px', padding: '8px 10px', fontSize: '12px', color: '#166534', fontWeight: 600 }}>
+                    ✓ Late fee collected in full
+                  </div>
+                )
+                return null
+              })()}
+            </div>
+          )}
+
+          {/* Shortfall when no late fee but paid less than expected */}
+          {editLateFee === 0 && (() => {
+            const collected = parseFloat(paidAmt) || 0
+            const gap = payment.amount - collected
+            if (gap > 0.01 && collected > 0) return (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '7px', padding: '8px 12px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', color: '#991b1b', fontWeight: 600 }}>Short by</span>
+                <span style={{ fontSize: '14px', fontWeight: 800, color: '#dc2626' }}>{fmtCurrency(gap)}</span>
+              </div>
+            )
+            return null
+          })()}
+
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>NOTES (optional)</label>
             <input style={iS} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Paid via Zelle" />
           </div>
-          {lateFee > 0 && (
-            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '7px', padding: '8px 12px', marginBottom: 12, fontSize: '12px', color: '#c2410c' }}>
-              ⚠ Accrued late fee: <strong>{fmtCurrency(lateFee)}</strong> — will be recorded if you save.
-            </div>
-          )}
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
               {saving ? 'Saving…' : 'Save'}
@@ -198,8 +299,8 @@ function MonthGroup({
       {open && (
         <div style={{ borderTop: '1px solid #f1f5f9' }}>
           {/* Table header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 110px 100px 100px', gap: 8, padding: '8px 16px', background: '#f8fafc' }}>
-            {['Tenant', 'Amount', 'Status', 'Paid Date', 'Late Fee'].map(h => (
+          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '8px 16px', background: '#f8fafc' }}>
+            {['Tenant', 'Expected', 'Collected', 'Status', 'Days Late', 'Late Fee'].map(h => (
               <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: h !== 'Tenant' ? 'right' : 'left', ...(h === 'Status' ? { textAlign: 'center' } : {}) }}>
                 {h}
               </div>
