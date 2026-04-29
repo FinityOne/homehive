@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from 'react'
 import {
-  getPlanById, updateScheduledPayment, updateSpecialPayment, addSpecialPayment,
+  getPlanById, updateScheduledPayment, updateSpecialPayment, updateSpecialPaymentFull, addSpecialPayment,
   updateTenantScheduleAmount, updateLineItem, addLineItem, deleteLineItem, updateTenantMonthlyTotal,
   getEffectiveStatus, isOverdue, computeLateFees, computeLateFeesByDate, daysLate, daysLateByDate,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
@@ -669,6 +669,221 @@ function TenantRentEditor({
   )
 }
 
+// ─── SPECIAL CHARGE CARD ─────────────────────────────────────────────────────
+
+type SpecialMode = 'view' | 'edit' | 'confirm'
+
+function SpecialChargeCard({
+  sp, multiTenant, onUpdate,
+}: {
+  sp: SpecialPayment
+  multiTenant: boolean
+  onUpdate: (id: string, updates: Parameters<typeof updateSpecialPaymentFull>[1]) => Promise<void>
+}) {
+  const [mode,     setMode]     = useState<SpecialMode>('view')
+  const [saving,   setSaving]   = useState(false)
+
+  // edit fields
+  const [category, setCategory] = useState(sp.category)
+  const [label,    setLabel]    = useState(sp.label)
+  const [amount,   setAmount]   = useState(String(sp.amount))
+  const [dueDate,  setDueDate]  = useState(sp.due_date)
+  const [status,   setStatus]   = useState<'pending' | 'paid' | 'waived'>(sp.status)
+  const [paidDate, setPaidDate] = useState(sp.paid_date ?? '')
+  const [notes,    setNotes]    = useState(sp.notes ?? '')
+
+  const openEdit = () => {
+    setCategory(sp.category); setLabel(sp.label); setAmount(String(sp.amount))
+    setDueDate(sp.due_date);  setStatus(sp.status)
+    setPaidDate(sp.paid_date ?? ''); setNotes(sp.notes ?? '')
+    setMode('edit')
+  }
+
+  const catLabel = (cat: string) => SPECIAL_CATEGORIES.find(c => c.value === cat)?.label ?? cat
+
+  // Build a human-readable diff for the confirmation step
+  const parsedAmt = parseFloat(amount) || 0
+  type Change = { field: string; from: string; to: string }
+  const changes: Change[] = []
+  if (sp.category !== category)              changes.push({ field: 'Type',      from: catLabel(sp.category),            to: catLabel(category) })
+  if (sp.label    !== label)                 changes.push({ field: 'Label',     from: sp.label,                         to: label })
+  if (Math.abs(sp.amount - parsedAmt) > 0.005) changes.push({ field: 'Amount',  from: fmtCurrency(sp.amount),           to: fmtCurrency(parsedAmt) })
+  if (sp.due_date !== dueDate)               changes.push({ field: 'Due date',  from: fmtDate(sp.due_date),             to: fmtDate(dueDate) })
+  if (sp.status   !== status)                changes.push({ field: 'Status',    from: sp.status,                        to: status })
+  if ((sp.paid_date ?? '') !== paidDate)     changes.push({ field: 'Paid date', from: sp.paid_date ? fmtDate(sp.paid_date) : '—', to: paidDate ? fmtDate(paidDate) : '—' })
+  if ((sp.notes   ?? '') !== notes)          changes.push({ field: 'Notes',     from: sp.notes || '—',                  to: notes || '—' })
+
+  const confirm = async () => {
+    if (changes.length === 0) { setMode('view'); return }
+    setSaving(true)
+    await onUpdate(sp.id, {
+      category,
+      label,
+      amount:    parsedAmt,
+      due_date:  dueDate,
+      status,
+      paid_date: status === 'paid' && paidDate ? paidDate : (status === 'paid' ? new Date().toISOString().split('T')[0] : null),
+      notes:     notes || null,
+    })
+    setSaving(false)
+    setMode('view')
+  }
+
+  const isOverdueCharge = sp.status === 'pending' && new Date(sp.due_date + 'T00:00:00') < new Date()
+
+  const iS: React.CSSProperties = {
+    width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e2e8f0',
+    borderRadius: '7px', outline: 'none', fontFamily: "'DM Sans', sans-serif",
+    background: '#fff', color: '#0f172a', boxSizing: 'border-box',
+  }
+
+  // ── VIEW mode ──
+  if (mode === 'view') {
+    return (
+      <div style={{ background: '#fff', borderRadius: '11px', border: `1px solid ${isOverdueCharge ? '#fca5a5' : '#e2e8f0'}`, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{sp.label}</span>
+            <span style={{ background: '#f1f5f9', color: '#475569', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{catLabel(sp.category)}</span>
+            {sp.tenant && <span style={{ fontSize: '12px', color: '#94a3b8' }}>→ {sp.tenant.name}</span>}
+            {!sp.tenant && multiTenant && <span style={{ fontSize: '12px', color: '#94a3b8' }}>→ All tenants</span>}
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>
+            Due {fmtDate(sp.due_date)}
+            {sp.paid_date && ` · Paid ${fmtDate(sp.paid_date)}`}
+            {sp.notes && ` · ${sp.notes}`}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{fmtCurrency(sp.amount)}</div>
+          <StatusBadge status={sp.status} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+          <button
+            onClick={openEdit}
+            style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+          >
+            ✏ Edit
+          </button>
+          {sp.status !== 'paid' && (
+            <>
+              <button
+                onClick={() => onUpdate(sp.id, { status: 'paid', paid_date: new Date().toISOString().split('T')[0] })}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#0f172a', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              >
+                Mark paid
+              </button>
+              <button
+                onClick={() => onUpdate(sp.id, { status: 'waived' })}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#94a3b8', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              >
+                Waive
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── EDIT mode ──
+  if (mode === 'edit') {
+    return (
+      <div style={{ background: '#fff', borderRadius: '11px', border: '1.5px solid #0f172a', padding: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Edit charge</span>
+          <button onClick={() => setMode('view')} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Type</label>
+            <select style={iS} value={category} onChange={e => {
+              const cat = SPECIAL_CATEGORIES.find(c => c.value === e.target.value)
+              setCategory(e.target.value as typeof category)
+              if (cat) setLabel(cat.label)
+            }}>
+              {SPECIAL_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Label</label>
+            <input style={iS} value={label} onChange={e => setLabel(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Amount ($)</label>
+            <input style={iS} type="number" min={0} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Status</label>
+            <select style={iS} value={status} onChange={e => setStatus(e.target.value as typeof status)}>
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="waived">Waived</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Due date</label>
+            <input style={iS} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Paid date</label>
+            <input style={iS} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} disabled={status !== 'paid'} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Notes</label>
+            <input style={iS} value={notes} placeholder="Optional note" onChange={e => setNotes(e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => changes.length > 0 ? setMode('confirm') : setMode('view')}
+            disabled={!parsedAmt || !dueDate}
+            style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: (!parsedAmt || !dueDate) ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: (!parsedAmt || !dueDate) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          >
+            {changes.length === 0 ? 'No changes' : `Review ${changes.length} change${changes.length !== 1 ? 's' : ''} →`}
+          </button>
+          <button onClick={() => setMode('view')} style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── CONFIRM mode ──
+  return (
+    <div style={{ background: '#fff', borderRadius: '11px', border: '1.5px solid #0f172a', padding: '20px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Confirm changes</div>
+      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: 14 }}>Review before saving — this cannot be undone.</div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+        {changes.map(ch => (
+          <div key={ch.field} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 14px 1fr', gap: 8, alignItems: 'center', background: '#f8fafc', borderRadius: '7px', padding: '8px 10px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{ch.field}</span>
+            <span style={{ fontSize: '12px', color: '#64748b', textDecoration: 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.from}</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center' }}>→</span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.to}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={confirm} disabled={saving}
+          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          {saving ? 'Saving…' : 'Confirm & save'}
+        </button>
+        <button onClick={() => setMode('edit')} style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+          ← Back
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── ADD SPECIAL CHARGE FORM ──────────────────────────────────────────────────
 
 function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: PaymentPlan['tenants']; onAdded: () => void }) {
@@ -778,8 +993,8 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     } : prev)
   }
 
-  const handleUpdateSpecial = async (id: string, updates: Parameters<typeof updateSpecialPayment>[1]) => {
-    await updateSpecialPayment(id, updates)
+  const handleUpdateSpecial = async (id: string, updates: Parameters<typeof updateSpecialPaymentFull>[1]) => {
+    await updateSpecialPaymentFull(id, updates)
     setPlan(prev => prev ? {
       ...prev,
       special_payments: prev.special_payments?.map(sp => sp.id === id ? { ...sp, ...updates } : sp),
@@ -1077,7 +1292,6 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {/* Security deposits first */}
                 {specials
                   .slice()
                   .sort((a, b) => {
@@ -1085,46 +1299,14 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                     if (b.category === 'security_deposit' && a.category !== 'security_deposit') return 1
                     return a.due_date.localeCompare(b.due_date)
                   })
-                  .map(sp => {
-                    const catLabel = SPECIAL_CATEGORIES.find(c => c.value === sp.category)?.label ?? sp.category
-                    return (
-                      <div key={sp.id} style={{ background: '#fff', borderRadius: '11px', border: `1px solid ${sp.status === 'pending' && new Date(sp.due_date + 'T00:00:00') < new Date() ? '#fca5a5' : '#e2e8f0'}`, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{sp.label}</span>
-                            <span style={{ background: '#f1f5f9', color: '#475569', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{catLabel}</span>
-                            {sp.tenant && <span style={{ fontSize: '12px', color: '#94a3b8' }}>→ {sp.tenant.name}</span>}
-                            {!sp.tenant && plan.tenants.length > 1 && <span style={{ fontSize: '12px', color: '#94a3b8' }}>→ All tenants</span>}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#64748b' }}>
-                            Due {fmtDate(sp.due_date)}
-                            {sp.paid_date && ` · Paid ${fmtDate(sp.paid_date)}`}
-                            {sp.notes && ` · ${sp.notes}`}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{fmtCurrency(sp.amount)}</div>
-                          <StatusBadge status={sp.status} />
-                        </div>
-                        {sp.status !== 'paid' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <button
-                              onClick={() => handleUpdateSpecial(sp.id, { status: 'paid', paid_date: new Date().toISOString().split('T')[0] })}
-                              style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#0f172a', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
-                            >
-                              Mark paid
-                            </button>
-                            <button
-                              onClick={() => handleUpdateSpecial(sp.id, { status: 'waived' })}
-                              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#94a3b8', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
-                            >
-                              Waive
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  .map(sp => (
+                    <SpecialChargeCard
+                      key={sp.id}
+                      sp={sp}
+                      multiTenant={plan.tenants.length > 1}
+                      onUpdate={handleUpdateSpecial}
+                    />
+                  ))}
               </div>
             )}
           </div>

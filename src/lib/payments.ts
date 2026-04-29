@@ -477,6 +477,25 @@ export async function updateSpecialPayment(
   return { error }
 }
 
+export async function updateSpecialPaymentFull(
+  id: string,
+  updates: Partial<{
+    category:  SpecialCategory
+    label:     string
+    amount:    number
+    due_date:  string
+    status:    'pending' | 'paid' | 'waived'
+    paid_date: string | null
+    notes:     string | null
+  }>
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('special_payments')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  return { error }
+}
+
 export async function addSpecialPayment(
   planId: string,
   data: {
