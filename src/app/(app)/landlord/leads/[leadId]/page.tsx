@@ -96,6 +96,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [property, setProperty] = useState<{ name: string; address: string; heroImage: string; price: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [groupedInquiries, setGroupedInquiries] = useState<{ id: string; created_at: string | null; first_name: string | null }[]>([])
 
   const [statusModal, setStatusModal] = useState(false)
   const [closedReason, setClosedReason] = useState<'leased' | 'lost' | null>(null)
@@ -105,7 +106,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [reminding, setReminding] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
-  // Tour state
   const [tourData, setTourData] = useState<TourRecord | null>(null)
   const [tourInviteSent, setTourInviteSent] = useState(false)
   const [inviting, setInviting] = useState(false)
@@ -118,12 +118,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [cancelForm, setCancelForm] = useState({ reason: '', notes: '' })
   const [cancelSaving, setCancelSaving] = useState(false)
 
-  // Reservation state
   type RoomOption = { id: string; name: string; price: number }
   const [reserveModal, setReserveModal] = useState(false)
   const [reserveRooms, setReserveRooms] = useState<RoomOption[]>([])
   const [reserveForm, setReserveForm] = useState({
-    room_id: '',         // '' = entire property
+    room_id: '',
     discount_type: '' as '' | 'dollars' | 'percent',
     discount_amount: '',
     expires_mode: '24h' as '24h' | '48h' | '72h' | 'custom',
@@ -131,7 +130,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   })
   const [reserveSending, setReserveSending] = useState(false)
   const [reserveSent, setReserveSent] = useState(false)
-  const [activeReservation, setActiveReservation] = useState<{ accept_token: string; expires_at?: string } | null>(null)
+  const [activeReservation, setActiveReservation] = useState<{ id: string; accept_token: string; expires_at?: string; status?: string } | null>(null)
   const [reserveLinkCopied, setReserveLinkCopied] = useState(false)
 
   const [copied, setCopied] = useState(false)
@@ -147,11 +146,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
   useEffect(() => {
     const load = async () => {
-      // Verify auth
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      // Fetch lead
       const { data: leadData, error } = await supabase.from('leads').select('*').eq('id', leadId).single()
       if (error || !leadData) { setNotFound(true); setLoading(false); return }
       const ld = leadData as Lead
@@ -164,11 +161,21 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         move_in_date: ld.move_in_date || '',
         property: ld.property || '',
       })
-      // Fetch landlord's properties for dropdown
       const { data: props } = await supabase.from('properties').select('slug, name').eq('owner_id', user.id)
       if (props) setProperties(props)
 
-      // Fetch prescreen + email logs via activity route (uses service role)
+      if (ld.lead_group_id && ld.property) {
+        const { data: groupLeads } = await supabase
+          .from('leads')
+          .select('id, created_at, first_name')
+          .eq('lead_group_id', ld.lead_group_id)
+          .eq('property', ld.property)
+          .order('created_at', { ascending: true })
+        if (groupLeads && groupLeads.length > 1) {
+          setGroupedInquiries(groupLeads as { id: string; created_at: string | null; first_name: string | null }[])
+        }
+      }
+
       const activityRes = await fetch(`/api/leads/${leadId}/activity`)
       if (activityRes.ok) {
         const { prescreen: ps, emails: el } = await activityRes.json()
@@ -176,13 +183,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         setEmails(el || [])
       }
 
-      // Fetch tour data
       const { data: tourRes } = await supabase
         .from('tours').select('*').eq('lead_id', leadId).eq('status', 'confirmed').maybeSingle()
       if (tourRes) setTourData(tourRes as TourRecord)
       if ((leadData as Lead & { tour_invite_sent_at?: string }).tour_invite_sent_at) setTourInviteSent(true)
 
-      // Fetch property + rooms for reservation
       if (leadData.property) {
         const { data: prop } = await supabase
           .from('properties')
@@ -199,16 +204,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               .map(r => ({ id: r.id, name: r.name || `Room ${r.position + 1}`, price: r.price }))
             setReserveRooms(rooms)
           }
-          // Check for existing pending reservation
           const { data: existingRes } = await supabase
             .from('lead_reservations')
-            .select('accept_token, expires_at, status')
+            .select('id, accept_token, expires_at, status')
             .eq('lead_id', leadId)
-            .eq('status', 'pending')
+            .in('status', ['pending', 'accepted'])
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
-          if (existingRes) setActiveReservation({ accept_token: existingRes.accept_token, expires_at: existingRes.expires_at })
+          if (existingRes) setActiveReservation({ id: existingRes.id, accept_token: existingRes.accept_token, expires_at: existingRes.expires_at, status: existingRes.status })
         }
       }
 
@@ -248,7 +252,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       })
       if (res.ok) {
         setLead(prev => prev ? { ...prev, ...editForm } : prev)
-        // If property changed, refresh property details
         if (editForm.property !== lead.property) {
           const { data: prop } = await supabase.from('properties').select('name, address, price, property_images(url, position)').eq('slug', editForm.property).single()
           if (prop) {
@@ -271,7 +274,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       const res = await fetch(`/api/leads/${leadId}/send-reminder`, { method: 'POST' })
       if (res.ok) {
         showToast(`Reminder sent to ${lead?.first_name || lead?.email}`)
-        // Refresh email logs
         const activityRes = await fetch(`/api/leads/${leadId}/activity`)
         if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
       } else {
@@ -318,7 +320,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         setLead(prev => prev ? { ...prev, status: 'tour_scheduled' } : prev)
         setManualTourModal(false)
         showToast(`Tour booked for ${body.readableDate}`)
-        // Refresh emails
         const activityRes = await fetch(`/api/leads/${leadId}/activity`)
         if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
       } else {
@@ -381,7 +382,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     try {
       const { data: { session } } = await supabase.auth.getSession()
 
-      // Calculate expires_at
       let expiresAt: Date
       if (reserveForm.expires_mode === 'custom' && reserveForm.custom_expires) {
         expiresAt = new Date(reserveForm.custom_expires)
@@ -393,6 +393,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       const payload: Record<string, unknown> = {
         room_id: reserveForm.room_id || null,
         expires_at: expiresAt.toISOString(),
+        send_email: false,
       }
       if (reserveForm.discount_type && reserveForm.discount_amount) {
         payload.discount_type = reserveForm.discount_type
@@ -406,21 +407,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       })
       const body = await res.json()
       if (res.ok) {
-        setActiveReservation({ accept_token: body.accept_token, expires_at: expiresAt.toISOString() })
+        setActiveReservation({ id: body.id, accept_token: body.accept_token, expires_at: expiresAt.toISOString(), status: 'pending' })
         setReserveSent(true)
         setReserveModal(false)
-        showToast('Reservation email sent! 🔒')
-        // Refresh emails
-        const activityRes = await fetch(`/api/leads/${leadId}/activity`)
-        if (activityRes.ok) { const { emails: el } = await activityRes.json(); setEmails(el || []) }
+        showToast('Offer created — opening preview')
+        window.open(`/landlord/leads/${leadId}/offer/${body.id}`, '_blank')
       } else {
-        showToast(body.error || 'Failed to send reservation', 'error')
+        showToast(body.error || 'Failed to create offer', 'error')
       }
     } catch { showToast('Failed to send reservation', 'error') }
     setReserveSending(false)
   }
 
-  // 30-min time slots from 7am–9pm for manual booking
   const MANUAL_TIME_SLOTS: string[] = []
   for (let h = 7; h < 21; h++) {
     MANUAL_TIME_SLOTS.push(`${String(h).padStart(2,'0')}:00`)
@@ -455,66 +453,160 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const meta = STATUS_META[lead.status]
   const hasPrescreen = !!prescreen
   const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
+  const initials = ((lead.first_name?.[0] || '') + (lead.last_name?.[0] || '')).toUpperCase() || '?'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
+  const isActiveResExp = activeReservation
+    ? (activeReservation.status === 'expired' || (activeReservation.expires_at ? new Date(activeReservation.expires_at) < new Date() : false))
+    : false
+  const isActiveResAcc = activeReservation?.status === 'accepted'
+
+  // ── AI Insight generator (template-based, no API) ──
+  const insight = (() => {
+    const chips: { label: string; color: string; bg: string }[] = []
+    const lines: string[] = []
+    const heatH = lead.created_at ? (Date.now() - new Date(lead.created_at).getTime()) / 3600000 : null
+    if (heatH !== null) {
+      if (heatH < 24)  { chips.push({ label: '🔥 Hot — < 24h',    color: '#ef4444', bg: 'rgba(239,68,68,0.15)'    }); lines.push(`Lead came in less than 24 hours ago — respond today to maximize conversion.`) }
+      else if (heatH < 72)  { chips.push({ label: '🌡 Warm — < 3 days', color: '#f97316', bg: 'rgba(249,115,22,0.15)'  }); lines.push(`Lead is ${Math.floor(heatH/24)} days old and still warm — follow up soon.`) }
+      else if (heatH < 168) { chips.push({ label: '· Cooling — < 7d',  color: '#eab308', bg: 'rgba(234,179,8,0.15)'   }); lines.push(`Lead is ${Math.floor(heatH/24)} days old and cooling — prioritize a follow-up today.`) }
+      else                  { chips.push({ label: '❄ Cold — 7d+',       color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' }); lines.push(`Lead is over a week old — a personal reactivation message may re-engage them.`) }
+    }
+    if (prescreen) {
+      chips.push({ label: '✓ Pre-screened', color: '#10b981', bg: 'rgba(16,185,129,0.15)' })
+      if (prescreen.monthly_budget) {
+        const price = property?.price ?? 0
+        const ok = price === 0 || prescreen.monthly_budget >= price * 0.85
+        lines.push(ok
+          ? `Budget of $${prescreen.monthly_budget.toLocaleString()}/mo fits your listing — financially qualified.`
+          : `Budget of $${prescreen.monthly_budget.toLocaleString()}/mo may be below asking — discuss pricing flexibility.`)
+        chips.push({ label: `$${prescreen.monthly_budget.toLocaleString()}/mo budget`, color: '#FFC627', bg: 'rgba(255,198,39,0.15)' })
+      }
+      if (prescreen.group_size !== null) {
+        chips.push({ label: prescreen.group_size === 1 ? 'Solo renter' : `${prescreen.group_size} people`, color: '#60a5fa', bg: 'rgba(96,165,250,0.15)' })
+        if (prescreen.group_size > 1) lines.push(`Group of ${prescreen.group_size} — confirm all occupants will be on the lease.`)
+      }
+      if (prescreen.move_in_date) chips.push({ label: `Move-in ${prescreen.move_in_date}`, color: '#38bdf8', bg: 'rgba(56,189,248,0.15)' })
+    } else {
+      chips.push({ label: '⚠ No pre-screen yet', color: '#fb923c', bg: 'rgba(251,146,60,0.15)' })
+      lines.push(`Pre-screen not yet submitted — send a reminder to qualify this lead faster.`)
+    }
+    if (tourData) {
+      chips.push({ label: '📅 Tour booked', color: '#c084fc', bg: 'rgba(192,132,252,0.15)' })
+      lines.push(`Tour on ${new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} — prepare the property and send a reminder the day before.`)
+    }
+    if (activeReservation) {
+      if (isActiveResAcc) { chips.push({ label: '✓ Offer accepted', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }); lines.push('Offer was accepted — close this lead as leased.') }
+      else if (isActiveResExp) { chips.push({ label: '⛔ Offer expired', color: '#f87171', bg: 'rgba(248,113,113,0.15)' }); lines.push('Offer expired — create a fresh one to maintain urgency.') }
+      else { chips.push({ label: '🔒 Offer pending', color: '#f9a8d4', bg: 'rgba(249,168,212,0.15)' }); lines.push("Active offer is pending — send the email to create urgency.") }
+    }
+    const statusRec: Record<string, string> = {
+      new:            'New lead — outreach within the first hour dramatically increases conversion.',
+      contacted:      'Awaiting reply — a 24h follow-up nudge boosts response rates significantly.',
+      follow_up:      'Needs a follow-up — try switching channels (call if you emailed, text if you called).',
+      engaged:        'Actively engaged — push toward a tour or offer while interest is high.',
+      cold:           'No response lately — a brief personal message can restart the conversation.',
+      qualified:      'Fully qualified — ideal time to schedule a tour or send a reservation offer.',
+      tour_scheduled: 'Tour is set — send a reminder 24h before and have the unit show-ready.',
+      closed:         lead.closed_reason === 'leased' ? 'Leased — great outcome! Archive and track for referrals.' : 'Closed as not a fit — no further action needed.',
+    }
+    if (statusRec[lead.status]) lines.push(statusRec[lead.status])
+    return { paragraph: lines.slice(0, 4).join(' '), chips: chips.slice(0, 7) }
+  })()
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         .ld-page { background: #f5f4f0; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
 
-        /* Top bar */
-        .ld-topbar { background: #fff; border-bottom: 1px solid #e8e5de; padding: 14px 28px; display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap; }
-        .ld-back { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #9b9b9b; text-decoration: none; transition: color 0.15s; cursor: pointer; background: none; border: none; font-family: 'DM Sans', sans-serif; }
+        /* ── Header ── */
+        .ld-hdr { background: #fff; border-bottom: 1px solid #e8e5de; position: sticky; top: 0; z-index: 100; }
+        .ld-hdr-top { padding: 10px 24px; display: flex; align-items: center; gap: 14px; }
+        .ld-back { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #9b9b9b; background: none; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: color 0.15s; flex-shrink: 0; padding: 0; }
         .ld-back:hover { color: #1a1a1a; }
-        .ld-topbar-actions { display: flex; align-items: center; gap: 8px; }
+        .ld-av { width: 38px; height: 38px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .ld-name-block { flex: 1; min-width: 0; }
+        .ld-name { font-size: 16px; font-weight: 700; color: #1a1a1a; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; line-height: 1.2; }
+        .ld-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; }
+        .ld-sub { font-size: 11px; color: #9b9b9b; margin-top: 2px; }
+        .ld-prop-block { text-align: right; flex-shrink: 0; }
+        .ld-prop-name { font-size: 12px; font-weight: 600; color: #1a1a1a; }
+        .ld-prop-addr { font-size: 10px; color: #9b9b9b; margin-top: 1px; }
+        .ld-prop-price { font-size: 12px; font-weight: 700; color: #8C1D40; margin-top: 2px; }
 
-        /* Hero */
-        .ld-hero { background: #1a1a1a; padding: 24px 28px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-        .ld-avatar-lg { width: 56px; height: 56px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 2px solid rgba(255,198,39,0.3); }
-        .ld-lead-name { font-size: 22px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
-        .ld-lead-sub { font-size: 13px; color: #9b9b9b; margin-top: 3px; }
-        .ld-status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; border: 1px solid; }
+        /* ── Pipeline strip ── */
+        .ld-pipe { display: flex; align-items: stretch; border-top: 1px solid #f0ede6; overflow-x: auto; scrollbar-width: none; }
+        .ld-pipe::-webkit-scrollbar { display: none; }
+        .ld-pipe-btn { flex: 1; min-width: 72px; padding: 6px 4px 5px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 10px; font-weight: 500; color: #b0a898; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; text-align: center; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
+        .ld-pipe-btn:hover { color: #1a1a1a; background: #faf9f6; }
+        .ld-pipe-btn.past { color: #6b6b6b; }
+        .ld-pipe-btn.active { font-weight: 700; }
 
-        /* Content grid */
-        .ld-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; padding: 20px 28px; align-items: start; }
+        /* ── Action bar ── */
+        .ld-act-bar { padding: 7px 24px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px solid #f0ede6; background: #faf9f6; }
+        .ld-act-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1.5px solid; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; text-decoration: none; }
+        .ld-act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ld-act-btn-primary { background: #8C1D40; color: #fff !important; border-color: #8C1D40; }
+        .ld-act-btn-primary:hover:not(:disabled) { opacity: 0.88; }
+        .ld-act-btn-gold { background: #FFC627; color: #1a1a1a !important; border-color: #FFC627; }
+        .ld-act-btn-gold:hover { opacity: 0.9; }
+        .ld-act-btn-ghost { background: #fff; color: #3a3a3a !important; border-color: #e8e5de; }
+        .ld-act-btn-ghost:hover:not(:disabled) { border-color: #aaa; color: #1a1a1a !important; }
+        .ld-act-btn-danger { background: rgba(239,68,68,0.06); color: #dc2626 !important; border-color: rgba(239,68,68,0.3); }
+        .ld-act-btn-danger:hover { background: rgba(239,68,68,0.12); }
+        .ld-act-btn-success { background: rgba(16,185,129,0.08); color: #10b981 !important; border-color: rgba(16,185,129,0.3); }
+        .ld-act-btn-success:hover { background: rgba(16,185,129,0.14); }
+        .ld-act-sep { width: 1px; height: 18px; background: #e0ddd7; flex-shrink: 0; }
 
-        /* Cards */
-        .ld-card { background: #fff; border-radius: 14px; border: 1px solid #e8e5de; overflow: hidden; margin-bottom: 16px; }
-        .ld-card-header { padding: 14px 20px; border-bottom: 1px solid #f0ede6; display: flex; align-items: center; justify-content: space-between; }
-        .ld-card-title { font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.8px; }
-        .ld-card-body { padding: 18px 20px; }
+        /* ── AI Insight ── */
+        .ld-insight-wrap { padding: 14px 24px 0; }
+        .ld-insight { background: #1a1a1a; border-radius: 12px; padding: 16px 20px; }
+        .ld-insight-hd { font-size: 9px; font-weight: 700; color: rgba(255,198,39,0.85); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 6px; }
+        .ld-insight-para { font-size: 13px; color: #d4d0ca; line-height: 1.65; margin-bottom: 10px; }
+        .ld-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+        .ld-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 600; border: 1px solid; }
 
-        /* Info rows */
-        .info-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #f5f4f0; }
-        .info-row:last-child { border-bottom: none; }
-        .info-label { font-size: 12px; color: #9b9b9b; flex-shrink: 0; width: 110px; }
-        .info-value { font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right; flex: 1; }
+        /* ── Body & 3-col grid ── */
+        .ld-body { padding: 14px 24px 32px; }
+        .ld-grid3 { display: grid; grid-template-columns: 1fr 1fr 300px; gap: 14px; align-items: start; }
+        @media (max-width: 1080px) { .ld-grid3 { grid-template-columns: 1fr 1fr; } .ld-grid3 > :nth-child(3) { grid-column: span 2; } }
+        @media (max-width: 680px)  { .ld-grid3 { grid-template-columns: 1fr; } .ld-grid3 > :nth-child(3) { grid-column: span 1; } }
 
-        /* Pre-screen highlight */
-        .ps-about { background: #fdf2f5; border-left: 3px solid #8C1D40; border-radius: 0 8px 8px 0; padding: 12px 16px; margin-bottom: 12px; font-size: 14px; color: #3a3a3a; line-height: 1.65; font-style: italic; }
-        .ps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .ps-item { background: #faf9f6; border-radius: 8px; padding: 10px 12px; border: 1px solid #f0ede6; }
-        .ps-item-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
-        .ps-item-value { font-size: 13px; color: #1a1a1a; font-weight: 500; }
+        /* ── Cards ── */
+        .ld-card { background: #fff; border-radius: 11px; border: 1px solid #e8e5de; margin-bottom: 12px; overflow: hidden; }
+        .ld-card-hd { padding: 10px 14px; border-bottom: 1px solid #f0ede6; display: flex; align-items: center; justify-content: space-between; }
+        .ld-card-ttl { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.7px; }
+        .ld-card-bd { padding: 12px 14px; }
 
-        /* Email log */
-        .email-entry { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f0ede6; }
-        .email-entry:last-child { border-bottom: none; }
-        .email-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
-        .email-type { font-size: 12px; font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
-        .email-meta { font-size: 11px; color: #9b9b9b; }
+        /* ── KV rows ── */
+        .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; border-bottom: 1px solid #f5f4f0; gap: 8px; }
+        .kv:last-child { border-bottom: none; }
+        .kv-l { font-size: 11px; color: #9b9b9b; flex-shrink: 0; min-width: 70px; }
+        .kv-r { font-size: 12px; color: #1a1a1a; font-weight: 500; text-align: right; }
 
-        /* Status modal */
+        /* ── Prescreen tiles ── */
+        .ps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+        .ps-tile { background: #faf9f6; border-radius: 7px; padding: 7px 9px; border: 1px solid #f0ede6; }
+        .ps-tile-l { font-size: 9px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
+        .ps-tile-v { font-size: 12px; color: #1a1a1a; font-weight: 500; }
+
+        /* ── Email timeline ── */
+        .tl-row { display: flex; gap: 9px; padding: 8px 0; border-bottom: 1px solid #f0ede6; }
+        .tl-row:last-child { border-bottom: none; }
+        .tl-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+        .tl-type { font-size: 11px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
+        .tl-meta { font-size: 10px; color: #9b9b9b; margin-top: 1px; }
+
+        /* ── Modals ── */
         .status-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(3px); }
         .status-modal { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.25); }
-        .status-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 2px solid #e8e5de; border-radius: 10px; cursor: pointer; transition: all 0.15s; margin-bottom: 8px; }
+        .status-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 2px solid #e8e5de; border-radius: 10px; cursor: pointer; transition: all 0.15s; margin-bottom: 7px; }
         .status-card:hover { border-color: #8C1D40; background: #fdf2f5; }
         .status-card.selected { border-color: #8C1D40; background: #fdf2f5; }
-        .status-card.current { border-color: currentColor; cursor: default; opacity: 0.6; }
-
-        /* Edit sheet */
+        .status-card.current { cursor: default; opacity: 0.6; }
         .edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 600; display: flex; align-items: flex-end; justify-content: center; backdrop-filter: blur(4px); }
         @media (min-width: 600px) { .edit-overlay { align-items: center; } }
         .edit-sheet { background: #fff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 0 0 env(safe-area-inset-bottom); animation: sheetUp 0.28s cubic-bezier(0.32,0.72,0,1); max-height: 92vh; overflow-y: auto; }
@@ -525,40 +617,30 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         .edit-sheet-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
         .edit-sheet-title { font-size: 18px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.3px; }
         .edit-sheet-body { padding: 20px 24px; }
-        .edit-field { margin-bottom: 16px; }
-        .edit-field-label { display: block; font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
-        .edit-input { width: 100%; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 11px 14px; font-size: 15px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; background: #faf9f6; outline: none; transition: border-color 0.15s, background 0.15s; }
+        .edit-field { margin-bottom: 14px; }
+        .edit-field-label { display: block; font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
+        .edit-input { width: 100%; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 10px 13px; font-size: 14px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; background: #faf9f6; outline: none; transition: border-color 0.15s, background 0.15s; }
         .edit-input:focus { border-color: #8C1D40; background: #fff; }
         .edit-input::placeholder { color: #b0a898; }
         .edit-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .edit-sheet-footer { padding: 4px 24px 24px; display: flex; gap: 10px; }
-
-        /* Buttons */
         .btn-primary { background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
         .btn-primary:hover { opacity: 0.88; }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-gold { background: #FFC627; color: #1a1a1a; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
         .btn-gold:hover { opacity: 0.9; }
+        .btn-gold:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-ghost { background: transparent; color: #3a3a3a; border: 1.5px solid #e8e5de; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
         .btn-ghost:hover { border-color: #1a1a1a; }
-
-        /* Toast */
-        .ld-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
-        @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
-
-        /* Reservation */
-        .reserve-mode-opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1.5px solid #e8e5de; border-radius: 10px; cursor: pointer; transition: all 0.15s; background: #fff; width: 100%; font-family: 'DM Sans', sans-serif; text-align: left; }
+        .reserve-mode-opt { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid #e8e5de; border-radius: 9px; cursor: pointer; transition: all 0.15s; background: #fff; width: 100%; font-family: 'DM Sans', sans-serif; text-align: left; margin-bottom: 6px; }
         .reserve-mode-opt.selected { border-color: #8C1D40; background: #fdf2f5; }
-        .reserve-mode-opt:hover:not(.selected) { border-color: #ccc; }
-        .reserve-discount-toggle { display: flex; gap: 8px; }
-        .reserve-discount-opt { flex: 1; padding: 9px; border: 1.5px solid #e8e5de; border-radius: 8px; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #3a3a3a; transition: all 0.15s; }
+        .reserve-discount-toggle { display: flex; gap: 6px; }
+        .reserve-discount-opt { flex: 1; padding: 8px; border: 1.5px solid #e8e5de; border-radius: 7px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #3a3a3a; transition: all 0.15s; }
         .reserve-discount-opt.selected { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; }
 
-        @media (max-width: 860px) {
-          .ld-grid { grid-template-columns: 1fr; }
-          .ld-hero { padding: 20px 16px; }
-          .ld-topbar { padding: 12px 16px; }
-        }
+        /* ── Toast ── */
+        .ld-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
+        @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
       `}</style>
 
       <div className="ld-page">
@@ -570,510 +652,417 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
           </div>
         )}
 
-        {/* Top bar */}
-        <div className="ld-topbar">
-          <button className="ld-back" onClick={() => router.push('/landlord/leads')}>
-            ← Back to Leads
-          </button>
-          <div className="ld-topbar-actions">
+        {/* ── HEADER ── */}
+        <div className="ld-hdr">
+          <div className="ld-hdr-top">
+            <button className="ld-back" onClick={() => router.push('/landlord/leads')}>← Leads</button>
+            <div className="ld-av">{initials}</div>
+            <div className="ld-name-block">
+              <div className="ld-name">
+                {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
+                <span className="ld-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
+                  {meta.icon} {meta.label}{lead.status === 'closed' && lead.closed_reason ? ` · ${lead.closed_reason}` : ''}
+                </span>
+                {heat.icon && <span style={{ fontSize: '13px' }} title={heat.label}>{heat.icon}</span>}
+              </div>
+              <div className="ld-sub">
+                <a href={`mailto:${lead.email}`} style={{ color: '#9b9b9b', textDecoration: 'none' }}>{lead.email}</a>
+                {lead.phone ? <> · <a href={`tel:${lead.phone}`} style={{ color: '#9b9b9b', textDecoration: 'none' }}>+1 {formatPhoneDisplay(lead.phone)}</a></> : ''}
+                {' '}· {lead.created_at ? timeAgo(lead.created_at) : '—'}
+              </div>
+            </div>
+            {property && (
+              <div className="ld-prop-block">
+                <div className="ld-prop-name">{property.name}</div>
+                <div className="ld-prop-addr">📍 {property.address}</div>
+                <div className="ld-prop-price">${property.price?.toLocaleString()}/mo</div>
+              </div>
+            )}
+          </div>
+
+          {/* Pipeline strip */}
+          <div className="ld-pipe">
+            {STATUS_ORDER.map((s, i) => {
+              const sm = STATUS_META[s]
+              const currentIdx = STATUS_ORDER.indexOf(lead.status)
+              const isPast = i < currentIdx
+              const isActive = lead.status === s
+              return (
+                <button
+                  key={s}
+                  className={`ld-pipe-btn${isActive ? ' active' : isPast ? ' past' : ''}`}
+                  style={isActive ? { color: meta.color, borderBottomColor: meta.color, background: meta.bg } : {}}
+                  onClick={() => { setPendingStatus(s); setStatusModal(true) }}
+                  title={sm.desc}
+                >
+                  <span>{sm.icon}</span>
+                  <span>{sm.label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Action bar */}
+          <div className="ld-act-bar">
+            <button className="ld-act-btn ld-act-btn-gold" onClick={() => setStatusModal(true)}>🔄 Status</button>
+            <button className="ld-act-btn ld-act-btn-ghost" onClick={() => setEditModal(true)}>✎ Edit</button>
+            <div className="ld-act-sep" />
             {needsRemind && (
-              <button className="btn-primary" disabled={reminding} onClick={sendReminder}>
-                {reminding ? '…' : '📧 Send Pre-screen Reminder'}
+              <button className="ld-act-btn ld-act-btn-primary" disabled={reminding} onClick={sendReminder}>
+                {reminding ? '…' : '📧 Send Reminder'}
               </button>
             )}
-            <button className="btn-gold" onClick={() => setStatusModal(true)}>
-              Change Status
-            </button>
-          </div>
-        </div>
-
-        {/* Hero */}
-        <div className="ld-hero">
-          {property?.heroImage && (
-            <div style={{ width: '56px', height: '56px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0 }}>
-              <img src={property.heroImage} alt={property.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-          )}
-          <div className="ld-avatar-lg">
-            {((lead.first_name?.[0] || '') + (lead.last_name?.[0] || '')).toUpperCase() || '?'}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <div className="ld-lead-name">
-                {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-              </div>
-              <span className="ld-status-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
-                {meta.icon} {meta.label}
-                {lead.status === 'closed' && lead.closed_reason && ` · ${lead.closed_reason}`}
-              </span>
-              {heat.icon && <span title={heat.label} style={{ fontSize: '16px' }}>{heat.icon}</span>}
-            </div>
-            <div className="ld-lead-sub">
-              {lead.email}{lead.phone ? ` · 🇺🇸 +1 ${formatPhoneDisplay(lead.phone)}` : ''} · Submitted {lead.created_at ? timeAgo(lead.created_at) : '—'}
-            </div>
-          </div>
-          <div style={{ flexShrink: 0, textAlign: 'right' }}>
-            {property && (
+            {activeReservation ? (
+              <button className="ld-act-btn ld-act-btn-primary" onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank')}>
+                🔍 {isActiveResAcc ? 'View Accepted Offer' : isActiveResExp ? 'View Expired Offer' : 'View / Send Offer'}
+              </button>
+            ) : (
+              <button className="ld-act-btn ld-act-btn-primary" onClick={() => setReserveModal(true)}>🔒 Build Offer</button>
+            )}
+            {activeReservation && (
+              <button className="ld-act-btn ld-act-btn-ghost" onClick={() => setReserveModal(true)}>+ New Offer</button>
+            )}
+            <div className="ld-act-sep" />
+            {tourData ? (
+              <button className="ld-act-btn ld-act-btn-ghost" onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }}>
+                📅 Manage Tour
+              </button>
+            ) : (
+              <button className="ld-act-btn ld-act-btn-ghost" disabled={inviting} onClick={handleInviteToTour}>
+                {inviting ? '…' : tourInviteSent ? '🔄 Resend Invite' : '🎉 Invite to Tour'}
+              </button>
+            )}
+            <div className="ld-act-sep" />
+            <a href={`mailto:${lead.email}?subject=Regarding your interest at ${property?.name || lead.property || 'our property'}`} className="ld-act-btn ld-act-btn-ghost">✉ Email</a>
+            {lead.phone && <a href={`tel:${lead.phone}`} className="ld-act-btn ld-act-btn-ghost">📞 Call</a>}
+            {lead.status !== 'closed' && (
               <>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>{property.name}</div>
-                <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '2px' }}>📍 {property.address}</div>
-                <div style={{ fontSize: '13px', color: '#FFC627', fontWeight: 600, marginTop: '4px' }}>${property.price?.toLocaleString()}/mo</div>
+                <div className="ld-act-sep" />
+                <button className="ld-act-btn ld-act-btn-success" onClick={() => handleStatusUpdate('closed', 'leased')}>✓ Leased</button>
+                <button className="ld-act-btn ld-act-btn-danger" onClick={() => handleStatusUpdate('closed', 'lost')}>✕ Not a Fit</button>
               </>
             )}
           </div>
         </div>
 
-        {/* Content */}
-        <div className="ld-grid">
+        {/* ── AI INSIGHT CARD ── */}
+        <div className="ld-insight-wrap">
+          <div className="ld-insight">
+            <div className="ld-insight-hd">AI Lead Summary</div>
+            <div className="ld-insight-para">{insight.paragraph || 'No insights available yet.'}</div>
+            <div className="ld-chips">
+              {insight.chips.map((chip, i) => (
+                <span key={i} className="ld-chip" style={{ color: chip.color, background: chip.bg, borderColor: chip.color + '55' }}>
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
 
-          {/* LEFT COLUMN */}
-          <div>
+        <div className="ld-body">
 
-            {/* Lead info */}
-            <div className="ld-card">
-              <div className="ld-card-header">
-                <span className="ld-card-title">Lead Information</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <a href={`mailto:${lead.email}`} style={{ fontSize: '12px', color: '#8C1D40', textDecoration: 'none', fontWeight: 500 }}>✉ Email →</a>
-                  <button
-                    onClick={() => setEditModal(true)}
-                    style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '7px', padding: '4px 10px', fontSize: '12px', fontWeight: 600, color: '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.15s' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#8C1D40'; (e.currentTarget as HTMLButtonElement).style.color = '#8C1D40' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#e8e5de'; (e.currentTarget as HTMLButtonElement).style.color = '#3a3a3a' }}
+          {/* Grouped inquiries banner */}
+          {groupedInquiries.length > 1 && (
+            <div style={{ background: 'rgba(139,92,246,0.06)', border: '1.5px solid rgba(139,92,246,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px' }}>
+                <span style={{ fontSize: '13px' }}>🔁</span>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {groupedInquiries.length} Inquiries from This Contact
+                </span>
+                <span style={{ fontSize: '10px', color: '#9b9b9b', marginLeft: 'auto' }}>Status changes apply to all</span>
+              </div>
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                {groupedInquiries.map((inq, i) => (
+                  <div
+                    key={inq.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: '5px', background: inq.id === leadId ? 'rgba(139,92,246,0.1)' : '#fff', border: `1px solid ${inq.id === leadId ? 'rgba(139,92,246,0.3)' : '#e8e5de'}`, borderRadius: '7px', padding: '5px 9px', cursor: inq.id !== leadId ? 'pointer' : 'default', fontSize: '11px' }}
+                    onClick={() => inq.id !== leadId && window.open(`/landlord/leads/${inq.id}`, '_blank')}
                   >
-                    ✎ Edit
-                  </button>
+                    <span style={{ fontWeight: 700, color: '#8b5cf6' }}>#{i + 1}</span>
+                    <span style={{ color: '#3a3a3a' }}>
+                      {inq.created_at ? new Date(inq.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                    </span>
+                    {inq.id === leadId && <span style={{ fontWeight: 700, color: '#8b5cf6', fontSize: '10px' }}>← viewing</span>}
+                    {inq.id !== leadId && <span style={{ color: '#b0a898' }}>→</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 3-COL GRID ── */}
+          <div className="ld-grid3">
+
+            {/* COL 1: Lead info + Prescreen */}
+            <div>
+              <div className="ld-card">
+                <div className="ld-card-hd">
+                  <span className="ld-card-ttl">Lead Information</span>
+                  <button onClick={() => setEditModal(true)} style={{ background: 'none', border: 'none', fontSize: '11px', color: '#8C1D40', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>✎ Edit</button>
+                </div>
+                <div className="ld-card-bd">
+                  <div className="kv"><span className="kv-l">Name</span><span className="kv-r">{lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}</span></div>
+                  <div className="kv"><span className="kv-l">Email</span><span className="kv-r"><a href={`mailto:${lead.email}`} style={{ color: '#8C1D40', textDecoration: 'none' }}>{lead.email}</a></span></div>
+                  <div className="kv"><span className="kv-l">Phone</span><span className="kv-r">{lead.phone ? `+1 ${formatPhoneDisplay(lead.phone)}` : '—'}</span></div>
+                  <div className="kv"><span className="kv-l">Property</span><span className="kv-r">{property?.name || lead.property || '—'}</span></div>
+                  <div className="kv"><span className="kv-l">Move-in</span><span className="kv-r">{lead.move_in_date ? new Date(lead.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></div>
+                  <div className="kv"><span className="kv-l">Submitted</span><span className="kv-r">{lead.created_at ? timeAgo(lead.created_at) : '—'}</span></div>
+                  <div className="kv"><span className="kv-l">Lead Age</span><span className="kv-r" style={{ color: heat.color, fontWeight: 600 }}>{heat.icon} {heat.label}</span></div>
                 </div>
               </div>
-              <div className="ld-card-body">
-                <div className="info-row"><span className="info-label">Full Name</span><span className="info-value">{lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}</span></div>
-                <div className="info-row"><span className="info-label">Email</span><span className="info-value"><a href={`mailto:${lead.email}`} style={{ color: '#8C1D40', textDecoration: 'none' }}>{lead.email}</a></span></div>
-                <div className="info-row"><span className="info-label">Phone</span><span className="info-value">{lead.phone ? `🇺🇸 +1 ${formatPhoneDisplay(lead.phone)}` : '—'}</span></div>
-                <div className="info-row"><span className="info-label">Property</span><span className="info-value">{property?.name || lead.property || '—'}</span></div>
-                <div className="info-row"><span className="info-label">Move-in</span><span className="info-value">{lead.move_in_date ? new Date(lead.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'}</span></div>
-                <div className="info-row"><span className="info-label">Submitted</span><span className="info-value">{lead.created_at ? new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</span></div>
-                <div className="info-row"><span className="info-label">Lead Age</span><span className="info-value" style={{ color: heat.color, fontWeight: 600 }}>{heat.icon} {heat.label}</span></div>
-              </div>
-            </div>
 
-            {/* Pre-screen */}
-            <div className="ld-card">
-              <div className="ld-card-header">
-                <span className="ld-card-title">Pre-Screen Application</span>
-                {hasPrescreen
-                  ? <span style={{ fontSize: '11px', fontWeight: 600, color: '#10b981', background: 'rgba(16,185,129,0.08)', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(16,185,129,0.2)' }}>✓ Complete</span>
-                  : <span style={{ fontSize: '11px', fontWeight: 600, color: '#f97316', background: 'rgba(249,115,22,0.08)', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(249,115,22,0.2)' }}>Not submitted</span>
-                }
-              </div>
-              <div className="ld-card-body">
-                {!hasPrescreen ? (
-                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                    <div style={{ fontSize: '28px', marginBottom: '8px' }}>📋</div>
-                    <div style={{ fontSize: '14px', color: '#6b6b6b', marginBottom: '14px', lineHeight: 1.5 }}>
-                      This lead hasn&apos;t completed their pre-screen yet.
+              <div className="ld-card">
+                <div className="ld-card-hd">
+                  <span className="ld-card-ttl">Pre-Screen</span>
+                  {hasPrescreen
+                    ? <span style={{ fontSize: '10px', fontWeight: 600, color: '#10b981' }}>✓ Complete</span>
+                    : <span style={{ fontSize: '10px', fontWeight: 600, color: '#f97316' }}>Not submitted</span>
+                  }
+                </div>
+                <div className="ld-card-bd">
+                  {!hasPrescreen ? (
+                    <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                      <div style={{ fontSize: '22px', marginBottom: '5px' }}>📋</div>
+                      <div style={{ fontSize: '12px', color: '#6b6b6b', marginBottom: '10px' }}>Pre-screen not yet submitted.</div>
+                      {needsRemind && (
+                        <button className="btn-primary" style={{ fontSize: '12px', padding: '6px 14px' }} disabled={reminding} onClick={sendReminder}>
+                          {reminding ? 'Sending…' : '📧 Send Reminder'}
+                        </button>
+                      )}
                     </div>
-                    {needsRemind && (
-                      <button className="btn-primary" disabled={reminding} onClick={sendReminder}>
-                        {reminding ? 'Sending…' : '📧 Send Reminder'}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    {prescreen.about && (
-                      <div className="ps-about">"{prescreen.about}"</div>
-                    )}
-                    <div className="ps-grid">
-                      {(prescreen.occupation || prescreen.is_student !== null) && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Occupation</div>
-                          <div className="ps-item-value">
-                            {prescreen.occupation || (prescreen.is_student ? 'Student' : 'Non-student')}
-                            {(prescreen.occupation === 'Student' || prescreen.is_student) && prescreen.university ? ` — ${prescreen.university}` : ''}
+                  ) : (
+                    <>
+                      {prescreen.about && (
+                        <div style={{ background: '#fdf2f5', borderLeft: '3px solid #8C1D40', borderRadius: '0 6px 6px 0', padding: '8px 10px', marginBottom: '9px', fontSize: '12px', color: '#3a3a3a', lineHeight: 1.6, fontStyle: 'italic' }}>
+                          &ldquo;{prescreen.about}&rdquo;
+                        </div>
+                      )}
+                      <div className="ps-grid">
+                        {(prescreen.occupation || prescreen.is_student !== null) && (
+                          <div className="ps-tile">
+                            <div className="ps-tile-l">Occupation</div>
+                            <div className="ps-tile-v">{prescreen.occupation || (prescreen.is_student ? 'Student' : 'Non-student')}{(prescreen.occupation === 'Student' || prescreen.is_student) && prescreen.university ? ` — ${prescreen.university}` : ''}</div>
                           </div>
-                        </div>
-                      )}
-                      {prescreen.gender && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Gender</div>
-                          <div className="ps-item-value">{prescreen.gender}</div>
-                        </div>
-                      )}
-                      {prescreen.birthdate && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Date of Birth</div>
-                          <div className="ps-item-value">{new Date(prescreen.birthdate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
-                        </div>
-                      )}
-                      {prescreen.move_in_date && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Move-in</div>
-                          <div className="ps-item-value">{prescreen.move_in_date}</div>
-                        </div>
-                      )}
-                      {prescreen.group_size !== null && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Group</div>
-                          <div className="ps-item-value">{prescreen.group_size === 1 ? 'Solo' : `${prescreen.group_size} people`}</div>
-                        </div>
-                      )}
-                      {prescreen.monthly_budget && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Budget</div>
-                          <div className="ps-item-value" style={{ color: '#8C1D40', fontWeight: 700 }}>${prescreen.monthly_budget.toLocaleString()}/mo</div>
-                        </div>
-                      )}
-                      {prescreen.lease_length && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Lease</div>
-                          <div className="ps-item-value">{prescreen.lease_length}</div>
-                        </div>
-                      )}
-                      {prescreen.lifestyle && (
-                        <div className="ps-item">
-                          <div className="ps-item-label">Lifestyle</div>
-                          <div className="ps-item-value">{prescreen.lifestyle}</div>
-                        </div>
-                      )}
-                    </div>
-                    {prescreen.notes && (
-                      <div style={{ marginTop: '12px', background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', color: '#4a4a4a', lineHeight: 1.6 }}>
-                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Additional Notes</div>
-                        {prescreen.notes}
+                        )}
+                        {prescreen.gender && <div className="ps-tile"><div className="ps-tile-l">Gender</div><div className="ps-tile-v">{prescreen.gender}</div></div>}
+                        {prescreen.birthdate && <div className="ps-tile"><div className="ps-tile-l">Birthdate</div><div className="ps-tile-v">{new Date(prescreen.birthdate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div></div>}
+                        {prescreen.move_in_date && <div className="ps-tile"><div className="ps-tile-l">Move-in</div><div className="ps-tile-v">{prescreen.move_in_date}</div></div>}
+                        {prescreen.group_size !== null && <div className="ps-tile"><div className="ps-tile-l">Group</div><div className="ps-tile-v">{prescreen.group_size === 1 ? 'Solo' : `${prescreen.group_size} people`}</div></div>}
+                        {prescreen.monthly_budget && <div className="ps-tile"><div className="ps-tile-l">Budget</div><div className="ps-tile-v" style={{ color: '#8C1D40', fontWeight: 700 }}>${prescreen.monthly_budget.toLocaleString()}/mo</div></div>}
+                        {prescreen.lease_length && <div className="ps-tile"><div className="ps-tile-l">Lease</div><div className="ps-tile-v">{prescreen.lease_length}</div></div>}
+                        {prescreen.lifestyle && <div className="ps-tile"><div className="ps-tile-l">Lifestyle</div><div className="ps-tile-v">{prescreen.lifestyle}</div></div>}
                       </div>
-                    )}
-                    {prescreen.created_at && (
-                      <div style={{ marginTop: '10px', fontSize: '11px', color: '#b0a898', textAlign: 'right' }}>
-                        Submitted {timeAgo(prescreen.created_at)}
+                      {prescreen.notes && (
+                        <div style={{ marginTop: '9px', background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '6px', padding: '9px 11px', fontSize: '12px', color: '#4a4a4a', lineHeight: 1.6 }}>
+                          <div style={{ fontSize: '9px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Notes</div>
+                          {prescreen.notes}
+                        </div>
+                      )}
+                      <div style={{ marginTop: '7px', fontSize: '10px', color: '#b0a898', textAlign: 'right' }}>
+                        Submitted {prescreen.created_at ? timeAgo(prescreen.created_at) : '—'}
                       </div>
-                    )}
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
-          </div>
+            {/* COL 2: Reservation + Tour */}
+            <div>
 
-          {/* RIGHT COLUMN */}
-          <div>
-
-            {/* ── TOUR SCHEDULING CARD ── */}
-            <div className="ld-card">
-              <div className="ld-card-header">
-                <span className="ld-card-title">Tour Scheduling</span>
-                {tourData && (
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#8b5cf6', background: 'rgba(139,92,246,0.08)', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)' }}>📅 Booked</span>
-                )}
-              </div>
-              <div className="ld-card-body">
-                {tourData ? (
-                  /* Tour is booked */
-                  <>
-                    <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Confirmed Tour</div>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a', marginBottom: '3px' }}>
-                        {new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#6b6b6b' }}>
-                        {fmtTime(tourData.time_slot)} · 30 min · {tourData.booked_by === 'tenant' ? 'Tenant chose this time' : 'You booked this'}
-                      </div>
-                      {tourData.custom_note && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#4a4a4a', fontStyle: 'italic', borderTop: '1px solid #ede9fe', paddingTop: '8px' }}>
-                          Note: {tourData.custom_note}
+              {/* Reservation */}
+              <div className="ld-card">
+                <div className="ld-card-hd">
+                  <span className="ld-card-ttl">Spot Reservation</span>
+                  {activeReservation && (() => {
+                    if (isActiveResAcc) return <span style={{ fontSize: '10px', fontWeight: 600, color: '#10b981' }}>✓ Accepted</span>
+                    if (isActiveResExp) return <span style={{ fontSize: '10px', fontWeight: 600, color: '#ef4444' }}>⛔ Expired</span>
+                    return <span style={{ fontSize: '10px', fontWeight: 600, color: '#8C1D40' }}>🔒 Active</span>
+                  })()}
+                </div>
+                <div className="ld-card-bd">
+                  {activeReservation ? (
+                    <>
+                      <div style={{ background: isActiveResAcc ? 'rgba(16,185,129,0.05)' : isActiveResExp ? 'rgba(239,68,68,0.05)' : 'rgba(140,29,64,0.04)', border: `1.5px solid ${isActiveResAcc ? 'rgba(16,185,129,0.2)' : isActiveResExp ? 'rgba(239,68,68,0.2)' : 'rgba(140,29,64,0.15)'}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '9px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: isActiveResAcc ? '#10b981' : isActiveResExp ? '#ef4444' : '#8C1D40', marginBottom: '3px' }}>
+                          {isActiveResAcc ? 'Offer Accepted' : isActiveResExp ? 'Offer Expired' : 'Active — Send When Ready'}
                         </div>
-                      )}
-                    </div>
-                    {/* Reminder */}
-                    <button
-                      onClick={handleSendTourReminder}
-                      disabled={sendingTourReminder}
-                      style={{
-                        width: '100%', padding: '10px', marginBottom: '8px',
-                        background: '#fff',
-                        color: '#1a1a1a',
-                        border: '1.5px solid #e8e5de',
-                        borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}
-                    >
-                      {sendingTourReminder ? 'Sending…' : '⏰ Send Tour Reminder'}
-                    </button>
-                    {/* Reschedule / Cancel row */}
-                    <div style={{ display: 'flex', gap: '7px' }}>
+                        <div style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.5 }}>
+                          {isActiveResAcc ? 'Lead accepted your reservation offer.' : isActiveResExp ? 'This offer expired. Create a new one.' : "Offer built — send email when you're ready."}
+                        </div>
+                        {activeReservation.expires_at && (
+                          <div style={{ fontSize: '11px', color: isActiveResExp ? '#ef4444' : '#9b9b9b', marginTop: '3px' }}>
+                            {isActiveResExp ? 'Expired ' : isActiveResAcc ? '' : 'Expires '}{new Date(activeReservation.expires_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          </div>
+                        )}
+                      </div>
                       <button
-                        onClick={() => setManualTourModal(true)}
-                        style={{ flex: 1, padding: '8px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '12px', fontWeight: 500, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                        onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank')}
+                        style={{ width: '100%', padding: '9px', background: 'linear-gradient(135deg,#8C1D40,#a02050)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', boxShadow: '0 3px 10px rgba(140,29,64,0.22)' }}
                       >
-                        ↺ Reschedule
+                        🔍 View / Send Offer
                       </button>
                       <button
-                        onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }}
-                        style={{ flex: 1, padding: '8px', background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#dc2626', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                        onClick={() => setReserveModal(true)}
+                        style={{ width: '100%', padding: '7px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '7px', fontSize: '12px', fontWeight: 600, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                       >
-                        ✕ Cancel Tour
+                        + Create New Offer
                       </button>
-                    </div>
-                  </>
-                ) : (
-                  /* No tour yet */
-                  <>
-                    {/* Invite to Tour */}
-                    <div style={{ marginBottom: '12px' }}>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '10px' }}>
+                        Build a custom pricing offer with optional discount — preview before sending.
+                      </div>
+                      <button
+                        onClick={() => setReserveModal(true)}
+                        style={{ width: '100%', padding: '11px', background: 'linear-gradient(135deg,#8C1D40,#a02050)', color: '#fff', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", boxShadow: '0 4px 14px rgba(140,29,64,0.26)' }}
+                      >
+                        🔒 Build Reservation Offer
+                      </button>
+                      <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', marginTop: '6px' }}>
+                        Preview &amp; edit before sending — no email until you choose
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Tour */}
+              <div className="ld-card">
+                <div className="ld-card-hd">
+                  <span className="ld-card-ttl">Tour Scheduling</span>
+                  {tourData && <span style={{ fontSize: '10px', fontWeight: 600, color: '#8b5cf6' }}>📅 Booked</span>}
+                </div>
+                <div className="ld-card-bd">
+                  {tourData ? (
+                    <>
+                      <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '10px 12px', marginBottom: '9px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Confirmed Tour</div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#1a1a1a', marginBottom: '2px' }}>
+                          {new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#6b6b6b' }}>
+                          {fmtTime(tourData.time_slot)} · {tourData.booked_by === 'tenant' ? 'Tenant booked' : 'You booked'}
+                        </div>
+                        {tourData.custom_note && (
+                          <div style={{ marginTop: '6px', fontSize: '11px', color: '#4a4a4a', fontStyle: 'italic', borderTop: '1px solid #ede9fe', paddingTop: '6px' }}>
+                            {tourData.custom_note}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleSendTourReminder}
+                        disabled={sendingTourReminder}
+                        style={{ width: '100%', padding: '8px', background: '#fff', border: '1.5px solid #e8e5de', borderRadius: '7px', fontSize: '12px', fontWeight: 600, color: '#1a1a1a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px' }}
+                      >
+                        {sendingTourReminder ? 'Sending…' : '⏰ Send Reminder'}
+                      </button>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={() => setManualTourModal(true)} style={{ flex: 1, padding: '7px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '7px', fontSize: '11px', fontWeight: 500, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                          ↺ Reschedule
+                        </button>
+                        <button onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }} style={{ flex: 1, padding: '7px', background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '7px', fontSize: '11px', fontWeight: 600, color: '#dc2626', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                          ✕ Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
                       <button
                         onClick={handleInviteToTour}
                         disabled={inviting}
-                        style={{
-                          width: '100%', padding: '13px', marginBottom: '8px',
-                          background: '#1a1a1a', color: '#FFC627',
-                          border: 'none', borderRadius: '10px',
-                          fontSize: '14px', fontWeight: 700, cursor: inviting ? 'not-allowed' : 'pointer',
-                          fontFamily: "'DM Sans', sans-serif", opacity: inviting ? 0.6 : 1,
-                        }}
+                        style={{ width: '100%', padding: '11px', background: '#1a1a1a', color: '#FFC627', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: 700, cursor: inviting ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: inviting ? 0.6 : 1, marginBottom: '7px' }}
                       >
                         {inviting ? 'Sending…' : tourInviteSent ? '🔄 Resend Tour Invitation' : '🎉 Invite to Tour'}
                       </button>
                       {tourInviteSent && (
-                        <div style={{ fontSize: '12px', color: '#10b981', textAlign: 'center', marginBottom: '8px' }}>
-                          ✓ Invitation sent — tenant selects their time
-                        </div>
+                        <>
+                          <div style={{ fontSize: '11px', color: '#10b981', textAlign: 'center', marginBottom: '7px' }}>✓ Invitation sent — tenant selects time</div>
+                          <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '8px', padding: '9px 11px', marginBottom: '7px' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Booking Link</div>
+                            <div style={{ fontSize: '10px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '5px', padding: '5px 7px', marginBottom: '5px' }}>
+                              {(process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live')}/book-tour/{leadId}
+                            </div>
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/book-tour/${leadId}`); setTourLinkCopied(true); setTimeout(() => setTourLinkCopied(false), 2000) }}
+                              style={{ width: '100%', padding: '5px', background: tourLinkCopied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${tourLinkCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '5px', fontSize: '11px', fontWeight: 600, color: tourLinkCopied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                            >
+                              {tourLinkCopied ? '✓ Copied!' : '⎘ Copy Link'}
+                            </button>
+                          </div>
+                        </>
                       )}
-                      <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', lineHeight: 1.5 }}>
-                        Requires availability set in{' '}
-                        <a href={`/landlord/listings/${lead.property}/calendar`} style={{ color: '#8C1D40', textDecoration: 'none', fontWeight: 600 }}>
-                          Calendar tab →
-                        </a>
-                      </div>
-                    </div>
-
-                    {/* Tour link copy */}
-                    {tourInviteSent && (
-                      <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>Booking Link</div>
-                        <div style={{ fontSize: '11px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '6px', padding: '7px 10px', marginBottom: '8px' }}>
-                          {(process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live')}/book-tour/{leadId}
-                        </div>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/book-tour/${leadId}`)
-                            setTourLinkCopied(true)
-                            setTimeout(() => setTourLinkCopied(false), 2000)
-                          }}
-                          style={{ width: '100%', padding: '7px', background: tourLinkCopied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${tourLinkCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '6px', fontSize: '12px', fontWeight: 600, color: tourLinkCopied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                        >
-                          {tourLinkCopied ? '✓ Copied!' : '⎘ Copy Link'}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Divider */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0' }}>
-                      <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
-                      <span style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 500 }}>or book manually</span>
-                      <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
-                    </div>
-
-                    {/* Manual booking */}
-                    <button
-                      onClick={() => setManualTourModal(true)}
-                      style={{ width: '100%', padding: '10px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '9px', fontSize: '13px', fontWeight: 600, color: '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif' " }}
-                    >
-                      📋 Book Tour Manually
-                    </button>
-                    <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', marginTop: '6px' }}>
-                      You pick the time — sends confirmation email
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* ── RESERVATION CARD ── */}
-            <div className="ld-card">
-              <div className="ld-card-header">
-                <span className="ld-card-title">Send Reservation</span>
-                {(activeReservation || reserveSent) && (
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#8C1D40', background: 'rgba(140,29,64,0.08)', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(140,29,64,0.25)' }}>🔒 Sent</span>
-                )}
-              </div>
-              <div className="ld-card-body">
-                {activeReservation ? (
-                  <>
-                    <div style={{ background: 'rgba(140,29,64,0.05)', border: '1.5px solid rgba(140,29,64,0.2)', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>Active Reservation</div>
-                      <div style={{ fontSize: '13px', color: '#3a3a3a', marginBottom: '4px' }}>Reservation sent — waiting for lead to accept.</div>
-                      {activeReservation.expires_at && (
-                        <div style={{ fontSize: '12px', color: '#9b9b9b' }}>
-                          Expires {new Date(activeReservation.expires_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                        </div>
-                      )}
-                    </div>
-                    {/* Copy accept link */}
-                    <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>Accept Link</div>
-                      <div style={{ fontSize: '11px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '6px', padding: '7px 10px', marginBottom: '8px' }}>
-                        {(process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live')}/reserve/{activeReservation.accept_token}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '6px 0' }}>
+                        <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
+                        <span style={{ fontSize: '10px', color: '#9b9b9b' }}>or book manually</span>
+                        <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
                       </div>
                       <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/reserve/${activeReservation.accept_token}`)
-                          setReserveLinkCopied(true)
-                          setTimeout(() => setReserveLinkCopied(false), 2000)
-                        }}
-                        style={{ width: '100%', padding: '7px', background: reserveLinkCopied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${reserveLinkCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '6px', fontSize: '12px', fontWeight: 600, color: reserveLinkCopied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                        onClick={() => setManualTourModal(true)}
+                        style={{ width: '100%', padding: '9px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                       >
-                        {reserveLinkCopied ? '✓ Copied!' : '⎘ Copy Accept Link'}
+                        📋 Book Manually
                       </button>
-                    </div>
-                    <button
-                      onClick={() => setReserveModal(true)}
-                      style={{ width: '100%', padding: '9px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                    >
-                      🔄 Send New Reservation
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ marginBottom: '14px', fontSize: '13px', color: '#6b6b6b', lineHeight: 1.6 }}>
-                      Hold a spot for this lead with a time-limited reservation. Creates urgency and accelerates conversion.
-                    </div>
-                    <button
-                      onClick={() => setReserveModal(true)}
-                      style={{
-                        width: '100%', padding: '13px',
-                        background: 'linear-gradient(135deg, #8C1D40, #a02050)',
-                        color: '#fff', border: 'none', borderRadius: '10px',
-                        fontSize: '14px', fontWeight: 700, cursor: 'pointer',
-                        fontFamily: "'DM Sans', sans-serif",
-                        boxShadow: '0 4px 18px rgba(140,29,64,0.3)',
-                      }}
-                    >
-                      🔒 Reserve a Spot for This Lead
-                    </button>
-                    <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', marginTop: '7px', lineHeight: 1.5 }}>
-                      Sends a personalized email with a 24-hour hold
-                    </div>
-                  </>
-                )}
+                      <div style={{ fontSize: '10px', color: '#9b9b9b', textAlign: 'center', marginTop: '5px' }}>
+                        Requires availability in{' '}
+                        <a href={`/landlord/listings/${lead.property}/calendar`} style={{ color: '#8C1D40', textDecoration: 'none', fontWeight: 600 }}>Calendar →</a>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
+
             </div>
 
-            {/* Quick Actions */}
-            <div className="ld-card">
-              <div className="ld-card-header"><span className="ld-card-title">Quick Actions</span></div>
-              <div className="ld-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button
-                  className="btn-gold"
-                  style={{ width: '100%' }}
-                  onClick={() => setStatusModal(true)}
-                >
-                  🔄 Change Status
-                </button>
-                {needsRemind && (
-                  <button className="btn-primary" style={{ width: '100%' }} disabled={reminding} onClick={sendReminder}>
-                    {reminding ? 'Sending…' : '📧 Send Pre-screen Reminder'}
-                  </button>
-                )}
-                {/* Pre-screen link */}
-                {(() => {
-                  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-                  const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
-                  return (
-                    <div style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
-                        Pre-Screen Link
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#4a4a4a', wordBreak: 'break-all', lineHeight: 1.5, marginBottom: '10px', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '7px', padding: '8px 10px' }}>
-                        {prescreenUrl}
-                      </div>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(prescreenUrl)
-                          setCopied(true)
-                          setTimeout(() => setCopied(false), 2000)
-                        }}
-                        style={{ width: '100%', padding: '8px', background: copied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${copied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '7px', fontSize: '13px', fontWeight: 600, color: copied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s' }}
-                      >
-                        {copied ? '✓ Copied!' : '⎘ Copy Link'}
-                      </button>
-                    </div>
-                  )
-                })()}
+            {/* COL 3: Quick links + Email activity */}
+            <div>
 
-                <a
-                  href={`mailto:${lead.email}?subject=Regarding your interest at ${property?.name || lead.property || 'our property'}`}
-                  className="btn-ghost"
-                  style={{ display: 'block', textAlign: 'center', textDecoration: 'none', color: '#3a3a3a', padding: '9px 14px', fontSize: '13px' }}
-                >
-                  ✉ Email Lead Directly
-                </a>
-                {lead.phone && (
-                  <a
-                    href={`tel:${lead.phone}`}
-                    className="btn-ghost"
-                    style={{ display: 'block', textAlign: 'center', textDecoration: 'none', color: '#3a3a3a', padding: '9px 14px', fontSize: '13px' }}
-                  >
-                    📞 Call 🇺🇸 +1 {formatPhoneDisplay(lead.phone)}
-                  </a>
-                )}
-                {!['tour_scheduled', 'closed'].includes(lead.status) && (
+              {/* Pre-screen link */}
+              <div className="ld-card">
+                <div className="ld-card-hd"><span className="ld-card-ttl">Pre-Screen Link</span></div>
+                <div className="ld-card-bd">
+                  <div style={{ fontSize: '10px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '6px', padding: '7px 9px', marginBottom: '7px' }}>
+                    {prescreenUrl}
+                  </div>
                   <button
-                    className="btn-ghost"
-                    style={{ width: '100%' }}
-                    onClick={() => handleStatusUpdate('tour_scheduled')}
+                    onClick={() => { navigator.clipboard.writeText(prescreenUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                    style={{ width: '100%', padding: '7px', background: copied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${copied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '6px', fontSize: '12px', fontWeight: 600, color: copied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
                   >
-                    📅 Mark Tour Scheduled
+                    {copied ? '✓ Copied!' : '⎘ Copy Link'}
                   </button>
-                )}
-                {lead.status !== 'closed' && (
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                    <button
-                      style={{ flex: 1, padding: '8px', background: 'rgba(16,185,129,0.08)', color: '#10b981', border: '1.5px solid rgba(16,185,129,0.3)', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                      onClick={() => handleStatusUpdate('closed', 'leased')}
-                    >
-                      ✓ Leased
-                    </button>
-                    <button
-                      style={{ flex: 1, padding: '8px', background: 'rgba(239,68,68,0.06)', color: '#ef4444', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                      onClick={() => handleStatusUpdate('closed', 'lost')}
-                    >
-                      ✕ Not a Fit
-                    </button>
-                  </div>
-                )}
+                </div>
               </div>
-            </div>
 
-            {/* Email Activity */}
-            <div className="ld-card">
-              <div className="ld-card-header">
-                <span className="ld-card-title">Email Activity</span>
-                <span style={{ fontSize: '12px', color: '#9b9b9b' }}>{emails.length} sent</span>
-              </div>
-              <div className="ld-card-body">
-                {emails.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '20px 0', color: '#9b9b9b', fontSize: '13px' }}>
-                    No emails logged yet
-                  </div>
-                ) : (
-                  emails.map(email => {
-                    const typeMeta = EMAIL_TYPE_META[email.type] || { label: email.type, icon: '📧', color: '#6b7280' }
-                    return (
-                      <div key={email.id} className="email-entry">
-                        <div className="email-dot" style={{ background: typeMeta.color }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="email-type">{typeMeta.icon} {typeMeta.label}</div>
-                          <div className="email-meta" title={email.subject}>{email.subject?.length > 50 ? email.subject.slice(0, 50) + '…' : email.subject}</div>
-                          <div className="email-meta" style={{ marginTop: '2px' }}>
-                            To: {email.recipient} · {timeAgo(email.sent_at)}
+              {/* Email Activity */}
+              <div className="ld-card">
+                <div className="ld-card-hd">
+                  <span className="ld-card-ttl">Email Activity</span>
+                  <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{emails.length} sent</span>
+                </div>
+                <div className="ld-card-bd">
+                  {emails.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '14px 0', color: '#9b9b9b', fontSize: '12px' }}>No emails logged yet</div>
+                  ) : (
+                    emails.map(email => {
+                      const tm = EMAIL_TYPE_META[email.type] || { label: email.type, icon: '📧', color: '#6b7280' }
+                      return (
+                        <div key={email.id} className="tl-row">
+                          <div className="tl-dot" style={{ background: tm.color }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="tl-type">{tm.icon} {tm.label}</div>
+                            <div className="tl-meta">{email.subject?.length > 44 ? email.subject.slice(0, 44) + '…' : email.subject}</div>
+                            <div className="tl-meta" style={{ marginTop: '1px' }}>{timeAgo(email.sent_at)}</div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })
-                )}
+                      )
+                    })
+                  )}
+                </div>
               </div>
-            </div>
 
+            </div>
           </div>
         </div>
       </div>
@@ -1126,7 +1115,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                   style={{ resize: 'vertical', minHeight: '72px' }}
                 />
                 <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '4px' }}>
-                  This note will appear in the tenant's confirmation email.
+                  This note will appear in the tenant&apos;s confirmation email.
                 </div>
               </div>
               <div style={{ background: '#fff8e6', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#4a3800', lineHeight: 1.5, marginBottom: '4px' }}>
@@ -1163,7 +1152,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               <button onClick={() => setCancelTourModal(false)} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
             </div>
             <div className="edit-sheet-body">
-              {/* Tour summary */}
               {tourData && (
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '12px 14px', marginBottom: '18px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: '#dc2626', marginBottom: '4px' }}>
@@ -1174,7 +1162,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                   </div>
                 </div>
               )}
-              {/* Reason */}
               <div className="edit-field">
                 <label className="edit-field-label">Reason for cancellation <span style={{ color: '#dc2626' }}>*</span></label>
                 <select
@@ -1191,7 +1178,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                   <option value="Other">Other</option>
                 </select>
               </div>
-              {/* Notes */}
               <div className="edit-field">
                 <label className="edit-field-label">Additional message to tenant (optional)</label>
                 <textarea
@@ -1296,9 +1282,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
             <div className="edit-sheet-handle" />
             <div className="edit-sheet-header">
               <div>
-                <div className="edit-sheet-title">🔒 Send Reservation</div>
+                <div className="edit-sheet-title">🔒 Build Reservation Offer</div>
                 <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>
-                  Hold a spot for {lead?.first_name || 'this lead'} — creates urgency, accelerates close.
+                  Set pricing &amp; discount — you&apos;ll preview &amp; send from the next screen.
                 </div>
               </div>
               <button onClick={() => setReserveModal(false)} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -1318,7 +1304,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                       <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: reserveForm.room_id === '' ? 'rgba(140,29,64,0.1)' : '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🏠</div>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>Entire Property</div>
-                        <div style={{ fontSize: '12px', color: '#9b9b9b' }}>${property?.price?.toLocaleString()}/mo</div>
+                        <div style={{ fontSize: '12px', color: '#9b9b9b' }}>
+                          ${(reserveRooms.length > 0 ? reserveRooms.reduce((s, r) => s + r.price, 0) : property?.price ?? 0).toLocaleString()}/mo
+                          {reserveRooms.length > 0 && <span style={{ color: '#b0a898' }}> (all {reserveRooms.length} rooms)</span>}
+                        </div>
                       </div>
                     </button>
                     {reserveRooms.map(room => (
@@ -1373,7 +1362,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                   />
                 )}
                 {reserveForm.discount_type && reserveForm.discount_amount && (() => {
-                  const basePrice = reserveRooms.find(r => r.id === reserveForm.room_id)?.price ?? property?.price ?? 0
+                  const basePrice = reserveForm.room_id
+                    ? (reserveRooms.find(r => r.id === reserveForm.room_id)?.price ?? 0)
+                    : reserveRooms.length > 0
+                      ? reserveRooms.reduce((s, r) => s + r.price, 0)
+                      : (property?.price ?? 0)
                   const disc = parseInt(reserveForm.discount_amount, 10)
                   const final = reserveForm.discount_type === 'dollars'
                     ? Math.max(0, basePrice - disc)
@@ -1413,7 +1406,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
               {/* Preview */}
               <div style={{ background: 'rgba(140,29,64,0.04)', border: '1.5px solid rgba(140,29,64,0.15)', borderRadius: '10px', padding: '14px 16px', fontSize: '12px', color: '#4a4a4a', lineHeight: 1.65 }}>
-                📧 A personalized reservation email will be sent to <strong>{lead?.email}</strong> with an exclusive accept link. No changes are made to the listing.
+                🔍 A preview page will open in a new tab. You&apos;ll be able to see the full offer, edit it, and choose when to send the email to <strong>{lead?.email}</strong>.
               </div>
             </div>
 
@@ -1430,7 +1423,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                   boxShadow: reserveSending ? 'none' : '0 4px 16px rgba(140,29,64,0.3)',
                 }}
               >
-                {reserveSending ? 'Sending…' : '🔒 Send Reservation'}
+                {reserveSending ? 'Creating…' : '🔍 Preview Offer →'}
               </button>
             </div>
           </div>

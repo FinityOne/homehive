@@ -324,7 +324,33 @@ export default function LandlordLeadsPage() {
   }
 
   // ── Derived state ─────────────────────────────────────────────────────────
-  const sortedLeads = [...leads].sort((a, b) => {
+
+  // Deduplicate grouped leads: keep only the primary (oldest) per group+property
+  const { displayLeads, groupCountById } = (() => {
+    const seenGroups = new Set<string>()
+    const groupCounts: Record<string, number> = {}
+    for (const l of leads) {
+      if (l.lead_group_id && l.property) {
+        const k = `${l.lead_group_id}:${l.property}`
+        groupCounts[k] = (groupCounts[k] || 0) + 1
+      }
+    }
+    // leads is sorted newest→oldest; reverse to process oldest first so oldest = primary
+    const display: Lead[] = []
+    const countById: Record<string, number> = {}
+    for (const l of [...leads].reverse()) {
+      const k = l.lead_group_id && l.property ? `${l.lead_group_id}:${l.property}` : null
+      if (k) {
+        if (seenGroups.has(k)) continue
+        seenGroups.add(k)
+      }
+      display.push(l)
+      countById[l.id] = k ? (groupCounts[k] || 1) : 1
+    }
+    return { displayLeads: display, groupCountById: countById }
+  })()
+
+  const sortedLeads = [...displayLeads].sort((a, b) => {
     const rank = (l: Lead) => isLeadVisible(l) ? 0 : freeLeadIds.has(l.id) ? 1 : 2
     if (rank(a) !== rank(b)) return rank(a) - rank(b)
     return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
@@ -353,11 +379,11 @@ export default function LandlordLeadsPage() {
   }, {})
 
   const counts = STATUS_ORDER.reduce<Record<string, number>>((acc, s) => {
-    acc[s] = leads.filter(l => l.status === s).length
+    acc[s] = displayLeads.filter(l => l.status === s).length
     return acc
   }, {})
-  const needsPrescreen = leads.filter(l => ['new', 'contacted', 'engaged'].includes(l.status)).length
-  const lockedCount = leads.filter(l => !isLeadVisible(l)).length
+  const needsPrescreen = displayLeads.filter(l => ['new', 'contacted', 'engaged'].includes(l.status)).length
+  const lockedCount = displayLeads.filter(l => !isLeadVisible(l)).length
 
   const PAGE_SIZE = 10
   const visibleFiltered = filteredLeads.filter(l => isLeadVisible(l))
@@ -957,7 +983,7 @@ export default function LandlordLeadsPage() {
                                     return (
                                       <div
                                         key={lead.id}
-                                        onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                                        onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
                                         style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? '#fefce8' : '#f8fafc', border: `1px solid ${i === 0 ? '#fde68a' : '#e2e8f0'}`, borderRadius: 9, padding: '9px 12px', cursor: 'pointer' }}
                                       >
                                         <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1064,7 +1090,7 @@ export default function LandlordLeadsPage() {
                               )}
                               <button
                                 style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                onClick={() => router.push(`/landlord/leads/${s.lead.id}`)}
+                                onClick={() => window.open(`/landlord/leads/${s.lead.id}`, '_blank')}
                               >
                                 View →
                               </button>
@@ -1232,7 +1258,7 @@ export default function LandlordLeadsPage() {
                             <tr
                               key={lead.id}
                               className="ll-tr-link"
-                              onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                              onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
                             >
                               <td>
                                 <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: '0.5px' }}>
@@ -1240,9 +1266,14 @@ export default function LandlordLeadsPage() {
                                 </div>
                               </td>
                               <td>
-                                <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a1a1a', lineHeight: 1.3 }}>
+                                <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a1a1a', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
                                   {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-                                  {heat.icon && <span style={{ marginLeft: '4px', fontSize: '12px' }} title={heat.label}>{heat.icon}</span>}
+                                  {heat.icon && <span style={{ fontSize: '12px' }} title={heat.label}>{heat.icon}</span>}
+                                  {(groupCountById[lead.id] || 1) > 1 && (
+                                    <span title={`${groupCountById[lead.id]} inquiries from this contact`} style={{ fontSize: '10px', fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '1px 7px', letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
+                                      ×{groupCountById[lead.id]} inquiries
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px', display: 'flex', alignItems: 'center' }}>
                                   <span>{lead.email}</span>
@@ -1318,7 +1349,7 @@ export default function LandlordLeadsPage() {
                                   <button
                                     className="ll-action-btn"
                                     style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
-                                    onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                                    onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
                                   >
                                     View →
                                   </button>
@@ -1478,16 +1509,21 @@ export default function LandlordLeadsPage() {
                           <div
                             key={lead.id}
                             className="ll-pcard"
-                            onClick={() => router.push(`/landlord/leads/${lead.id}`)}
+                            onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                               <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 {initials(lead.first_name, lead.last_name)}
                               </div>
                               <div>
-                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                                   {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name[0]}.` : ''}
-                                  {heat.icon && <span style={{ marginLeft: '4px' }}>{heat.icon}</span>}
+                                  {heat.icon && <span>{heat.icon}</span>}
+                                  {(groupCountById[lead.id] || 1) > 1 && (
+                                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '1px 6px' }}>
+                                      ×{groupCountById[lead.id]}
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: '11px', color: '#9b9b9b' }}>{lead.email}</div>
                                 {lead.phone && <div style={{ fontSize: '10px', color: '#6b9af0' }}>🇺🇸 {formatPhoneDisplay(lead.phone)}</div>}

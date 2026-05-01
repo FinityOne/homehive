@@ -35,6 +35,28 @@ export async function POST(req: Request) {
   }
 
   const leadId = data[0].id
+
+  // Auto-group: check for existing leads with same email + property
+  if (email && property) {
+    const { data: existingLeads } = await supabaseAdmin
+      .from('leads')
+      .select('id, lead_group_id')
+      .eq('email', email)
+      .eq('property', property)
+      .neq('id', leadId)
+
+    if (existingLeads && existingLeads.length > 0) {
+      const groupId = existingLeads.find(l => l.lead_group_id)?.lead_group_id || crypto.randomUUID()
+      const idsToGroup = [leadId, ...existingLeads.filter(l => !l.lead_group_id).map(l => l.id)]
+      // Assign group_id to new lead + any ungrouped existing leads
+      await supabaseAdmin.from('leads').update({ lead_group_id: groupId }).in('id', idsToGroup)
+      // If existing leads didn't have a group_id yet, assign the same one
+      if (!existingLeads.find(l => l.lead_group_id)) {
+        await supabaseAdmin.from('leads').update({ lead_group_id: groupId }).in('id', existingLeads.map(l => l.id))
+      }
+    }
+  }
+
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
   const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
 

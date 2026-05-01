@@ -45,6 +45,7 @@ export type Lead = {
   status: 'new' | 'contacted' | 'follow_up' | 'engaged' | 'cold' | 'qualified' | 'tour_scheduled' | 'closed'
   closed_reason: 'leased' | 'lost' | null
   property: string | null // stores property slug
+  lead_group_id: string | null
 }
 
 export type PrescreenData = {

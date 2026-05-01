@@ -7,61 +7,59 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
 const resend = new Resend(process.env.RESEND_API_KEY!)
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ leadId: string }> }) {
-  const { leadId } = await params
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ leadId: string; reservationId: string }> }
+) {
+  const { leadId, reservationId } = await params
 
-  // Auth check
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.replace('Bearer ', '')
+  const token = req.headers.get('authorization')?.replace('Bearer ', '')
   if (!token) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token)
   if (authErr || !user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await req.json()
-  const {
-    room_id,           // null = entire property
-    discount_amount,   // number or null
-    discount_type,     // 'dollars' | 'percent' | null
-    expires_at,        // ISO string
-    send_email = true, // false = create without sending (preview flow)
-  } = body
-
-  // Fetch lead
-  const { data: lead, error: leadErr } = await supabaseAdmin
-    .from('leads').select('*').eq('id', leadId).single()
-  if (leadErr || !lead) return Response.json({ error: 'Lead not found' }, { status: 404 })
-
-  // Fetch property (include rooms for by_room price summing)
-  const { data: prop } = await supabaseAdmin
-    .from('properties')
-    .select('id, name, address, price, owner_id, rental_mode, property_images(url, position), property_rooms(id, price, is_available)')
-    .eq('slug', lead.property)
+  // Fetch reservation + related data
+  const { data: res } = await supabaseAdmin
+    .from('lead_reservations')
+    .select(`
+      id, accept_token, status, expires_at, original_price,
+      discount_amount, discount_type, room_id, room_name, landlord_id,
+      leads(first_name, email),
+      properties(name, address, owner_id, property_images(url, position))
+    `)
+    .eq('id', reservationId)
+    .eq('lead_id', leadId)
     .single()
+
+  if (!res) return Response.json({ error: 'Not found' }, { status: 404 })
+
+  const prop = res.properties as unknown as { name: string; address: string; owner_id: string; property_images: { url: string; position: number }[] } | null
   if (!prop || prop.owner_id !== user.id) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
-  // Determine room details
-  let roomName: string | null = null
-  let basePrice = prop.price as number
+  const lead = res.leads as unknown as { first_name: string | null; email: string } | null
+  if (!lead?.email) return Response.json({ error: 'Lead email missing' }, { status: 400 })
 
-  if (room_id) {
-    const { data: room } = await supabaseAdmin
-      .from('property_rooms').select('name, price').eq('id', room_id).single()
-    if (room) {
-      roomName = room.name || null
-      basePrice = room.price
-    }
-  } else if (prop.rental_mode === 'by_room') {
-    // Sum all available room prices for the whole-property offer
-    const rooms = (prop.property_rooms as { id: string; price: number; is_available: boolean }[] | null) ?? []
-    const available = rooms.filter(r => r.is_available)
-    if (available.length > 0) basePrice = available.reduce((s, r) => s + r.price, 0)
-  }
+  // Check not expired or accepted
+  const isExpired = res.status === 'expired' || new Date(res.expires_at) < new Date()
+  if (isExpired) return Response.json({ error: 'Cannot send email for an expired offer. Please edit the offer to extend the expiry first.' }, { status: 409 })
+  if (res.status === 'accepted') return Response.json({ error: 'Offer already accepted' }, { status: 409 })
 
-  // Calculate discounted price
+  // Get landlord name
+  let landlordFirstName = ''
+  try {
+    const { data: profile } = await supabaseAdmin.from('profiles').select('first_name').eq('id', user.id).single()
+    if (profile?.first_name) landlordFirstName = profile.first_name
+  } catch (_) {}
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const acceptUrl = `${siteUrl}/reserve/${res.accept_token}`
+  const tenantName = lead.first_name || 'there'
+  const basePrice = res.original_price as number
+  const discount_amount = res.discount_amount as number | null
+  const discount_type = res.discount_type as 'dollars' | 'percent' | null
+
   let discountedPrice: number | null = null
   let savingsLabel = ''
   if (discount_amount && discount_type) {
@@ -74,58 +72,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     }
   }
 
-  // Get landlord name
-  let landlordFirstName = ''
-  try {
-    const { data: profile } = await supabaseAdmin.from('profiles').select('first_name').eq('id', user.id).single()
-    if (profile?.first_name) landlordFirstName = profile.first_name
-  } catch (_) {}
+  const heroImage = (prop.property_images ?? []).sort((a, b) => a.position - b.position)[0]?.url || ''
+  const roomLabel = res.room_name ? res.room_name : (res.room_id ? 'Your Room' : 'Entire Property')
+  const subject = `🔒 ${tenantName}, your spot at ${prop.name} is reserved!`
 
-  // Create reservation record
-  const { data: reservation, error: resErr } = await supabaseAdmin
-    .from('lead_reservations')
-    .insert({
-      lead_id: leadId,
-      property_id: prop.id,
-      room_id: room_id || null,
-      landlord_id: user.id,
-      discount_amount: discount_amount || null,
-      discount_type: discount_type || null,
-      original_price: basePrice,
-      expires_at,
-      room_name: roomName,
-      status: 'pending',
-    })
-    .select('id, accept_token')
-    .single()
-
-  if (resErr || !reservation) {
-    console.error('Reservation insert error:', resErr)
-    return Response.json({ error: 'Failed to create reservation' }, { status: 500 })
-  }
-
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-  const acceptUrl = `${siteUrl}/reserve/${reservation.accept_token}`
-
-  if (!send_email) {
-    return Response.json({ success: true, id: reservation.id, accept_token: reservation.accept_token, acceptUrl })
-  }
-
-  const tenantName = lead.first_name || 'there'
-  const expiresDate = new Date(expires_at)
-  const expiresFormatted = expiresDate.toLocaleString('en-US', {
+  const expiresFormatted = new Date(res.expires_at).toLocaleString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
     timeZone: 'America/Phoenix',
   })
 
-  const heroImage = ((prop.property_images as { url: string; position: number }[] | null) ?? [])
-    .sort((a, b) => a.position - b.position)[0]?.url || ''
-
-  const roomLabel = roomName ? roomName : (room_id ? 'Your Room' : 'Entire Property')
-  const subject = `🔒 ${tenantName}, your spot at ${prop.name} is reserved!`
-
-  const displayPrice = discountedPrice ?? basePrice
   const priceBlock = discountedPrice !== null
     ? `<div style="margin-bottom:6px;">
         <span style="font-size:15px;color:#9b9b9b;text-decoration:line-through;margin-right:8px;">$${basePrice.toLocaleString()}/mo</span>
@@ -151,7 +107,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
 <body style="margin:0;padding:0;background:#f5f4f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
 <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
 
-  <!-- Header -->
   <div style="background:#1a1a1a;border-radius:16px 16px 0 0;padding:22px 32px;text-align:center;">
     <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;">
       Home<span style="color:#FFC627;font-style:italic;">Hive</span>
@@ -168,19 +123,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     </div>
   </div>` : ''}
 
-  <!-- Main card -->
   <div style="background:#fff;border:1px solid #e8e5de;border-top:none;border-radius:0 0 16px 16px;overflow:hidden;">
-
-    <!-- Urgency banner -->
     <div style="background:linear-gradient(135deg,#8C1D40,#a02050);padding:18px 32px;text-align:center;">
       <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,0.75);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Time-Sensitive Reservation</div>
       <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.3px;">🔒 Your spot is being held</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-top:6px;">Reserved exclusively for you until ${expiresFormatted}</div>
     </div>
 
-    <!-- Body -->
     <div style="padding:36px 32px 40px;text-align:center;">
-
       <h1 style="margin:0 0 10px;font-size:24px;font-weight:800;color:#1a1a1a;letter-spacing:-0.4px;line-height:1.25;">
         ${tenantName}, you're our top pick.
       </h1>
@@ -188,10 +138,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
         ${landlordFirstName ? `<strong>${landlordFirstName}</strong> has` : 'The landlord has'} personally reserved <strong>${roomLabel}</strong> at ${prop.name} for you. This offer is exclusive — we&apos;re not showing this spot to anyone else while it&apos;s held for you.
       </p>
 
-      <!-- Reservation details box -->
       <div style="background:#faf9f6;border:1.5px solid #e8e5de;border-radius:14px;padding:24px 28px;margin-bottom:28px;text-align:left;">
         <div style="font-size:11px;font-weight:700;color:#9b9b9b;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:16px;">Your Reservation</div>
-
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f0ede6;">
           <div style="font-size:13px;color:#9b9b9b;">Property</div>
           <div style="font-size:13px;font-weight:600;color:#1a1a1a;text-align:right;">${prop.name}</div>
@@ -203,9 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
         </div>` : ''}
         <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f0ede6;">
           <div style="font-size:13px;color:#9b9b9b;">Monthly Rent</div>
-          <div style="text-align:right;">
-            ${priceBlock}
-          </div>
+          <div style="text-align:right;">${priceBlock}</div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;">
           <div style="font-size:13px;color:#9b9b9b;">Held Until</div>
@@ -213,7 +159,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
         </div>
       </div>
 
-      <!-- CTA -->
       <a href="${acceptUrl}"
          style="display:inline-block;background:#8C1D40;color:#fff;text-decoration:none;font-size:17px;font-weight:800;padding:20px 48px;border-radius:12px;letter-spacing:-0.2px;margin-bottom:14px;box-shadow:0 6px 28px rgba(140,29,64,0.35);">
         ✓ Accept My Reservation →
@@ -224,22 +169,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
         We&apos;ll follow up with next steps after you accept.
       </div>
 
-      <!-- Urgency callout -->
       <div style="background:#fff8e6;border:1.5px solid #fde68a;border-radius:12px;padding:16px 20px;margin-bottom:4px;">
         <div style="font-size:13px;color:#4a3800;line-height:1.65;">
           ⏰ <strong>This reservation expires automatically.</strong> Once it expires, the spot opens back up and we may offer it to other interested renters.
         </div>
       </div>
-
     </div>
   </div>
 
-  <!-- Footer -->
   <div style="margin-top:28px;text-align:center;font-size:12px;color:#9b9b9b;line-height:1.8;">
     Sent with care by the HomeHive Team<br/>
     <a href="mailto:hello@homehive.live" style="color:#8C1D40;text-decoration:none;">hello@homehive.live</a>
   </div>
-
 </div>
 </body>
 </html>`,
@@ -248,14 +189,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     await logEmail(leadId, 'reservation_sent', subject, lead.email, {
       property: prop.name,
       room: roomLabel,
-      expires_at,
+      expires_at: res.expires_at,
       discount_type,
       discount_amount,
+      reservation_id: reservationId,
     })
   } catch (e) {
     console.error('Reservation email error:', e)
-    return Response.json({ error: 'Failed to send reservation email' }, { status: 500 })
+    return Response.json({ error: 'Failed to send email' }, { status: 500 })
   }
 
-  return Response.json({ success: true, id: reservation.id, accept_token: reservation.accept_token, acceptUrl })
+  return Response.json({ success: true })
 }
