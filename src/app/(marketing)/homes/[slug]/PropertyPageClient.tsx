@@ -67,6 +67,11 @@ export default function PropertyPageClient({
   const [showStickyBar, setShowStickyBar] = useState(false)
   const [badgeHover, setBadgeHover] = useState(false)
   const [landlordProfile, setLandlordProfile] = useState<{ first_name: string | null; avatar_url: string | null } | null>(null)
+  const [recommended, setRecommended] = useState<{
+    slug: string; name: string; address: string; price: number; beds: number; baths: number
+    available: number; total_rooms: number; asu_distance: number; is_featured: boolean
+    asu_score: number; rental_mode: string; cover: string | null
+  }[]>([])
   const titleRef = useRef<HTMLDivElement>(null)
   const formStartedRef = useRef(false)
 
@@ -88,6 +93,31 @@ export default function PropertyPageClient({
       .then(data => { if (data.first_name) setLandlordProfile(data) })
       .catch(() => {})
   }, [home?.owner_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!home) return
+    supabase
+      .from('properties')
+      .select('slug, name, address, price, beds, baths, available, total_rooms, asu_distance, is_featured, asu_score, rental_mode, property_images(url, position)')
+      .eq('is_active', true)
+      .eq('admin_status', 'active')
+      .eq('is_test', false)
+      .eq('is_featured', true)
+      .neq('slug', slug)
+      .order('asu_score', { ascending: false })
+      .limit(3)
+      .then(({ data }) => {
+        if (!data) return
+        const mapped = data.map((p: any) => ({
+          slug: p.slug, name: p.name, address: p.address, price: p.price,
+          beds: p.beds, baths: p.baths, available: p.available, total_rooms: p.total_rooms,
+          asu_distance: p.asu_distance, is_featured: p.is_featured, asu_score: p.asu_score,
+          rental_mode: p.rental_mode ?? 'whole_home',
+          cover: p.property_images?.sort((a: any, b: any) => a.position - b.position)?.[0]?.url ?? null,
+        }))
+        setRecommended(mapped)
+      })
+  }, [home]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!home) return
@@ -601,9 +631,17 @@ export default function PropertyPageClient({
         .nearby-place { font-size: 13px; color: #3a3a3a; }
         .nearby-time  { font-size: 12px; color: #d4a843; font-weight: 500; }
 
-        .testimonial  { padding: 16px 18px; background: #faf9f6; border-radius: 10px; border: 1px solid #e8e5de; border-left: 3px solid #d4a843; margin-bottom: 10px; }
-        .testimonial-quote  { font-size: 14px; color: #3a3a3a; line-height: 1.65; font-style: italic; margin-bottom: 6px; }
-        .testimonial-author { font-size: 12px; color: #9b9b9b; font-weight: 500; }
+        .rec-grid    { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+        .rec-card    { border: 1px solid #e8e5de; border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: box-shadow 0.15s, border-color 0.15s; background: #fff; }
+        .rec-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.10); border-color: #c5c1b8; }
+        .rec-img     { width: 100%; height: 140px; object-fit: cover; background: #e8e4db; display: block; }
+        .rec-body    { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        .rec-name    { font-size: 14px; font-weight: 700; color: #1a1a1a; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rec-addr    { font-size: 11px; color: #9b9b9b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rec-price   { font-family: 'DM Serif Display', serif; font-size: 18px; color: #1a1a1a; margin-top: 4px; }
+        .rec-meta    { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+        .rec-pill    { font-size: 10px; font-weight: 600; color: #6b6b6b; background: #f5f4f0; border-radius: 20px; padding: 2px 8px; }
+        .rec-cta     { font-size: 12px; font-weight: 700; color: #8C1D40; margin-top: auto; padding-top: 8px; }
 
         /* ── FORM CARD (right column) ───────────────────── */
         .form-card    { background: #fff; border-radius: 16px; padding: 22px; border: 1px solid #e8e5de; box-shadow: 0 4px 24px rgba(0,0,0,0.06); }
@@ -948,19 +986,55 @@ export default function PropertyPageClient({
               </div>
             )}
 
-            {/* TESTIMONIALS — platform social proof, always shown */}
-            <div className="section">
-              <div className="section-label">What students say</div>
-              {[
-                { q: 'Found my roommates through HomeHive before I even moved in. So much less stressful than scrolling Facebook groups for weeks.', a: 'Sofia M. — ASU Junior, Psychology' },
-                { q: 'The price I saw was exactly what I paid. No surprise fees at signing — first time that\'s ever happened renting near campus.', a: 'Marcus T. — ASU Grad Student, Engineering' },
-              ].map(({ q, a }) => (
-                <div className="testimonial" key={a}>
-                  <p className="testimonial-quote">"{q}"</p>
-                  <p className="testimonial-author">— {a}</p>
+            {/* RECOMMENDED PROPERTIES */}
+            {recommended.length > 0 && (
+              <div className="section">
+                <div className="section-label">You might also like</div>
+                <div className="rec-grid">
+                  {recommended.map(p => {
+                    const pAvail = availabilityConfig(p.available, p.total_rooms)
+                    return (
+                      <a key={p.slug} href={`/homes/${p.slug}`} className="rec-card">
+                        {p.cover ? (
+                          <img src={p.cover} alt={p.name} className="rec-img" />
+                        ) : (
+                          <div className="rec-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🏠</div>
+                        )}
+                        <div className="rec-body">
+                          {p.is_featured && (
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#d4a843', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>⭐ Featured</div>
+                          )}
+                          <div className="rec-name">{p.name}</div>
+                          <div className="rec-addr">📍 {p.address}</div>
+                          <div className="rec-price">
+                            {p.rental_mode === 'by_room' ? `from $${p.price.toLocaleString()}` : `$${p.price.toLocaleString()}`}
+                            <span style={{ fontSize: 12, fontFamily: "'DM Sans', sans-serif", color: '#9b9b9b', fontWeight: 400 }}>
+                              {p.rental_mode === 'by_room' ? '/mo per room' : '/mo'}
+                            </span>
+                          </div>
+                          <div className="rec-meta">
+                            <span className="rec-pill">{p.beds} bd · {p.baths} ba</span>
+                            {p.asu_distance > 0 && <span className="rec-pill">{p.asu_distance} mi to ASU</span>}
+                            <span style={{ fontSize: 10, fontWeight: 600, color: pAvail.color, background: pAvail.bg, borderRadius: 20, padding: '2px 8px' }}>
+                              {pAvail.text}
+                            </span>
+                          </div>
+                          <div className="rec-cta">View listing →</div>
+                        </div>
+                      </a>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
+                <div style={{ marginTop: 14, textAlign: 'center' }}>
+                  <a href="/homes" style={{ fontSize: 13, color: '#9b9b9b', textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#1a1a1a'}
+                    onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#9b9b9b'}
+                  >
+                    Browse all homes →
+                  </a>
+                </div>
+              </div>
+            )}
 
           </div>{/* /prop-left */}
 
