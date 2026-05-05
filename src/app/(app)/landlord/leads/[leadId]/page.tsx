@@ -133,6 +133,100 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [activeReservation, setActiveReservation] = useState<{ id: string; accept_token: string; expires_at?: string; status?: string } | null>(null)
   const [reserveLinkCopied, setReserveLinkCopied] = useState(false)
 
+  // ─── Roommate Groups ─────────────────────────────────────────────────────────
+  type RoommateGroup = { id: string; name: string; emoji: string; property_slug: string | null; member_count: number }
+  const [groupsModal, setGroupsModal] = useState(false)
+  const [roommateGroups, setRoommateGroups] = useState<RoommateGroup[]>([])
+  const [groupsLoading, setGroupsLoading] = useState(false)
+  const [leadGroupIds, setLeadGroupIds] = useState<Set<string>>(new Set())
+  const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [showNewGroupInput, setShowNewGroupInput] = useState(false)
+
+  const openGroupsModal = async () => {
+    setGroupsModal(true)
+    setGroupsLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const [groupsRes, memberRes] = await Promise.all([
+      fetch('/api/roommate-groups', { headers: { Authorization: `Bearer ${session?.access_token}` } }),
+      fetch(`/api/roommate-groups?lead_id=${leadId}`, { headers: { Authorization: `Bearer ${session?.access_token}` } }),
+    ])
+    if (groupsRes.ok) {
+      const { groups } = await groupsRes.json()
+      const allGroups: RoommateGroup[] = groups || []
+      setRoommateGroups(allGroups)
+      // Check membership by fetching each group's detail in parallel
+      const checks = await Promise.all(
+        allGroups.map(g =>
+          fetch(`/api/roommate-groups/${g.id}`, { headers: { Authorization: `Bearer ${session?.access_token}` } })
+            .then(r => r.ok ? r.json() : null)
+        )
+      )
+      const memberOf = new Set<string>()
+      checks.forEach((detail, i) => {
+        if (detail?.members?.some((m: { lead_id: string }) => m.lead_id === leadId)) {
+          memberOf.add(allGroups[i].id)
+        }
+      })
+      setLeadGroupIds(memberOf)
+    }
+    setGroupsLoading(false)
+  }
+
+  const handleAddToGroup = async (groupId: string) => {
+    setAddingToGroup(groupId)
+    const { data: { session } } = await supabase.auth.getSession()
+    const alreadyIn = leadGroupIds.has(groupId)
+    const method = alreadyIn ? 'DELETE' : 'POST'
+    const res = await fetch(`/api/roommate-groups/${groupId}/members`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ lead_id: leadId }),
+    })
+    if (res.ok) {
+      setLeadGroupIds(prev => {
+        const next = new Set(prev)
+        if (alreadyIn) next.delete(groupId); else next.add(groupId)
+        return next
+      })
+      setRoommateGroups(prev => prev.map(g => g.id === groupId
+        ? { ...g, member_count: g.member_count + (alreadyIn ? -1 : 1) }
+        : g
+      ))
+      showToast(alreadyIn ? 'Removed from group' : 'Added to group! 🏠')
+    }
+    setAddingToGroup(null)
+  }
+
+  const handleCreateAndAdd = async () => {
+    if (!newGroupName.trim()) return
+    setCreatingGroup(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/roommate-groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ name: newGroupName.trim(), emoji: '🏠', property_slug: lead?.property || null }),
+    })
+    if (res.ok) {
+      const { group } = await res.json()
+      // Add this lead immediately
+      await fetch(`/api/roommate-groups/${group.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ lead_id: leadId }),
+      })
+      setRoommateGroups(prev => [{ ...group, member_count: 1 }, ...prev])
+      setLeadGroupIds(prev => new Set([...prev, group.id]))
+      setNewGroupName('')
+      setShowNewGroupInput(false)
+      showToast('Group created and lead added! 🏠')
+    } else {
+      showToast('Failed to create group', 'error')
+    }
+    setCreatingGroup(false)
+  }
+
   const [copied, setCopied] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', move_in_date: '', property: '' })
@@ -732,6 +826,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                 {inviting ? '…' : tourInviteSent ? '🔄 Resend Invite' : '🎉 Invite to Tour'}
               </button>
             )}
+            <div className="ld-act-sep" />
+            <button className="ld-act-btn ld-act-btn-ghost" onClick={openGroupsModal}>
+              👥 {leadGroupIds.size > 0 ? `Groups (${leadGroupIds.size})` : 'Roommate Groups'}
+            </button>
             <div className="ld-act-sep" />
             <a href={`mailto:${lead.email}?subject=Regarding your interest at ${property?.name || lead.property || 'our property'}`} className="ld-act-btn ld-act-btn-ghost">✉ Email</a>
             {lead.phone && <a href={`tel:${lead.phone}`} className="ld-act-btn ld-act-btn-ghost">📞 Call</a>}
@@ -1510,6 +1608,147 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                 {updatingStatus ? 'Saving…' : `Update to ${pendingStatus ? STATUS_META[pendingStatus].label : '…'}`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ROOMMATE GROUPS MODAL ── */}
+      {groupsModal && (
+        <div
+          className="status-modal-overlay"
+          onClick={() => { setGroupsModal(false); setShowNewGroupInput(false); setNewGroupName('') }}
+        >
+          <div
+            className="status-modal"
+            style={{ maxWidth: 500 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.3px' }}>
+                  👥 Roommate Groups
+                </div>
+                <div style={{ fontSize: 12, color: '#9b9b9b', marginTop: 3 }}>
+                  Add or remove {lead?.first_name || 'this lead'} from a group
+                </div>
+              </div>
+              <button
+                onClick={() => { setGroupsModal(false); setShowNewGroupInput(false); setNewGroupName('') }}
+                style={{ background: 'none', border: 'none', fontSize: 18, color: '#9b9b9b', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {groupsLoading ? (
+              <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 13, color: '#9b9b9b' }}>Loading groups…</div>
+            ) : (
+              <>
+                {roommateGroups.length === 0 && !showNewGroupInput ? (
+                  <div style={{ background: '#f5f4f0', borderRadius: 10, padding: '20px 16px', textAlign: 'center', marginBottom: 16 }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>🏠</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>No groups yet</div>
+                    <div style={{ fontSize: 12, color: '#9b9b9b' }}>Create your first group to start organizing leads.</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14, maxHeight: 280, overflowY: 'auto' }}>
+                    {roommateGroups.map(group => {
+                      const inGroup = leadGroupIds.has(group.id)
+                      return (
+                        <div
+                          key={group.id}
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: inGroup ? 'rgba(140,29,64,0.04)' : '#faf9f6', border: `1.5px solid ${inGroup ? 'rgba(140,29,64,0.25)' : '#e8e5de'}`, borderRadius: 10 }}
+                        >
+                          <span style={{ fontSize: 20 }}>{group.emoji}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{group.name}</div>
+                            <div style={{ fontSize: 11, color: '#9b9b9b', marginTop: 1 }}>
+                              {group.member_count} member{group.member_count !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                          {inGroup && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                              ✓ In group
+                            </span>
+                          )}
+                          <button
+                            disabled={addingToGroup === group.id}
+                            onClick={() => handleAddToGroup(group.id)}
+                            style={{
+                              fontSize: 12, fontWeight: 600, border: '1.5px solid', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', flexShrink: 0,
+                              ...(inGroup
+                                ? { color: '#ef4444', background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }
+                                : { color: '#8C1D40', background: '#fdf2f5', borderColor: 'rgba(140,29,64,0.25)' }
+                              )
+                            }}
+                          >
+                            {addingToGroup === group.id ? '…' : inGroup ? 'Remove' : '+ Add'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Create new group inline */}
+                {showNewGroupInput ? (
+                  <div style={{ background: '#f5f4f0', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>New Group Name</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        autoFocus
+                        className="edit-input"
+                        placeholder="e.g. Fall 2026 Unit 4A"
+                        value={newGroupName}
+                        onChange={e => setNewGroupName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleCreateAndAdd(); if (e.key === 'Escape') { setShowNewGroupInput(false); setNewGroupName('') } }}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn-primary"
+                        disabled={!newGroupName.trim() || creatingGroup}
+                        onClick={handleCreateAndAdd}
+                        style={{ flexShrink: 0, padding: '8px 14px', fontSize: 12 }}
+                      >
+                        {creatingGroup ? '…' : 'Create'}
+                      </button>
+                      <button
+                        onClick={() => { setShowNewGroupInput(false); setNewGroupName('') }}
+                        style={{ fontSize: 12, color: '#9b9b9b', background: 'none', border: '1.5px solid #e8e5de', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9b9b9b', marginTop: 6 }}>
+                      This lead will be added automatically when you create the group.
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowNewGroupInput(true)}
+                    style={{ width: '100%', padding: '10px', background: '#fff', border: '1.5px dashed #e8e5de', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#8C1D40', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: 14 }}
+                  >
+                    + Create New Group
+                  </button>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button
+                    onClick={() => { setGroupsModal(false); router.push('/landlord/leads') }}
+                    style={{ fontSize: 12, color: '#6b6b6b', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontWeight: 500, padding: 0 }}
+                  >
+                    Manage all groups →
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    onClick={() => { setGroupsModal(false); setShowNewGroupInput(false); setNewGroupName('') }}
+                    style={{ fontSize: 12, padding: '7px 14px' }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
