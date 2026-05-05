@@ -124,6 +124,7 @@ export default function LandlordLeadsPage() {
   const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
   const [autoUnlockingId, setAutoUnlockingId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [collapsedProps, setCollapsedProps] = useState<Set<string>>(new Set())
 
   // leadId -> ISO timestamp of last outreach email (within 24h window)
   const [lastContactedAt, setLastContactedAt] = useState<Record<string, string>>({})
@@ -590,6 +591,186 @@ export default function LandlordLeadsPage() {
     return { subject, html }
   }
 
+  // ── Urgency helper ───────────────────────────────────────────────────────
+  const urgencyOf = (lead: Lead) => {
+    const d = staleDays(lead)
+    if (['qualified', 'tour_scheduled'].includes(lead.status)) return 'hot'
+    if ((lead.status === 'new' && d >= 3) || (['follow_up', 'contacted'].includes(lead.status) && d >= 14)) return 'urgent'
+    if ((lead.status === 'new' && d >= 1) || (lead.status === 'contacted' && d >= 5)) return 'warm'
+    return 'normal'
+  }
+
+  // ── Lead card renderer ────────────────────────────────────────────────────
+  const renderLeadCard = (lead: Lead, hasBorder: boolean, showPropName: boolean) => {
+    const heat = getHeat(lead.created_at)
+    const meta = STATUS_META[lead.status]
+    const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
+    const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
+    const prop = properties.find(p => p.slug === lead.property)
+    const phone = formatPhoneDisplay(lead.phone)
+    const urg = urgencyOf(lead)
+    const accentColor = urg === 'urgent' ? '#ef4444' : urg === 'hot' ? '#10b981' : urg === 'warm' ? '#f97316' : meta.color
+    return (
+      <div
+        key={lead.id}
+        className="ll-lead-card"
+        style={{ borderLeft: `3px solid ${accentColor}`, borderBottom: hasBorder ? '1px solid #f0ede6' : 'none' }}
+        onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
+      >
+        {/* Avatar */}
+        <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: 0.5 }}>
+          {initials(lead.first_name, lead.last_name)}
+        </div>
+
+        {/* Identity */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 3 }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a', letterSpacing: '-0.1px' }}>
+              {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
+            </span>
+            {heat.icon && <span title={heat.label} style={{ fontSize: 12 }}>{heat.icon}</span>}
+            {(groupCountById[lead.id] || 1) > 1 && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 10, padding: '1px 6px' }}>
+                ×{groupCountById[lead.id]}
+              </span>
+            )}
+            {urg === 'urgent' && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', background: '#fef2f2', borderRadius: 10, padding: '1px 6px' }}>needs action</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: '#6b7280' }}>
+              <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span>
+              <button className={`ll-copy-btn${copiedKey === `${lead.id}:email` ? ' copied' : ''}`} onClick={e => handleCopy(e, `${lead.id}:email`, lead.email)} title="Copy email">
+                {copiedKey === `${lead.id}:email`
+                  ? <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>✓</span>
+                  : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9b9b9b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+              </button>
+            </div>
+            {phone && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12 }}>
+                <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} style={{ color: '#6b9af0', textDecoration: 'none' }}>+1 {phone}</a>
+                <button className={`ll-copy-btn${copiedKey === `${lead.id}:phone` ? ' copied' : ''}`} onClick={e => handleCopy(e, `${lead.id}:phone`, phone)} title="Copy phone">
+                  {copiedKey === `${lead.id}:phone`
+                    ? <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>✓</span>
+                    : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b9af0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+                </button>
+              </div>
+            )}
+            {lead.move_in_date && (
+              <span style={{ fontSize: 11, color: '#b0a898' }}>📅 {lead.move_in_date}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Property tag — only in flat all-properties view */}
+        {showPropName && (
+          <div style={{ flexShrink: 0, width: 136, overflow: 'hidden' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{prop?.name || '—'}</div>
+            {prop?.address && <div style={{ fontSize: 10, color: '#9b9b9b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{prop.address}</div>}
+          </div>
+        )}
+
+        {/* Age */}
+        <div style={{ flexShrink: 0, minWidth: 50, textAlign: 'right' }}>
+          <span style={{ fontSize: 11, color: urg === 'urgent' ? '#ef4444' : '#b0a898', fontWeight: urg === 'urgent' ? 600 : 400 }}>
+            {timeAgo(lead.created_at)}
+          </span>
+        </div>
+
+        {/* Status */}
+        <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          <select
+            className="ll-status-select"
+            value={lead.status}
+            disabled={updatingStatusId === lead.id}
+            onChange={e => handleStatusChange(lead, e.target.value as Lead['status'])}
+            style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}
+          >
+            {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
+          </select>
+          <div style={{ fontSize: 10, marginTop: 3, textAlign: 'center', color: hasPrescreen ? '#10b981' : '#d1d5db', fontWeight: hasPrescreen ? 600 : 400 }}>
+            {hasPrescreen ? '✓ Pre-screened' : 'Needs pre-screen'}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ flexShrink: 0, display: 'flex', gap: 5 }} onClick={e => e.stopPropagation()}>
+          {needsRemind && (
+            <button className="ll-action-btn" style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
+              disabled={remindingId === lead.id} onClick={e => sendReminder(lead, e)}>
+              {remindingId === lead.id ? '…' : '📧'}
+            </button>
+          )}
+          <button className="ll-action-btn" style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
+            onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}>
+            View →
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const renderLockedSection = (lockedLeads: Lead[]) => (
+    <>
+      <div style={{
+        background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)',
+        padding: '12px 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+        borderTop: '2px solid #e8e5de',
+      }}>
+        <div>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginBottom: 3 }}>🔒 {lockedLeads.length} lead{lockedLeads.length !== 1 ? 's' : ''} locked</div>
+          <div style={{ color: '#9b9b9b', fontSize: 11, lineHeight: 1.6 }}>
+            Unlock to see name, email & phone ·{' '}
+            <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> 1 listing ·{' '}
+            <span style={{ color: '#FFC627', fontWeight: 600 }}>$49.99/mo</span> unlimited ·{' '}
+            <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
+          </div>
+        </div>
+        <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
+          style={{ background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}>
+          Unlock Leads →
+        </button>
+      </div>
+      {lockedLeads.slice(0, 3).map(lead => {
+        const meta = STATUS_META[lead.status]
+        const prop = properties.find(p => p.slug === lead.property)
+        return (
+          <div key={lead.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid #f0ede6', background: '#fafaf8', borderLeft: '3px solid #e0ddd7' }}>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#d4d0c8', flexShrink: 0, filter: 'blur(3px)' }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
+                <div className="blur-line" style={{ width: 90, height: 12, marginBottom: 4 }} />
+                <div className="blur-line" style={{ width: 140, height: 10 }} />
+              </div>
+            </div>
+            <div style={{ flexShrink: 0, width: 136 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{prop?.name || '—'}</div>
+              {lead.move_in_date && <div style={{ fontSize: 10, color: '#b0a898', marginTop: 1 }}>📅 {lead.move_in_date}</div>}
+            </div>
+            <div style={{ flexShrink: 0, minWidth: 50, textAlign: 'right' }}>
+              <span style={{ fontSize: 11, color: '#b0a898' }}>{timeAgo(lead.created_at)}</span>
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>{meta.label}</span>
+            </div>
+            <div style={{ flexShrink: 0, width: 56 }} />
+          </div>
+        )
+      })}
+      {lockedLeads.length > 3 && (
+        <div style={{ padding: '9px 16px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
+          <span style={{ fontSize: 12, color: '#9b9b9b' }}>+{lockedLeads.length - 3} more — </span>
+          <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
+            style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}>
+            unlock all →
+          </button>
+        </div>
+      )}
+    </>
+  )
+
   if (!loading && properties.length === 0) {
     return (
       <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
@@ -647,25 +828,21 @@ export default function LandlordLeadsPage() {
         .ll-view-btn.active { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
         .ll-view-btn:not(.active) { background: transparent; color: #9b9b9b; }
 
-        .ll-table-wrap { background: #fff; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; margin: 12px 24px 0; }
-        .ll-table { width: 100%; border-collapse: collapse; }
-        .ll-table thead th { background: #faf9f6; padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; border-bottom: 1px solid #e8e5de; white-space: nowrap; }
-        .ll-table thead th:first-child { width: 44px; padding-left: 14px; }
-        .ll-table thead th:last-child { text-align: right; padding-right: 14px; }
-        .ll-table tbody tr { border-bottom: 1px solid #f5f4f0; transition: background 0.1s; }
-        .ll-table tbody tr:last-child { border-bottom: none; }
-        .ll-table tbody tr.ll-tr-link { cursor: pointer; }
-        .ll-table tbody tr.ll-tr-link:hover { background: #faf9f6; }
-        .ll-table td { padding: 9px 12px; vertical-align: middle; }
-        .ll-table td:first-child { padding-left: 14px; }
-        .ll-table td:last-child { padding-right: 14px; }
+        /* ── CARD LIST ─────────────────────────────── */
+        .ll-group { margin: 12px 24px 0; }
+        .ll-group-hdr { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: #1a1a1a; border-radius: 10px 10px 0 0; cursor: pointer; user-select: none; transition: background 0.15s; }
+        .ll-group-hdr.collapsed { border-radius: 10px; }
+        .ll-group-hdr:hover { background: #272727; }
+        .ll-group-body { background: #fff; border: 1px solid #e8e5de; border-top: none; border-radius: 0 0 10px 10px; overflow: hidden; }
+        .ll-lead-card { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid #f0ede6; cursor: pointer; transition: background 0.1s; }
+        .ll-lead-card:last-child { border-bottom: none; }
+        .ll-lead-card:hover { background: #faf9f6; }
+        .ll-flat { margin: 12px 24px 0; background: #fff; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; }
 
         .ll-pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px 0; }
         .ll-page-btn { padding: 5px 12px; border: 1.5px solid #e8e5de; border-radius: 6px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #4a4a4a; transition: all 0.15s; }
         .ll-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .ll-page-btn:not(:disabled):hover { border-color: #8C1D40; color: #8C1D40; }
-
-        .ll-avatar { width: 32px; height: 32px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; }
 
         /* Copy button */
         .ll-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 1px 3px; border-radius: 3px; opacity: 0; transition: opacity 0.12s, background 0.12s; vertical-align: middle; margin-left: 3px; }
@@ -1185,19 +1362,12 @@ export default function LandlordLeadsPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              <div className="ll-status-pills">
-                <div className={`ll-pill${statusFilter === 'all' ? ' active' : ''}`} onClick={() => setStatusFilter('all')}>All</div>
-                {STATUS_ORDER.map(s => (
-                  <div
-                    key={s}
-                    className={`ll-pill${statusFilter === s ? ' active' : ''}`}
-                    onClick={() => setStatusFilter(s)}
-                    style={statusFilter === s ? {} : { borderColor: STATUS_META[s].border, color: STATUS_META[s].color }}
-                  >
-                    {STATUS_META[s].label}
-                  </div>
-                ))}
-              </div>
+              {statusFilter !== 'all' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: STATUS_META[statusFilter].bg, border: `1.5px solid ${STATUS_META[statusFilter].border}`, borderRadius: 20, padding: '4px 10px' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: STATUS_META[statusFilter].color }}>{STATUS_META[statusFilter].label}</span>
+                  <button onClick={() => setStatusFilter('all')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: STATUS_META[statusFilter].color, lineHeight: 1, padding: 0, display: 'flex' }}>×</button>
+                </div>
+              )}
               {properties.length > 1 && (
                 <select className="ll-select" value={propertyFilter} onChange={e => setPropertyFilter(e.target.value)}>
                   <option value="all">All Properties</option>
@@ -1231,241 +1401,74 @@ export default function LandlordLeadsPage() {
             {/* ── LIST VIEW ── */}
             {viewMode === 'list' && filteredLeads.length > 0 && (
               <>
-                <div className="ll-table-wrap">
-                  <table className="ll-table">
-                    <thead>
-                      <tr>
-                        <th />
-                        <th>Lead</th>
-                        <th>Listing</th>
-                        <th>Status</th>
-                        <th>Age</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-
-                    {/* ── Visible rows ── */}
-                    {pagedVisible.length > 0 && (
-                      <tbody>
-                        {pagedVisible.map(lead => {
-                          const heat = getHeat(lead.created_at)
-                          const meta = STATUS_META[lead.status]
-                          const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
-                          const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
-                          const prop = properties.find(p => p.slug === lead.property)
-                          const phone = formatPhoneDisplay(lead.phone)
-                          return (
-                            <tr
-                              key={lead.id}
-                              className="ll-tr-link"
-                              onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
-                            >
-                              <td>
-                                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: '0.5px' }}>
-                                  {initials(lead.first_name, lead.last_name)}
-                                </div>
-                              </td>
-                              <td>
-                                <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a1a1a', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-                                  {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-                                  {heat.icon && <span style={{ fontSize: '12px' }} title={heat.label}>{heat.icon}</span>}
-                                  {(groupCountById[lead.id] || 1) > 1 && (
-                                    <span title={`${groupCountById[lead.id]} inquiries from this contact`} style={{ fontSize: '10px', fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '1px 7px', letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
-                                      ×{groupCountById[lead.id]} inquiries
-                                    </span>
-                                  )}
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px', display: 'flex', alignItems: 'center' }}>
-                                  <span>{lead.email}</span>
-                                  <button
-                                    className={`ll-copy-btn${copiedKey === `${lead.id}:email` ? ' copied' : ''}`}
-                                    onClick={e => handleCopy(e, `${lead.id}:email`, lead.email)}
-                                    title="Copy email"
-                                  >
-                                    {copiedKey === `${lead.id}:email`
-                                      ? <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700 }}>✓</span>
-                                      : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9b9b9b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                    }
-                                  </button>
-                                </div>
-                                {phone && (
-                                  <div style={{ fontSize: '11px', color: '#6b9af0', marginTop: '1px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                    <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} style={{ color: '#6b9af0', textDecoration: 'none' }}>
-                                      🇺🇸 +1 {phone}
-                                    </a>
-                                    <button
-                                      className={`ll-copy-btn${copiedKey === `${lead.id}:phone` ? ' copied' : ''}`}
-                                      onClick={e => handleCopy(e, `${lead.id}:phone`, phone)}
-                                      title="Copy phone"
-                                    >
-                                      {copiedKey === `${lead.id}:phone`
-                                        ? <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700 }}>✓</span>
-                                        : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b9af0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                      }
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                              <td>
-                                <div style={{ fontSize: '12px', color: '#1a1a1a', fontWeight: 600 }}>{prop?.name || '—'}</div>
-                                {prop?.address && <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{prop.address}</div>}
-                                {lead.move_in_date && <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '1px' }}>Move-in: {lead.move_in_date}</div>}
-                              </td>
-                              <td onClick={e => e.stopPropagation()}>
-                                <select
-                                  className="ll-status-select"
-                                  value={lead.status}
-                                  disabled={updatingStatusId === lead.id}
-                                  onChange={e => handleStatusChange(lead, e.target.value as Lead['status'])}
-                                  style={{
-                                    color: meta.color,
-                                    background: meta.bg,
-                                    borderColor: meta.border,
-                                  }}
-                                >
-                                  {STATUS_ORDER.map(s => (
-                                    <option key={s} value={s}>{STATUS_META[s].label}</option>
-                                  ))}
-                                </select>
-                                <div style={{ marginTop: '3px', fontSize: '10px', color: hasPrescreen ? '#10b981' : '#c5c1b8', fontWeight: hasPrescreen ? 600 : 400 }}>
-                                  {hasPrescreen ? '✓ Pre-screened' : 'Needs pre-screen'}
-                                </div>
-                              </td>
-                              <td style={{ whiteSpace: 'nowrap', fontSize: '11px', color: '#b0a898' }}>
-                                {timeAgo(lead.created_at)}
-                              </td>
-                              <td onClick={e => e.stopPropagation()}>
-                                <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
-                                  {needsRemind && (
-                                    <button
-                                      className="ll-action-btn"
-                                      style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
-                                      disabled={remindingId === lead.id}
-                                      onClick={e => sendReminder(lead, e)}
-                                    >
-                                      {remindingId === lead.id ? '…' : '📧'}
-                                    </button>
-                                  )}
-                                  <button
-                                    className="ll-action-btn"
-                                    style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
-                                    onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
-                                  >
-                                    View →
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    )}
-
-                    {/* ── Locked section ── */}
-                    {lockedFiltered.length > 0 && (
-                      <tbody>
-                        <tr>
-                          <td colSpan={6} style={{ padding: 0 }}>
-                            <div style={{
-                              background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)',
-                              padding: '14px 18px',
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              gap: '16px', flexWrap: 'wrap',
-                              borderTop: pagedVisible.length > 0 ? '2px solid #e8e5de' : 'none',
-                            }}>
-                              <div>
-                                <div style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
-                                  🔒 {lockedFiltered.length} lead{lockedFiltered.length !== 1 ? 's' : ''} locked
-                                </div>
-                                <div style={{ color: '#9b9b9b', fontSize: '11px', lineHeight: 1.7 }}>
-                                  Unlock to see name, email & phone&nbsp;·&nbsp;
-                                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> 1 listing&nbsp;·&nbsp;
-                                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$49.99/mo</span> unlimited listings&nbsp;·&nbsp;
-                                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$299</span> lifetime deal&nbsp;·&nbsp;
-                                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => setUnlockModalLeadId(lockedFiltered[0].id)}
-                                style={{
-                                  background: '#FFC627', color: '#1a1a1a', border: 'none',
-                                  borderRadius: '7px', padding: '9px 18px', fontSize: '13px',
-                                  fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
-                                  fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
-                                }}
-                              >
-                                Unlock Leads →
-                              </button>
+                {propertyFilter === 'all' && properties.length > 1 ? (
+                  // ── GROUPED BY PROPERTY ──
+                  <div style={{ paddingBottom: 20 }}>
+                    {properties.map(prop => {
+                      const propVisible = visibleFiltered.filter(l => l.property === prop.slug)
+                      const propLocked = lockedFiltered.filter(l => l.property === prop.slug)
+                      if (propVisible.length === 0 && propLocked.length === 0) return null
+                      const urgencyRank = (l: Lead) => {
+                        const u = urgencyOf(l)
+                        return u === 'urgent' ? 0 : u === 'hot' ? 1 : u === 'warm' ? 2 : 3
+                      }
+                      const sorted = [...propVisible].sort((a, b) => urgencyRank(a) - urgencyRank(b))
+                      const urgentCnt = propVisible.filter(l => urgencyOf(l) === 'urgent').length
+                      const hotCnt = propVisible.filter(l => urgencyOf(l) === 'hot').length
+                      const newCnt = propVisible.filter(l => l.status === 'new').length
+                      const isCollapsed = collapsedProps.has(prop.slug)
+                      return (
+                        <div key={prop.slug} className="ll-group">
+                          <div
+                            className={`ll-group-hdr${isCollapsed ? ' collapsed' : ''}`}
+                            onClick={() => setCollapsedProps(prev => {
+                              const next = new Set(prev)
+                              if (next.has(prop.slug)) next.delete(prop.slug)
+                              else next.add(prop.slug)
+                              return next
+                            })}
+                          >
+                            <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prop.name}</span>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                              {urgentCnt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.15)', borderRadius: 10, padding: '2px 8px' }}>{urgentCnt} urgent</span>}
+                              {hotCnt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.15)', borderRadius: 10, padding: '2px 8px' }}>{hotCnt} hot</span>}
+                              {newCnt > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: '#93c5fd', background: 'rgba(59,130,246,0.15)', borderRadius: 10, padding: '2px 8px' }}>{newCnt} new</span>}
+                              {propLocked.length > 0 && <span style={{ fontSize: 11, color: '#9b9b9b' }}>🔒 {propLocked.length}</span>}
+                              <span style={{ color: '#9b9b9b', fontSize: 16, lineHeight: 1, display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>⌄</span>
                             </div>
-                          </td>
-                        </tr>
-
-                        {lockedFiltered.slice(0, 3).map(lead => {
-                          const meta = STATUS_META[lead.status]
-                          const prop = properties.find(p => p.slug === lead.property)
-                          return (
-                            <tr key={lead.id} style={{ background: '#fafaf8' }}>
-                              <td>
-                                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#d4d0c8', filter: 'blur(3px)' }} />
-                              </td>
-                              <td>
-                                <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
-                                  <div className="blur-line" style={{ width: '90px', height: '12px', marginBottom: '4px' }} />
-                                  <div className="blur-line" style={{ width: '120px', height: '10px' }} />
-                                </div>
-                              </td>
-                              <td>
-                                <div style={{ fontSize: '12px', color: '#1a1a1a', fontWeight: 600 }}>{prop?.name || '—'}</div>
-                                {prop?.address && <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{prop.address}</div>}
-                                {lead.move_in_date && <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '1px' }}>Move-in: {lead.move_in_date}</div>}
-                              </td>
-                              <td>
-                                <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
-                                  {meta.label}
-                                </span>
-                              </td>
-                              <td style={{ fontSize: '11px', color: '#b0a898', whiteSpace: 'nowrap' }}>
-                                {timeAgo(lead.created_at)}
-                              </td>
-                              <td />
-                            </tr>
-                          )
-                        })}
-
-                        {lockedFiltered.length > 3 && (
-                          <tr>
-                            <td colSpan={6} style={{ padding: '10px 18px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
-                              <span style={{ fontSize: '12px', color: '#9b9b9b' }}>
-                                +{lockedFiltered.length - 3} more lead{lockedFiltered.length - 3 !== 1 ? 's' : ''} across{' '}
-                                {Math.ceil(lockedFiltered.length / PAGE_SIZE)} more page{Math.ceil(lockedFiltered.length / PAGE_SIZE) !== 1 ? 's' : ''} —{' '}
-                              </span>
-                              <button
-                                onClick={() => setUnlockModalLeadId(lockedFiltered[0].id)}
-                                style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}
-                              >
-                                unlock all →
-                              </button>
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    )}
-                  </table>
-                </div>
-
-                {totalPages > 1 && (
-                  <div className="ll-pagination">
-                    <span style={{ fontSize: '12px', color: '#9b9b9b' }}>
-                      {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, visibleFiltered.length)} of {visibleFiltered.length} leads
-                    </span>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <button className="ll-page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
-                      <span style={{ fontSize: '12px', color: '#6b6b6b', fontWeight: 600, minWidth: '80px', textAlign: 'center' }}>
-                        Page {page} of {totalPages}
-                      </span>
-                      <button className="ll-page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
-                    </div>
+                          </div>
+                          {!isCollapsed && (
+                            <div className="ll-group-body">
+                              {sorted.map((lead, i) => renderLeadCard(lead, i < sorted.length - 1 || propLocked.length > 0, false))}
+                              {propLocked.length > 0 && renderLockedSection(propLocked)}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
+                ) : (
+                  // ── FLAT LIST (single property or filtered to one) ──
+                  <>
+                    <div className="ll-flat">
+                      {pagedVisible.map((lead, i) => renderLeadCard(lead, i < pagedVisible.length - 1 || lockedFiltered.length > 0, properties.length > 1))}
+                      {lockedFiltered.length > 0 && renderLockedSection(lockedFiltered)}
+                    </div>
+                    {totalPages > 1 && (
+                      <div className="ll-pagination">
+                        <span style={{ fontSize: 12, color: '#9b9b9b' }}>
+                          {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, visibleFiltered.length)} of {visibleFiltered.length} leads
+                        </span>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <button className="ll-page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+                          <span style={{ fontSize: 12, color: '#6b6b6b', fontWeight: 600, minWidth: 80, textAlign: 'center' }}>
+                            Page {page} of {totalPages}
+                          </span>
+                          <button className="ll-page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
