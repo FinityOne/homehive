@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import Loader from '@/components/Loader'
 import { getProperties, type Property } from '@/lib/properties'
 
 function fmtDate(d: string | null | undefined) {
@@ -147,21 +146,14 @@ function HomePageInner() {
   const guestName       = searchParams.get('name') || ''
   const isPersonalized  = !!guestName
 
-  const [showLoader, setShowLoader]                   = useState(false)
   const [properties, setProperties]                   = useState<Property[]>([])
   const [loading, setLoading]                         = useState(true)
   const [showLandlordBanner, setShowLandlordBanner]   = useState(false)
 
   useEffect(() => {
     getProperties().then(data => { setProperties(data); setLoading(false) })
-    if (!localStorage.getItem('hh_loader_seen')) setShowLoader(true)
     if (!sessionStorage.getItem('hh_landlord_bar_dismissed')) setShowLandlordBanner(true)
   }, [])
-
-  const handleLoaderComplete = () => {
-    localStorage.setItem('hh_loader_seen', '1')
-    setShowLoader(false)
-  }
 
   const featuredPicks = properties.filter(p => p.is_featured)
   const rentals       = properties.filter(p => !p.is_featured && p.listing_type === 'standard_rental').sort((a, b) => b.asu_score - a.asu_score).slice(0, 8)
@@ -175,8 +167,6 @@ function HomePageInner() {
 
   return (
     <>
-      {showLoader && <Loader onComplete={handleLoaderComplete} />}
-
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
