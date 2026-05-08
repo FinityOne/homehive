@@ -48,7 +48,8 @@ const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
     { href: '/landlord/tenants',    label: 'Tenants',     icon: '◎' },
     { href: '/landlord/leases',     label: 'Leases',      icon: '📋' },
     { href: '/landlord/payments',     label: 'Payments',     icon: '💳' },
-    { href: '/landlord/automations',  label: 'Automations',  icon: '⚡' },
+    { href: '/landlord/automations',       label: 'Automations',       icon: '⚡' },
+    { href: '/landlord/background-checks', label: 'Background Checks', icon: '🔍' },
   ],
   admin: [
     { href: '/admin',                    label: 'Overview',         icon: '⊞', exact: true },
