@@ -62,10 +62,16 @@ export async function POST(
   if (!responses || !Array.isArray(responses)) {
     return Response.json({ error: 'responses array required' }, { status: 400 })
   }
+  // Sanitise — only keep known fields
+  const clean = responses.map((r: { question?: string; answer?: string; detail?: string }) => ({
+    question: String(r.question || ''),
+    answer: String(r.answer || ''),
+    ...(r.detail ? { detail: String(r.detail) } : {}),
+  }))
 
   await supabaseAdmin
     .from('bg_check_references')
-    .update({ responses, status: 'verified', contact_date: new Date().toISOString().split('T')[0] })
+    .update({ responses: clean, status: 'verified', contact_date: new Date().toISOString().split('T')[0] })
     .eq('id', ref.id)
 
   return Response.json({ success: true })
