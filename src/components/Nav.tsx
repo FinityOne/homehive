@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import Loader from '@/components/Loader'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +18,6 @@ function getInitials(email: string, fullName?: string): string {
 }
 
 export default function Nav() {
-  const [showLoader, setShowLoader] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [user, setUser] = useState<{ email: string; fullName: string; role: string; avatarUrl: string | null } | null>(null)
@@ -77,24 +75,6 @@ export default function Nav() {
     return () => document.removeEventListener('click', handler)
   }, [profileOpen])
 
-  // Auto-show loader once per browser (localStorage persists across sessions)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!localStorage.getItem('hh_loader_seen')) {
-      setShowLoader(true)
-    }
-  }, [])
-
-  const replayLoader = () => {
-    localStorage.removeItem('hh_loader_seen')
-    setShowLoader(true)
-  }
-
-  const handleLoaderComplete = () => {
-    localStorage.setItem('hh_loader_seen', '1')
-    setShowLoader(false)
-  }
-
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
@@ -119,12 +99,6 @@ export default function Nav() {
         .pill-hot { background:#FFC627; color:#8C1D40; font-size:9px; font-weight:700; letter-spacing:.5px; padding:1px 5px; border-radius:4px; text-transform:uppercase; }
         .asu-rlink { font-size:11px; color:rgba(255,255,255,.75); text-decoration:none; font-weight:500; }
         .asu-rlink:hover { color:#FFC627; }
-        .play-btn { width:24px; height:24px; border-radius:50%; border:1.5px solid rgba(255,255,255,.3); background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
-        .play-btn:hover { background:rgba(255,198,39,.2); border-color:#FFC627; }
-        .play-tri { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid rgba(255,255,255,.8); margin-left:2px; }
-        .play-btn:hover .play-tri { border-left-color:#FFC627; }
-        .play-tip { font-size:10px; color:rgba(255,255,255,.5); white-space:nowrap; }
-
         .nav { background:#fff; border-bottom:1px solid #e8e4db; padding:0 32px; height:58px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:200; font-family:'DM Sans',sans-serif; transition:box-shadow .2s; }
         .nav.scrolled { box-shadow:0 2px 20px rgba(0,0,0,.07); }
         .nav-logo { font-family:'DM Sans',sans-serif; font-size:19px; font-weight:600; color:#1a1a1a; text-decoration:none; letter-spacing:-.3px; }
@@ -180,11 +154,6 @@ export default function Nav() {
         .mob-link:hover { background:#faf9f6; }
         .mob-link-inner { display:flex; align-items:center; gap:10px; }
         .mob-bottom { padding:16px 20px 40px; border-top:1px solid #f0ede6; display:flex; flex-direction:column; gap:10px; }
-        .mob-replay { display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:9px; border:1px solid #e8e4db; cursor:pointer; background:#faf9f6; }
-        .mob-replay-circle { width:30px; height:30px; border-radius:50%; background:#8C1D40; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-        .mob-replay-tri { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid #fff; margin-left:2px; }
-        .mob-replay-title { font-size:13px; font-weight:500; color:#1a1a1a; }
-        .mob-replay-sub { font-size:11px; color:#9b9b9b; }
         .mob-main-cta { background:#8C1D40; color:#fff; padding:15px; border-radius:9px; text-align:center; font-size:15px; font-weight:600; text-decoration:none; font-family:'DM Sans',sans-serif; }
         .mob-user-row { display:flex; align-items:center; gap:10px; padding:14px; background:#faf9f6; border-radius:9px; border:1px solid #e8e4db; }
         .mob-user-avatar { width:36px; height:36px; border-radius:50%; background:#8C1D40; color:#FFC627; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -205,8 +174,6 @@ export default function Nav() {
         }
       `}</style>
 
-      {showLoader && <Loader onComplete={handleLoaderComplete} />}
-
       {/* ASU RIBBON */}
       <div className="asu-ribbon">
         <div className="asu-ribbon-inner">
@@ -219,10 +186,6 @@ export default function Nav() {
           <div className="asu-right">
             <a href="/student-guide" className="asu-rlink">Student Guide</a>
             <span className="asu-pill">Fall 2026 open</span>
-            <button className="play-btn" onClick={replayLoader} title="Replay intro">
-              <span className="play-tri" />
-            </button>
-            <span className="play-tip">replay</span>
           </div>
         </div>
       </div>
@@ -333,16 +296,6 @@ export default function Nav() {
         </div>
 
         <div className="mob-bottom">
-          <div className="mob-replay" role="button" tabIndex={0}
-            onClick={() => { setMobileOpen(false); replayLoader() }}
-            onKeyDown={e => e.key === 'Enter' && replayLoader()}>
-            <div className="mob-replay-circle"><span className="mob-replay-tri" /></div>
-            <div>
-              <div className="mob-replay-title">Watch the intro</div>
-              <div className="mob-replay-sub">See what HomeHive is all about</div>
-            </div>
-          </div>
-
           <a href="/homes" className="mob-main-cta" onClick={() => setMobileOpen(false)}>
             View available homes →
           </a>

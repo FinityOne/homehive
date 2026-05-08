@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Loader from '@/components/Loader'
 
 const SECTIONS = [
   {
@@ -34,18 +33,7 @@ const SECTIONS = [
 ]
 
 export default function Footer() {
-  const [showLoader, setShowLoader] = useState(false)
   const [openSection, setOpenSection] = useState<string | null>(null)
-
-  const replayLoader = () => {
-    localStorage.removeItem('hh_loader_seen')
-    setShowLoader(true)
-  }
-
-  const handleLoaderComplete = () => {
-    localStorage.setItem('hh_loader_seen', '1')
-    setShowLoader(false)
-  }
 
   return (
     <>
@@ -73,13 +61,6 @@ export default function Footer() {
         .f-logo { font-family:'DM Sans',sans-serif; font-size:22px; font-weight:600; color:#fff; text-decoration:none; letter-spacing:-.3px; display:inline-block; margin-bottom:12px; }
         .f-logo em { font-family:'Fraunces',serif; font-style:italic; color:#FFC627; }
         .f-tagline { font-size:13px; line-height:1.75; color:#6b6b6b; max-width:240px; margin-bottom:24px; }
-
-        .f-play { display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:28px; padding:12px 16px; background:#1a1a1a; border-radius:10px; border:1px solid #2a2a2a; transition:border-color .2s,background .2s; width:fit-content; }
-        .f-play:hover { border-color:#8C1D40; background:#1f1f1f; }
-        .f-play-circle { width:36px; height:36px; border-radius:50%; background:#8C1D40; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-        .f-play-tri { width:0; height:0; border-top:6px solid transparent; border-bottom:6px solid transparent; border-left:10px solid #fff; margin-left:3px; }
-        .f-play-title { font-size:13px; font-weight:500; color:#fff; margin-bottom:1px; }
-        .f-play-sub { font-size:11px; color:#4b4b4b; }
 
         .f-asu-badge { display:inline-flex; align-items:center; gap:7px; background:rgba(140,29,64,.15); border:1px solid rgba(140,29,64,.3); border-radius:20px; padding:5px 12px; }
         .f-asu-dot { width:6px; height:6px; border-radius:50%; background:#FFC627; }
@@ -112,7 +93,6 @@ export default function Footer() {
           .f-body { grid-template-columns:1fr; gap:0; padding:28px 20px 0; }
           .f-brand { padding-bottom:24px; border-bottom:1px solid #1e1e1e; }
           .f-tagline { max-width:100%; }
-          .f-play { width:100%; box-sizing:border-box; }
           .f-col-desktop { display:none; }
 
           .mob-accordions { display:block; }
@@ -132,8 +112,6 @@ export default function Footer() {
           .f-bottom-inner { flex-direction:column; align-items:center; gap:8px; text-align:center; }
         }
       `}</style>
-
-      {showLoader && <Loader onComplete={handleLoaderComplete} />}
 
       <footer className="footer">
 
@@ -156,13 +134,6 @@ export default function Footer() {
           <div className="f-brand">
             <a href="/" className="f-logo">Home<em>Hive</em></a>
             <p className="f-tagline">The off-campus housing platform built for ASU students. Verified homes, transparent pricing, zero broker fees.</p>
-            <div className="f-play" role="button" tabIndex={0} onClick={replayLoader} onKeyDown={e => e.key === 'Enter' && replayLoader()}>
-              <div className="f-play-circle"><span className="f-play-tri" /></div>
-              <div>
-                <div className="f-play-title">Watch the intro again</div>
-                <div className="f-play-sub">See what HomeHive is all about</div>
-              </div>
-            </div>
             <div className="f-asu-badge">
               <span className="f-asu-dot" />
               <span className="f-asu-text">⚡ ASU Off-Campus Housing · Tempe, AZ</span>
