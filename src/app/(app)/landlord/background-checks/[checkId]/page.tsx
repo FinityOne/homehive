@@ -21,7 +21,8 @@ type Reference = {
   name: string | null; phone: string | null; email: string | null
   address: string | null; contact_date: string | null
   status: 'pending' | 'contacted' | 'verified' | 'unverified'
-  notes: string | null; income_monthly: number | null; created_at: string
+  notes: string | null; income_monthly: number | null
+  public_token: string; created_at: string
 }
 
 type BgCheck = {
@@ -191,6 +192,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
   const [copiedQ, setCopiedQ] = useState<number | null>(null)
   const [sendingEmail, setSendingEmail] = useState<string | null>(null)
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
+  const [copiedText, setCopiedText] = useState<string | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -374,6 +376,36 @@ Please reply to this email. Everything you share will be kept strictly confident
 
 Thank you,
 [Your Name]`
+    }
+  }
+
+  const buildTextMessage = (ref: Reference, lead: Lead | null, type: 'employer' | 'residence'): string => {
+    const leadName = lead?.first_name && lead?.last_name
+      ? `${lead.first_name} ${lead.last_name}`
+      : lead?.first_name || 'our applicant'
+    const greeting = ref.name ? `Hi ${ref.name}` : 'Hi'
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const formUrl = `${baseUrl}/ref/${ref.public_token}`
+
+    if (type === 'employer') {
+      return `${greeting} — quick note from our property management team. ${leadName} has applied to rent one of our units and listed you as their employer. Whenever you have a moment, could you confirm:
+
+1. Are they currently employed with you?
+2. Job title & approx. start date?
+3. Full-time, part-time, or contract?
+4. Approx. gross monthly income?
+5. Employment in good standing?
+6. Any wage garnishments or liens?
+
+Feel free to reply here or email hello@homehive.live. Really appreciate it!`
+    } else {
+      const addrLine = ref.address ? ` at ${ref.address}` : ''
+      return `${greeting} — quick note from our property management team. ${leadName} has applied to rent one of our units and listed your property${addrLine} as a previous residence, with you as their reference.
+
+Would you mind taking 3 minutes to fill out a short form? Just tap the link whenever you're free:
+${formUrl}
+
+Really appreciate your time — thank you!`
     }
   }
 
@@ -774,8 +806,14 @@ Thank you,
                       setCopiedEmail(ref.id)
                       setTimeout(() => setCopiedEmail(null), 2000)
                     } : undefined}
+                    onCopyText={ref.phone ? () => {
+                      navigator.clipboard.writeText(buildTextMessage(ref, lead, 'employer'))
+                      setCopiedText(ref.id)
+                      setTimeout(() => setCopiedText(null), 2000)
+                    } : undefined}
                     isSending={sendingEmail === ref.id}
                     isCopied={copiedEmail === ref.id}
+                    isCopiedText={copiedText === ref.id}
                   />
                 ))}
 
@@ -836,8 +874,14 @@ Thank you,
                       setCopiedEmail(ref.id)
                       setTimeout(() => setCopiedEmail(null), 2000)
                     } : undefined}
+                    onCopyText={ref.phone ? () => {
+                      navigator.clipboard.writeText(buildTextMessage(ref, lead, 'residence'))
+                      setCopiedText(ref.id)
+                      setTimeout(() => setCopiedText(null), 2000)
+                    } : undefined}
                     isSending={sendingEmail === ref.id}
                     isCopied={copiedEmail === ref.id}
+                    isCopiedText={copiedText === ref.id}
                   />
                 ))}
 
@@ -915,7 +959,7 @@ Thank you,
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, onStatusChange, onEdit, onEditChange, onEditSave, onEditCancel, onDelete, onTemplate, onSendEmail, onCopyEmail, isSending, isCopied }: {
+function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, onStatusChange, onEdit, onEditChange, onEditSave, onEditCancel, onDelete, onTemplate, onSendEmail, onCopyEmail, onCopyText, isSending, isCopied, isCopiedText }: {
   ref_: Reference
   expanded: boolean
   editing: boolean
@@ -931,8 +975,10 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
   onTemplate: () => void
   onSendEmail?: () => void
   onCopyEmail?: () => void
+  onCopyText?: () => void
   isSending?: boolean
   isCopied?: boolean
+  isCopiedText?: boolean
 }) {
   const sc = statusColors[ref_.status]
   return (
@@ -1001,13 +1047,13 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                 </div>
               )}
 
-              {ref_.email && (onSendEmail || onCopyEmail) && (
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+              {(onSendEmail || onCopyEmail || onCopyText) && (
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
                   {onSendEmail && (
                     <button
                       onClick={onSendEmail}
                       disabled={isSending}
-                      style={{ flex: 1, background: isSending ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 700, cursor: isSending ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: isSending ? 0.7 : 1 }}
+                      style={{ flex: 1, minWidth: '90px', background: isSending ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 700, cursor: isSending ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: isSending ? 0.7 : 1 }}
                     >
                       {isSending ? '⏳ Sending…' : '✉ Send Email'}
                     </button>
@@ -1015,9 +1061,17 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                   {onCopyEmail && (
                     <button
                       onClick={onCopyEmail}
-                      style={{ flex: 1, background: isCopied ? 'rgba(16,185,129,0.08)' : '#faf9f6', border: `1.5px solid ${isCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 600, color: isCopied ? '#10b981' : '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      style={{ flex: 1, minWidth: '90px', background: isCopied ? 'rgba(16,185,129,0.08)' : '#faf9f6', border: `1.5px solid ${isCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 600, color: isCopied ? '#10b981' : '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                     >
-                      {isCopied ? '✓ Copied!' : '📋 Copy Draft'}
+                      {isCopied ? '✓ Copied!' : '📋 Copy Email'}
+                    </button>
+                  )}
+                  {onCopyText && (
+                    <button
+                      onClick={onCopyText}
+                      style={{ flex: 1, minWidth: '90px', background: isCopiedText ? 'rgba(59,130,246,0.08)' : '#faf9f6', border: `1.5px solid ${isCopiedText ? 'rgba(59,130,246,0.4)' : '#e8e5de'}`, borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 600, color: isCopiedText ? '#3b82f6' : '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                    >
+                      {isCopiedText ? '✓ Copied!' : '💬 Copy Text'}
                     </button>
                   )}
                 </div>
