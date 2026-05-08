@@ -212,11 +212,16 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
     }
     setSubmitting(true)
     setError('')
-    const responses = QUESTIONS.map(q => ({
-      question: q.label,
-      answer: answers[q.id].value || '—',
-      ...(answers[q.id].detail ? { detail: answers[q.id].detail } : {}),
-    }))
+    const responses = [
+      ...QUESTIONS.map(q => ({
+        question: q.label,
+        answer: answers[q.id].value || '—',
+        ...(answers[q.id].detail ? { detail: answers[q.id].detail } : {}),
+      })),
+      ...(answers['_notes']?.value?.trim()
+        ? [{ question: 'Additional notes', answer: answers['_notes'].value.trim() }]
+        : []),
+    ]
     const res = await fetch(`/api/ref/${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -408,6 +413,23 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
                   </div>
                 )
               })}
+
+              {/* Additional notes */}
+              <div className={`q-card${answers['_notes']?.value ? ' answered' : ''}`} style={{ marginTop: '2px' }}>
+                <div className="q-number" style={{ background: answers['_notes']?.value ? '#1a1a1a' : undefined, color: answers['_notes']?.value ? '#fff' : undefined }}>✎</div>
+                <div className="q-text">Anything else you'd like to add?</div>
+                <div style={{ marginTop: '10px' }}>
+                  <textarea
+                    className="detail-input"
+                    placeholder="Additional notes, context, or anything else that might be helpful…"
+                    value={answers['_notes']?.value || ''}
+                    onChange={e => setAnswers(prev => ({ ...prev, _notes: { value: e.target.value, detail: '' } }))}
+                    disabled={submitting}
+                    rows={4}
+                    style={{ minHeight: '96px' }}
+                  />
+                </div>
+              </div>
 
               {error && <div className="error-msg">{error}</div>}
 
