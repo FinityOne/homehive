@@ -16,6 +16,12 @@ type Lead = {
   status: string | null; move_in_date: string | null; created_at: string | null
 }
 
+type RefResponse = {
+  question: string
+  answer: string
+  detail?: string
+}
+
 type Reference = {
   id: string; bg_check_id: string; type: 'employer' | 'residence'
   name: string | null; manager_name: string | null
@@ -23,7 +29,7 @@ type Reference = {
   address: string | null; contact_date: string | null
   status: 'pending' | 'contacted' | 'verified' | 'unverified'
   notes: string | null; income_monthly: number | null
-  public_token: string; created_at: string
+  public_token: string; responses: RefResponse[] | null; created_at: string
 }
 
 type BgCheck = {
@@ -992,8 +998,13 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="ref-name">{ref_.name || (ref_.type === 'employer' ? 'Employer' : 'Residence')}</div>
-          <div className="ref-sub">
-            {ref_.phone || ref_.email || ref_.address || '—'}
+          <div className="ref-sub" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span>{ref_.phone || ref_.email || ref_.address || '—'}</span>
+            {ref_.responses && ref_.responses.length > 0 && (
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#059669', background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.2)', borderRadius: '20px', padding: '1px 7px', lineHeight: 1.6 }}>
+                {ref_.responses.length} answers
+              </span>
+            )}
           </div>
         </div>
         <span className="ref-status-badge" style={{ color: sc.color, background: sc.bg, borderColor: sc.border }}>
@@ -1053,6 +1064,55 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
               {ref_.notes && (
                 <div style={{ background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '7px', padding: '8px 10px', fontSize: '12px', color: '#4a4a4a', lineHeight: 1.55, marginBottom: '10px', fontStyle: 'italic' }}>
                   {ref_.notes}
+                </div>
+              )}
+
+              {ref_.responses && ref_.responses.length > 0 && (
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Reference Form Responses
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {ref_.responses.map((r, i) => {
+                      const isYesNo = r.answer === 'yes' || r.answer === 'no'
+                      const isAdditional = r.question === 'Additional notes'
+                      return (
+                        <div key={i} style={{ background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '9px', padding: '10px 12px' }}>
+                          <div style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 600, marginBottom: '5px', lineHeight: 1.4 }}>
+                            {r.question}
+                          </div>
+                          {isAdditional ? (
+                            <div style={{ fontSize: '13px', color: '#3a3a3a', lineHeight: 1.6, fontStyle: 'italic' }}>
+                              "{r.answer}"
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+                                background: isYesNo
+                                  ? (r.answer === 'yes' ? 'rgba(5,150,105,0.1)' : 'rgba(220,38,38,0.08)')
+                                  : r.answer === '—' ? '#f5f4f0' : 'rgba(26,26,26,0.07)',
+                                color: isYesNo
+                                  ? (r.answer === 'yes' ? '#059669' : '#dc2626')
+                                  : r.answer === '—' ? '#9b9b9b' : '#1a1a1a',
+                                border: `1px solid ${isYesNo
+                                  ? (r.answer === 'yes' ? 'rgba(5,150,105,0.2)' : 'rgba(220,38,38,0.2)')
+                                  : r.answer === '—' ? '#e8e5de' : 'rgba(26,26,26,0.12)'}`,
+                              }}>
+                                {isYesNo ? (r.answer === 'yes' ? '✓ Yes' : '✕ No') : r.answer}
+                              </span>
+                              {r.detail && (
+                                <span style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.5, fontStyle: 'italic', paddingTop: '3px' }}>
+                                  — {r.detail}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 
