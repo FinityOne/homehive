@@ -82,13 +82,12 @@ function employerEmailHtml(params: {
 }
 
 function residenceEmailHtml(params: {
-  landlordName: string
-  landlordEmail: string
   leadName: string
   contactName: string | null
   propertyAddress: string | null
+  formUrl: string
 }): string {
-  const { landlordName, landlordEmail, leadName, contactName, propertyAddress } = params
+  const { leadName, contactName, propertyAddress, formUrl } = params
   const greeting = contactName ? `Hi ${contactName},` : 'Hi there,'
   const addrLine = propertyAddress ? ` at <strong>${propertyAddress}</strong>` : ''
   return `<!DOCTYPE html>
@@ -107,36 +106,26 @@ function residenceEmailHtml(params: {
     <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#1a1a1a;">${greeting}</p>
 
     <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#3a3a3a;">
-      My name is <strong>${landlordName}</strong> and I'm an independent property owner. <strong>${leadName}</strong> has applied to rent one of my properties and has listed your property${addrLine} as a previous residence.
+      <strong>${leadName}</strong> has applied to rent a property managed by our team and has listed your property${addrLine} as a previous residence, with you as their reference.
     </p>
 
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#3a3a3a;">
-      I'd really appreciate if you could take a moment to answer a few quick questions — your honest feedback helps me make a responsible decision:
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#3a3a3a;">
+      We'd appreciate a few minutes of your time to complete a short reference form. It's quick, straightforward, and your responses are completely confidential.
     </p>
 
-    <div style="background:#faf9f6;border-left:3px solid #8C1D40;border-radius:0 10px 10px 0;padding:16px 20px;margin-bottom:24px;">
-      <ol style="margin:0;padding-left:18px;font-size:14px;line-height:2;color:#3a3a3a;">
-        <li>Can you confirm <strong>${leadName}</strong> resided at your property, and for how long?</li>
-        <li>Did they consistently pay rent on time?</li>
-        <li>Were there any noise complaints, lease violations, or damage to the property?</li>
-        <li>Did they leave the unit in good condition upon move-out?</li>
-        <li>Was the security deposit returned in full? If not, why?</li>
-        <li>Would you rent to this tenant again?</li>
-      </ol>
+    <div style="text-align:center;margin-bottom:28px;">
+      <a href="${formUrl}" style="display:inline-block;background:#8C1D40;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:700;letter-spacing:-0.2px;">
+        Complete Reference Form →
+      </a>
+      <p style="margin:12px 0 0;font-size:12px;color:#9b9b9b;">Takes about 3–5 minutes</p>
     </div>
 
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#3a3a3a;">
-      You're welcome to reply directly to this email. Everything you share will be kept strictly confidential.
-    </p>
-
-    <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#3a3a3a;">
-      Thank you so much — I know your time is valuable and I genuinely appreciate it.
-    </p>
+    <p style="margin:0 0 4px;font-size:13px;color:#9b9b9b;">Or copy and paste this link into your browser:</p>
+    <p style="margin:0 0 28px;font-size:12px;color:#8C1D40;word-break:break-all;">${formUrl}</p>
 
     <div style="border-top:1px solid #f0ede6;padding-top:20px;">
-      <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#1a1a1a;">${landlordName}</p>
-      <p style="margin:0;font-size:13px;color:#6b6b6b;">Property Owner · <a href="mailto:${landlordEmail}" style="color:#8C1D40;text-decoration:none;">${landlordEmail}</a></p>
-      <p style="margin:6px 0 0;font-size:12px;color:#9b9b9b;">Verified landlord on <a href="https://homehive.live" style="color:#8C1D40;text-decoration:none;">HomeHive</a></p>
+      <p style="margin:0;font-size:12px;color:#9b9b9b;">Questions? Reach us at <a href="mailto:hello@homehive.live" style="color:#8C1D40;text-decoration:none;">hello@homehive.live</a></p>
+      <p style="margin:6px 0 0;font-size:12px;color:#9b9b9b;">Sent via <a href="https://homehive.live" style="color:#8C1D40;text-decoration:none;">HomeHive</a> — property management platform</p>
     </div>
 
   </div>
@@ -201,21 +190,24 @@ export async function POST(
     ? `Employment Verification Request — ${leadName}`
     : `Rental Reference Request — ${leadName}`
 
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const formUrl = `${baseUrl}/ref/${ref.public_token}`
+
   const html = isEmployer
     ? employerEmailHtml({ landlordName, landlordEmail, leadName, employerName: ref.name })
-    : residenceEmailHtml({ landlordName, landlordEmail, leadName, contactName: ref.name, propertyAddress: ref.address })
+    : residenceEmailHtml({ leadName, contactName: ref.name, propertyAddress: ref.address, formUrl })
 
   try {
     await resend.emails.send({
       from: 'HomeHive <hello@homehive.live>',
-      replyTo: landlordEmail,
+      replyTo: isEmployer ? landlordEmail : 'hello@homehive.live',
       to: ref.email,
       subject,
       html,
     })
 
-    // For residences mark as contacted; employers manage status manually
-    if (ref.type === 'residence') {
+    // Residences: mark as contacted; employers: status stays as-is
+    if (!isEmployer) {
       await supabaseAdmin
         .from('bg_check_references')
         .update({ status: 'contacted', contact_date: new Date().toISOString().split('T')[0] })
