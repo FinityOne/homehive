@@ -55,7 +55,7 @@ function LeadPanel({ lead, onClose, onUpdate }: {
   onUpdate: (id: string, updates: Partial<Lead>) => void
 }) {
   const [status, setStatus] = useState(lead.status)
-  const [closedReason, setClosedReason] = useState<'leased' | 'lost' | null>(lead.closed_reason)
+  const [closedReason, setClosedReason] = useState<Lead['closed_reason']>(lead.closed_reason)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -114,11 +114,18 @@ function LeadPanel({ lead, onClose, onUpdate }: {
             })}
           </div>
           {status === 'closed' && (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {(['leased', 'lost'] as const).map(r => (
-                <button key={r} onClick={() => setClosedReason(r)}
-                  style={{ flex: 1, background: closedReason === r ? (r === 'leased' ? '#f0fdf4' : '#fff1f2') : '#fff', color: closedReason === r ? (r === 'leased' ? '#166534' : '#dc2626') : '#9b9b9b', border: `1.5px solid ${closedReason === r ? (r === 'leased' ? '#bbf7d0' : '#fecdd3') : '#e8e4db'}`, borderRadius: '7px', padding: '6px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-                  {r === 'leased' ? 'Leased ✓' : 'Lost ✗'}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+              {([
+                { value: 'leased',              label: 'Leased ✓' },
+                { value: 'found_another_place', label: 'Found Another Place' },
+                { value: 'unresponsive',        label: 'Unresponsive' },
+                { value: 'budget_mismatch',     label: 'Budget Mismatch' },
+                { value: 'not_qualified',       label: "Didn't Qualify" },
+                { value: 'other',               label: 'Other' },
+              ] as { value: Lead['closed_reason']; label: string }[]).map(r => (
+                <button key={r.value} onClick={() => setClosedReason(r.value)}
+                  style={{ background: closedReason === r.value ? '#fdf2f5' : '#fff', color: closedReason === r.value ? '#8C1D40' : '#9b9b9b', border: `1.5px solid ${closedReason === r.value ? 'rgba(140,29,64,0.3)' : '#e8e4db'}`, borderRadius: '7px', padding: '5px 11px', fontSize: '12px', fontWeight: closedReason === r.value ? 600 : 400, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                  {r.label}
                 </button>
               ))}
             </div>

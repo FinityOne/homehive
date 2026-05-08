@@ -14,7 +14,7 @@ export async function PATCH(
   const body = await req.json()
 
   const status: Lead['status'] = body.status
-  const closedReason: 'leased' | 'lost' | undefined = body.closed_reason
+  const closedReason: Lead['closed_reason'] | undefined = body.closed_reason
 
   if (!status) {
     return Response.json({ error: 'status is required' }, { status: 400 })

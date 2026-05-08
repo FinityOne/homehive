@@ -99,9 +99,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [groupedInquiries, setGroupedInquiries] = useState<{ id: string; created_at: string | null; first_name: string | null }[]>([])
 
   const [statusModal, setStatusModal] = useState(false)
-  const [closedReason, setClosedReason] = useState<'leased' | 'lost' | null>(null)
+  const [closedReason, setClosedReason] = useState<Lead['closed_reason']>(null)
   const [pendingStatus, setPendingStatus] = useState<Lead['status'] | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+
+  type LeadNote = { id: string; lead_id: string; content: string; created_at: string; updated_at: string }
+  const [notes, setNotes] = useState<LeadNote[]>([])
+  const [notesLoading, setNotesLoading] = useState(true)
+  const [noteInput, setNoteInput] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingNoteContent, setEditingNoteContent] = useState('')
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null)
 
   const [reminding, setReminding] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -310,12 +319,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         }
       }
 
+      const notesRes = await fetch(`/api/leads/${leadId}/notes`)
+      if (notesRes.ok) {
+        const { notes: nl } = await notesRes.json()
+        setNotes(nl || [])
+      }
+      setNotesLoading(false)
+
       setLoading(false)
     }
     load()
   }, [leadId, router])
 
-  const handleStatusUpdate = async (status: Lead['status'], cr?: 'leased' | 'lost') => {
+  const handleStatusUpdate = async (status: Lead['status'], cr?: Lead['closed_reason']) => {
     if (!lead) return
     setUpdatingStatus(true)
     try {
@@ -333,6 +349,61 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       }
     } catch { showToast('Failed to update status', 'error') }
     setUpdatingStatus(false)
+  }
+
+  const handleAddNote = async () => {
+    if (!noteInput.trim()) return
+    setSavingNote(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: noteInput.trim() }),
+      })
+      if (res.ok) {
+        const { note } = await res.json()
+        setNotes(prev => [note, ...prev])
+        setNoteInput('')
+        showToast('Note saved')
+      } else {
+        showToast('Failed to save note', 'error')
+      }
+    } catch { showToast('Failed to save note', 'error') }
+    setSavingNote(false)
+  }
+
+  const handleUpdateNote = async (noteId: string) => {
+    if (!editingNoteContent.trim()) return
+    try {
+      const res = await fetch(`/api/leads/${leadId}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ noteId, content: editingNoteContent.trim() }),
+      })
+      if (res.ok) {
+        const { note } = await res.json()
+        setNotes(prev => prev.map(n => n.id === noteId ? note : n))
+        setEditingNoteId(null)
+        setEditingNoteContent('')
+        showToast('Note updated')
+      } else {
+        showToast('Failed to update note', 'error')
+      }
+    } catch { showToast('Failed to update note', 'error') }
+  }
+
+  const handleDeleteNote = async (noteId: string) => {
+    setDeletingNoteId(noteId)
+    try {
+      const res = await fetch(`/api/leads/${leadId}/notes?noteId=${noteId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setNotes(prev => prev.filter(n => n.id !== noteId))
+        showToast('Note deleted')
+      } else {
+        showToast('Failed to delete note', 'error')
+      }
+    } catch { showToast('Failed to delete note', 'error') }
+    setDeletingNoteId(null)
   }
 
   const handleEditSave = async () => {
@@ -602,7 +673,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       cold:           'No response lately — a brief personal message can restart the conversation.',
       qualified:      'Fully qualified — ideal time to schedule a tour or send a reservation offer.',
       tour_scheduled: 'Tour is set — send a reminder 24h before and have the unit show-ready.',
-      closed:         lead.closed_reason === 'leased' ? 'Leased — great outcome! Archive and track for referrals.' : 'Closed as not a fit — no further action needed.',
+      closed: lead.closed_reason === 'leased'
+        ? 'Leased — great outcome! Archive and track for referrals.'
+        : lead.closed_reason === 'found_another_place'
+          ? 'Found another place — ask for a referral before they move on.'
+          : lead.closed_reason === 'unresponsive'
+            ? 'Went dark — consider a final reactivation touch in 30 days.'
+            : lead.closed_reason === 'budget_mismatch'
+              ? 'Budget mismatch — revisit if pricing changes or a new unit opens.'
+              : 'Closed — no further action needed.',
     }
     if (statusRec[lead.status]) lines.push(statusRec[lead.status])
     return { paragraph: lines.slice(0, 4).join(' '), chips: chips.slice(0, 7) }
@@ -732,6 +811,34 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         .reserve-discount-opt { flex: 1; padding: 8px; border: 1.5px solid #e8e5de; border-radius: 7px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #3a3a3a; transition: all 0.15s; }
         .reserve-discount-opt.selected { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; }
 
+        /* ── Notes ── */
+        .note-compose { background: #faf9f6; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 10px 12px; transition: border-color 0.15s; }
+        .note-compose:focus-within { border-color: #8C1D40; background: #fff; }
+        .note-textarea { width: 100%; border: none; background: transparent; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; resize: none; outline: none; line-height: 1.5; min-height: 72px; }
+        .note-textarea::placeholder { color: #b0a898; }
+        .note-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+        .note-item { padding: 10px 12px; border-radius: 8px; border: 1px solid #f0ede6; background: #faf9f6; margin-bottom: 8px; position: relative; }
+        .note-item:last-child { margin-bottom: 0; }
+        .note-item:hover .note-item-actions { opacity: 1; }
+        .note-item-actions { opacity: 0; display: flex; gap: 4px; transition: opacity 0.15s; }
+        .note-item-btn { background: none; border: none; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; padding: 2px 6px; border-radius: 4px; }
+        .note-item-btn-edit { color: #8C1D40; }
+        .note-item-btn-edit:hover { background: rgba(140,29,64,0.08); }
+        .note-item-btn-del { color: #dc2626; }
+        .note-item-btn-del:hover { background: rgba(220,38,38,0.08); }
+        .note-content { font-size: 13px; color: #1a1a1a; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+        .note-meta { font-size: 10px; color: #b0a898; margin-top: 5px; }
+        .note-edit-area { width: 100%; border: 1.5px solid #8C1D40; border-radius: 7px; padding: 8px 10px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; resize: vertical; outline: none; min-height: 64px; background: #fff; line-height: 1.5; }
+        .note-edit-btns { display: flex; gap: 6px; margin-top: 6px; }
+
+        /* ── Close reason cards ── */
+        .close-reason-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+        .close-reason-card { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 2px solid #e8e5de; border-radius: 9px; cursor: pointer; transition: all 0.15s; background: #fff; text-align: left; font-family: 'DM Sans', sans-serif; }
+        .close-reason-card:hover { border-color: #ccc; background: #faf9f6; }
+        .close-reason-card.selected { border-color: #8C1D40; background: #fdf2f5; }
+        .close-reason-icon { font-size: 18px; flex-shrink: 0; }
+        .close-reason-label { font-size: 12px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
+
         /* ── Toast ── */
         .ld-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
         @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
@@ -755,7 +862,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               <div className="ld-name">
                 {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
                 <span className="ld-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
-                  {meta.icon} {meta.label}{lead.status === 'closed' && lead.closed_reason ? ` · ${lead.closed_reason}` : ''}
+                  {meta.icon} {meta.label}{lead.status === 'closed' && lead.closed_reason ? ` · ${{
+                    leased: 'Leased',
+                    found_another_place: 'Found Another Place',
+                    unresponsive: 'Unresponsive',
+                    budget_mismatch: 'Budget Mismatch',
+                    not_qualified: 'Not Qualified',
+                    other: 'Other',
+                  }[lead.closed_reason] ?? lead.closed_reason}` : ''}
                 </span>
                 {heat.icon && <span style={{ fontSize: '13px' }} title={heat.label}>{heat.icon}</span>}
               </div>
@@ -836,8 +950,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
             {lead.status !== 'closed' && (
               <>
                 <div className="ld-act-sep" />
-                <button className="ld-act-btn ld-act-btn-success" onClick={() => handleStatusUpdate('closed', 'leased')}>✓ Leased</button>
-                <button className="ld-act-btn ld-act-btn-danger" onClick={() => handleStatusUpdate('closed', 'lost')}>✕ Not a Fit</button>
+                <button
+                  className="ld-act-btn ld-act-btn-danger"
+                  onClick={() => { setPendingStatus('closed'); setStatusModal(true) }}
+                >
+                  🏁 Close Lead
+                </button>
               </>
             )}
           </div>
@@ -1114,8 +1232,99 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
             </div>
 
-            {/* COL 3: Quick links + Email activity */}
+            {/* COL 3: Notes + Quick links + Email activity */}
             <div>
+
+              {/* Notes */}
+              <div className="ld-card">
+                <div className="ld-card-hd">
+                  <span className="ld-card-ttl">Notes</span>
+                  <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{notes.length} note{notes.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="ld-card-bd">
+                  {/* Compose */}
+                  <div className="note-compose" style={{ marginBottom: '12px' }}>
+                    <textarea
+                      className="note-textarea"
+                      placeholder="Add a note — call outcomes, objections, next steps…"
+                      value={noteInput}
+                      onChange={e => setNoteInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddNote() }}
+                    />
+                    <div className="note-actions">
+                      <span style={{ fontSize: '10px', color: '#c0b9b0' }}>⌘↵ to save</span>
+                      <button
+                        onClick={handleAddNote}
+                        disabled={savingNote || !noteInput.trim()}
+                        style={{ background: noteInput.trim() ? '#8C1D40' : '#e8e5de', color: noteInput.trim() ? '#fff' : '#9b9b9b', border: 'none', borderRadius: '7px', padding: '5px 13px', fontSize: '12px', fontWeight: 600, cursor: noteInput.trim() ? 'pointer' : 'not-allowed', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
+                      >
+                        {savingNote ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Note list */}
+                  {notesLoading ? (
+                    <div style={{ textAlign: 'center', padding: '12px 0', fontSize: '12px', color: '#9b9b9b' }}>Loading…</div>
+                  ) : notes.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '14px 0', color: '#9b9b9b', fontSize: '12px' }}>No notes yet — jot down key context above.</div>
+                  ) : (
+                    notes.map(note => (
+                      <div key={note.id} className="note-item">
+                        {editingNoteId === note.id ? (
+                          <>
+                            <textarea
+                              className="note-edit-area"
+                              value={editingNoteContent}
+                              onChange={e => setEditingNoteContent(e.target.value)}
+                              autoFocus
+                            />
+                            <div className="note-edit-btns">
+                              <button
+                                onClick={() => handleUpdateNote(note.id)}
+                                disabled={!editingNoteContent.trim()}
+                                style={{ flex: 2, background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => { setEditingNoteId(null); setEditingNoteContent('') }}
+                                style={{ flex: 1, background: '#fff', color: '#6b6b6b', border: '1.5px solid #e8e5de', borderRadius: '6px', padding: '6px', fontSize: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
+                              <p className="note-content">{note.content}</p>
+                              <div className="note-item-actions" style={{ flexShrink: 0 }}>
+                                <button
+                                  className="note-item-btn note-item-btn-edit"
+                                  onClick={() => { setEditingNoteId(note.id); setEditingNoteContent(note.content) }}
+                                  title="Edit note"
+                                >✎</button>
+                                <button
+                                  className="note-item-btn note-item-btn-del"
+                                  disabled={deletingNoteId === note.id}
+                                  onClick={() => handleDeleteNote(note.id)}
+                                  title="Delete note"
+                                >{deletingNoteId === note.id ? '…' : '✕'}</button>
+                              </div>
+                            </div>
+                            <div className="note-meta">
+                              {note.updated_at !== note.created_at
+                                ? `Edited ${timeAgo(note.updated_at)}`
+                                : timeAgo(note.created_at)}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
 
               {/* Pre-screen link */}
               <div className="ld-card">
@@ -1579,20 +1788,25 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
             {/* Closed reason picker */}
             {pendingStatus === 'closed' && (
               <div style={{ marginTop: '12px', padding: '14px', background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '10px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>Reason for closing</div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => setClosedReason('leased')}
-                    style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `2px solid ${closedReason === 'leased' ? '#10b981' : '#e8e5de'}`, background: closedReason === 'leased' ? 'rgba(16,185,129,0.08)' : '#fff', color: closedReason === 'leased' ? '#10b981' : '#3a3a3a', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
-                  >
-                    ✓ Leased
-                  </button>
-                  <button
-                    onClick={() => setClosedReason('lost')}
-                    style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `2px solid ${closedReason === 'lost' ? '#ef4444' : '#e8e5de'}`, background: closedReason === 'lost' ? 'rgba(239,68,68,0.06)' : '#fff', color: closedReason === 'lost' ? '#ef4444' : '#3a3a3a', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
-                  >
-                    ✕ Not a Fit
-                  </button>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>Why is this lead closing?</div>
+                <div className="close-reason-grid">
+                  {([
+                    { value: 'leased',              icon: '🏠', label: 'Leased Here' },
+                    { value: 'found_another_place', icon: '🔑', label: 'Found Another Place' },
+                    { value: 'unresponsive',        icon: '👻', label: 'Went Dark / Unresponsive' },
+                    { value: 'budget_mismatch',     icon: '💸', label: 'Budget Mismatch' },
+                    { value: 'not_qualified',       icon: '🚫', label: 'Didn\'t Qualify' },
+                    { value: 'other',               icon: '📝', label: 'Other' },
+                  ] as { value: Lead['closed_reason']; icon: string; label: string }[]).map(opt => (
+                    <button
+                      key={opt.value}
+                      className={`close-reason-card${closedReason === opt.value ? ' selected' : ''}`}
+                      onClick={() => setClosedReason(opt.value)}
+                    >
+                      <span className="close-reason-icon">{opt.icon}</span>
+                      <span className="close-reason-label">{opt.label}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}

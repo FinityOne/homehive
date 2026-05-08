@@ -277,7 +277,7 @@ export default function LandlordLeadsPage() {
     setUpdatingStatusId(null)
   }
 
-  const handleCloseWithReason = async (reason: 'leased' | 'lost') => {
+  const handleCloseWithReason = async (reason: Lead['closed_reason']) => {
     if (!closeModal) return
     const leadId = closeModal.leadId
     setCloseModal(null)
@@ -1610,26 +1610,31 @@ export default function LandlordLeadsPage() {
       {/* ── CLOSE REASON MODAL ── */}
       {closeModal && (
         <div className="modal-overlay" onClick={() => setCloseModal(null)}>
-          <div className="modal-card" style={{ maxWidth: '360px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-card" style={{ maxWidth: '420px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-title">Close this lead</div>
-            <div className="modal-sub">How did this lead end?</div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                className="btn-primary"
-                style={{ flex: 1, background: '#10b981' }}
-                onClick={() => handleCloseWithReason('leased')}
-              >
-                ✓ Leased
-              </button>
-              <button
-                className="btn-ghost"
-                style={{ flex: 1 }}
-                onClick={() => handleCloseWithReason('lost')}
-              >
-                ✗ Lost
-              </button>
+            <div className="modal-sub">Why is this lead closing?</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+              {([
+                { value: 'leased',              icon: '🏠', label: 'Leased Here' },
+                { value: 'found_another_place', icon: '🔑', label: 'Found Another Place' },
+                { value: 'unresponsive',        icon: '👻', label: 'Went Dark / Unresponsive' },
+                { value: 'budget_mismatch',     icon: '💸', label: 'Budget Mismatch' },
+                { value: 'not_qualified',       icon: '🚫', label: "Didn't Qualify" },
+                { value: 'other',               icon: '📝', label: 'Other' },
+              ] as { value: Lead['closed_reason']; icon: string; label: string }[]).map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleCloseWithReason(opt.value)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', border: '1.5px solid #e8e5de', borderRadius: '9px', background: '#fff', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textAlign: 'left', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#8C1D40'; (e.currentTarget as HTMLButtonElement).style.background = '#fdf2f5' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#e8e5de'; (e.currentTarget as HTMLButtonElement).style.background = '#fff' }}
+                >
+                  <span style={{ fontSize: '18px' }}>{opt.icon}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#1a1a1a', lineHeight: 1.3 }}>{opt.label}</span>
+                </button>
+              ))}
             </div>
-            <button style={{ marginTop: '12px', width: '100%', background: 'none', border: 'none', color: '#9b9b9b', fontSize: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setCloseModal(null)}>
+            <button style={{ width: '100%', background: 'none', border: 'none', color: '#9b9b9b', fontSize: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setCloseModal(null)}>
               Cancel
             </button>
           </div>

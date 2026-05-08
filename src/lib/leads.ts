@@ -43,7 +43,7 @@ export type Lead = {
   phone: string | null
   move_in_date: string | null
   status: 'new' | 'contacted' | 'follow_up' | 'engaged' | 'cold' | 'qualified' | 'tour_scheduled' | 'closed'
-  closed_reason: 'leased' | 'lost' | null
+  closed_reason: 'leased' | 'found_another_place' | 'unresponsive' | 'budget_mismatch' | 'not_qualified' | 'other' | null
   property: string | null // stores property slug
   lead_group_id: string | null
 }
@@ -133,7 +133,7 @@ export async function getAllLeads(): Promise<Lead[]> {
 export async function updateLeadStatus(
   leadId: string,
   status: Lead['status'],
-  closedReason?: 'leased' | 'lost'
+  closedReason?: Lead['closed_reason']
 ): Promise<{ error: any }> {
   const updatePayload: Record<string, any> = { status }
   if (status === 'closed' && closedReason) {
