@@ -317,10 +317,12 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
       body: JSON.stringify({ refId }),
     })
     if (res.ok) {
-      setRefs(prev => prev.map(r => r.id === refId
-        ? { ...r, status: 'contacted', contact_date: new Date().toISOString().split('T')[0] }
-        : r
-      ))
+      setRefs(prev => prev.map(r => {
+        if (r.id !== refId) return r
+        return r.type === 'residence'
+          ? { ...r, status: 'contacted' as Reference['status'], contact_date: new Date().toISOString().split('T')[0] }
+          : r
+      }))
       showToast('Verification email sent!')
     } else {
       const body = await res.json()
@@ -959,7 +961,9 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                 <input className="edit-input" placeholder={ref_.type === 'employer' ? 'Company name' : 'Landlord / property name'} value={editForm.name || ''} onChange={e => onEditChange({ name: e.target.value })} />
                 <input className="edit-input" placeholder="Phone" value={editForm.phone || ''} onChange={e => onEditChange({ phone: e.target.value })} />
                 <input className="edit-input" placeholder="Email" value={editForm.email || ''} onChange={e => onEditChange({ email: e.target.value })} />
-                <input className="edit-input" type="date" placeholder="Contact date" value={editForm.contact_date || ''} onChange={e => onEditChange({ contact_date: e.target.value })} />
+                {ref_.type === 'residence' && (
+                  <input className="edit-input" type="date" placeholder="Contact date" value={editForm.contact_date || ''} onChange={e => onEditChange({ contact_date: e.target.value })} />
+                )}
               </div>
               <input className="edit-input" placeholder={ref_.type === 'employer' ? 'Company address (optional)' : 'Property address'} value={editForm.address || ''} onChange={e => onEditChange({ address: e.target.value })} />
               {ref_.type === 'employer' && (
@@ -984,7 +988,7 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                 {ref_.phone && <a href={`tel:${ref_.phone}`} style={{ fontSize: '12px', color: '#3b82f6', textDecoration: 'none' }}>📞 {ref_.phone}</a>}
                 {ref_.email && <a href={`mailto:${ref_.email}`} style={{ fontSize: '12px', color: '#3b82f6', textDecoration: 'none' }}>✉ {ref_.email}</a>}
                 {ref_.address && <span style={{ fontSize: '12px', color: '#6b6b6b' }}>📍 {ref_.address}</span>}
-                {ref_.contact_date && <span style={{ fontSize: '12px', color: '#6b6b6b' }}>📅 Contacted {new Date(ref_.contact_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                {ref_.type === 'residence' && ref_.contact_date && <span style={{ fontSize: '12px', color: '#6b6b6b' }}>📅 Contacted {new Date(ref_.contact_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                 {ref_.type === 'employer' && ref_.income_monthly != null && (
                   <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
                     💵 ${ref_.income_monthly.toLocaleString()}/mo
@@ -1021,7 +1025,10 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
 
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Status</div>
               <div className="status-cycle">
-                {(['pending','contacted','verified','unverified'] as Reference['status'][]).map(s => {
+                {(ref_.type === 'employer'
+                  ? (['pending','verified','unverified'] as Reference['status'][])
+                  : (['pending','contacted','verified','unverified'] as Reference['status'][])
+                ).map(s => {
                   const c = { pending: '#9b9b9b', contacted: '#f97316', verified: '#10b981', unverified: '#ef4444' }[s]
                   return (
                     <button
@@ -1072,7 +1079,9 @@ function AddRefForm({ type, form, saving, onChange, onSave, onCancel }: {
         <input className="edit-input" placeholder={type === 'employer' ? 'Company name' : 'Landlord / property name'} value={form.name} onChange={e => onChange({ name: e.target.value })} />
         <input className="edit-input" placeholder="Phone" value={form.phone} onChange={e => onChange({ phone: e.target.value })} />
         <input className="edit-input" placeholder="Email" value={form.email} onChange={e => onChange({ email: e.target.value })} />
-        <input className="edit-input" type="date" value={form.contact_date} onChange={e => onChange({ contact_date: e.target.value })} />
+        {type === 'residence' && (
+          <input className="edit-input" type="date" value={form.contact_date} onChange={e => onChange({ contact_date: e.target.value })} />
+        )}
       </div>
       <input className="edit-input" placeholder={type === 'employer' ? 'Company address (optional)' : 'Property address'} value={form.address} onChange={e => onChange({ address: e.target.value })} />
       {type === 'employer' && (

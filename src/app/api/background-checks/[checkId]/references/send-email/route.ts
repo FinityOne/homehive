@@ -214,11 +214,13 @@ export async function POST(
       html,
     })
 
-    // Mark as contacted
-    await supabaseAdmin
-      .from('bg_check_references')
-      .update({ status: 'contacted', contact_date: new Date().toISOString().split('T')[0] })
-      .eq('id', refId)
+    // For residences mark as contacted; employers manage status manually
+    if (ref.type === 'residence') {
+      await supabaseAdmin
+        .from('bg_check_references')
+        .update({ status: 'contacted', contact_date: new Date().toISOString().split('T')[0] })
+        .eq('id', refId)
+    }
 
     return Response.json({ success: true })
   } catch (e) {
