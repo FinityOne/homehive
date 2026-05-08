@@ -19,9 +19,10 @@ function employerEmailHtml(params: {
   landlordEmail: string
   leadName: string
   employerName: string | null
+  managerName: string | null
 }): string {
-  const { landlordName, landlordEmail, leadName, employerName } = params
-  const greeting = employerName ? `Hi ${employerName},` : 'To Whom It May Concern,'
+  const { landlordName, landlordEmail, leadName, employerName, managerName } = params
+  const greeting = managerName ? `Hi ${managerName},` : employerName ? `To the team at ${employerName},` : 'To Whom It May Concern,'
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Employment Verification Request</title></head>
@@ -194,7 +195,7 @@ export async function POST(
   const formUrl = `${baseUrl}/ref/${ref.public_token}`
 
   const html = isEmployer
-    ? employerEmailHtml({ landlordName, landlordEmail, leadName, employerName: ref.name })
+    ? employerEmailHtml({ landlordName, landlordEmail, leadName, employerName: ref.name, managerName: ref.manager_name })
     : residenceEmailHtml({ leadName, contactName: ref.name, propertyAddress: ref.address, formUrl })
 
   try {

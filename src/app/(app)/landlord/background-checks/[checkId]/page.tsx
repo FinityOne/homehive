@@ -18,7 +18,8 @@ type Lead = {
 
 type Reference = {
   id: string; bg_check_id: string; type: 'employer' | 'residence'
-  name: string | null; phone: string | null; email: string | null
+  name: string | null; manager_name: string | null
+  phone: string | null; email: string | null
   address: string | null; contact_date: string | null
   status: 'pending' | 'contacted' | 'verified' | 'unverified'
   notes: string | null; income_monthly: number | null
@@ -183,7 +184,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
   const [refs, setRefs] = useState<Reference[]>([])
   const [addingRef, setAddingRef] = useState(false)
   const [refType, setRefType] = useState<'employer' | 'residence'>('employer')
-  const [refForm, setRefForm] = useState({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' })
+  const [refForm, setRefForm] = useState({ name: '', manager_name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' })
   const [savingRef, setSavingRef] = useState(false)
   const [expandedRef, setExpandedRef] = useState<string | null>(null)
   const [editingRef, setEditingRef] = useState<string | null>(null)
@@ -254,13 +255,13 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     const res = await fetch(`/api/background-checks/${checkId}/references`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ type: refType, ...refForm, contact_date: refForm.contact_date || null, income_monthly: refForm.income_monthly ? parseInt(refForm.income_monthly) : null }),
+      body: JSON.stringify({ type: refType, ...refForm, manager_name: refForm.manager_name || null, contact_date: refForm.contact_date || null, income_monthly: refForm.income_monthly ? parseInt(refForm.income_monthly) : null }),
     })
     if (res.ok) {
       const { reference } = await res.json()
       setRefs(prev => [...prev, reference])
       setAddingRef(false)
-      setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' })
+      setRefForm({ name: '', manager_name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' })
       showToast(`${refType === 'employer' ? 'Employer' : 'Residence'} reference added`)
     } else {
       showToast('Failed to add reference', 'error')
@@ -340,9 +341,10 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     const greeting = ref.name ? `Hi ${ref.name},` : 'To Whom It May Concern,'
 
     if (type === 'employer') {
-      return `${greeting}
+      const employerGreeting = ref.manager_name ? `Hi ${ref.manager_name},` : ref.name ? `To the team at ${ref.name},` : 'To Whom It May Concern,'
+      return `${employerGreeting}
 
-My name is [Your Name] and I'm an independent property owner. ${leadName} has applied to rent one of my properties and has listed your organization as their current employer.
+My name is [Your Name] and I'm a property manager. ${leadName} has applied to rent one of our managed properties and has listed your organization as their current employer.
 
 As part of a standard screening process, I'd appreciate if you could confirm the following:
 
@@ -388,7 +390,8 @@ Thank you,
     const formUrl = `${baseUrl}/ref/${ref.public_token}`
 
     if (type === 'employer') {
-      return `${greeting} — quick note from our property management team. ${leadName} has applied to rent one of our units and listed you as their employer. Whenever you have a moment, could you confirm:
+      const textGreeting = ref.manager_name ? `Hi ${ref.manager_name}` : ref.name ? `Hi, team at ${ref.name}` : 'Hi'
+      return `${textGreeting} — quick note from our property management team. ${leadName} has applied to rent one of our units and listed you as their employer. Whenever you have a moment, could you confirm:
 
 1. Are they currently employed with you?
 2. Job title & approx. start date?
@@ -794,7 +797,7 @@ Really appreciate your time — thank you!`
                     statusColors={STATUS_COLORS}
                     onToggle={() => setExpandedRef(expandedRef === ref.id ? null : ref.id)}
                     onStatusChange={s => handleRefStatusUpdate(ref.id, s)}
-                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes, income_monthly: ref.income_monthly, income_monthly_str: ref.income_monthly != null ? String(ref.income_monthly) : '' }) }}
+                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, manager_name: ref.manager_name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes, income_monthly: ref.income_monthly, income_monthly_str: ref.income_monthly != null ? String(ref.income_monthly) : '' }) }}
                     onEditChange={patch => setEditRefForm(prev => ({ ...prev, ...patch }))}
                     onEditSave={() => handleUpdateRef(ref.id)}
                     onEditCancel={() => setEditingRef(null)}
@@ -824,7 +827,7 @@ Really appreciate your time — thank you!`
                     saving={savingRef}
                     onChange={patch => setRefForm(f => ({ ...f, ...patch }))}
                     onSave={handleAddRef}
-                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' }) }}
+                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', manager_name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' }) }}
                   />
                 )}
 
@@ -862,7 +865,7 @@ Really appreciate your time — thank you!`
                     statusColors={STATUS_COLORS}
                     onToggle={() => setExpandedRef(expandedRef === ref.id ? null : ref.id)}
                     onStatusChange={s => handleRefStatusUpdate(ref.id, s)}
-                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes, income_monthly: ref.income_monthly, income_monthly_str: '' }) }}
+                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, manager_name: ref.manager_name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes, income_monthly: ref.income_monthly, income_monthly_str: '' }) }}
                     onEditChange={patch => setEditRefForm(prev => ({ ...prev, ...patch }))}
                     onEditSave={() => handleUpdateRef(ref.id)}
                     onEditCancel={() => setEditingRef(null)}
@@ -892,7 +895,7 @@ Really appreciate your time — thank you!`
                     saving={savingRef}
                     onChange={patch => setRefForm(f => ({ ...f, ...patch }))}
                     onSave={handleAddRef}
-                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' }) }}
+                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', manager_name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' }) }}
                   />
                 )}
 
@@ -1005,6 +1008,9 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px', marginBottom: '0' }}>
                 <input className="edit-input" placeholder={ref_.type === 'employer' ? 'Company name' : 'Landlord / property name'} value={editForm.name || ''} onChange={e => onEditChange({ name: e.target.value })} />
+                {ref_.type === 'employer' && (
+                  <input className="edit-input" placeholder="Manager / supervisor name (optional)" value={editForm.manager_name || ''} onChange={e => onEditChange({ manager_name: e.target.value })} />
+                )}
                 <input className="edit-input" placeholder="Phone" value={editForm.phone || ''} onChange={e => onEditChange({ phone: e.target.value })} />
                 <input className="edit-input" placeholder="Email" value={editForm.email || ''} onChange={e => onEditChange({ email: e.target.value })} />
                 {ref_.type === 'residence' && (
@@ -1031,6 +1037,9 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
           ) : (
             <>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                {ref_.type === 'employer' && ref_.manager_name && (
+                  <span style={{ fontSize: '12px', color: '#1a1a1a', fontWeight: 600 }}>👤 {ref_.manager_name}</span>
+                )}
                 {ref_.phone && <a href={`tel:${ref_.phone}`} style={{ fontSize: '12px', color: '#3b82f6', textDecoration: 'none' }}>📞 {ref_.phone}</a>}
                 {ref_.email && <a href={`mailto:${ref_.email}`} style={{ fontSize: '12px', color: '#3b82f6', textDecoration: 'none' }}>✉ {ref_.email}</a>}
                 {ref_.address && <span style={{ fontSize: '12px', color: '#6b6b6b' }}>📍 {ref_.address}</span>}
@@ -1118,7 +1127,7 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
 
 function AddRefForm({ type, form, saving, onChange, onSave, onCancel }: {
   type: 'employer' | 'residence'
-  form: { name: string; phone: string; email: string; address: string; contact_date: string; notes: string; income_monthly: string }
+  form: { name: string; manager_name: string; phone: string; email: string; address: string; contact_date: string; notes: string; income_monthly: string }
   saving: boolean
   onChange: (patch: Partial<typeof form>) => void
   onSave: () => void
@@ -1131,6 +1140,10 @@ function AddRefForm({ type, form, saving, onChange, onSave, onCancel }: {
       </div>
       <div className="edit-row">
         <input className="edit-input" placeholder={type === 'employer' ? 'Company name' : 'Landlord / property name'} value={form.name} onChange={e => onChange({ name: e.target.value })} />
+        {type === 'employer'
+          ? <input className="edit-input" placeholder="Manager / supervisor name (optional)" value={form.manager_name} onChange={e => onChange({ manager_name: e.target.value })} />
+          : null
+        }
         <input className="edit-input" placeholder="Phone" value={form.phone} onChange={e => onChange({ phone: e.target.value })} />
         <input className="edit-input" placeholder="Email" value={form.email} onChange={e => onChange({ email: e.target.value })} />
         {type === 'residence' && (
