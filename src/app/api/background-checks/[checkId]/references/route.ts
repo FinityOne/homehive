@@ -27,12 +27,12 @@ export async function POST(
   if (!check) return Response.json({ error: 'Not found' }, { status: 404 })
 
   const body = await req.json()
-  const { type, name, phone, email, address, contact_date, status, notes } = body
+  const { type, name, phone, email, address, contact_date, status, notes, income_monthly } = body
   if (!type) return Response.json({ error: 'type required' }, { status: 400 })
 
   const { data, error } = await supabaseAdmin
     .from('bg_check_references')
-    .insert({ bg_check_id: checkId, type, name, phone, email, address, contact_date: contact_date || null, status: status || 'pending', notes })
+    .insert({ bg_check_id: checkId, type, name, phone, email, address, contact_date: contact_date || null, status: status || 'pending', notes, income_monthly: income_monthly || null })
     .select()
     .single()
 
@@ -56,7 +56,7 @@ export async function PATCH(
   const { refId, ...updates } = body
   if (!refId) return Response.json({ error: 'refId required' }, { status: 400 })
 
-  const allowed = ['name','phone','email','address','contact_date','status','notes']
+  const allowed = ['name','phone','email','address','contact_date','status','notes','income_monthly']
   const patch: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in updates) patch[key] = updates[key]

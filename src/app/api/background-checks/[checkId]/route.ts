@@ -42,7 +42,7 @@ export async function PATCH(
 
   const body = await req.json()
   const allowed = [
-    'is_student','cosigner','credit',
+    'is_student','cosigner','credit','credit_score',
     'employment_check','current_residence_check',
     'criminal_check','eviction_check','notes',
   ]

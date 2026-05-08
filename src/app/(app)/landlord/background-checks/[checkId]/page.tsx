@@ -21,7 +21,7 @@ type Reference = {
   name: string | null; phone: string | null; email: string | null
   address: string | null; contact_date: string | null
   status: 'pending' | 'contacted' | 'verified' | 'unverified'
-  notes: string | null; created_at: string
+  notes: string | null; income_monthly: number | null; created_at: string
 }
 
 type BgCheck = {
@@ -29,6 +29,7 @@ type BgCheck = {
   is_student: boolean | null
   cosigner: 'yes' | 'no' | 'pending' | 'need_cosigner' | null
   credit: 'great' | 'average' | 'poor' | null
+  credit_score: number | null
   employment_check: 'clear' | 'not_clear' | null
   current_residence_check: 'clear' | 'not_clear' | null
   criminal_check: 'clear' | 'not_clear' | null
@@ -37,6 +38,29 @@ type BgCheck = {
   created_at: string; updated_at: string
   leads: Lead | null
   bg_check_references: Reference[]
+}
+
+// ── Scoring ───────────────────────────────────────────────────────────────────
+function computeScore(f: {
+  criminal_check: string | null; eviction_check: string | null
+  employment_check: string | null; current_residence_check: string | null
+  credit: string | null; credit_score: number | null
+}): { score: number; tier: 'good' | 'medium' | 'high'; label: string; color: string; bg: string } {
+  const pts = (val: string | null, full: number) =>
+    val === 'clear' ? full : val === 'not_clear' ? 0 : 0
+
+  let creditPts = 0
+  if (f.credit_score) {
+    creditPts = f.credit_score >= 750 ? 10 : f.credit_score >= 700 ? 8 : f.credit_score >= 650 ? 6 : f.credit_score >= 600 ? 4 : 2
+  } else if (f.credit === 'great') creditPts = 10
+  else if (f.credit === 'average') creditPts = 6
+  else if (f.credit === 'poor') creditPts = 2
+
+  const score = pts(f.criminal_check, 30) + pts(f.eviction_check, 25) + pts(f.employment_check, 20) + pts(f.current_residence_check, 15) + creditPts
+
+  if (score >= 80) return { score, tier: 'good',   label: 'Good to Go',   color: '#10b981', bg: 'rgba(16,185,129,0.08)' }
+  if (score >= 60) return { score, tier: 'medium', label: 'Medium Risk',  color: '#f97316', bg: 'rgba(249,115,22,0.08)' }
+  return               { score, tier: 'high',   label: 'High Risk',    color: '#ef4444', bg: 'rgba(239,68,68,0.07)' }
 }
 
 // ── Template questions ────────────────────────────────────────────────────────
@@ -146,6 +170,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     is_student: null as boolean | null,
     cosigner: null as string | null,
     credit: null as string | null,
+    credit_score: null as number | null,
     employment_check: null as string | null,
     current_residence_check: null as string | null,
     criminal_check: null as string | null,
@@ -157,13 +182,15 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
   const [refs, setRefs] = useState<Reference[]>([])
   const [addingRef, setAddingRef] = useState(false)
   const [refType, setRefType] = useState<'employer' | 'residence'>('employer')
-  const [refForm, setRefForm] = useState({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '' })
+  const [refForm, setRefForm] = useState({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' })
   const [savingRef, setSavingRef] = useState(false)
   const [expandedRef, setExpandedRef] = useState<string | null>(null)
   const [editingRef, setEditingRef] = useState<string | null>(null)
-  const [editRefForm, setEditRefForm] = useState<Partial<Reference>>({})
+  const [editRefForm, setEditRefForm] = useState<Partial<Reference & { income_monthly_str: string }>>({})
   const [templateModal, setTemplateModal] = useState<{ type: 'employer' | 'residence'; refName?: string } | null>(null)
   const [copiedQ, setCopiedQ] = useState<number | null>(null)
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null)
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -187,6 +214,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
         is_student: c.is_student,
         cosigner: c.cosigner,
         credit: c.credit,
+        credit_score: c.credit_score ?? null,
         employment_check: c.employment_check,
         current_residence_check: c.current_residence_check,
         criminal_check: c.criminal_check,
@@ -224,13 +252,13 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     const res = await fetch(`/api/background-checks/${checkId}/references`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ type: refType, ...refForm, contact_date: refForm.contact_date || null }),
+      body: JSON.stringify({ type: refType, ...refForm, contact_date: refForm.contact_date || null, income_monthly: refForm.income_monthly ? parseInt(refForm.income_monthly) : null }),
     })
     if (res.ok) {
       const { reference } = await res.json()
       setRefs(prev => [...prev, reference])
       setAddingRef(false)
-      setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '' })
+      setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' })
       showToast(`${refType === 'employer' ? 'Employer' : 'Residence'} reference added`)
     } else {
       showToast('Failed to add reference', 'error')
@@ -277,6 +305,73 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     if (res.ok) {
       const { reference } = await res.json()
       setRefs(prev => prev.map(r => r.id === refId ? reference : r))
+    }
+  }
+
+  const handleSendEmail = async (refId: string) => {
+    setSendingEmail(refId)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}/references/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ refId }),
+    })
+    if (res.ok) {
+      setRefs(prev => prev.map(r => r.id === refId
+        ? { ...r, status: 'contacted', contact_date: new Date().toISOString().split('T')[0] }
+        : r
+      ))
+      showToast('Verification email sent!')
+    } else {
+      const body = await res.json()
+      showToast(body.error || 'Failed to send email', 'error')
+    }
+    setSendingEmail(null)
+  }
+
+  const buildPlainTextEmail = (ref: Reference, lead: Lead | null, type: 'employer' | 'residence'): string => {
+    const leadName = lead?.first_name && lead?.last_name
+      ? `${lead.first_name} ${lead.last_name}`
+      : lead?.first_name || lead?.email || 'the applicant'
+    const greeting = ref.name ? `Hi ${ref.name},` : 'To Whom It May Concern,'
+
+    if (type === 'employer') {
+      return `${greeting}
+
+My name is [Your Name] and I'm an independent property owner. ${leadName} has applied to rent one of my properties and has listed your organization as their current employer.
+
+As part of a standard screening process, I'd appreciate if you could confirm the following:
+
+1. Is ${leadName} currently employed at your organization?
+2. What is their job title and approximate start date?
+3. Is their position full-time, part-time, or contract?
+4. Can you confirm their approximate gross monthly income?
+5. Is their employment in good standing with no pending termination?
+6. Are there any active wage garnishments or liens?
+
+Please reply to this email. Your response will be kept strictly confidential.
+
+Thank you,
+[Your Name]`
+    } else {
+      const addrLine = ref.address ? ` at ${ref.address}` : ''
+      return `${greeting}
+
+My name is [Your Name] and I'm an independent property owner. ${leadName} has applied to rent one of my properties and has listed your property${addrLine} as a previous residence.
+
+I'd appreciate if you could answer a few quick questions:
+
+1. Can you confirm ${leadName} resided at your property, and for how long?
+2. Did they consistently pay rent on time?
+3. Were there any noise complaints, lease violations, or damage?
+4. Did they leave the unit in good condition upon move-out?
+5. Was the security deposit returned in full? If not, why?
+6. Would you rent to this tenant again?
+
+Please reply to this email. Everything you share will be kept strictly confidential.
+
+Thank you,
+[Your Name]`
     }
   }
 
@@ -494,6 +589,35 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
                   onChange={v => setForm(f => ({ ...f, credit: v }))}
                 />
 
+                <div style={{ marginBottom: '18px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Credit Score (optional)</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="number"
+                      min={300}
+                      max={850}
+                      placeholder="e.g. 720"
+                      value={form.credit_score ?? ''}
+                      onChange={e => setForm(f => ({ ...f, credit_score: e.target.value ? parseInt(e.target.value) : null }))}
+                      style={{ width: '120px', border: '1.5px solid #e8e5de', borderRadius: '9px', padding: '8px 12px', fontSize: '14px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: '#faf9f6', outline: 'none' }}
+                    />
+                    {form.credit_score != null && (
+                      <span style={{
+                        fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px',
+                        ...(form.credit_score >= 750 ? { color: '#10b981', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }
+                          : form.credit_score >= 700 ? { color: '#3b82f6', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)' }
+                          : form.credit_score >= 650 ? { color: '#f97316', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.3)' }
+                          : { color: '#ef4444', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)' }),
+                      }}>
+                        {form.credit_score >= 750 ? 'Excellent' : form.credit_score >= 700 ? 'Good' : form.credit_score >= 650 ? 'Fair' : form.credit_score >= 600 ? 'Poor' : 'Very Poor'}
+                      </span>
+                    )}
+                    {form.credit_score != null && (
+                      <span style={{ fontSize: '10px', color: '#9b9b9b' }}>overrides toggle above</span>
+                    )}
+                  </div>
+                </div>
+
                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Verification Checks</div>
 
                 <ClearToggle
@@ -568,6 +692,36 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
           {/* RIGHT COLUMN */}
           <div>
 
+            {/* ── Score Widget ── */}
+            {(() => {
+              const s = computeScore(form)
+              const pct = (s.score / 100) * 100
+              return (
+                <div style={{ background: s.bg, border: `1.5px solid ${s.color}30`, borderRadius: '14px', padding: '18px 20px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '3px' }}>Risk Score</div>
+                      <div style={{ fontSize: '22px', fontWeight: 800, color: '#1a1a1a', lineHeight: 1, fontFamily: "'DM Sans', sans-serif" }}>
+                        {s.score}<span style={{ fontSize: '13px', color: '#9b9b9b', fontWeight: 500 }}>/100</span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 800, color: s.color, fontFamily: "'DM Sans', sans-serif" }}>{s.label}</div>
+                      <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>
+                        {s.tier === 'good' ? 'Strong application' : s.tier === 'medium' ? 'Review recommended' : 'Proceed with caution'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ height: '6px', background: 'rgba(0,0,0,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: s.color, borderRadius: '3px', transition: 'width 0.4s' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '10px', color: '#9b9b9b' }}>
+                    <span>Criminal 30 · Eviction 25 · Employment 20 · Residence 15 · Credit 10</span>
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* Lead quick info */}
             <div className="bgd-card">
               <div className="bgd-card-hd"><span className="bgd-card-ttl">Lead Details</span></div>
@@ -606,12 +760,20 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
                     statusColors={STATUS_COLORS}
                     onToggle={() => setExpandedRef(expandedRef === ref.id ? null : ref.id)}
                     onStatusChange={s => handleRefStatusUpdate(ref.id, s)}
-                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes }) }}
+                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes, income_monthly: ref.income_monthly, income_monthly_str: ref.income_monthly != null ? String(ref.income_monthly) : '' }) }}
                     onEditChange={patch => setEditRefForm(prev => ({ ...prev, ...patch }))}
                     onEditSave={() => handleUpdateRef(ref.id)}
                     onEditCancel={() => setEditingRef(null)}
                     onDelete={() => handleDeleteRef(ref.id)}
                     onTemplate={() => setTemplateModal({ type: 'employer', refName: ref.name || undefined })}
+                    onSendEmail={ref.email ? () => handleSendEmail(ref.id) : undefined}
+                    onCopyEmail={ref.email ? () => {
+                      navigator.clipboard.writeText(buildPlainTextEmail(ref, lead, 'employer'))
+                      setCopiedEmail(ref.id)
+                      setTimeout(() => setCopiedEmail(null), 2000)
+                    } : undefined}
+                    isSending={sendingEmail === ref.id}
+                    isCopied={copiedEmail === ref.id}
                   />
                 ))}
 
@@ -622,7 +784,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
                     saving={savingRef}
                     onChange={patch => setRefForm(f => ({ ...f, ...patch }))}
                     onSave={handleAddRef}
-                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '' }) }}
+                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' }) }}
                   />
                 )}
 
@@ -660,12 +822,20 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
                     statusColors={STATUS_COLORS}
                     onToggle={() => setExpandedRef(expandedRef === ref.id ? null : ref.id)}
                     onStatusChange={s => handleRefStatusUpdate(ref.id, s)}
-                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes }) }}
+                    onEdit={() => { setEditingRef(ref.id); setEditRefForm({ name: ref.name, phone: ref.phone, email: ref.email, address: ref.address, contact_date: ref.contact_date, notes: ref.notes, income_monthly: ref.income_monthly, income_monthly_str: '' }) }}
                     onEditChange={patch => setEditRefForm(prev => ({ ...prev, ...patch }))}
                     onEditSave={() => handleUpdateRef(ref.id)}
                     onEditCancel={() => setEditingRef(null)}
                     onDelete={() => handleDeleteRef(ref.id)}
                     onTemplate={() => setTemplateModal({ type: 'residence', refName: ref.name || undefined })}
+                    onSendEmail={ref.email ? () => handleSendEmail(ref.id) : undefined}
+                    onCopyEmail={ref.email ? () => {
+                      navigator.clipboard.writeText(buildPlainTextEmail(ref, lead, 'residence'))
+                      setCopiedEmail(ref.id)
+                      setTimeout(() => setCopiedEmail(null), 2000)
+                    } : undefined}
+                    isSending={sendingEmail === ref.id}
+                    isCopied={copiedEmail === ref.id}
                   />
                 ))}
 
@@ -676,7 +846,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
                     saving={savingRef}
                     onChange={patch => setRefForm(f => ({ ...f, ...patch }))}
                     onSave={handleAddRef}
-                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '' }) }}
+                    onCancel={() => { setAddingRef(false); setRefForm({ name: '', phone: '', email: '', address: '', contact_date: '', notes: '', income_monthly: '' }) }}
                   />
                 )}
 
@@ -743,20 +913,24 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, onStatusChange, onEdit, onEditChange, onEditSave, onEditCancel, onDelete, onTemplate }: {
+function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, onStatusChange, onEdit, onEditChange, onEditSave, onEditCancel, onDelete, onTemplate, onSendEmail, onCopyEmail, isSending, isCopied }: {
   ref_: Reference
   expanded: boolean
   editing: boolean
-  editForm: Partial<Reference>
+  editForm: Partial<Reference & { income_monthly_str: string }>
   statusColors: Record<Reference['status'], { color: string; bg: string; border: string; label: string }>
   onToggle: () => void
   onStatusChange: (s: Reference['status']) => void
   onEdit: () => void
-  onEditChange: (patch: Partial<Reference>) => void
+  onEditChange: (patch: Partial<Reference & { income_monthly_str: string }>) => void
   onEditSave: () => void
   onEditCancel: () => void
   onDelete: () => void
   onTemplate: () => void
+  onSendEmail?: () => void
+  onCopyEmail?: () => void
+  isSending?: boolean
+  isCopied?: boolean
 }) {
   const sc = statusColors[ref_.status]
   return (
@@ -788,6 +962,16 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                 <input className="edit-input" type="date" placeholder="Contact date" value={editForm.contact_date || ''} onChange={e => onEditChange({ contact_date: e.target.value })} />
               </div>
               <input className="edit-input" placeholder={ref_.type === 'employer' ? 'Company address (optional)' : 'Property address'} value={editForm.address || ''} onChange={e => onEditChange({ address: e.target.value })} />
+              {ref_.type === 'employer' && (
+                <input
+                  className="edit-input"
+                  type="number"
+                  min={0}
+                  placeholder="Monthly gross income (e.g. 4500)"
+                  value={editForm.income_monthly_str || ''}
+                  onChange={e => onEditChange({ income_monthly_str: e.target.value, income_monthly: e.target.value ? parseInt(e.target.value) : null })}
+                />
+              )}
               <textarea className="edit-input" rows={3} placeholder="Notes…" style={{ resize: 'vertical', minHeight: '60px' }} value={editForm.notes || ''} onChange={e => onEditChange({ notes: e.target.value })} />
               <div style={{ display: 'flex', gap: '7px' }}>
                 <button onClick={onEditSave} style={{ flex: 2, background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>Save</button>
@@ -801,10 +985,37 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                 {ref_.email && <a href={`mailto:${ref_.email}`} style={{ fontSize: '12px', color: '#3b82f6', textDecoration: 'none' }}>✉ {ref_.email}</a>}
                 {ref_.address && <span style={{ fontSize: '12px', color: '#6b6b6b' }}>📍 {ref_.address}</span>}
                 {ref_.contact_date && <span style={{ fontSize: '12px', color: '#6b6b6b' }}>📅 Contacted {new Date(ref_.contact_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                {ref_.type === 'employer' && ref_.income_monthly != null && (
+                  <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
+                    💵 ${ref_.income_monthly.toLocaleString()}/mo
+                  </span>
+                )}
               </div>
               {ref_.notes && (
                 <div style={{ background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '7px', padding: '8px 10px', fontSize: '12px', color: '#4a4a4a', lineHeight: 1.55, marginBottom: '10px', fontStyle: 'italic' }}>
                   {ref_.notes}
+                </div>
+              )}
+
+              {ref_.email && (onSendEmail || onCopyEmail) && (
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                  {onSendEmail && (
+                    <button
+                      onClick={onSendEmail}
+                      disabled={isSending}
+                      style={{ flex: 1, background: isSending ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 700, cursor: isSending ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: isSending ? 0.7 : 1 }}
+                    >
+                      {isSending ? '⏳ Sending…' : '✉ Send Email'}
+                    </button>
+                  )}
+                  {onCopyEmail && (
+                    <button
+                      onClick={onCopyEmail}
+                      style={{ flex: 1, background: isCopied ? 'rgba(16,185,129,0.08)' : '#faf9f6', border: `1.5px solid ${isCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 600, color: isCopied ? '#10b981' : '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                    >
+                      {isCopied ? '✓ Copied!' : '📋 Copy Draft'}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -846,7 +1057,7 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
 
 function AddRefForm({ type, form, saving, onChange, onSave, onCancel }: {
   type: 'employer' | 'residence'
-  form: { name: string; phone: string; email: string; address: string; contact_date: string; notes: string }
+  form: { name: string; phone: string; email: string; address: string; contact_date: string; notes: string; income_monthly: string }
   saving: boolean
   onChange: (patch: Partial<typeof form>) => void
   onSave: () => void
@@ -864,6 +1075,16 @@ function AddRefForm({ type, form, saving, onChange, onSave, onCancel }: {
         <input className="edit-input" type="date" value={form.contact_date} onChange={e => onChange({ contact_date: e.target.value })} />
       </div>
       <input className="edit-input" placeholder={type === 'employer' ? 'Company address (optional)' : 'Property address'} value={form.address} onChange={e => onChange({ address: e.target.value })} />
+      {type === 'employer' && (
+        <input
+          className="edit-input"
+          type="number"
+          min={0}
+          placeholder="Monthly gross income (e.g. 4500)"
+          value={form.income_monthly}
+          onChange={e => onChange({ income_monthly: e.target.value })}
+        />
+      )}
       <textarea className="edit-input" rows={2} placeholder="Notes…" style={{ resize: 'vertical' }} value={form.notes} onChange={e => onChange({ notes: e.target.value })} />
       <div style={{ display: 'flex', gap: '8px' }}>
         <button onClick={onSave} disabled={saving} style={{ flex: 2, background: saving ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '8px', padding: '9px', fontSize: '13px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
