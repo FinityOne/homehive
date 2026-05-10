@@ -203,6 +203,7 @@ export default function NewListingWizard() {
       security_deposit: form.security_deposit === '' ? null : Number(form.security_deposit),
       utilities_included: utilitiesIncluded,
       rental_mode: isByRoom ? 'by_room' : 'whole_home',
+      available_from: form.move_in_date || null,
     })
 
     if (error || !slug || !id) {

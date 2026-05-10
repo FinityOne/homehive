@@ -249,6 +249,11 @@ function HomeCard({ home, onHover, featured = false }: { home: Property; onHover
           {isSub && start && end && (
             <span className="hc2-date-pill">{start} – {end}</span>
           )}
+          {!isSub && home.available_from && (
+            <span className="hc2-avail-pill">
+              Available {fmtDate(home.available_from)}
+            </span>
+          )}
         </div>
       </div>
     </a>
@@ -396,6 +401,7 @@ export default function HomesPageClient() {
         .hc2-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .hc2-bed-pill { font-size: 12px; font-weight: 500; color: #4a4a4a; background: #f4f1eb; padding: 3px 9px; border-radius: 20px; }
         .hc2-date-pill { font-size: 11px; font-weight: 600; color: #8C1D40; background: #fdf2f5; border: 1px solid #f5c6d0; padding: 3px 9px; border-radius: 20px; }
+        .hc2-avail-pill { font-size: 11px; font-weight: 600; color: #059669; background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.25); padding: 3px 9px; border-radius: 20px; }
 
         /* ── MAP ── */
         .homes-map { width: 50%; flex-shrink: 0; position: sticky; top: 0; height: 100%; background: #e8e4db; }

@@ -823,6 +823,21 @@ export default function PropertyPageClient({
               )}
             </div>
 
+            {/* AVAILABLE FROM — standard rentals */}
+            {home.listing_type === 'standard_rental' && home.available_from && (
+              <div className="section" style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                <div className="section-label" style={{ color: '#059669' }}>Move-In Ready</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Available From</span>
+                    <span style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                      {new Date(home.available_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* SUBLEASE / LEASE TRANSFER DATES */}
             {(home.listing_type === 'sublease' || home.listing_type === 'lease_transfer') &&
               (home.sublease_start_date || home.sublease_end_date) && (

@@ -51,6 +51,7 @@ export type Property = {
   offer_description: string | null
   utilities_included: boolean
   rental_mode: 'whole_home' | 'by_room'
+  available_from: string | null
   // joined
   tags: string[]
   images: string[]
@@ -77,6 +78,7 @@ export type NewPropertyInput = {
   security_deposit?: number | null
   utilities_included?: boolean
   rental_mode?: 'whole_home' | 'by_room'
+  available_from?: string | null
 }
 
 const PROPERTY_SELECT = `
@@ -154,6 +156,7 @@ export async function createProperty(
       security_deposit: data.security_deposit ?? null,
       utilities_included: data.utilities_included ?? false,
       rental_mode: data.rental_mode ?? 'whole_home',
+      available_from: data.available_from ?? null,
       is_active: false,
       admin_status: 'pending',
       is_featured: false,
@@ -266,7 +269,7 @@ export async function updatePropertyOffer(
 
 export async function updatePropertyCore(
   id: string,
-  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'|'utilities_included'|'rental_mode'>>
+  updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'|'utilities_included'|'rental_mode'|'available_from'>>
 ): Promise<{ error: any }> {
   const { error } = await supabase
     .from('properties')

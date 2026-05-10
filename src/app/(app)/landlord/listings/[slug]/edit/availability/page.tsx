@@ -24,6 +24,7 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
   const [totalRooms, setTotalRooms] = useState('')
   const [isActive, setIsActive] = useState(false)
   const [isFeatured, setIsFeatured] = useState(false)
+  const [availableFrom, setAvailableFrom] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -39,6 +40,7 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
       setTotalRooms(found.total_rooms?.toString() || '0')
       setIsActive(found.is_active ?? false)
       setIsFeatured(found.is_featured ?? false)
+      setAvailableFrom(found.available_from ?? '')
       setLoading(false)
     }
     load()
@@ -55,6 +57,7 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
       total_rooms: parseInt(totalRooms) || 0,
       is_active: isActive,
       is_featured: isFeatured,
+      available_from: availableFrom || null,
     })
 
     setSaving(false)
@@ -160,6 +163,21 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
               onChange={e => setTotalRooms(e.target.value)}
               placeholder="6"
             />
+          </div>
+        </div>
+
+        <div className="section-heading">Move-In Date</div>
+
+        <div className="form-group">
+          <label className="form-label">Available From <span style={{ textTransform: 'none', fontWeight: 400, color: '#94a3b8' }}>(optional)</span></label>
+          <input
+            className="form-input"
+            type="date"
+            value={availableFrom}
+            onChange={e => setAvailableFrom(e.target.value)}
+          />
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '5px' }}>
+            Shown prominently on your listing so renters know when they can move in.
           </div>
         </div>
 
