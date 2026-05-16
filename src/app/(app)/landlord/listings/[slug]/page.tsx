@@ -341,7 +341,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
           total_rooms: validRooms.length,
           available: validRooms.filter(r => r.is_available).length,
           price: minPrice || p.price,
-          rooms: validRooms.map((r, i) => ({ id: '', property_id: p.id, name: r.name.trim() || `Room ${i + 1}`, price: Number(r.price), is_available: r.is_available, position: i })),
+          rooms: validRooms.map((r, i) => ({ id: '', property_id: p.id, name: r.name.trim() || `Room ${i + 1}`, price: Number(r.price), is_available: r.is_available, position: i, images: [] })),
         } : p)
       }
     } else {

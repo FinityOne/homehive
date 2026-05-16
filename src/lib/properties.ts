@@ -12,6 +12,7 @@ export type PropertyRoom = {
   price: number
   is_available: boolean
   position: number
+  images: string[]
 }
 
 export type Property = {
@@ -84,33 +85,49 @@ export type NewPropertyInput = {
 const PROPERTY_SELECT = `
   *,
   property_tags ( tag ),
-  property_images ( url, position ),
+  property_images ( id, url, position, room_id ),
   property_nearby ( place, travel_time ),
   property_asu_reasons ( reason, position ),
   property_rooms ( id, property_id, name, price, is_available, position )
 `
 
-function mapRooms(raw: any[], propertyId: string): PropertyRoom[] {
-  return raw
-    .sort((a, b) => a.position - b.position)
-    .map(r => ({
+function mapProperty(p: any): Property {
+  // Sort all images by position
+  const allImages: any[] = [...(p.property_images ?? [])].sort((a, b) => a.position - b.position)
+
+  // Separate general images (no room) and room-specific images
+  const generalImages = allImages.filter((i: any) => i.room_id == null)
+  const roomImages = allImages.filter((i: any) => i.room_id != null)
+
+  // Build a map: room_id -> string[]
+  const roomImgMap: Record<string, string[]> = {}
+  for (const img of roomImages) {
+    if (!roomImgMap[img.room_id]) roomImgMap[img.room_id] = []
+    roomImgMap[img.room_id].push(img.url)
+  }
+
+  // Map rooms with their images
+  const rooms: PropertyRoom[] = (p.property_rooms ?? [])
+    .sort((a: any, b: any) => a.position - b.position)
+    .map((r: any) => ({
       id: r.id,
-      property_id: propertyId,
+      property_id: p.id,
       name: r.name,
       price: r.price,
       is_available: r.is_available,
       position: r.position,
+      images: roomImgMap[r.id] ?? [],
     }))
-}
 
-function mapProperty(p: any): Property {
+  // Flat list: general images first, then all room images in room/position order
+  const allRoomUrls = rooms.flatMap(r => r.images)
+  const images = [...generalImages.map((i: any) => i.url), ...allRoomUrls]
+
   return {
     ...p,
     rental_mode: (p.rental_mode ?? 'whole_home') as 'whole_home' | 'by_room',
     tags: p.property_tags.map((t: any) => t.tag),
-    images: p.property_images
-      .sort((a: any, b: any) => a.position - b.position)
-      .map((i: any) => i.url),
+    images,
     nearby: p.property_nearby.map((n: any) => ({
       place: n.place,
       travel_time: n.travel_time,
@@ -118,7 +135,7 @@ function mapProperty(p: any): Property {
     asu_reasons: p.property_asu_reasons
       .sort((a: any, b: any) => a.position - b.position)
       .map((r: any) => r.reason),
-    rooms: mapRooms(p.property_rooms ?? [], p.id),
+    rooms,
   }
 }
 
@@ -390,6 +407,19 @@ export async function uploadPropertyImage(
   propertyId: string
 ): Promise<{ url: string | null; error: any }> {
   const path = `${userId}/${propertyId}/${Date.now()}-${file.name}`
+  const { error } = await supabase.storage.from('property-images').upload(path, file, { upsert: false })
+  if (error) return { url: null, error }
+  const { data: { publicUrl } } = supabase.storage.from('property-images').getPublicUrl(path)
+  return { url: publicUrl, error: null }
+}
+
+export async function uploadRoomImage(
+  file: File,
+  userId: string,
+  propertyId: string,
+  roomId: string
+): Promise<{ url: string | null; error: any }> {
+  const path = `${userId}/${propertyId}/rooms/${roomId}/${Date.now()}-${file.name}`
   const { error } = await supabase.storage.from('property-images').upload(path, file, { upsert: false })
   if (error) return { url: null, error }
   const { data: { publicUrl } } = supabase.storage.from('property-images').getPublicUrl(path)

@@ -44,11 +44,29 @@ export async function GET(
         .eq('property_id', prop.id)
         .order('position', { ascending: true })
 
+      const roomIds = (propRooms || []).map((r: Record<string, unknown>) => r.id as string)
+      let roomImages: Record<string, string[]> = {}
+      if (roomIds.length > 0) {
+        const { data: roomImgs } = await supabaseAdmin
+          .from('property_images')
+          .select('room_id, url, position')
+          .in('room_id', roomIds)
+          .order('position', { ascending: true })
+        for (const img of roomImgs || []) {
+          const rid = img.room_id as string
+          if (!roomImages[rid]) roomImages[rid] = []
+          roomImages[rid].push(img.url as string)
+        }
+      }
+
       property = {
         ...prop,
         hero_image: imgs?.[0]?.url ?? null,
       }
-      rooms = propRooms || []
+      rooms = (propRooms || []).map((r: Record<string, unknown>) => ({
+        ...r,
+        images: roomImages[r.id as string] ?? [],
+      }))
     }
   }
 

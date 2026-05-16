@@ -29,11 +29,12 @@ export async function PUT(
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Delete existing images then re-insert
+  // Delete only general images (room_id IS NULL) — room images are managed separately
   const { error: delError } = await supabase
     .from('property_images')
     .delete()
     .eq('property_id', propertyId)
+    .is('room_id', null)
 
   if (delError) {
     console.error('property_images delete error:', delError)

@@ -11,7 +11,7 @@ const supabase = createBrowserClient(
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
-type Room = { id: string; name: string; price: number; is_available: boolean; position: number }
+type Room = { id: string; name: string; price: number; is_available: boolean; position: number; images: string[] }
 type Member = {
   id: string; room_id: string | null; added_at: string
   first_name: string | null; last_name: string | null
@@ -415,9 +415,18 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                 {pricedRooms.map(room => {
                   const assignedMember = members.find(m => m.room_id === room.id)
                   const available = room.is_available && !assignedMember
+                  const thumbUrl = room.images?.[0] ?? null
                   return (
                     <div className="gp-room" key={room.id} style={!available ? { opacity: 0.7 } : {}}>
-                      <div>
+                      {thumbUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={thumbUrl}
+                          alt={room.name}
+                          style={{ width: 52, height: 40, objectFit: 'cover', borderRadius: 7, border: '1px solid #ede9e0', flexShrink: 0, marginRight: 10 }}
+                        />
+                      )}
+                      <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
                         {assignedMember && (
                           <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>
@@ -594,6 +603,7 @@ function MembersSection({ members, roomMap, acMain }: { members: Member[]; roomM
               m.lifestyle ? (LIFESTYLE_LABELS[m.lifestyle] ?? m.lifestyle) : null,
               m.gender && m.gender !== 'Prefer not to say' ? m.gender : null,
             ].filter(Boolean) as string[]
+            const roomPhotos = assignedRoom?.images ?? []
             return (
               <div key={m.id} style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: 14, padding: '14px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -625,6 +635,20 @@ function MembersSection({ members, roomMap, acMain }: { members: Member[]; roomM
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                     {tags.map(t => (
                       <span key={t} style={{ fontSize: 11, color: '#6b6b6b', background: '#f5f4f0', border: '1px solid #ede9e0', padding: '3px 9px', borderRadius: 20 }}>{t}</span>
+                    ))}
+                  </div>
+                )}
+                {/* Room photo strip — shown when member is assigned a room that has photos */}
+                {assignedRoom && roomPhotos.length > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+                    {roomPhotos.map((url, pi) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={pi}
+                        src={url}
+                        alt={`${assignedRoom.name} photo ${pi + 1}`}
+                        style={{ height: 100, width: 'auto', minWidth: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid #ede9e0', flexShrink: 0 }}
+                      />
                     ))}
                   </div>
                 )}
