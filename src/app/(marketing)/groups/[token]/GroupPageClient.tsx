@@ -596,6 +596,74 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
             </div>
           </div>
 
+          {/* Group Chat — prominent in-page section */}
+          <div className="gp-hr" style={{ marginTop: 18 }} />
+          <div className="gp-section" style={{ paddingTop: 18, paddingBottom: 20 }}>
+            <div className="gp-section-label">Group Chat</div>
+            {hasChat ? (
+              /* Member: open chat button */
+              <button
+                onClick={() => { setChatOpen(true); setChatUnread(0) }}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 14,
+                  background: 'linear-gradient(135deg,#FFC627,#f5a623)',
+                  border: 'none', borderRadius: 14, padding: '16px 20px',
+                  cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
+                  boxShadow: '0 4px 20px rgba(255,198,39,0.4)',
+                }}
+              >
+                <span style={{ fontSize: 28, animation: 'beeWiggle 1.8s ease-in-out infinite' }}>🐝</span>
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>
+                    Open Group Chat
+                    {chatUnread > 0 && (
+                      <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>{chatUnread} new</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 2 }}>
+                    Chat with your {members.length > 0 ? `${members.length} roommate${members.length !== 1 ? 's' : ''}` : 'future roommates'}
+                  </div>
+                </div>
+                <span style={{ fontSize: 18, color: 'rgba(0,0,0,0.35)' }}>→</span>
+              </button>
+            ) : (
+              /* Non-member: locked state */
+              <div style={{ background: '#fff', border: '1.5px solid #ede9e0', borderRadius: 14, overflow: 'hidden' }}>
+                {/* Blurred preview of chat */}
+                <div style={{ padding: '16px 18px 14px', filter: 'blur(3px)', pointerEvents: 'none', userSelect: 'none', opacity: 0.5 }}>
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🐝</div>
+                    <div style={{ background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: '4px 14px 14px 14px', padding: '10px 14px', fontSize: 12, color: '#1a1a1a', maxWidth: 240, lineHeight: 1.5 }}>
+                      Hey! Welcome to the group chat 🎉 Introduce yourself to your future roommates!
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginBottom: 4 }}>
+                    <div style={{ background: ac.light, border: `1px solid ${ac.border}`, borderRadius: '14px 4px 14px 14px', padding: '8px 14px', fontSize: 12, color: '#1a1a1a', maxWidth: 180 }}>
+                      Hey everyone! Can&apos;t wait to move in 🙌
+                    </div>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#1d4ed8', flexShrink: 0 }} />
+                  </div>
+                </div>
+                {/* Lock overlay */}
+                <div style={{ borderTop: '1px solid #ede9e0', background: '#faf9f7', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ fontSize: 24, flexShrink: 0 }}>🔒</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>Join the group to chat</div>
+                    <div style={{ fontSize: 12, color: '#9b9b9b' }}>
+                      {!currentUser ? 'Sign in and request to join to unlock the group chat.' : 'Request to join above to connect with everyone in this group.'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={openJoinModal}
+                    style={{ background: ac.gradient, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    {currentUser ? 'Join →' : 'Sign In →'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* ─── RIGHT COLUMN (desktop only) — join widget ─── */}
@@ -710,38 +778,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         }
       `}</style>
 
-      {/* Floating chat button */}
-      {hasChat && !chatOpen && (
-        <>
-          <style>{`
-            .chat-fab { bottom: 100px !important; }
-            @media (min-width: 768px) { .chat-fab { bottom: 28px !important; } }
-            @keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
-          `}</style>
-          <div className="chat-fab" style={{ position: 'fixed', right: 16, zIndex: 500, fontFamily: 'DM Sans,sans-serif' }}>
-            <button
-              onClick={() => { setChatOpen(true); setChatUnread(0) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 9,
-                background: 'linear-gradient(135deg,#FFC627,#f5a623)',
-                color: '#1a1a1a', border: 'none', borderRadius: 28,
-                padding: '12px 20px 12px 15px',
-                boxShadow: '0 4px 22px rgba(255,198,39,0.55)',
-                cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
-                fontWeight: 700, fontSize: 14, letterSpacing: '-0.2px',
-              }}
-            >
-              <span style={{ fontSize: 20, display: 'inline-block', animation: 'beeWiggle 1.8s ease-in-out infinite' }}>🐝</span>
-              <span>Group Chat</span>
-              {chatUnread > 0 && (
-                <span style={{ background: '#ef4444', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>
-                  {chatUnread > 9 ? '9+' : chatUnread}
-                </span>
-              )}
-            </button>
-          </div>
-        </>
-      )}
+      <style>{`@keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }`}</style>
 
       {/* Chat overlay */}
       {chatOpen && hasChat && (

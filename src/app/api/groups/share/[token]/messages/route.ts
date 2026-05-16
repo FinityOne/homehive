@@ -6,11 +6,7 @@ const supabaseAdmin = createClient(
 )
 
 const BOT_MESSAGES = [
-  "Hey hey hey! 🎉 Welcome to your group chat! I'm Honeybee 🐝 — your friendly roommate matchmaker. This is your space to connect and get to know each other before move-in day. Don't be shy — introduce yourself below!",
-  "Let's break the ice! ☀️ **Are you more of a morning person or a night owl?** Drop your answer — it helps a lot with setting house vibes from day one.",
-  "Roommate quiz round 2 🍕 **What's your ideal Friday night?** Netflix marathon at home, hitting a restaurant, or heading to a campus event? No wrong answers!",
-  "Real talk time 🏠 **What's one house rule that's non-negotiable for you?** No judgment — this is exactly how you build a home that works for everyone.",
-  "Last one from me for now! 🎓 **What are you studying and what brings you to ASU?** You might have a future study buddy right here in this very chat!",
+  "Hey hey hey! 🎉 Welcome to your group chat! I'm Honeybee 🐝 — your friendly roommate matchmaker. This is your space to connect before move-in day. To kick things off: are you an early bird or a night owl? What's your ideal Friday night like? Any non-negotiable house rules? Drop your answers and get to know your future roomies! 🏠",
 ]
 
 async function getUser(req: Request) {
