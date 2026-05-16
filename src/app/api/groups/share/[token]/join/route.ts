@@ -81,15 +81,30 @@ export async function POST(
 
   if (!leadId) return Response.json({ error: 'Could not create lead record' }, { status: 500 })
 
+  // Accept optional room preference
+  let roomId: string | null = null
+  try {
+    const body = await req.json().catch(() => ({}))
+    roomId = body.room_id ?? null
+  } catch { /* no body */ }
+
   // Add to group
   const { error: insertErr } = await supabaseAdmin
     .from('roommate_group_members')
     .upsert(
-      [{ group_id: group.id, lead_id: leadId, user_id: user.id }],
+      [{ group_id: group.id, lead_id: leadId, user_id: user.id, ...(roomId ? { room_id: roomId } : {}) }],
       { onConflict: 'group_id,lead_id' }
     )
 
   if (insertErr) return Response.json({ error: insertErr.message }, { status: 500 })
 
-  return Response.json({ success: true })
+  // Check if user has filled out a pre-screen
+  const { data: prescreen } = await supabaseAdmin
+    .from('pre_screens')
+    .select('id')
+    .eq('lead_id', leadId)
+    .limit(1)
+    .single()
+
+  return Response.json({ success: true, lead_id: leadId, has_prescreen: !!prescreen })
 }

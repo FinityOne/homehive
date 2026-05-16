@@ -78,9 +78,13 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   const [notFound, setNotFound] = useState(false)
   const [joining, setJoining] = useState(false)
   const [joined, setJoined] = useState(false)
+  const [joinResult, setJoinResult] = useState<{ lead_id: string; has_prescreen: boolean } | null>(null)
   const [joinError, setJoinError] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null)
   const [copiedShare, setCopiedShare] = useState(false)
+  // Join modal
+  const [joinModalOpen, setJoinModalOpen] = useState(false)
+  const [selectedRoomId, setSelectedRoomId] = useState<string | 'none' | null>(null)
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; roomName: string } | null>(null)
 
   const openLightbox = useCallback((images: string[], index: number, roomName: string) => {
@@ -113,16 +117,33 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
     })
   }, [token])
 
+  const openJoinModal = () => {
+    if (joined) return
+    setJoinModalOpen(true)
+    setSelectedRoomId(null)
+    setJoinError(null)
+  }
+
   const handleJoin = async () => {
-    if (!currentUser) { router.push(`/login?next=/groups/${token}`); return }
+    if (!currentUser) {
+      router.push(`/login?next=/groups/${token}`)
+      return
+    }
     setJoining(true); setJoinError(null)
     const { data: { session } } = await supabase.auth.getSession()
+    const roomId = selectedRoomId === 'none' || selectedRoomId === null ? null : selectedRoomId
     const res = await fetch(`/api/groups/share/${token}/join`, {
-      method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ room_id: roomId }),
     })
     const body = await res.json()
-    if (res.ok || body.already_member) setJoined(true)
-    else setJoinError(body.error || 'Something went wrong')
+    if (res.ok || body.already_member) {
+      setJoined(true)
+      if (body.lead_id) setJoinResult({ lead_id: body.lead_id, has_prescreen: !!body.has_prescreen })
+    } else {
+      setJoinError(body.error || 'Something went wrong')
+    }
     setJoining(false)
   }
 
@@ -225,27 +246,30 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
       {joined ? (
         <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '16px 18px', textAlign: 'center' }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#15803d', marginBottom: 3 }}>You&apos;re in the group 🎉</div>
-          <div style={{ fontSize: 12, color: '#166534' }}>The landlord will reach out to coordinate next steps.</div>
+          <div style={{ fontSize: 12, color: '#166534', marginBottom: joinResult && !joinResult.has_prescreen ? 10 : 0 }}>The landlord will reach out to coordinate next steps.</div>
+          {joinResult && !joinResult.has_prescreen && (
+            <a
+              href={`/pre-screen/${joinResult.lead_id}`}
+              style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#15803d', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, padding: '8px 14px', textDecoration: 'none' }}
+            >
+              ✏️ Tell your roommates about yourself →
+            </a>
+          )}
         </div>
       ) : (
         <>
           <button
-            disabled={joining}
-            onClick={handleJoin}
+            onClick={openJoinModal}
             style={{
               width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
-              cursor: joining ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans,sans-serif',
+              cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
               border: 'none', background: ac.gradient, color: '#fff',
-              opacity: joining ? 0.6 : 1, transition: 'opacity 0.15s',
               letterSpacing: '-0.2px',
             }}
           >
-            {joining ? 'Joining…' : currentUser ? 'Join This Group →' : 'Sign In to Join →'}
+            {currentUser ? 'Join This Group →' : 'Sign In to Join →'}
           </button>
-          {joinError
-            ? <div style={{ textAlign: 'center', fontSize: 11, color: '#ef4444', marginTop: 6 }}>{joinError}</div>
-            : <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 7 }}>Free · No commitment · Just express interest</div>
-          }
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 7 }}>Free · No commitment · Just express interest</div>
         </>
       )}
     </div>
@@ -502,27 +526,30 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
               <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '16px', textAlign: 'center' }}>
                 <div style={{ fontSize: 20, marginBottom: 6 }}>🎉</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#15803d', marginBottom: 3 }}>You&apos;re in!</div>
-                <div style={{ fontSize: 12, color: '#166534' }}>The landlord will be in touch to coordinate.</div>
+                <div style={{ fontSize: 12, color: '#166534', marginBottom: joinResult && !joinResult.has_prescreen ? 10 : 0 }}>The landlord will be in touch to coordinate.</div>
+                {joinResult && !joinResult.has_prescreen && (
+                  <a
+                    href={`/pre-screen/${joinResult.lead_id}`}
+                    style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#15803d', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, padding: '8px 14px', textDecoration: 'none' }}
+                  >
+                    ✏️ Tell your roommates about yourself →
+                  </a>
+                )}
               </div>
             ) : (
               <>
                 <button
-                  disabled={joining}
-                  onClick={handleJoin}
+                  onClick={openJoinModal}
                   style={{
                     width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
-                    cursor: joining ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans,sans-serif',
+                    cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
                     border: 'none', background: ac.gradient, color: '#fff',
-                    opacity: joining ? 0.6 : 1, transition: 'opacity 0.15s', letterSpacing: '-0.2px',
-                    marginBottom: 8,
+                    letterSpacing: '-0.2px', marginBottom: 8,
                   }}
                 >
-                  {joining ? 'Joining…' : currentUser ? 'Join This Group →' : 'Sign In to Join →'}
+                  {currentUser ? 'Join This Group →' : 'Sign In to Join →'}
                 </button>
-                {joinError
-                  ? <div style={{ textAlign: 'center', fontSize: 11, color: '#ef4444' }}>{joinError}</div>
-                  : <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b' }}>Free · No commitment · Just express interest</div>
-                }
+                <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b' }}>Free · No commitment · Just express interest</div>
               </>
             )}
           </div>
@@ -561,26 +588,29 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           {joined ? (
             <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginBottom: 2 }}>You&apos;re in the group 🎉</div>
-              <div style={{ fontSize: 11, color: '#166534' }}>The landlord will reach out to coordinate.</div>
+              <div style={{ fontSize: 11, color: '#166534', marginBottom: joinResult && !joinResult.has_prescreen ? 8 : 0 }}>The landlord will reach out to coordinate.</div>
+              {joinResult && !joinResult.has_prescreen && (
+                <a
+                  href={`/pre-screen/${joinResult.lead_id}`}
+                  style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#15803d', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, padding: '7px 14px', textDecoration: 'none' }}
+                >
+                  ✏️ Tell your roommates about yourself →
+                </a>
+              )}
             </div>
           ) : (
             <>
               <button
-                disabled={joining}
-                onClick={handleJoin}
+                onClick={openJoinModal}
                 style={{
                   width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
-                  cursor: joining ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans,sans-serif',
+                  cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
                   border: 'none', background: ac.gradient, color: '#fff',
-                  opacity: joining ? 0.6 : 1,
                 }}
               >
-                {joining ? 'Joining…' : currentUser ? 'Join This Group →' : 'Sign In to Join →'}
+                {currentUser ? 'Join This Group →' : 'Sign In to Join →'}
               </button>
-              {joinError
-                ? <div style={{ textAlign: 'center', fontSize: 11, color: '#ef4444', marginTop: 6 }}>{joinError}</div>
-                : <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 6 }}>Free · No commitment · Just express interest</div>
-              }
+              <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 6 }}>Free · No commitment · Just express interest</div>
             </>
           )}
         </div>
@@ -596,6 +626,150 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           .gp-section { padding-top: 0 !important; margin-bottom: 20px; }
         }
       `}</style>
+
+      {/* Join modal */}
+      {joinModalOpen && !joined && (
+        <div
+          onClick={() => setJoinModalOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', padding: '0 0 32px' }}
+          >
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: '#e0dbd3' }} />
+            </div>
+
+            <div style={{ padding: '8px 22px 0' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.3px', marginBottom: 4 }}>
+                {group.emoji} Join {group.name}
+              </div>
+              <div style={{ fontSize: 13, color: '#6b6b6b', marginBottom: 20 }}>Free · No commitment · The landlord will follow up</div>
+
+              {/* Room selection */}
+              {pricedRooms.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#9b9b9b', marginBottom: 12 }}>
+                    Which room are you interested in?
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+                    {pricedRooms.map(room => {
+                      const assignedMember = members.find(m => m.room_id === room.id)
+                      const available = room.is_available && !assignedMember
+                      const isSelected = selectedRoomId === room.id
+                      const thumbUrl = room.images?.[0] ?? null
+                      return (
+                        <div
+                          key={room.id}
+                          onClick={() => available && setSelectedRoomId(room.id)}
+                          style={{
+                            border: `2px solid ${isSelected ? ac.main : '#ede9e0'}`,
+                            borderRadius: 12,
+                            background: isSelected ? ac.light : '#faf9f7',
+                            cursor: available ? 'pointer' : 'default',
+                            opacity: available ? 1 : 0.5,
+                            transition: 'border-color 0.15s, background 0.15s',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {/* Room photo strip */}
+                          {room.images.length > 0 && (
+                            <div style={{ display: 'flex', gap: 4, padding: '8px 8px 0', overflowX: 'auto' }}>
+                              {room.images.map((url, pi) => (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  key={pi}
+                                  src={url}
+                                  alt={`${room.name} photo ${pi + 1}`}
+                                  onClick={e => { e.stopPropagation(); openLightbox(room.images, pi, room.name) }}
+                                  style={{ height: 80, width: 'auto', minWidth: 100, borderRadius: 7, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)', flexShrink: 0, cursor: 'zoom-in' }}
+                                />
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px' }}>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
+                              {assignedMember
+                                ? <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>Reserved for {assignedMember.first_name ?? 'a member'}</div>
+                                : <div style={{ fontSize: 11, color: '#10b981', fontWeight: 600, marginTop: 2 }}>Available</div>
+                              }
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>${room.price.toLocaleString()}<span style={{ fontSize: 11, fontWeight: 400, color: '#9b9b9b' }}>/mo</span></div>
+                              {isSelected && <div style={{ fontSize: 10, fontWeight: 700, color: ac.main, marginTop: 2 }}>✓ Selected</div>}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {/* No preference option */}
+                    <div
+                      onClick={() => setSelectedRoomId('none')}
+                      style={{
+                        border: `2px solid ${selectedRoomId === 'none' ? ac.main : '#ede9e0'}`,
+                        borderRadius: 12,
+                        background: selectedRoomId === 'none' ? ac.light : '#faf9f7',
+                        cursor: 'pointer',
+                        padding: '12px 14px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        transition: 'border-color 0.15s, background 0.15s',
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 500, color: '#6b6b6b' }}>No specific preference</div>
+                      {selectedRoomId === 'none' && <span style={{ fontSize: 12, fontWeight: 700, color: ac.main }}>✓</span>}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {joinError && (
+                <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                  {joinError}
+                </div>
+              )}
+
+              {/* CTA */}
+              <div style={{ marginTop: 16 }}>
+                {currentUser ? (
+                  <button
+                    disabled={joining || (pricedRooms.length > 0 && selectedRoomId === null)}
+                    onClick={handleJoin}
+                    style={{
+                      width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
+                      cursor: joining || (pricedRooms.length > 0 && selectedRoomId === null) ? 'not-allowed' : 'pointer',
+                      fontFamily: 'DM Sans,sans-serif', border: 'none', background: ac.gradient, color: '#fff',
+                      opacity: joining || (pricedRooms.length > 0 && selectedRoomId === null) ? 0.5 : 1,
+                      transition: 'opacity 0.15s', letterSpacing: '-0.2px',
+                    }}
+                  >
+                    {joining ? 'Joining…' : pricedRooms.length > 0 && selectedRoomId === null ? 'Pick a room above to continue' : 'Confirm & Join →'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => router.push(`/login?next=/groups/${token}`)}
+                      style={{
+                        width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
+                        cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', border: 'none', background: ac.gradient, color: '#fff', letterSpacing: '-0.2px',
+                      }}
+                    >
+                      Sign In to Join →
+                    </button>
+                    <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 8 }}>
+                      {"Don't have an account? "}
+                      <a href={`/signup?next=/groups/${token}`} style={{ color: ac.main, fontWeight: 600, textDecoration: 'none' }}>Sign up free</a>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox */}
       {lightbox && (
