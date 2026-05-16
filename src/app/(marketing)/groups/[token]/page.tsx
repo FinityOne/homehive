@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use, useCallback } from 'react'
+import { useState, useEffect, use, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 
@@ -23,6 +23,19 @@ type GroupData = {
   property: { id: string; slug: string; name: string; address: string; description: string | null; price: number; beds: number; baths: number; sqft: string | null; hero_image: string | null } | null
   rooms: Room[]
   members: Member[]
+}
+
+type ChatMessage = {
+  id: string; sender_id: string | null; sender_name: string
+  content: string; is_bot: boolean; created_at: string
+}
+
+function formatTime(ts: string) {
+  const diff = Date.now() - new Date(ts).getTime()
+  if (diff < 60000) return 'just now'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+  if (diff < 86400000) return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const LIFESTYLE_LABELS: Record<string, string> = {
@@ -86,6 +99,16 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   const [joinModalOpen, setJoinModalOpen] = useState(false)
   const [selectedRoomId, setSelectedRoomId] = useState<string | 'none' | null>(null)
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; roomName: string } | null>(null)
+  // Chat
+  const [hasChat, setHasChat] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatGroupId, setChatGroupId] = useState<string | null>(null)
+  const [chatInput, setChatInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [chatUnread, setChatUnread] = useState(0)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatOpenRef = useRef(false)
 
   const openLightbox = useCallback((images: string[], index: number, roomName: string) => {
     setLightbox({ images, index, roomName })
@@ -107,15 +130,73 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
     return () => window.removeEventListener('keydown', handler)
   }, [lightbox, lightboxPrev, lightboxNext, closeLightbox])
 
+  const checkChatAccess = useCallback(async (accessToken: string) => {
+    const res = await fetch(`/api/groups/share/${token}/messages`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (res.ok) {
+      const d = await res.json()
+      setHasChat(true)
+      setChatGroupId(d.group_id)
+      setChatMessages(d.messages)
+      setJoined(true)
+    }
+  }, [token])
+
+  const sendMessage = async () => {
+    if (!chatInput.trim() || sending) return
+    const content = chatInput.trim()
+    setChatInput('')
+    setSending(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/groups/share/${token}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ content }),
+    })
+    if (res.ok) {
+      const d = await res.json()
+      if (d.message) setChatMessages(prev => [...prev, d.message])
+    }
+    setSending(false)
+  }
+
   useEffect(() => {
     fetch(`/api/groups/share/${token}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setData(d); else setNotFound(true) })
       .finally(() => setLoading(false))
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUser({ id: user.id, email: user.email! })
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (user) {
+        setCurrentUser({ id: user.id, email: user.email! })
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) checkChatAccess(session.access_token)
+      }
     })
-  }, [token])
+  }, [token, checkChatAccess])
+
+  // Real-time subscription for new messages
+  useEffect(() => {
+    if (!chatGroupId) return
+    const channel = supabase
+      .channel(`chat-${chatGroupId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'group_messages',
+        filter: `group_id=eq.${chatGroupId}`,
+      }, (payload) => {
+        const msg = payload.new as ChatMessage
+        setChatMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
+        if (!chatOpenRef.current) setChatUnread(n => n + 1)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [chatGroupId])
+
+  // Keep chatOpenRef in sync and auto-scroll
+  useEffect(() => { chatOpenRef.current = chatOpen }, [chatOpen])
+  useEffect(() => {
+    if (chatOpen) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60)
+  }, [chatMessages, chatOpen])
 
   const openJoinModal = () => {
     if (joined) return
@@ -141,6 +222,8 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
     if (res.ok || body.already_member) {
       setJoined(true)
       if (body.lead_id) setJoinResult({ lead_id: body.lead_id, has_prescreen: !!body.has_prescreen })
+      if (session) checkChatAccess(session.access_token)
+      setJoinModalOpen(false)
     } else {
       setJoinError(body.error || 'Something went wrong')
     }
@@ -626,6 +709,138 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           .gp-section { padding-top: 0 !important; margin-bottom: 20px; }
         }
       `}</style>
+
+      {/* Floating chat button */}
+      {hasChat && !chatOpen && (
+        <>
+          <style>{`
+            .chat-fab { bottom: 100px !important; }
+            @media (min-width: 768px) { .chat-fab { bottom: 28px !important; } }
+            @keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
+          `}</style>
+          <div className="chat-fab" style={{ position: 'fixed', right: 16, zIndex: 500, fontFamily: 'DM Sans,sans-serif' }}>
+            <button
+              onClick={() => { setChatOpen(true); setChatUnread(0) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 9,
+                background: 'linear-gradient(135deg,#FFC627,#f5a623)',
+                color: '#1a1a1a', border: 'none', borderRadius: 28,
+                padding: '12px 20px 12px 15px',
+                boxShadow: '0 4px 22px rgba(255,198,39,0.55)',
+                cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
+                fontWeight: 700, fontSize: 14, letterSpacing: '-0.2px',
+              }}
+            >
+              <span style={{ fontSize: 20, display: 'inline-block', animation: 'beeWiggle 1.8s ease-in-out infinite' }}>🐝</span>
+              <span>Group Chat</span>
+              {chatUnread > 0 && (
+                <span style={{ background: '#ef4444', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>
+                  {chatUnread > 9 ? '9+' : chatUnread}
+                </span>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Chat overlay */}
+      {chatOpen && hasChat && (
+        <>
+          <style>{`
+            .chat-overlay { position: fixed; inset: 0; z-index: 8500; background: #f5f4f0; display: flex; flex-direction: column; font-family: 'DM Sans',sans-serif; }
+            .chat-messages { flex: 1; overflow-y: auto; padding: 16px 16px 8px; }
+            .chat-messages::-webkit-scrollbar { width: 4px; }
+            .chat-messages::-webkit-scrollbar-thumb { background: #d4c9b0; border-radius: 10px; }
+            @media (min-width: 768px) {
+              .chat-overlay { left: auto; right: 0; width: 420px; border-left: 1px solid #ede9e0; box-shadow: -8px 0 40px rgba(0,0,0,0.12); }
+            }
+          `}</style>
+          <div className="chat-overlay">
+            {/* Header */}
+            <div style={{ background: 'linear-gradient(135deg,#FFC627,#f5a623)', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+              <button
+                onClick={() => setChatOpen(false)}
+                style={{ background: 'rgba(0,0,0,0.1)', border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#1a1a1a', flexShrink: 0 }}
+              >←</button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {data?.group.emoji} {data?.group.name}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)', marginTop: 1 }}>
+                  {data?.members.length ?? 0} member{(data?.members.length ?? 0) !== 1 ? 's' : ''} · 🐝 Honeybee is here to help
+                </div>
+              </div>
+              <span style={{ fontSize: 20, animation: 'beeWiggle 1.8s ease-in-out infinite' }}>🐝</span>
+            </div>
+
+            {/* Messages */}
+            <div className="chat-messages">
+              {chatMessages.map((msg, idx) => {
+                const isOwn = !msg.is_bot && msg.sender_id === currentUser?.id
+                if (msg.is_bot) {
+                  return (
+                    <div key={msg.id} style={{ marginBottom: 18, maxWidth: 320 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, boxShadow: '0 2px 8px rgba(255,198,39,0.4)' }}>🐝</div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>Honeybee</span>
+                        <span style={{ fontSize: 11, color: '#b0a898' }}>{formatTime(msg.created_at)}</span>
+                      </div>
+                      <div style={{ background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: '4px 16px 16px 16px', padding: '12px 16px', fontSize: 13, color: '#1a1a1a', lineHeight: 1.65 }}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  )
+                }
+                if (isOwn) {
+                  return (
+                    <div key={msg.id} style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                      <div>
+                        <div style={{ textAlign: 'right', fontSize: 11, color: '#b0a898', marginBottom: 4 }}>You · {formatTime(msg.created_at)}</div>
+                        <div style={{ background: ac.gradient, color: '#fff', borderRadius: '16px 4px 16px 16px', padding: '10px 14px', fontSize: 13, lineHeight: 1.65, maxWidth: 260, wordBreak: 'break-word' }}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+                const colorIdx = (msg.sender_id || msg.sender_name).charCodeAt(0) % 6
+                const pal = avatarColors(colorIdx)
+                const initials = msg.sender_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+                return (
+                  <div key={msg.id} style={{ marginBottom: 12, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: pal.bg, color: pal.fg, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
+                    <div style={{ maxWidth: 260 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#6b6b6b', marginBottom: 4 }}>{msg.sender_name} · {formatTime(msg.created_at)}</div>
+                      <div style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: '4px 16px 16px 16px', padding: '10px 14px', fontSize: 13, color: '#1a1a1a', lineHeight: 1.65, wordBreak: 'break-word' }}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input bar */}
+            <div style={{ background: '#fff', padding: '12px 16px 28px', display: 'flex', gap: 10, alignItems: 'center', borderTop: '1px solid #ede9e0', flexShrink: 0 }}>
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                placeholder="Say something to the group…"
+                style={{ flex: 1, border: '1.5px solid #e8e5de', borderRadius: 22, padding: '11px 16px', fontSize: 14, outline: 'none', fontFamily: 'DM Sans,sans-serif', background: '#faf9f6', color: '#1a1a1a' }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!chatInput.trim() || sending}
+                style={{ background: 'linear-gradient(135deg,#FFC627,#f5a623)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: chatInput.trim() && !sending ? 'pointer' : 'default', flexShrink: 0, opacity: chatInput.trim() && !sending ? 1 : 0.4, fontSize: 19, color: '#1a1a1a', fontWeight: 700, boxShadow: chatInput.trim() ? '0 2px 10px rgba(255,198,39,0.4)' : 'none', transition: 'opacity 0.15s, box-shadow 0.15s' }}
+              >
+                {sending ? '…' : '→'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Join modal */}
       {joinModalOpen && !joined && (
