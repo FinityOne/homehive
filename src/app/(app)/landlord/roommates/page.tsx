@@ -106,8 +106,12 @@ export default function RoommatesPage() {
   const [deletingGroup, setDeletingGroup] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [copiedShareToken, setCopiedShareToken] = useState<string | null>(null)
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null)
   const [propertyRooms, setPropertyRooms] = useState<PropertyRoom[]>([])
   const [assigningRoom, setAssigningRoom] = useState<string | null>(null)
+  const [editGroupModal, setEditGroupModal] = useState(false)
+  const [editGroupForm, setEditGroupForm] = useState({ name: '', description: '', gender_preference: 'any' })
+  const [savingGroup, setSavingGroup] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -175,6 +179,57 @@ export default function RoommatesPage() {
     navigator.clipboard.writeText(url)
     setCopiedShareToken(shareToken)
     setTimeout(() => setCopiedShareToken(null), 2500)
+  }
+
+  const copyPhone = (phone: string) => {
+    navigator.clipboard.writeText(phone)
+    setCopiedPhone(phone)
+    setTimeout(() => setCopiedPhone(null), 2000)
+  }
+
+  const openEditModal = () => {
+    if (!selectedGroup) return
+    setEditGroupForm({
+      name: selectedGroup.group.name,
+      description: selectedGroup.group.description ?? '',
+      gender_preference: selectedGroup.group.gender_preference ?? 'any',
+    })
+    setEditGroupModal(true)
+  }
+
+  const handleSaveGroup = async () => {
+    if (!selectedGroup || !editGroupForm.name.trim()) return
+    setSavingGroup(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/roommate-groups/${selectedGroup.group.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({
+        name: editGroupForm.name.trim(),
+        description: editGroupForm.description || null,
+        gender_preference: editGroupForm.gender_preference,
+      }),
+    })
+    if (res.ok) {
+      setSelectedGroup(prev => prev ? {
+        ...prev,
+        group: {
+          ...prev.group,
+          name: editGroupForm.name.trim(),
+          description: editGroupForm.description || null,
+          gender_preference: editGroupForm.gender_preference as 'any' | 'girls_only' | 'boys_only',
+        },
+      } : prev)
+      setRoommateGroups(prev => prev.map(g => g.id === selectedGroup.group.id
+        ? { ...g, name: editGroupForm.name.trim(), description: editGroupForm.description || null, gender_preference: editGroupForm.gender_preference as 'any' | 'girls_only' | 'boys_only' }
+        : g
+      ))
+      setEditGroupModal(false)
+      showToast('Group updated')
+    } else {
+      showToast('Failed to save')
+    }
+    setSavingGroup(false)
   }
 
   const handleCreateGroup = async () => {
@@ -343,7 +398,7 @@ export default function RoommatesPage() {
                         </span>
                       )
                     })()}
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         onClick={() => copyShareLink(selectedGroup.group.share_token)}
                         style={{ fontSize: 12, fontWeight: 600, color: copiedShareToken === selectedGroup.group.share_token ? '#10b981' : '#1a1a1a', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
@@ -355,6 +410,12 @@ export default function RoommatesPage() {
                         style={{ fontSize: 12, fontWeight: 600, color: '#6b6b6b', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                       >
                         Preview →
+                      </button>
+                      <button
+                        onClick={openEditModal}
+                        style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        ✏️ Edit Group
                       </button>
                       <button
                         onClick={() => setDeleteGroupId(selectedGroup.group.id)}
@@ -416,7 +477,13 @@ export default function RoommatesPage() {
                               </div>
                               <a href={`mailto:${lead.email}`} style={{ fontSize: 12, color: '#6b9af0', textDecoration: 'none' }}>{lead.email}</a>
                               {lead.phone && (
-                                <div style={{ fontSize: 11, color: '#9b9b9b', marginTop: 1 }}>📞 +1 {formatPhoneDisplay(lead.phone)}</div>
+                                <button
+                                  onClick={() => copyPhone(lead.phone!)}
+                                  title="Click to copy"
+                                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: copiedPhone === lead.phone ? '#10b981' : '#9b9b9b', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}
+                                >
+                                  {copiedPhone === lead.phone ? '✓ Copied' : `📞 ${formatPhoneDisplay(lead.phone)}`}
+                                </button>
                               )}
                             </div>
 
@@ -694,6 +761,78 @@ export default function RoommatesPage() {
                 onClick={handleCreateGroup}
               >
                 {creatingGroup ? 'Creating…' : 'Create Group →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT GROUP MODAL ── */}
+      {editGroupModal && selectedGroup && (
+        <div className="modal-overlay" onClick={() => setEditGroupModal(false)}>
+          <div className="modal-card" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+              <div>
+                <div className="modal-title">Edit Group</div>
+                <div className="modal-sub">Update name, description, or gender preference.</div>
+              </div>
+              <button style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#9b9b9b' }} onClick={() => setEditGroupModal(false)}>✕</button>
+            </div>
+
+            <div className="field-col">
+              <label className="field-label">Group Name *</label>
+              <input
+                className="field-input"
+                value={editGroupForm.name}
+                onChange={e => setEditGroupForm(f => ({ ...f, name: e.target.value }))}
+                autoFocus
+              />
+            </div>
+
+            <div className="field-col">
+              <label className="field-label">Description (optional)</label>
+              <input
+                className="field-input"
+                placeholder="e.g. 3 friends looking for a 3-bed"
+                value={editGroupForm.description}
+                onChange={e => setEditGroupForm(f => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+
+            <div className="field-col">
+              <label className="field-label">Gender Preference</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { value: 'any', label: '⚤ Open to All' },
+                  { value: 'girls_only', label: '♀ Girls Only' },
+                  { value: 'boys_only', label: '♂ Boys Only' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEditGroupForm(f => ({ ...f, gender_preference: opt.value }))}
+                    style={{
+                      flex: 1, padding: '8px 6px', border: `2px solid ${editGroupForm.gender_preference === opt.value ? '#8C1D40' : '#e8e5de'}`,
+                      borderRadius: 8, background: editGroupForm.gender_preference === opt.value ? '#fdf2f5' : '#fff',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                      color: editGroupForm.gender_preference === opt.value ? '#8C1D40' : '#6b6b6b',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setEditGroupModal(false)}>Cancel</button>
+              <button
+                className="btn-primary"
+                style={{ flex: 2 }}
+                disabled={!editGroupForm.name.trim() || savingGroup}
+                onClick={handleSaveGroup}
+              >
+                {savingGroup ? 'Saving…' : 'Save Changes →'}
               </button>
             </div>
           </div>
