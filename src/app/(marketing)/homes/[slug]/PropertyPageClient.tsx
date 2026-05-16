@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, use, useEffect, useRef } from 'react'
+import { useState, use, useEffect, useRef, useCallback } from 'react'
 import { usePostHog } from 'posthog-js/react'
 import { createBrowserClient } from '@supabase/ssr'
 import { getPropertyBySlug, Property } from '@/lib/properties'
@@ -74,6 +74,25 @@ export default function PropertyPageClient({
   }[]>([])
   const titleRef = useRef<HTMLDivElement>(null)
   const formStartedRef = useRef(false)
+  const [roomLightbox, setRoomLightbox] = useState<{ images: string[]; index: number; roomName: string } | null>(null)
+
+  const openRoomLightbox = useCallback((images: string[], index: number, roomName: string) => {
+    setRoomLightbox({ images, index, roomName })
+  }, [])
+  const closeRoomLightbox = useCallback(() => setRoomLightbox(null), [])
+  const roomLbPrev = useCallback(() => setRoomLightbox(lb => lb ? { ...lb, index: (lb.index - 1 + lb.images.length) % lb.images.length } : lb), [])
+  const roomLbNext = useCallback(() => setRoomLightbox(lb => lb ? { ...lb, index: (lb.index + 1) % lb.images.length } : lb), [])
+
+  useEffect(() => {
+    if (!roomLightbox) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') roomLbPrev()
+      else if (e.key === 'ArrowRight') roomLbNext()
+      else if (e.key === 'Escape') closeRoomLightbox()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [roomLightbox, roomLbPrev, roomLbNext, closeRoomLightbox])
 
   const ph = usePostHog()
 
@@ -894,6 +913,86 @@ export default function PropertyPageClient({
               </div>
             )}
 
+            {/* ROOM GALLERY — only for by_room listings that have room photos */}
+            {home.rental_mode === 'by_room' && home.rooms.some(r => r.images.length > 0) && (
+              <div className="section">
+                <div className="section-label">Explore the Rooms</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  {home.rooms.filter(r => r.images.length > 0).map(room => {
+                    const imgs = room.images
+                    return (
+                      <div key={room.id} style={{ border: '1px solid #e8e5de', borderRadius: 12, overflow: 'hidden', background: '#faf9f6' }}>
+                        {/* Airbnb-style grid: 1 photo = full; 2 = split; 3+ = hero + 2 side */}
+                        {imgs.length === 1 && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imgs[0]}
+                            alt={room.name}
+                            onClick={() => openRoomLightbox(imgs, 0, room.name)}
+                            style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block', cursor: 'zoom-in' }}
+                          />
+                        )}
+                        {imgs.length === 2 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                            {imgs.map((url, i) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img key={i} src={url} alt={`${room.name} ${i + 1}`} onClick={() => openRoomLightbox(imgs, i, room.name)} style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block', cursor: 'zoom-in' }} />
+                            ))}
+                          </div>
+                        )}
+                        {imgs.length >= 3 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gridTemplateRows: '140px 140px', gap: 2 }}>
+                            {/* Hero — spans 2 rows */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={imgs[0]} alt={room.name} onClick={() => openRoomLightbox(imgs, 0, room.name)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', gridRow: '1 / 3', cursor: 'zoom-in' }} />
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={imgs[1]} alt={`${room.name} 2`} onClick={() => openRoomLightbox(imgs, 1, room.name)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', cursor: 'zoom-in' }} />
+                            {/* Third slot — shows count badge if more */}
+                            <div style={{ position: 'relative', overflow: 'hidden' }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={imgs[2]} alt={`${room.name} 3`} onClick={() => openRoomLightbox(imgs, 2, room.name)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', cursor: 'zoom-in' }} />
+                              {imgs.length > 3 && (
+                                <div
+                                  onClick={() => openRoomLightbox(imgs, 2, room.name)}
+                                  style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.52)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                >
+                                  <span style={{ color: '#fff', fontWeight: 700, fontSize: 15, fontFamily: 'DM Sans,sans-serif' }}>+{imgs.length - 3} more</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {/* Room info bar */}
+                        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{room.name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: room.is_available ? '#16a34a' : '#9b9b9b', display: 'inline-block', flexShrink: 0 }} />
+                              <span style={{ fontSize: 12, color: room.is_available ? '#16a34a' : '#9b9b9b', fontWeight: 600 }}>{room.is_available ? 'Available' : 'Filled'}</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', fontFamily: 'DM Serif Display,serif' }}>${room.price.toLocaleString()}</div>
+                              <div style={{ fontSize: 11, color: '#9b9b9b' }}>/month</div>
+                            </div>
+                            {imgs.length > 1 && (
+                              <button
+                                onClick={() => openRoomLightbox(imgs, 0, room.name)}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#8C1D40', background: 'rgba(140,29,64,0.06)', border: '1px solid rgba(140,29,64,0.2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap' }}
+                              >
+                                🖼 {imgs.length} photos
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* PRICING */}
             <div className="section">
               <div className="section-label">Transparent Pricing</div>
@@ -1127,6 +1226,69 @@ export default function PropertyPageClient({
         <div style={{ fontSize: '12px', color: '#9b9b9b', marginBottom: '20px' }}>📍 {home.address}</div>
         {FormContent()}
       </div>
+
+      {/* ── ROOM LIGHTBOX ─────────────────────────────── */}
+      {roomLightbox && (
+        <div
+          onClick={closeRoomLightbox}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.93)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={roomLightbox.images[roomLightbox.index]}
+              alt={`${roomLightbox.roomName} photo ${roomLightbox.index + 1}`}
+              style={{ maxWidth: '90vw', maxHeight: '78vh', objectFit: 'contain', borderRadius: 10, userSelect: 'none', display: 'block' }}
+              draggable={false}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', opacity: 0.9 }}>{roomLightbox.roomName}</span>
+              {roomLightbox.images.length > 1 && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>{roomLightbox.index + 1} / {roomLightbox.images.length}</span>
+              )}
+            </div>
+            {roomLightbox.images.length > 1 && (
+              <>
+                <button onClick={e => { e.stopPropagation(); roomLbPrev() }} style={{ position: 'absolute', left: -60, top: '40%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: '#fff', fontFamily: 'DM Sans,sans-serif' }}>‹</button>
+                <button onClick={e => { e.stopPropagation(); roomLbNext() }} style={{ position: 'absolute', right: -60, top: '40%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: '#fff', fontFamily: 'DM Sans,sans-serif' }}>›</button>
+              </>
+            )}
+            {roomLightbox.images.length > 1 && (
+              <div style={{ display: 'flex', gap: 6 }}>
+                {roomLightbox.images.map((_, di) => (
+                  <button key={di} onClick={e => { e.stopPropagation(); setRoomLightbox(lb => lb ? { ...lb, index: di } : lb) }} style={{ width: di === roomLightbox.index ? 20 : 8, height: 8, borderRadius: 4, background: di === roomLightbox.index ? '#fff' : 'rgba(255,255,255,0.3)', border: 'none', cursor: 'pointer', padding: 0, transition: 'all 0.2s' }} />
+                ))}
+              </div>
+            )}
+            {/* Thumbnail strip */}
+            {roomLightbox.images.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', maxWidth: '80vw', paddingBottom: 2 }}>
+                {roomLightbox.images.map((url, ti) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={ti}
+                    src={url}
+                    alt=""
+                    onClick={e => { e.stopPropagation(); setRoomLightbox(lb => lb ? { ...lb, index: ti } : lb) }}
+                    style={{ height: 52, width: 70, objectFit: 'cover', borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${ti === roomLightbox.index ? '#fff' : 'transparent'}`, opacity: ti === roomLightbox.index ? 1 : 0.55, transition: 'all 0.15s' }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={closeRoomLightbox} style={{ position: 'fixed', top: 18, right: 18, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif' }}>×</button>
+          {/* Mobile tap zones */}
+          {roomLightbox.images.length > 1 && (
+            <style>{`@media (max-width: 767px) { .rlb-arrow { display: none !important; } }`}</style>
+          )}
+          {roomLightbox.images.length > 1 && (
+            <>
+              <div onClick={e => { e.stopPropagation(); roomLbPrev() }} style={{ position: 'fixed', left: 0, top: 60, bottom: 80, width: '38%', cursor: 'pointer', zIndex: 1 }} />
+              <div onClick={e => { e.stopPropagation(); roomLbNext() }} style={{ position: 'fixed', right: 0, top: 60, bottom: 80, width: '38%', cursor: 'pointer', zIndex: 1 }} />
+            </>
+          )}
+        </div>
+      )}
     </>
   )
 }
