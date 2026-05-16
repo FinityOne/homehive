@@ -18,15 +18,20 @@ type RoommateGroup = {
   description: string | null
   property_slug: string | null
   emoji: string
+  gender_preference: 'any' | 'girls_only' | 'boys_only'
+  share_token: string
   created_at: string
   member_count: number
 }
+
+type PropertyRoom = { id: string; name: string; price: number; is_available: boolean }
 
 type GroupMember = {
   id: string
   lead_id: string
   notes: string | null
   added_at: string
+  room_id: string | null
   has_prescreen: boolean
   leads: {
     id: string
@@ -42,6 +47,14 @@ type GroupMember = {
 }
 
 type GroupDetail = { group: RoommateGroup; members: GroupMember[] }
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+
+const GENDER_PREF_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  any:        { label: 'Open to All', color: '#059669', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)' },
+  girls_only: { label: 'Girls Only',  color: '#db2777', bg: 'rgba(236,72,153,0.08)', border: 'rgba(236,72,153,0.25)' },
+  boys_only:  { label: 'Boys Only',   color: '#2563eb', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.25)' },
+}
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
@@ -86,12 +99,15 @@ export default function RoommatesPage() {
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null)
   const [groupDetailLoading, setGroupDetailLoading] = useState(false)
   const [createGroupModal, setCreateGroupModal] = useState(false)
-  const [createGroupForm, setCreateGroupForm] = useState({ name: '', description: '', property_slug: '', emoji: '🏠' })
+  const [createGroupForm, setCreateGroupForm] = useState({ name: '', description: '', property_slug: '', emoji: '🏠', gender_preference: 'any' })
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null)
   const [deletingGroup, setDeletingGroup] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [copiedShareToken, setCopiedShareToken] = useState<string | null>(null)
+  const [propertyRooms, setPropertyRooms] = useState<PropertyRoom[]>([])
+  const [assigningRoom, setAssigningRoom] = useState<string | null>(null)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -118,8 +134,47 @@ export default function RoommatesPage() {
     if (res.ok) {
       const detail = await res.json()
       setSelectedGroup(detail)
+      // Load rooms for the linked property
+      if (detail.group?.property_slug) {
+        const prop = properties.find((p: Property) => p.slug === detail.group.property_slug)
+        if (prop) {
+          const { data: rooms } = await supabase
+            .from('property_rooms')
+            .select('id, name, price, is_available')
+            .eq('property_id', (await supabase.from('properties').select('id').eq('slug', prop.slug).single()).data?.id)
+            .order('position', { ascending: true })
+          setPropertyRooms((rooms || []) as PropertyRoom[])
+        }
+      } else {
+        setPropertyRooms([])
+      }
     }
     setGroupDetailLoading(false)
+  }
+
+  const handleAssignRoom = async (groupId: string, leadId: string, roomId: string | null) => {
+    setAssigningRoom(leadId)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/roommate-groups/${groupId}/members`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ lead_id: leadId, room_id: roomId }),
+    })
+    if (res.ok) {
+      setSelectedGroup(prev => prev ? {
+        ...prev,
+        members: prev.members.map(m => m.lead_id === leadId ? { ...m, room_id: roomId } : m),
+      } : prev)
+      showToast(roomId ? 'Room assigned' : 'Room cleared')
+    }
+    setAssigningRoom(null)
+  }
+
+  const copyShareLink = (shareToken: string) => {
+    const url = `${SITE_URL}/groups/${shareToken}`
+    navigator.clipboard.writeText(url)
+    setCopiedShareToken(shareToken)
+    setTimeout(() => setCopiedShareToken(null), 2500)
   }
 
   const handleCreateGroup = async () => {
@@ -133,7 +188,7 @@ export default function RoommatesPage() {
     })
     if (res.ok) {
       setCreateGroupModal(false)
-      setCreateGroupForm({ name: '', description: '', property_slug: '', emoji: '🏠' })
+      setCreateGroupForm({ name: '', description: '', property_slug: '', emoji: '🏠', gender_preference: 'any' })
       await loadRoommateGroups()
       showToast('Roommate group created!')
     } else {
@@ -280,7 +335,27 @@ export default function RoommatesPage() {
                         </span>
                       ) : null
                     })()}
+                    {(() => {
+                      const gm = GENDER_PREF_META[selectedGroup.group.gender_preference || 'any']
+                      return (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: gm.color, background: gm.bg, border: `1px solid ${gm.border}`, borderRadius: 20, padding: '3px 10px' }}>
+                          {gm.label}
+                        </span>
+                      )
+                    })()}
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => copyShareLink(selectedGroup.group.share_token)}
+                        style={{ fontSize: 12, fontWeight: 600, color: copiedShareToken === selectedGroup.group.share_token ? '#10b981' : '#1a1a1a', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        {copiedShareToken === selectedGroup.group.share_token ? '✓ Link Copied!' : '🔗 Copy Share Link'}
+                      </button>
+                      <button
+                        onClick={() => window.open(`${SITE_URL}/groups/${selectedGroup.group.share_token}`, '_blank')}
+                        style={{ fontSize: 12, fontWeight: 600, color: '#6b6b6b', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        Preview →
+                      </button>
                       <button
                         onClick={() => setDeleteGroupId(selectedGroup.group.id)}
                         style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
@@ -376,6 +451,23 @@ export default function RoommatesPage() {
                               )}
                             </div>
 
+                            {/* Room assignment */}
+                            {propertyRooms.length > 0 && (
+                              <select
+                                value={member.room_id ?? ''}
+                                disabled={assigningRoom === lead.id}
+                                onChange={e => handleAssignRoom(selectedGroup.group.id, lead.id, e.target.value || null)}
+                                style={{ fontSize: 11, padding: '6px 10px', border: '1.5px solid #e8e5de', borderRadius: 7, background: '#fff', color: '#1a1a1a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", minWidth: 130 }}
+                              >
+                                <option value="">Assign room…</option>
+                                {propertyRooms.map(r => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.name}{r.price ? ` — $${r.price}/mo` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
                             {/* Actions */}
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                               <button
@@ -466,10 +558,24 @@ export default function RoommatesPage() {
                           ) : (
                             <span style={{ fontSize: 11, color: '#b0a898' }}>Any property</span>
                           )}
+                          {(() => {
+                            const gm = GENDER_PREF_META[group.gender_preference || 'any']
+                            return (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: gm.color, background: gm.bg, border: `1px solid ${gm.border}`, borderRadius: 20, padding: '2px 8px' }}>
+                                {gm.label}
+                              </span>
+                            )
+                          })()}
                         </div>
 
-                        <div style={{ marginTop: 12, fontSize: 11, color: '#8C1D40', fontWeight: 600 }}>
-                          Open group →
+                        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ fontSize: 11, color: '#8C1D40', fontWeight: 600 }}>Open group →</div>
+                          <button
+                            onClick={e => { e.stopPropagation(); copyShareLink(group.share_token) }}
+                            style={{ fontSize: 10, fontWeight: 600, color: copiedShareToken === group.share_token ? '#10b981' : '#9b9b9b', background: 'transparent', border: '1px solid #e8e5de', borderRadius: 6, padding: '4px 9px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                          >
+                            {copiedShareToken === group.share_token ? '✓ Copied' : '🔗 Share'}
+                          </button>
                         </div>
                       </div>
                     )
@@ -553,6 +659,31 @@ export default function RoommatesPage() {
                 </select>
               </div>
             )}
+
+            <div className="field-col">
+              <label className="field-label">Gender Preference</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { value: 'any', label: '⚤ Open to All' },
+                  { value: 'girls_only', label: '♀ Girls Only' },
+                  { value: 'boys_only', label: '♂ Boys Only' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setCreateGroupForm(f => ({ ...f, gender_preference: opt.value }))}
+                    style={{
+                      flex: 1, padding: '8px 6px', border: `2px solid ${createGroupForm.gender_preference === opt.value ? '#8C1D40' : '#e8e5de'}`,
+                      borderRadius: 8, background: createGroupForm.gender_preference === opt.value ? '#fdf2f5' : '#fff',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                      color: createGroupForm.gender_preference === opt.value ? '#8C1D40' : '#6b6b6b',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
               <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setCreateGroupModal(false)}>Cancel</button>

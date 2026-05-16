@@ -78,9 +78,17 @@ export async function POST(req: Request) {
 
   if (!name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 })
 
+  const { gender_preference } = body
   const { data, error } = await supabaseAdmin
     .from('roommate_groups')
-    .insert([{ landlord_id: landlordId, name: name.trim(), description: description || null, property_slug: property_slug || null, emoji: emoji || '🏠' }])
+    .insert([{
+      landlord_id: landlordId,
+      name: name.trim(),
+      description: description || null,
+      property_slug: property_slug || null,
+      emoji: emoji || '🏠',
+      gender_preference: ['any', 'girls_only', 'boys_only'].includes(gender_preference) ? gender_preference : 'any',
+    }])
     .select()
     .single()
 

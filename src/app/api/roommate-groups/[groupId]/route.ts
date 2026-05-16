@@ -23,7 +23,7 @@ export async function GET(
 
   const { data: group, error } = await supabaseAdmin
     .from('roommate_groups')
-    .select('*')
+    .select('*, share_token, gender_preference')
     .eq('id', groupId)
     .eq('landlord_id', landlordId)
     .single()
@@ -32,7 +32,7 @@ export async function GET(
 
   const { data: members } = await supabaseAdmin
     .from('roommate_group_members')
-    .select('id, lead_id, notes, added_at, leads(id, first_name, last_name, email, phone, status, closed_reason, property, created_at, move_in_date)')
+    .select('id, lead_id, notes, added_at, room_id, leads(id, first_name, last_name, email, phone, status, closed_reason, property, created_at, move_in_date)')
     .eq('group_id', groupId)
     .order('added_at', { ascending: true })
 
@@ -64,7 +64,7 @@ export async function PATCH(
   if (!landlordId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const allowed = ['name', 'description', 'property_slug', 'emoji']
+  const allowed = ['name', 'description', 'property_slug', 'emoji', 'gender_preference']
   const update: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in body) update[key] = body[key]
