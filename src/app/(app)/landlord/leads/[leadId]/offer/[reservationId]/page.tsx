@@ -9,6 +9,15 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+type ReservationRoomEntry = {
+  room_id: string
+  room_name: string
+  original_price: number
+  discount_amount: number | null
+  discount_type: 'dollars' | 'percent' | null
+  discounted_price: number | null
+}
+
 type Reservation = {
   id: string
   accept_token: string
@@ -23,7 +32,8 @@ type Reservation = {
   accepted_at: string | null
   lead: { first_name: string | null; last_name: string | null; email: string } | null
   property: { name: string; address: string; heroImage: string }
-  rooms: { name: string; price: number }[] // individual room prices for whole-property offers
+  // multi-room JSONB entries OR whole-property room breakdown
+  rooms: ReservationRoomEntry[] | { name: string; price: number }[]
   acceptUrl: string
 }
 
@@ -208,14 +218,30 @@ export default function OfferPreviewPage({
   }
 
   const discountedPrice = calcPrice(res.original_price, res.discount_amount, res.discount_type)
-  const roomLabel = res.room_name || (res.room_id ? 'Room' : 'Entire Property')
+
+  // Detect multi-room offer (JSONB rooms with room_id field)
+  const isMultiRoom = res.rooms.length > 0 && 'room_id' in res.rooms[0]
+  const multiRooms = isMultiRoom ? (res.rooms as ReservationRoomEntry[]) : []
+  const wholePropertyRooms = !isMultiRoom ? (res.rooms as { name: string; price: number }[]) : []
+
+  // For multi-room per-room discounts: compute total discounted
+  const multiRoomDiscountedTotal = isMultiRoom
+    ? multiRooms.reduce((s, r) => s + (r.discounted_price ?? r.original_price), 0)
+    : null
+  const effectiveDiscountedPrice = discountedPrice ?? (isMultiRoom && multiRoomDiscountedTotal !== null && multiRoomDiscountedTotal < res.original_price ? multiRoomDiscountedTotal : null)
+
+  const roomLabel = isMultiRoom
+    ? multiRooms.map(r => r.room_name).join(' & ')
+    : (res.room_name || (res.room_id ? 'Room' : 'Entire Property'))
   const leadName = [res.lead?.first_name, res.lead?.last_name].filter(Boolean).join(' ') || res.lead?.email || 'Lead'
 
   const savingsLabel = res.discount_amount && res.discount_type
     ? res.discount_type === 'dollars'
       ? `$${res.discount_amount} off/mo`
       : `${res.discount_amount}% off`
-    : null
+    : isMultiRoom && effectiveDiscountedPrice !== null
+      ? `$${res.original_price - effectiveDiscountedPrice} off/mo`
+      : null
 
   const editBasePrice = res.original_price
 
@@ -443,16 +469,47 @@ export default function OfferPreviewPage({
 
               <table className="op-table">
                 <tbody>
-                  {/* Whole-property with room breakdown */}
-                  {!res.room_id && res.rooms && res.rooms.length > 0 ? (
+                  {/* Multi-room offer (JSONB rooms with per-room discounts) */}
+                  {isMultiRoom ? (
                     <>
                       <tr>
                         <td className="col-label" style={{ paddingBottom: '4px' }}>Rooms Included</td>
                         <td className="col-value" style={{ paddingBottom: '4px' }}>
-                          <span style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 400 }}>{res.rooms.length} bedrooms</span>
+                          <span style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 400 }}>{multiRooms.length} room{multiRooms.length > 1 ? 's' : ''}</span>
                         </td>
                       </tr>
-                      {res.rooms.map((room, i) => (
+                      {multiRooms.map((room, i) => (
+                        <tr key={i} style={{ opacity: 0.9 }}>
+                          <td style={{ paddingLeft: '14px', fontSize: '12px', color: '#6b6b6b', paddingTop: '6px', paddingBottom: '6px', borderBottom: '1px solid #f5f4f0' }}>
+                            🛏 {room.room_name}
+                            {room.discount_amount && room.discount_type && (
+                              <span style={{ marginLeft: '6px', background: '#fdf2f5', color: '#8C1D40', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px' }}>
+                                {room.discount_type === 'dollars' ? `$${room.discount_amount} off` : `${room.discount_amount}% off`}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ fontSize: '12px', textAlign: 'right', paddingTop: '6px', paddingBottom: '6px', borderBottom: '1px solid #f5f4f0' }}>
+                            {room.discounted_price !== null ? (
+                              <>
+                                <span style={{ textDecoration: 'line-through', color: '#b0a898', marginRight: '6px' }}>${room.original_price.toLocaleString()}</span>
+                                <span style={{ fontWeight: 700, color: '#8C1D40' }}>${room.discounted_price.toLocaleString()}/mo</span>
+                              </>
+                            ) : (
+                              <span style={{ fontWeight: 600, color: '#4a4a4a' }}>${room.original_price.toLocaleString()}/mo</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  ) : wholePropertyRooms.length > 0 ? (
+                    <>
+                      <tr>
+                        <td className="col-label" style={{ paddingBottom: '4px' }}>Rooms Included</td>
+                        <td className="col-value" style={{ paddingBottom: '4px' }}>
+                          <span style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 400 }}>{wholePropertyRooms.length} bedrooms</span>
+                        </td>
+                      </tr>
+                      {wholePropertyRooms.map((room, i) => (
                         <tr key={i} style={{ opacity: 0.85 }}>
                           <td style={{ paddingLeft: '14px', fontSize: '12px', color: '#6b6b6b', paddingTop: '5px', paddingBottom: '5px', borderBottom: '1px solid #f5f4f0' }}>
                             🛏 {room.name}
@@ -463,9 +520,9 @@ export default function OfferPreviewPage({
                         </tr>
                       ))}
                       <tr>
-                        <td className="col-label" style={{ paddingTop: '10px' }}>Subtotal ({res.rooms.length} rooms)</td>
+                        <td className="col-label" style={{ paddingTop: '10px' }}>Subtotal ({wholePropertyRooms.length} rooms)</td>
                         <td className="col-value" style={{ paddingTop: '10px' }}>
-                          ${res.rooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo
+                          ${wholePropertyRooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo
                         </td>
                       </tr>
                     </>
@@ -476,10 +533,17 @@ export default function OfferPreviewPage({
                     </tr>
                   )}
 
-                  {/* Discount row */}
-                  {savingsLabel && (
+                  {/* Collective discount row (not shown for per-room since shown inline above) */}
+                  {savingsLabel && !isMultiRoom && (
                     <tr>
                       <td className="col-label">Discount</td>
+                      <td className="col-value" style={{ color: '#8C1D40' }}>− {savingsLabel}</td>
+                    </tr>
+                  )}
+                  {/* Bundle discount row for multi-room */}
+                  {isMultiRoom && res.discount_amount && res.discount_type && (
+                    <tr>
+                      <td className="col-label">Bundle Discount</td>
                       <td className="col-value" style={{ color: '#8C1D40' }}>− {savingsLabel}</td>
                     </tr>
                   )}
@@ -490,14 +554,14 @@ export default function OfferPreviewPage({
                   </tr>
                   <tr className="op-price-row">
                     <td className="op-price-label">
-                      {discountedPrice !== null ? 'Your Price' : 'Monthly Rent'}
+                      {effectiveDiscountedPrice !== null ? 'Your Price' : 'Monthly Rent'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      {discountedPrice !== null ? (
+                      {effectiveDiscountedPrice !== null ? (
                         <>
                           <div className="op-price-original">${res.original_price.toLocaleString()}/mo</div>
-                          <div className="op-price-value">${discountedPrice.toLocaleString()}/mo</div>
-                          <div><span className="op-savings-badge">{savingsLabel} — exclusive</span></div>
+                          <div className="op-price-value">${effectiveDiscountedPrice.toLocaleString()}/mo</div>
+                          {savingsLabel && <div><span className="op-savings-badge">{savingsLabel} — exclusive</span></div>}
                         </>
                       ) : (
                         <div className="op-price-value">${res.original_price.toLocaleString()}/mo</div>

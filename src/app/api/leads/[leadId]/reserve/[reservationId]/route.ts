@@ -26,7 +26,7 @@ export async function GET(
     .from('lead_reservations')
     .select(`
       id, accept_token, status, expires_at, original_price,
-      discount_amount, discount_type, room_id, room_name,
+      discount_amount, discount_type, room_id, room_name, rooms,
       created_at, accepted_at, landlord_id,
       leads(first_name, last_name, email),
       properties(id, name, address, owner_id, property_images(url, position))
@@ -42,9 +42,18 @@ export async function GET(
 
   const heroImage = (prop.property_images ?? []).sort((a, b) => a.position - b.position)[0]?.url || ''
 
-  // If whole-property offer, fetch individual room prices for the breakdown
-  let rooms: { name: string; price: number }[] = []
-  if (!res.room_id) {
+  // reservationRooms: populated from JSONB column (multi-room offer) or fetched for whole-property breakdown
+  type ReservationRoomEntry = {
+    room_id: string; room_name: string; original_price: number
+    discount_amount: number | null; discount_type: 'dollars' | 'percent' | null; discounted_price: number | null
+  }
+  let reservationRooms: ReservationRoomEntry[] | { name: string; price: number }[] = []
+
+  if (res.rooms && Array.isArray(res.rooms) && res.rooms.length > 0) {
+    // Multi-room offer stored in JSONB
+    reservationRooms = res.rooms as ReservationRoomEntry[]
+  } else if (!res.room_id) {
+    // Whole-property offer — fetch room breakdown for display
     const { data: roomData } = await supabaseAdmin
       .from('property_rooms')
       .select('name, price, is_available, position')
@@ -52,7 +61,7 @@ export async function GET(
       .eq('is_available', true)
       .order('position', { ascending: true })
     if (roomData && roomData.length > 0) {
-      rooms = (roomData as { name: string | null; price: number; position: number }[])
+      reservationRooms = (roomData as { name: string | null; price: number; position: number }[])
         .map((r, i) => ({ name: r.name || `Room ${i + 1}`, price: r.price }))
     }
   }
@@ -77,7 +86,7 @@ export async function GET(
       address: prop.address,
       heroImage,
     },
-    rooms, // populated when room_id is null and property has by-room pricing
+    rooms: reservationRooms, // multi-room JSONB or whole-property breakdown
     acceptUrl: `${siteUrl}/reserve/${res.accept_token}`,
   })
 }

@@ -29,7 +29,7 @@ export const SPECIAL_CATEGORIES = [
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
-export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'late' | 'missed'
+export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'late' | 'missed' | 'voided'
 export type SpecialCategory = 'security_deposit' | 'special' | 'penalty' | 'other'
 
 export type PaymentLineItem = {
@@ -49,6 +49,11 @@ export type PaymentPlanTenant = {
   monthly_total: number
   created_at: string
   line_items: PaymentLineItem[]
+  start_date: string | null
+  end_date: string | null
+  status: 'active' | 'terminated' | 'completed'
+  termination_date: string | null
+  termination_reason: string | null
 }
 
 export type LateFeeRule = {
@@ -72,6 +77,7 @@ export type ScheduledPayment = {
   paid_date: string | null
   late_fees_applied: number
   notes: string | null
+  void_reason: string | null
   created_at: string
   updated_at: string
   tenant?: { name: string; email: string | null }
@@ -116,6 +122,7 @@ export type PaymentPlan = {
 export function getEffectiveStatus(
   payment: Pick<ScheduledPayment, 'status' | 'due_date'>
 ): PaymentStatus {
+  if (payment.status === 'voided') return 'voided'
   if (payment.status !== 'pending') return payment.status
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -124,6 +131,7 @@ export function getEffectiveStatus(
 }
 
 export function isOverdue(payment: Pick<ScheduledPayment, 'status' | 'due_date'>): boolean {
+  if (payment.status === 'voided') return false
   const s = getEffectiveStatus(payment)
   return s === 'late' || s === 'missed'
 }
@@ -229,6 +237,54 @@ export function fmtOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100
   return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+// Prorate a monthly amount for a partial first month.
+// startDate is when the tenant starts; dueDay is the plan's payment due day.
+// Returns { proratedAmount, fullMonths, startDate } to show a preview.
+export function computeProration(monthlyAmount: number, startDate: string, dueDay: number): {
+  proratedAmount: number
+  proratedDays: number
+  totalDays: number
+  firstDueDate: string
+} {
+  const start = new Date(startDate + 'T00:00:00')
+  const year  = start.getFullYear()
+  const month = start.getMonth()
+
+  // Last day of start month
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  // Due day clamped
+  const clampedDueDay = Math.min(dueDay, lastDay)
+
+  // If start is on/before due day, first full payment is this month (prorate from start → due day)
+  // If start is after due day, first full payment is next month (prorate from start → end of month)
+  let proratedDays: number
+  let totalDays = 30.5 // average month
+  let firstDueYear = year
+  let firstDueMonth = month + 1 // next month (0-indexed → 1-indexed → shift +1)
+
+  const dueThisMonth = new Date(year, month, clampedDueDay)
+  if (start <= dueThisMonth) {
+    // Start before/on due day this month → prorate start→dueDay
+    proratedDays = clampedDueDay - start.getDate() + 1
+    firstDueYear = year
+    firstDueMonth = month  // 0-indexed
+  } else {
+    // Start after due day → prorate remainder of month, full rent starts next month
+    proratedDays = lastDay - start.getDate() + 1
+    firstDueYear = month === 11 ? year + 1 : year
+    firstDueMonth = (month + 1) % 12
+  }
+
+  const proratedAmount = Math.round((monthlyAmount / totalDays) * proratedDays * 100) / 100
+
+  // First full month due date
+  const nextLastDay = new Date(firstDueYear, firstDueMonth + 1, 0).getDate()
+  const nextDueDay  = Math.min(dueDay, nextLastDay)
+  const firstDueDate = `${firstDueYear}-${String(firstDueMonth + 1).padStart(2, '0')}-${String(nextDueDay).padStart(2, '0')}`
+
+  return { proratedAmount, proratedDays, totalDays, firstDueDate }
 }
 
 // ─── DATA ACCESS ─────────────────────────────────────────────────────────────

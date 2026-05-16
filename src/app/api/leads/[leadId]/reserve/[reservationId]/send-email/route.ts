@@ -25,7 +25,7 @@ export async function POST(
     .from('lead_reservations')
     .select(`
       id, accept_token, status, expires_at, original_price,
-      discount_amount, discount_type, room_id, room_name, landlord_id,
+      discount_amount, discount_type, room_id, room_name, rooms, landlord_id,
       leads(first_name, email),
       properties(name, address, owner_id, property_images(url, position))
     `)
@@ -60,6 +60,9 @@ export async function POST(
   const discount_amount = res.discount_amount as number | null
   const discount_type = res.discount_type as 'dollars' | 'percent' | null
 
+  type ReservationRoomEntry = { room_id: string; room_name: string; original_price: number; discount_amount: number | null; discount_type: 'dollars' | 'percent' | null; discounted_price: number | null }
+  const roomsJsonb = (Array.isArray(res.rooms) && res.rooms.length > 0) ? (res.rooms as ReservationRoomEntry[]) : null
+
   let discountedPrice: number | null = null
   let savingsLabel = ''
   if (discount_amount && discount_type) {
@@ -71,9 +74,31 @@ export async function POST(
       savingsLabel = `${discount_amount}% off`
     }
   }
+  // Per-room discount total
+  if (roomsJsonb && !discount_amount) {
+    const totalDiscounted = roomsJsonb.reduce((s, r) => s + (r.discounted_price ?? r.original_price), 0)
+    if (totalDiscounted < basePrice) {
+      discountedPrice = totalDiscounted
+      savingsLabel = `$${basePrice - totalDiscounted} off`
+    }
+  }
 
   const heroImage = (prop.property_images ?? []).sort((a, b) => a.position - b.position)[0]?.url || ''
-  const roomLabel = res.room_name ? res.room_name : (res.room_id ? 'Your Room' : 'Entire Property')
+  const roomLabel = roomsJsonb
+    ? roomsJsonb.map(r => r.room_name).join(' & ')
+    : (res.room_name ? res.room_name : (res.room_id ? 'Your Room' : 'Entire Property'))
+
+  // Per-room breakdown rows for multi-room email
+  const multiRoomRows = roomsJsonb ? roomsJsonb.map(r => {
+    const rFinal = r.discounted_price ?? r.original_price
+    const rSaved = r.discounted_price !== null && r.discount_amount && r.discount_type
+      ? ` <span style="color:#8C1D40;font-weight:700;">(${r.discount_type === 'dollars' ? `$${r.discount_amount} off` : `${r.discount_amount}% off`})</span>`
+      : ''
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #f0ede6;">
+      <div style="font-size:13px;color:#6b6b6b;">🛏 ${r.room_name}</div>
+      <div style="font-size:13px;font-weight:600;color:#1a1a1a;text-align:right;">$${rFinal.toLocaleString()}/mo${rSaved}</div>
+    </div>`
+  }).join('') : ''
   const subject = `🔒 ${tenantName}, your spot at ${prop.name} is reserved!`
 
   const expiresFormatted = new Date(res.expires_at).toLocaleString('en-US', {
@@ -144,6 +169,13 @@ export async function POST(
           <div style="font-size:13px;color:#9b9b9b;">Property</div>
           <div style="font-size:13px;font-weight:600;color:#1a1a1a;text-align:right;">${prop.name}</div>
         </div>
+        ${roomsJsonb ? `
+        <div style="font-size:11px;font-weight:700;color:#9b9b9b;text-transform:uppercase;letter-spacing:0.6px;padding:6px 0 2px;">Rooms</div>
+        ${multiRoomRows}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f0ede6;">
+          <div style="font-size:13px;color:#9b9b9b;">Total / month</div>
+          <div style="text-align:right;">${priceBlock}</div>
+        </div>` : `
         ${roomLabel !== 'Entire Property' ? `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f0ede6;">
           <div style="font-size:13px;color:#9b9b9b;">Room</div>
@@ -152,7 +184,7 @@ export async function POST(
         <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f0ede6;">
           <div style="font-size:13px;color:#9b9b9b;">Monthly Rent</div>
           <div style="text-align:right;">${priceBlock}</div>
-        </div>
+        </div>`}
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;">
           <div style="font-size:13px;color:#9b9b9b;">Held Until</div>
           <div style="font-size:13px;font-weight:600;color:#ef4444;text-align:right;">${expiresFormatted}</div>

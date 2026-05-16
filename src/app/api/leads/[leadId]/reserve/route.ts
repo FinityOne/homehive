@@ -23,8 +23,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
 
   const body = await req.json()
   const {
-    room_id,           // null = entire property
-    discount_amount,   // number or null
+    room_id,           // null = entire property (single-room compat)
+    rooms: roomsInput, // [{ room_id, discount_amount, discount_type }] for multi-room
+    discount_amount,   // collective discount amount (or single-room discount)
     discount_type,     // 'dollars' | 'percent' | null
     expires_at,        // ISO string
     send_email = true, // false = create without sending (preview flow)
@@ -38,30 +39,60 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
   // Fetch property (include rooms for by_room price summing)
   const { data: prop } = await supabaseAdmin
     .from('properties')
-    .select('id, name, address, price, owner_id, rental_mode, property_images(url, position), property_rooms(id, price, is_available)')
+    .select('id, name, address, price, owner_id, rental_mode, property_images(url, position), property_rooms(id, name, price, is_available)')
     .eq('slug', lead.property)
     .single()
   if (!prop || prop.owner_id !== user.id) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
-  // Determine room details
+  type RoomsRow = { id: string; name: string | null; price: number; is_available: boolean }
+  const allPropRooms = (prop.property_rooms as RoomsRow[] | null) ?? []
+
+  // ── Multi-room offer ─────────────────────────────────────────────────────────
+  type RoomInput = { room_id: string; discount_amount?: number | null; discount_type?: 'dollars' | 'percent' | null }
+  const isMultiRoom = Array.isArray(roomsInput) && roomsInput.length > 0
+
+  type ReservationRoomEntry = {
+    room_id: string; room_name: string; original_price: number
+    discount_amount: number | null; discount_type: 'dollars' | 'percent' | null; discounted_price: number | null
+  }
+
+  let roomsJsonb: ReservationRoomEntry[] | null = null
   let roomName: string | null = null
   let basePrice = prop.price as number
 
-  if (room_id) {
-    const { data: room } = await supabaseAdmin
-      .from('property_rooms').select('name, price').eq('id', room_id).single()
-    if (room) {
-      roomName = room.name || null
-      basePrice = room.price
+  if (isMultiRoom) {
+    const entries: ReservationRoomEntry[] = []
+    for (const ri of (roomsInput as RoomInput[]).slice(0, 2)) {
+      const propRoom = allPropRooms.find(r => r.id === ri.room_id)
+      if (!propRoom) continue
+      const rda = ri.discount_amount ?? null
+      const rdt = ri.discount_type ?? null
+      let rdp: number | null = null
+      if (rda && rdt) {
+        rdp = rdt === 'dollars' ? Math.max(0, propRoom.price - rda) : Math.round(propRoom.price * (1 - rda / 100))
+      }
+      entries.push({ room_id: ri.room_id, room_name: propRoom.name || `Room`, original_price: propRoom.price, discount_amount: rda, discount_type: rdt, discounted_price: rdp })
+    }
+    roomsJsonb = entries
+    basePrice = entries.reduce((s, r) => s + r.original_price, 0)
+  } else if (room_id) {
+    // Single room
+    const propRoom = allPropRooms.find(r => r.id === room_id)
+    if (propRoom) {
+      roomName = propRoom.name || null
+      basePrice = propRoom.price
+    } else {
+      const { data: room } = await supabaseAdmin
+        .from('property_rooms').select('name, price').eq('id', room_id).single()
+      if (room) { roomName = room.name || null; basePrice = room.price }
     }
   } else if (prop.rental_mode === 'by_room') {
     // Sum all available room prices for the whole-property offer
-    const rooms = (prop.property_rooms as { id: string; price: number; is_available: boolean }[] | null) ?? []
-    const available = rooms.filter(r => r.is_available)
+    const available = allPropRooms.filter(r => r.is_available)
     if (available.length > 0) basePrice = available.reduce((s, r) => s + r.price, 0)
   }
 
-  // Calculate discounted price
+  // ── Collective / single discount ─────────────────────────────────────────────
   let discountedPrice: number | null = null
   let savingsLabel = ''
   if (discount_amount && discount_type) {
@@ -71,6 +102,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     } else {
       discountedPrice = Math.round(basePrice * (1 - discount_amount / 100))
       savingsLabel = `${discount_amount}% off`
+    }
+  }
+  // For per-room discounts with no collective discount, compute combined discounted total for display
+  if (isMultiRoom && !discount_amount && roomsJsonb) {
+    const totalDiscounted = roomsJsonb.reduce((s, r) => s + (r.discounted_price ?? r.original_price), 0)
+    if (totalDiscounted < basePrice) {
+      discountedPrice = totalDiscounted
+      const saved = basePrice - totalDiscounted
+      savingsLabel = `$${saved} off`
     }
   }
 
@@ -87,13 +127,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     .insert({
       lead_id: leadId,
       property_id: prop.id,
-      room_id: room_id || null,
+      room_id: isMultiRoom ? null : (room_id || null),
       landlord_id: user.id,
       discount_amount: discount_amount || null,
       discount_type: discount_type || null,
       original_price: basePrice,
       expires_at,
-      room_name: roomName,
+      room_name: isMultiRoom ? null : roomName,
+      rooms: roomsJsonb ?? null,
       status: 'pending',
     })
     .select('id, accept_token')
@@ -122,7 +163,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
   const heroImage = ((prop.property_images as { url: string; position: number }[] | null) ?? [])
     .sort((a, b) => a.position - b.position)[0]?.url || ''
 
-  const roomLabel = roomName ? roomName : (room_id ? 'Your Room' : 'Entire Property')
+  const roomLabel = isMultiRoom
+    ? (roomsJsonb!.map(r => r.room_name).join(' & '))
+    : (roomName ? roomName : (room_id ? 'Your Room' : 'Entire Property'))
   const subject = `🔒 ${tenantName}, your spot at ${prop.name} is reserved!`
 
   const displayPrice = discountedPrice ?? basePrice
@@ -135,6 +178,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
         ${savingsLabel} — exclusive offer
       </div>`
     : `<div style="font-size:24px;font-weight:800;color:#1a1a1a;">$${basePrice.toLocaleString()}/mo</div>`
+
+  // Per-room breakdown rows for multi-room email
+  const multiRoomRows = isMultiRoom && roomsJsonb ? roomsJsonb.map(r => {
+    const rFinal = r.discounted_price ?? r.original_price
+    const rSaved = r.discounted_price !== null ? ` <span style="color:#8C1D40;font-weight:700;">(${r.discount_type === 'dollars' ? `$${r.discount_amount} off` : `${r.discount_amount}% off`})</span>` : ''
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #f0ede6;">
+      <div style="font-size:13px;color:#6b6b6b;">🛏 ${r.room_name}</div>
+      <div style="font-size:13px;font-weight:600;color:#1a1a1a;text-align:right;">
+        $${rFinal.toLocaleString()}/mo${rSaved}
+      </div>
+    </div>`
+  }).join('') : ''
 
   try {
     await resend.emails.send({
@@ -196,6 +251,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
           <div style="font-size:13px;color:#9b9b9b;">Property</div>
           <div style="font-size:13px;font-weight:600;color:#1a1a1a;text-align:right;">${prop.name}</div>
         </div>
+        ${isMultiRoom ? `
+        <div style="font-size:11px;font-weight:700;color:#9b9b9b;text-transform:uppercase;letter-spacing:0.6px;padding:6px 0 2px;">Rooms</div>
+        ${multiRoomRows}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f0ede6;">
+          <div style="font-size:13px;color:#9b9b9b;">Total / month</div>
+          <div style="text-align:right;">${priceBlock}</div>
+        </div>` : `
         ${roomLabel !== 'Entire Property' ? `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f0ede6;">
           <div style="font-size:13px;color:#9b9b9b;">Room</div>
@@ -206,7 +268,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
           <div style="text-align:right;">
             ${priceBlock}
           </div>
-        </div>
+        </div>`}
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;">
           <div style="font-size:13px;color:#9b9b9b;">Held Until</div>
           <div style="font-size:13px;font-weight:600;color:#ef4444;text-align:right;">${expiresFormatted}</div>

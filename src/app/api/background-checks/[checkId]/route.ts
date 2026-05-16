@@ -44,7 +44,7 @@ export async function PATCH(
   const allowed = [
     'is_student','cosigner','credit','credit_score',
     'employment_check','current_residence_check',
-    'criminal_check','eviction_check','notes',
+    'criminal_check','eviction_check','notes','decision',
   ]
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   for (const key of allowed) {

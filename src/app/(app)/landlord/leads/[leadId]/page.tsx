@@ -97,6 +97,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [groupedInquiries, setGroupedInquiries] = useState<{ id: string; created_at: string | null; first_name: string | null }[]>([])
+  const [landlordName, setLandlordName] = useState('')
+
+  // SMS Templates
+  type SMSTemplate = { id: string; name: string; category: string; body: string; position: number }
+  const [smsTemplates, setSmsTemplates] = useState<SMSTemplate[]>([])
+  const [templatesCopied, setTemplatesCopied] = useState<string | null>(null)
+  const [contactCopied, setContactCopied] = useState<'email' | 'phone' | null>(null)
+  const [smsPanelOpen, setSmsPanelOpen] = useState(true)
 
   const [statusModal, setStatusModal] = useState(false)
   const [closedReason, setClosedReason] = useState<Lead['closed_reason']>(null)
@@ -128,12 +136,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [cancelSaving, setCancelSaving] = useState(false)
 
   type RoomOption = { id: string; name: string; price: number }
+  type RoomDiscount = { discount_type: '' | 'dollars' | 'percent'; discount_amount: string }
   const [reserveModal, setReserveModal] = useState(false)
   const [reserveRooms, setReserveRooms] = useState<RoomOption[]>([])
   const [reserveForm, setReserveForm] = useState({
-    room_id: '',
+    mode: 'whole' as 'whole' | 'rooms',  // whole property or specific rooms
+    selectedRoomIds: [] as string[],      // up to 2 room IDs
+    discount_mode: 'bundle' as 'bundle' | 'per_room',
+    // Bundle / whole-property discount
     discount_type: '' as '' | 'dollars' | 'percent',
     discount_amount: '',
+    // Per-room discounts keyed by room_id
+    roomDiscounts: {} as Record<string, RoomDiscount>,
     expires_mode: '24h' as '24h' | '48h' | '72h' | 'custom',
     custom_expires: '',
   })
@@ -240,7 +254,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const [editModal, setEditModal] = useState(false)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', phone: '', move_in_date: '', property: '' })
   const [editSaving, setEditSaving] = useState(false)
-  const [properties, setProperties] = useState<{ slug: string; name: string }[]>([])
+  const [properties, setProperties] = useState<{ slug: string; name: string; address: string }[]>([])
+
+  // Change property modal
+  const [changePropertyModal, setChangePropertyModal] = useState(false)
+  const [changePropertySlug, setChangePropertySlug] = useState('')
+  const [changePropertyConfirm, setChangePropertyConfirm] = useState(false)
+  const [changingProperty, setChangingProperty] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -264,8 +284,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         move_in_date: ld.move_in_date || '',
         property: ld.property || '',
       })
-      const { data: props } = await supabase.from('properties').select('slug, name').eq('owner_id', user.id)
-      if (props) setProperties(props)
+      const { data: props } = await supabase.from('properties').select('slug, name, address').eq('owner_id', user.id)
+      if (props) setProperties(props as { slug: string; name: string; address: string }[])
 
       if (ld.lead_group_id && ld.property) {
         const { data: groupLeads } = await supabase
@@ -326,10 +346,43 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       }
       setNotesLoading(false)
 
+      // Landlord profile + SMS templates
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        const [profileRes, tmplRes] = await Promise.all([
+          supabase.from('profiles').select('first_name').eq('id', user.id).single(),
+          fetch('/api/sms-templates', { headers: { Authorization: `Bearer ${session.access_token}` } }),
+        ])
+        if (profileRes.data?.first_name) setLandlordName(profileRes.data.first_name)
+        if (tmplRes.ok) { const { templates } = await tmplRes.json(); setSmsTemplates(templates || []) }
+      }
+
       setLoading(false)
     }
     load()
   }, [leadId, router])
+
+  // Substitute template variables with lead-specific data
+  const fillTemplate = (body: string): string => {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    let tourDateStr = ''
+    if (tourData?.scheduled_date) {
+      const tour = new Date(tourData.scheduled_date)
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const diff = Math.round((today.getTime() - tour.getTime()) / 86400000)
+      if (diff === 0) tourDateStr = 'today'
+      else if (diff === 1) tourDateStr = 'yesterday'
+      else if (diff > 1 && diff <= 6) tourDateStr = `${diff} days ago`
+      else if (diff < 0 && diff >= -1) tourDateStr = 'tomorrow'
+      else tourDateStr = `on ${tour.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`
+    }
+    return body
+      .replace(/\{\{first_name\}\}/g, lead?.first_name || 'there')
+      .replace(/\{\{your_name\}\}/g, landlordName || 'Your Landlord')
+      .replace(/\{\{property_name\}\}/g, property?.name || lead?.property || 'the property')
+      .replace(/\{\{listing_link\}\}/g, lead?.property ? `${siteUrl}/homes/${lead.property}` : siteUrl)
+      .replace(/\{\{tour_date\}\}/g, tourDateStr || 'recently')
+  }
 
   const handleStatusUpdate = async (status: Lead['status'], cr?: Lead['closed_reason']) => {
     if (!lead) return
@@ -431,6 +484,47 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       }
     } catch { showToast('Failed to save changes', 'error') }
     setEditSaving(false)
+  }
+
+  const handleChangeProperty = async () => {
+    if (!lead || !changePropertySlug || changePropertySlug === lead.property) return
+    setChangingProperty(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property: changePropertySlug }),
+      })
+      if (res.ok) {
+        setLead(prev => prev ? { ...prev, property: changePropertySlug } : prev)
+        const { data: prop } = await supabase
+          .from('properties')
+          .select('name, address, price, property_images(url, position), rental_mode, property_rooms(id, name, price, is_available, position)')
+          .eq('slug', changePropertySlug)
+          .single()
+        if (prop) {
+          const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
+          setProperty({ name: prop.name, address: prop.address, price: prop.price, heroImage: imgs.sort((a, b) => a.position - b.position)[0]?.url || '' })
+          if ((prop as { rental_mode?: string }).rental_mode === 'by_room' && (prop as { property_rooms?: unknown[] }).property_rooms?.length) {
+            const rooms = (prop.property_rooms as { id: string; name: string; price: number; is_available: boolean; position: number }[])
+              .filter(r => r.is_available)
+              .sort((a, b) => a.position - b.position)
+              .map(r => ({ id: r.id, name: r.name || `Room ${r.position + 1}`, price: r.price }))
+            setReserveRooms(rooms)
+          } else {
+            setReserveRooms([])
+          }
+        }
+        setEditForm(f => ({ ...f, property: changePropertySlug }))
+        setChangePropertyModal(false)
+        setChangePropertyConfirm(false)
+        setChangePropertySlug('')
+        showToast('Property updated')
+      } else {
+        showToast('Failed to update property', 'error')
+      }
+    } catch { showToast('Failed to update property', 'error') }
+    setChangingProperty(false)
   }
 
   const sendReminder = async () => {
@@ -555,14 +649,34 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         expiresAt = new Date(Date.now() + hours * 3600 * 1000)
       }
 
-      const payload: Record<string, unknown> = {
-        room_id: reserveForm.room_id || null,
-        expires_at: expiresAt.toISOString(),
-        send_email: false,
-      }
-      if (reserveForm.discount_type && reserveForm.discount_amount) {
-        payload.discount_type = reserveForm.discount_type
-        payload.discount_amount = parseInt(reserveForm.discount_amount, 10)
+      const payload: Record<string, unknown> = { expires_at: expiresAt.toISOString(), send_email: false }
+
+      if (reserveForm.mode === 'rooms' && reserveForm.selectedRoomIds.length > 0) {
+        // Multi-room offer
+        if (reserveForm.discount_mode === 'per_room') {
+          payload.rooms = reserveForm.selectedRoomIds.map(rid => {
+            const rd = reserveForm.roomDiscounts[rid]
+            return {
+              room_id: rid,
+              discount_type: rd?.discount_type || null,
+              discount_amount: rd?.discount_type && rd?.discount_amount ? parseInt(rd.discount_amount, 10) : null,
+            }
+          })
+        } else {
+          // Bundle discount across selected rooms
+          payload.rooms = reserveForm.selectedRoomIds.map(rid => ({ room_id: rid, discount_amount: null, discount_type: null }))
+          if (reserveForm.discount_type && reserveForm.discount_amount) {
+            payload.discount_type = reserveForm.discount_type
+            payload.discount_amount = parseInt(reserveForm.discount_amount, 10)
+          }
+        }
+      } else {
+        // Whole property
+        payload.room_id = null
+        if (reserveForm.discount_type && reserveForm.discount_amount) {
+          payload.discount_type = reserveForm.discount_type
+          payload.discount_amount = parseInt(reserveForm.discount_amount, 10)
+        }
       }
 
       const res = await fetch(`/api/leads/${leadId}/reserve`, {
@@ -687,685 +801,1008 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     return { paragraph: lines.slice(0, 4).join(' '), chips: chips.slice(0, 7) }
   })()
 
+  // ── Computed values for new design ──────────────────────────────────────────
+  const daysInStage = lead.created_at
+    ? Math.max(0, Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 86400000))
+    : 0
+
+  const matchScore = (() => {
+    if (!prescreen) return null
+    let score = 45
+    const rent = property?.price ?? 0
+    const budget = prescreen.monthly_budget ?? 0
+    if (budget > 0 && rent > 0) {
+      const r = budget / rent
+      if (r >= 1.2) score += 28
+      else if (r >= 1.0) score += 18
+      else if (r >= 0.85) score += 8
+      else score -= 5
+    }
+    if (prescreen.move_in_date) {
+      const months = (new Date(prescreen.move_in_date).getTime() - Date.now()) / (30 * 86400000)
+      if (months >= 0 && months <= 2) score += 15
+      else if (months >= 0 && months <= 5) score += 10
+      else score += 3
+    }
+    if (prescreen.lease_length?.includes('12')) score += 7
+    if (prescreen.group_size === 1) score += 5
+    return Math.min(99, Math.max(0, score))
+  })()
+
+  const matchVerdict = !matchScore ? null
+    : matchScore >= 80 ? { label: 'Strong fit', color: '#16a34a' }
+    : matchScore >= 65 ? { label: 'Good fit', color: '#2563eb' }
+    : matchScore >= 50 ? { label: 'Possible fit', color: '#d97706' }
+    : { label: 'Low fit', color: '#dc2626' }
+
+  const copyQuickReply = (category: string) => {
+    const tmpl = smsTemplates.find(t => t.category === category || t.name.toLowerCase().includes(category.toLowerCase()))
+    if (tmpl) { navigator.clipboard.writeText(fillTemplate(tmpl.body)); showToast('Template copied!') }
+    else showToast('Template not found', 'error')
+  }
+
+  const fmtTourTime = (t: string) => {
+    const [h, m] = t.split(':').map(Number)
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`
+  }
+
+  const tourDateObj = tourData ? new Date(tourData.scheduled_date + 'T12:00:00') : null
+  const tourDiffMs = tourDateObj ? tourDateObj.getTime() - Date.now() : null
+  const tourDiffDays = tourDiffMs !== null ? Math.ceil(tourDiffMs / 86400000) : null
+  const tourCountdown = tourDiffDays === null ? ''
+    : tourDiffDays === 0 ? 'Today'
+    : tourDiffDays === 1 ? 'Tomorrow · in ~24 hours'
+    : tourDiffDays > 1 ? `In ${tourDiffDays} days`
+    : `${Math.abs(tourDiffDays)} days ago`
+
+  const budgetVsRent = prescreen?.monthly_budget && property?.price
+    ? `$${prescreen.monthly_budget.toLocaleString()} / $${property.price.toLocaleString()} · ${prescreen.monthly_budget >= property.price ? '+' : ''}${Math.round(((prescreen.monthly_budget - property.price) / property.price) * 100)}%`
+    : null
+
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .ld-page { background: #f5f4f0; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
+        /* ── PAGE ── */
+        .ld2-page { background: #f5f4f0; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
+        .ld2-wrap { max-width: 1360px; margin: 0 auto; padding: 20px 24px 60px; }
 
-        /* ── Header ── */
-        .ld-hdr { background: #fff; border-bottom: 1px solid #e8e5de; position: sticky; top: 0; z-index: 100; }
-        .ld-hdr-top { padding: 10px 24px; display: flex; align-items: center; gap: 14px; }
-        .ld-back { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #9b9b9b; background: none; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: color 0.15s; flex-shrink: 0; padding: 0; }
-        .ld-back:hover { color: #1a1a1a; }
-        .ld-av { width: 38px; height: 38px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .ld-name-block { flex: 1; min-width: 0; }
-        .ld-name { font-size: 16px; font-weight: 700; color: #1a1a1a; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; line-height: 1.2; }
-        .ld-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; }
-        .ld-sub { font-size: 11px; color: #9b9b9b; margin-top: 2px; }
-        .ld-prop-block { text-align: right; flex-shrink: 0; }
-        .ld-prop-name { font-size: 12px; font-weight: 600; color: #1a1a1a; }
-        .ld-prop-addr { font-size: 10px; color: #9b9b9b; margin-top: 1px; }
-        .ld-prop-price { font-size: 12px; font-weight: 700; color: #8C1D40; margin-top: 2px; }
+        /* ── BREADCRUMB ── */
+        .ld2-bc { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9b9b9b; margin-bottom: 14px; }
+        .ld2-bc a { color: #9b9b9b; text-decoration: none; font-weight: 500; }
+        .ld2-bc a:hover { color: #1a1a1a; }
+        .ld2-bc-sep { color: #d0ccc5; }
+        .ld2-bc-cur { color: #1a1a1a; font-weight: 600; }
 
-        /* ── Pipeline strip ── */
-        .ld-pipe { display: flex; align-items: stretch; border-top: 1px solid #f0ede6; overflow-x: auto; scrollbar-width: none; }
-        .ld-pipe::-webkit-scrollbar { display: none; }
-        .ld-pipe-btn { flex: 1; min-width: 72px; padding: 6px 4px 5px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 10px; font-weight: 500; color: #b0a898; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; text-align: center; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
-        .ld-pipe-btn:hover { color: #1a1a1a; background: #faf9f6; }
-        .ld-pipe-btn.past { color: #6b6b6b; }
-        .ld-pipe-btn.active { font-weight: 700; }
+        /* ── HEADER CARD ── */
+        .ld2-header { background: #fff; border: 1px solid #e8e5de; border-radius: 14px; padding: 22px 24px 18px; margin-bottom: 10px; display: flex; gap: 16px; align-items: flex-start; }
+        .ld2-avatar { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, #8C1D40, #a02050); color: #FFC627; font-size: 20px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .ld2-hd-main { flex: 1; min-width: 0; }
+        .ld2-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+        .ld2-name { font-size: 22px; font-weight: 800; color: #1a1a1a; letter-spacing: -0.4px; }
+        .ld2-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1.5px solid; }
+        .ld2-badge-status { background: #f0f0ff; border-color: #c7c7f9; color: #4f46e5; }
+        .ld2-badge-heat-hot { background: #fff4ec; border-color: #f97316; color: #c2410c; }
+        .ld2-badge-heat-warm { background: #fff4ec; border-color: #fb923c; color: #ea580c; }
+        .ld2-badge-heat-cool { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
+        .ld2-badge-heat-cold { background: #f8fafc; border-color: #cbd5e1; color: #64748b; }
+        .ld2-contacts { display: flex; align-items: center; gap: 0; flex-wrap: wrap; font-size: 13px; color: #6b6b6b; }
+        .ld2-contact-item { display: flex; align-items: center; gap: 5px; margin-right: 16px; }
+        .ld2-contact-item a { color: #6b6b6b; text-decoration: none; }
+        .ld2-contact-item a:hover { color: #1a1a1a; }
+        .ld2-copy-icon { background: none; border: none; cursor: pointer; color: #b0a898; font-size: 12px; padding: 1px 3px; border-radius: 3px; line-height: 1; }
+        .ld2-copy-icon:hover { color: #8C1D40; background: rgba(140,29,64,0.06); }
+        .ld2-copy-icon.ok { color: #10b981; }
+        .ld2-listing { border-left: 1px solid #f0ede6; padding-left: 24px; min-width: 220px; flex-shrink: 0; }
+        .ld2-listing-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+        .ld2-listing-name { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 3px; line-height: 1.3; }
+        .ld2-listing-addr { font-size: 12px; color: #9b9b9b; margin-bottom: 5px; display: flex; align-items: center; gap: 4px; }
+        .ld2-listing-price { font-size: 20px; font-weight: 800; color: #1a1a1a; letter-spacing: -0.3px; }
+        .ld2-listing-price span { font-size: 13px; font-weight: 400; color: #9b9b9b; }
 
-        /* ── Action bar ── */
-        .ld-act-bar { padding: 7px 24px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px solid #f0ede6; background: #faf9f6; }
-        .ld-act-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1.5px solid; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; text-decoration: none; }
-        .ld-act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .ld-act-btn-primary { background: #8C1D40; color: #fff !important; border-color: #8C1D40; }
-        .ld-act-btn-primary:hover:not(:disabled) { opacity: 0.88; }
-        .ld-act-btn-gold { background: #FFC627; color: #1a1a1a !important; border-color: #FFC627; }
-        .ld-act-btn-gold:hover { opacity: 0.9; }
-        .ld-act-btn-ghost { background: #fff; color: #3a3a3a !important; border-color: #e8e5de; }
-        .ld-act-btn-ghost:hover:not(:disabled) { border-color: #aaa; color: #1a1a1a !important; }
-        .ld-act-btn-danger { background: rgba(239,68,68,0.06); color: #dc2626 !important; border-color: rgba(239,68,68,0.3); }
-        .ld-act-btn-danger:hover { background: rgba(239,68,68,0.12); }
-        .ld-act-btn-success { background: rgba(16,185,129,0.08); color: #10b981 !important; border-color: rgba(16,185,129,0.3); }
-        .ld-act-btn-success:hover { background: rgba(16,185,129,0.14); }
-        .ld-act-sep { width: 1px; height: 18px; background: #e0ddd7; flex-shrink: 0; }
+        /* ── ACTION BAR ── */
+        .ld2-actions { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #fff; border: 1px solid #e8e5de; border-radius: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+        .ld2-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1.5px solid; font-family: 'DM Sans', sans-serif; transition: all 0.12s; white-space: nowrap; }
+        .ld2-btn-primary { background: #8C1D40; border-color: #8C1D40; color: #fff; box-shadow: 0 2px 8px rgba(140,29,64,0.25); }
+        .ld2-btn-primary:hover { background: #7a1836; }
+        .ld2-btn-green { background: #16a34a; border-color: #16a34a; color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,0.2); }
+        .ld2-btn-green:hover { background: #15803d; }
+        .ld2-btn-ghost { background: #fff; border-color: #e8e5de; color: #3a3a3a; }
+        .ld2-btn-ghost:hover { border-color: #d0ccc5; background: #faf9f6; }
+        .ld2-btn-danger { background: #fff; border-color: #fca5a5; color: #dc2626; }
+        .ld2-btn-danger:hover { background: #fef2f2; }
+        .ld2-btn-cs { background: #f8f7f5; border-color: #e8e5de; color: #b0a898; cursor: not-allowed; position: relative; }
+        .ld2-btn-cs:hover::after { content: 'Coming soon'; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; font-size: 11px; padding: 4px 9px; border-radius: 6px; white-space: nowrap; pointer-events: none; z-index: 10; }
+        .ld2-sep { width: 1px; height: 24px; background: #e8e5de; flex-shrink: 0; }
+        .ld2-more-btn { background: #fff; border: 1.5px solid #e8e5de; border-radius: 8px; padding: 8px 10px; color: #6b6b6b; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+        .ld2-more-btn:hover { background: #faf9f6; }
 
-        /* ── AI Insight ── */
-        .ld-insight-wrap { padding: 14px 24px 0; }
-        .ld-insight { background: #1a1a1a; border-radius: 12px; padding: 16px 20px; }
-        .ld-insight-hd { font-size: 9px; font-weight: 700; color: rgba(255,198,39,0.85); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 6px; }
-        .ld-insight-para { font-size: 13px; color: #d4d0ca; line-height: 1.65; margin-bottom: 10px; }
-        .ld-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-        .ld-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 600; border: 1px solid; }
+        /* ── PIPELINE ── */
+        .ld2-pipeline { background: #fff; border: 1px solid #e8e5de; border-radius: 12px; padding: 16px 20px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 0; overflow-x: auto; }
+        .ld2-stage { display: flex; flex-direction: column; align-items: center; min-width: 90px; cursor: pointer; position: relative; flex: 1; }
+        .ld2-stage + .ld2-stage::before { content: '▶'; position: absolute; left: -8px; top: 6px; font-size: 8px; color: #d0ccc5; }
+        .ld2-stage-dot-wrap { display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; margin-bottom: 5px; }
+        .ld2-stage-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .ld2-stage.past .ld2-stage-dot { background: #22c55e; }
+        .ld2-stage.active .ld2-stage-dot { background: #8C1D40; width: 13px; height: 13px; box-shadow: 0 0 0 3px rgba(140,29,64,0.2); }
+        .ld2-stage.future .ld2-stage-dot { background: #e2e8f0; }
+        .ld2-stage-name { font-size: 11px; font-weight: 600; color: #9b9b9b; text-align: center; }
+        .ld2-stage.active .ld2-stage-name { color: #8C1D40; font-weight: 700; }
+        .ld2-stage.past .ld2-stage-name { color: #4a4a4a; }
+        .ld2-stage-days { font-size: 10px; color: #b0a898; text-align: center; margin-top: 2px; }
+        .ld2-stage.active .ld2-stage-days { color: #8C1D40; font-weight: 600; }
 
-        /* ── Body & 3-col grid ── */
-        .ld-body { padding: 14px 24px 32px; }
-        .ld-grid3 { display: grid; grid-template-columns: 1fr 1fr 300px; gap: 14px; align-items: start; }
-        @media (max-width: 1080px) { .ld-grid3 { grid-template-columns: 1fr 1fr; } .ld-grid3 > :nth-child(3) { grid-column: span 2; } }
-        @media (max-width: 680px)  { .ld-grid3 { grid-template-columns: 1fr; } .ld-grid3 > :nth-child(3) { grid-column: span 1; } }
+        /* ── AI CARD ── */
+        .ld2-ai { background: #111; border-radius: 14px; padding: 22px 24px; margin-bottom: 16px; display: flex; gap: 24px; align-items: flex-start; }
+        .ld2-ai-left { flex: 1; min-width: 0; }
+        .ld2-ai-label { font-size: 11px; font-weight: 700; color: #4ade80; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .ld2-ai-heading { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 8px; line-height: 1.4; letter-spacing: -0.2px; }
+        .ld2-ai-body { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.7; margin-bottom: 14px; }
+        .ld2-ai-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .ld2-ai-chip { font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
+        .ld2-ai-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
+        .ld2-ai-cta { background: #4ade80; color: #111; border: none; border-radius: 9px; padding: 11px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .ld2-ai-cta:hover { background: #22c55e; }
+        .ld2-ai-link { font-size: 12px; color: rgba(255,255,255,0.5); background: none; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: underline; }
+        .ld2-ai-link:hover { color: rgba(255,255,255,0.8); }
 
-        /* ── Cards ── */
-        .ld-card { background: #fff; border-radius: 11px; border: 1px solid #e8e5de; margin-bottom: 12px; overflow: hidden; }
-        .ld-card-hd { padding: 10px 14px; border-bottom: 1px solid #f0ede6; display: flex; align-items: center; justify-content: space-between; }
-        .ld-card-ttl { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.7px; }
-        .ld-card-bd { padding: 12px 14px; }
+        /* ── 3-COL GRID ── */
+        .ld2-grid { display: grid; grid-template-columns: 300px 1fr 300px; gap: 14px; align-items: start; }
+        @media (max-width: 1100px) { .ld2-grid { grid-template-columns: 280px 1fr; } .ld2-col-right { display: none; } }
+        @media (max-width: 760px) { .ld2-grid { grid-template-columns: 1fr; } }
 
-        /* ── KV rows ── */
-        .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; border-bottom: 1px solid #f5f4f0; gap: 8px; }
-        .kv:last-child { border-bottom: none; }
-        .kv-l { font-size: 11px; color: #9b9b9b; flex-shrink: 0; min-width: 70px; }
-        .kv-r { font-size: 12px; color: #1a1a1a; font-weight: 500; text-align: right; }
+        /* ── CARD ── */
+        .ld2-card { background: #fff; border: 1px solid #e8e5de; border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
+        .ld2-card-hd { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid #f0ede6; }
+        .ld2-card-title { font-size: 11px; font-weight: 700; color: #1a1a1a; text-transform: uppercase; letter-spacing: 0.6px; display: flex; align-items: center; gap: 7px; }
+        .ld2-card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .ld2-card-action { font-size: 12px; font-weight: 600; color: #8C1D40; background: none; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .ld2-card-action:hover { text-decoration: underline; }
+        .ld2-card-body { padding: 16px; }
 
-        /* ── Prescreen tiles ── */
-        .ps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-        .ps-tile { background: #faf9f6; border-radius: 7px; padding: 7px 9px; border: 1px solid #f0ede6; }
-        .ps-tile-l { font-size: 9px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
-        .ps-tile-v { font-size: 12px; color: #1a1a1a; font-weight: 500; }
+        /* ── MATCH SCORE ── */
+        .ld2-score-ring { width: 80px; height: 80px; position: relative; margin: 0 auto 12px; }
+        .ld2-score-svg { width: 80px; height: 80px; transform: rotate(-90deg); }
+        .ld2-score-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: #1a1a1a; }
+        .ld2-score-denom { font-size: 11px; font-weight: 400; color: #9b9b9b; }
+        .ld2-score-verdict { font-size: 16px; font-weight: 700; text-align: center; margin-bottom: 3px; }
+        .ld2-score-desc { font-size: 12px; color: #6b6b6b; text-align: center; line-height: 1.5; margin-bottom: 14px; }
+        .ld2-metric { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+        .ld2-metric-row { display: flex; justify-content: space-between; align-items: center; }
+        .ld2-metric-label { font-size: 11px; color: #6b6b6b; }
+        .ld2-metric-val { font-size: 11px; font-weight: 600; color: #1a1a1a; }
+        .ld2-bar { height: 4px; background: #f0ede6; border-radius: 2px; overflow: hidden; }
+        .ld2-bar-fill { height: 100%; border-radius: 2px; background: #22c55e; }
+        .ld2-no-score { text-align: center; padding: 20px 0; color: #9b9b9b; font-size: 13px; }
 
-        /* ── Email timeline ── */
-        .tl-row { display: flex; gap: 9px; padding: 8px 0; border-bottom: 1px solid #f0ede6; }
-        .tl-row:last-child { border-bottom: none; }
-        .tl-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
-        .tl-type { font-size: 11px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
-        .tl-meta { font-size: 10px; color: #9b9b9b; margin-top: 1px; }
+        /* ── PRE-SCREEN ── */
+        .ld2-quote { border-left: 3px solid #8C1D40; padding: 10px 14px; margin-bottom: 16px; background: #faf9f6; border-radius: 0 8px 8px 0; }
+        .ld2-quote-text { font-size: 12px; color: #3a3a3a; line-height: 1.7; font-style: italic; }
+        .ld2-quote-attr { font-size: 11px; color: #9b9b9b; margin-top: 6px; }
+        .ld2-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .ld2-field { }
+        .ld2-field-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .ld2-field-val { font-size: 12px; font-weight: 600; color: #1a1a1a; }
+        .ld2-field-val.budget { color: #8C1D40; }
+        .ld2-pet-tag { background: #fff9e6; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #78350f; display: flex; align-items: flex-start; gap: 6px; }
+        .ld2-no-prescreen { text-align: center; padding: 24px 0; color: #9b9b9b; font-size: 13px; }
+        .ld2-ns-btn { margin-top: 10px; font-size: 12px; font-weight: 600; color: #8C1D40; background: none; border: 1px solid rgba(140,29,64,0.25); border-radius: 7px; padding: 6px 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 
-        /* ── Modals ── */
-        .status-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(3px); }
-        .status-modal { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.25); }
-        .status-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 2px solid #e8e5de; border-radius: 10px; cursor: pointer; transition: all 0.15s; margin-bottom: 7px; }
-        .status-card:hover { border-color: #8C1D40; background: #fdf2f5; }
-        .status-card.selected { border-color: #8C1D40; background: #fdf2f5; }
-        .status-card.current { cursor: default; opacity: 0.6; }
-        .edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 600; display: flex; align-items: flex-end; justify-content: center; backdrop-filter: blur(4px); }
-        @media (min-width: 600px) { .edit-overlay { align-items: center; } }
-        .edit-sheet { background: #fff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 0 0 env(safe-area-inset-bottom); animation: sheetUp 0.28s cubic-bezier(0.32,0.72,0,1); max-height: 92vh; overflow-y: auto; }
-        @media (min-width: 600px) { .edit-sheet { border-radius: 20px; max-height: 88vh; } }
-        @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .edit-sheet-handle { width: 36px; height: 4px; background: #e0ddd7; border-radius: 2px; margin: 10px auto 0; }
-        @media (min-width: 600px) { .edit-sheet-handle { display: none; } }
-        .edit-sheet-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
-        .edit-sheet-title { font-size: 18px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.3px; }
-        .edit-sheet-body { padding: 20px 24px; }
-        .edit-field { margin-bottom: 14px; }
-        .edit-field-label { display: block; font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
-        .edit-input { width: 100%; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 10px 13px; font-size: 14px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; background: #faf9f6; outline: none; transition: border-color 0.15s, background 0.15s; }
-        .edit-input:focus { border-color: #8C1D40; background: #fff; }
-        .edit-input::placeholder { color: #b0a898; }
-        .edit-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .edit-sheet-footer { padding: 4px 24px 24px; display: flex; gap: 10px; }
-        .btn-primary { background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
-        .btn-primary:hover { opacity: 0.88; }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-gold { background: #FFC627; color: #1a1a1a; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
-        .btn-gold:hover { opacity: 0.9; }
-        .btn-gold:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-ghost { background: transparent; color: #3a3a3a; border: 1.5px solid #e8e5de; border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
-        .btn-ghost:hover { border-color: #1a1a1a; }
-        .reserve-mode-opt { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid #e8e5de; border-radius: 9px; cursor: pointer; transition: all 0.15s; background: #fff; width: 100%; font-family: 'DM Sans', sans-serif; text-align: left; margin-bottom: 6px; }
-        .reserve-mode-opt.selected { border-color: #8C1D40; background: #fdf2f5; }
+        /* ── TOUR ── */
+        .ld2-tour-card { background: linear-gradient(135deg, #f5f3ff, #ede9fe); border: 1.5px solid #c4b5fd; border-radius: 12px; padding: 16px; display: flex; gap: 14px; align-items: flex-start; }
+        .ld2-tour-date-box { background: #fff; border-radius: 10px; padding: 8px 12px; text-align: center; min-width: 52px; border: 1px solid #ddd6fe; flex-shrink: 0; }
+        .ld2-tour-month { font-size: 10px; font-weight: 700; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.5px; }
+        .ld2-tour-day { font-size: 26px; font-weight: 800; color: #1a1a1a; line-height: 1; margin: 2px 0; }
+        .ld2-tour-dow { font-size: 10px; color: #9b9b9b; }
+        .ld2-tour-info { flex: 1; min-width: 0; }
+        .ld2-tour-tag { font-size: 10px; font-weight: 700; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+        .ld2-tour-time { font-size: 17px; font-weight: 800; color: #1a1a1a; margin-bottom: 3px; }
+        .ld2-tour-meta { font-size: 11px; color: #6b6b6b; line-height: 1.5; margin-bottom: 8px; }
+        .ld2-tour-countdown { display: inline-flex; align-items: center; gap: 5px; background: #fff; border: 1px solid #ddd6fe; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; color: #7c3aed; }
+        .ld2-tour-actions { display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; }
+        .ld2-tour-btn { font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; display: flex; align-items: center; gap: 6px; border: 1.5px solid; }
+        .ld2-tour-btn-ghost { background: #fff; border-color: #ddd6fe; color: #4a4a4a; }
+        .ld2-tour-btn-ghost:hover { border-color: #c4b5fd; background: #faf9f6; }
+        .ld2-tour-btn-danger { background: #fff; border-color: #fca5a5; color: #dc2626; }
+        .ld2-tour-btn-danger:hover { background: #fef2f2; }
+        .ld2-no-tour { text-align: center; padding: 20px 0; }
+        .ld2-no-tour p { font-size: 13px; color: #9b9b9b; margin-bottom: 12px; }
+        .ld2-tour-invite-row { display: flex; gap: 8px; justify-content: center; }
+
+        /* ── RESERVATION OFFER ── */
+        .ld2-offer-desc { font-size: 12px; color: #6b6b6b; line-height: 1.65; margin-bottom: 14px; }
+        .ld2-offer-tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .ld2-tier { border: 1.5px solid #e8e5de; border-radius: 12px; padding: 14px; position: relative; cursor: default; }
+        .ld2-tier.recommended { border-color: #8C1D40; }
+        .ld2-tier-badge { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: #8C1D40; color: #fff; font-size: 9px; font-weight: 700; padding: 2px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+        .ld2-tier-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .ld2-tier-price { font-size: 22px; font-weight: 800; color: #1a1a1a; letter-spacing: -0.3px; }
+        .ld2-tier-price span { font-size: 13px; font-weight: 400; color: #9b9b9b; }
+        .ld2-tier-details { font-size: 11px; color: #6b6b6b; margin-top: 6px; line-height: 1.6; }
+        .ld2-tier-stat { font-size: 11px; color: #16a34a; font-weight: 600; margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+        .ld2-tier-cs { opacity: 0.5; cursor: not-allowed; }
+        .ld2-incentive-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1.5px dashed #e8e5de; border-radius: 10px; font-size: 12px; color: #6b6b6b; margin-bottom: 14px; }
+        .ld2-offer-actions { display: flex; gap: 8px; }
+        .ld2-offer-cta { flex: 1; background: #8C1D40; color: #fff; border: none; border-radius: 9px; padding: 11px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        .ld2-offer-cta:hover { background: #7a1836; }
+        .ld2-offer-draft { background: #fff; color: #4a4a4a; border: 1.5px solid #e8e5de; border-radius: 9px; padding: 11px 16px; font-size: 13px; font-weight: 600; cursor: not-allowed; font-family: 'DM Sans', sans-serif; opacity: 0.6; position: relative; }
+        .ld2-offer-draft:hover::after { content: 'Coming soon'; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; font-size: 11px; padding: 4px 9px; border-radius: 6px; white-space: nowrap; pointer-events: none; }
+
+        /* ── QUICK REPLY ── */
+        .ld2-qr-meta { font-size: 11px; color: #9b9b9b; margin-bottom: 10px; }
+        .ld2-qr-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+        .ld2-qr-chip { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border: 1.5px solid #e8e5de; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #3a3a3a; transition: all 0.12s; }
+        .ld2-qr-chip:hover { border-color: #8C1D40; color: #8C1D40; background: rgba(140,29,64,0.04); }
+        .ld2-qr-chip.primary { background: #8C1D40; border-color: #8C1D40; color: #fff; }
+        .ld2-qr-chip.primary:hover { background: #7a1836; }
+        .ld2-qr-chip.cs { opacity: 0.5; cursor: not-allowed; position: relative; }
+        .ld2-qr-chip.cs:hover { border-color: #e8e5de; color: #3a3a3a; background: #fff; }
+        .ld2-qr-chip.cs:hover::after { content: 'Coming soon'; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; font-size: 11px; padding: 4px 9px; border-radius: 6px; white-space: nowrap; pointer-events: none; z-index: 10; }
+
+        /* ── SMS TEMPLATES ── */
+        .ld2-sms-cat { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; padding: 8px 16px 4px; }
+        .ld2-sms-tmpl { padding: 10px 16px; border-bottom: 1px solid #f5f4f0; display: flex; align-items: flex-start; gap: 10px; }
+        .ld2-sms-tmpl:last-child { border-bottom: none; }
+        .ld2-sms-name { font-size: 11px; font-weight: 700; color: #6b6b6b; margin-bottom: 3px; }
+        .ld2-sms-body { font-size: 12px; color: #1a1a1a; line-height: 1.6; }
+        .ld2-sms-copy { flex-shrink: 0; padding: 5px 10px; border: 1.5px solid #e8e5de; border-radius: 7px; background: #fff; font-size: 11px; font-weight: 700; color: #6b6b6b; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.12s; }
+        .ld2-sms-copy:hover { border-color: #8C1D40; color: #8C1D40; }
+        .ld2-sms-copy.ok { border-color: #10b981; color: #10b981; }
+        .ld2-sms-footer { padding: 10px 16px; background: #faf9f6; border-top: 1px solid #f0ede6; display: flex; align-items: center; justify-content: space-between; }
+
+        /* ── NOTES ── */
+        .ld2-note-compose { background: #fff; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 10px 12px; transition: border-color 0.15s; margin-bottom: 12px; }
+        .ld2-note-compose:focus-within { border-color: #8C1D40; }
+        .ld2-note-textarea { width: 100%; border: none; background: transparent; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; resize: none; outline: none; line-height: 1.5; min-height: 72px; }
+        .ld2-note-textarea::placeholder { color: #b0a898; }
+        .ld2-note-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+        .ld2-note-add { background: #8C1D40; color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .ld2-note-add:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ld2-note-save-hint { font-size: 11px; color: #b0a898; }
+        .ld2-note-item { padding: 10px 12px; border-radius: 8px; border: 1px solid #f0ede6; background: #faf9f6; margin-bottom: 8px; }
+        .ld2-note-author { font-size: 11px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+        .ld2-note-date { font-size: 10px; color: #9b9b9b; font-weight: 400; }
+        .ld2-note-content { font-size: 12px; color: #3a3a3a; line-height: 1.6; white-space: pre-wrap; }
+        .ld2-note-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+        .ld2-note-tag { font-size: 10px; color: #8C1D40; background: rgba(140,29,64,0.08); border-radius: 4px; padding: 1px 5px; }
+        .ld2-note-del { background: none; border: none; font-size: 11px; color: #dc2626; cursor: pointer; opacity: 0; font-family: 'DM Sans', sans-serif; }
+        .ld2-note-item:hover .ld2-note-del { opacity: 1; }
+
+        /* ── TIMELINE ── */
+        .ld2-tl-filters { display: flex; gap: 6px; margin-bottom: 12px; }
+        .ld2-tl-filter { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; cursor: pointer; border: 1.5px solid #e8e5de; background: #fff; color: #6b6b6b; font-family: 'DM Sans', sans-serif; }
+        .ld2-tl-filter.active { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
+        .ld2-tl-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f4f0; align-items: flex-start; }
+        .ld2-tl-item:last-child { border-bottom: none; }
+        .ld2-tl-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+        .ld2-tl-content { flex: 1; min-width: 0; }
+        .ld2-tl-title { font-size: 12px; font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
+        .ld2-tl-body { font-size: 11px; color: #6b6b6b; line-height: 1.5; }
+        .ld2-tl-time { font-size: 10px; color: #b0a898; flex-shrink: 0; white-space: nowrap; margin-top: 2px; }
+
+        /* ── SHARED / MODALS ── */
+        .edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+        .edit-sheet { background: #fff; border-radius: 20px 20px 0 0; width: 100%; max-width: 580px; padding: 0 0 32px; max-height: 92vh; overflow-y: auto; }
+        .edit-sheet-handle { width: 36px; height: 4px; background: #e8e5de; border-radius: 2px; margin: 12px auto 0; }
+        .edit-sheet-header { padding: 16px 22px 14px; border-bottom: 1px solid #f0ede6; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .edit-sheet-title { font-size: 17px; font-weight: 700; color: #1a1a1a; }
+        .edit-sheet-body { padding: 16px 22px; display: flex; flex-direction: column; gap: 16px; }
+        .edit-sheet-footer { padding: 0 22px; display: flex; gap: 10px; }
+        .edit-field { display: flex; flex-direction: column; gap: 6px; }
+        .edit-field-label { font-size: 11px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; }
+        .edit-input { padding: 10px 12px; border: 1.5px solid #e8e5de; border-radius: 8px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; outline: none; width: 100%; }
+        .edit-input:focus { border-color: #8C1D40; }
+        .btn-ghost { padding: 10px 16px; border: 1.5px solid #e8e5de; border-radius: 8px; background: #fff; color: #4a4a4a; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .btn-ghost:hover { background: #faf9f6; }
+        .btn-gold { padding: 10px 16px; border: none; border-radius: 8px; background: #FFC627; color: #1a1a1a; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .reserve-mode-opt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px solid #e8e5de; border-radius: 10px; background: #fff; cursor: pointer; text-align: left; font-family: 'DM Sans', sans-serif; transition: all 0.12s; }
+        .reserve-mode-opt.selected { border-color: #8C1D40; background: rgba(140,29,64,0.03); }
+        .reserve-mode-opt:disabled { opacity: 0.45; cursor: not-allowed; }
         .reserve-discount-toggle { display: flex; gap: 6px; }
         .reserve-discount-opt { flex: 1; padding: 8px; border: 1.5px solid #e8e5de; border-radius: 7px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #3a3a3a; transition: all 0.15s; }
-        .reserve-discount-opt.selected { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; }
-
-        /* ── Notes ── */
-        .note-compose { background: #faf9f6; border: 1.5px solid #e8e5de; border-radius: 10px; padding: 10px 12px; transition: border-color 0.15s; }
-        .note-compose:focus-within { border-color: #8C1D40; background: #fff; }
-        .note-textarea { width: 100%; border: none; background: transparent; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; resize: none; outline: none; line-height: 1.5; min-height: 72px; }
-        .note-textarea::placeholder { color: #b0a898; }
-        .note-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-        .note-item { padding: 10px 12px; border-radius: 8px; border: 1px solid #f0ede6; background: #faf9f6; margin-bottom: 8px; position: relative; }
-        .note-item:last-child { margin-bottom: 0; }
-        .note-item:hover .note-item-actions { opacity: 1; }
-        .note-item-actions { opacity: 0; display: flex; gap: 4px; transition: opacity 0.15s; }
-        .note-item-btn { background: none; border: none; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; padding: 2px 6px; border-radius: 4px; }
-        .note-item-btn-edit { color: #8C1D40; }
-        .note-item-btn-edit:hover { background: rgba(140,29,64,0.08); }
-        .note-item-btn-del { color: #dc2626; }
-        .note-item-btn-del:hover { background: rgba(220,38,38,0.08); }
-        .note-content { font-size: 13px; color: #1a1a1a; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
-        .note-meta { font-size: 10px; color: #b0a898; margin-top: 5px; }
-        .note-edit-area { width: 100%; border: 1.5px solid #8C1D40; border-radius: 7px; padding: 8px 10px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; resize: vertical; outline: none; min-height: 64px; background: #fff; line-height: 1.5; }
-        .note-edit-btns { display: flex; gap: 6px; margin-top: 6px; }
-
-        /* ── Close reason cards ── */
+        .reserve-discount-opt.selected { border-color: #8C1D40; background: rgba(140,29,64,0.06); color: #8C1D40; }
+        .status-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .status-modal { background: #fff; border-radius: 18px; width: 100%; max-width: 420px; padding: 24px; max-height: 90vh; overflow-y: auto; }
+        .status-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid #e8e5de; border-radius: 10px; margin-bottom: 7px; cursor: pointer; transition: all 0.12s; }
+        .status-card.selected { border-color: #8C1D40 !important; background: #fdf2f5 !important; }
         .close-reason-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
         .close-reason-card { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 2px solid #e8e5de; border-radius: 9px; cursor: pointer; transition: all 0.15s; background: #fff; text-align: left; font-family: 'DM Sans', sans-serif; }
         .close-reason-card:hover { border-color: #ccc; background: #faf9f6; }
         .close-reason-card.selected { border-color: #8C1D40; background: #fdf2f5; }
         .close-reason-icon { font-size: 18px; flex-shrink: 0; }
-        .close-reason-label { font-size: 12px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
-
-        /* ── Toast ── */
-        .ld-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
-        @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+        .ld2-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; z-index: 200; box-shadow: 0 4px 20px rgba(0,0,0,0.2); white-space: nowrap; }
+        .ld2-toast.error { background: #ef4444; }
       `}</style>
 
-      <div className="ld-page">
+      <div className="ld2-page">
+        <div className="ld2-wrap">
 
-        {/* Toast */}
-        {toast && (
-          <div className="ld-toast" style={{ background: toast.type === 'success' ? '#1a1a1a' : '#8C1D40', color: '#fff' }}>
-            {toast.type === 'success' ? '✓ ' : '✕ '}{toast.msg}
+          {/* ── BREADCRUMB ── */}
+          <div className="ld2-bc">
+            <a href="/landlord/leads">Leads</a>
+            <span className="ld2-bc-sep">/</span>
+            <span className="ld2-bc-cur">
+              {lead.first_name}{lead.last_name ? ` ${lead.last_name}` : ''}{property ? ` · ${property.name}` : ''}
+            </span>
           </div>
-        )}
 
-        {/* ── HEADER ── */}
-        <div className="ld-hdr">
-          <div className="ld-hdr-top">
-            <button className="ld-back" onClick={() => router.push('/landlord/leads')}>← Leads</button>
-            <div className="ld-av">{initials}</div>
-            <div className="ld-name-block">
-              <div className="ld-name">
-                {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-                <span className="ld-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
-                  {meta.icon} {meta.label}{lead.status === 'closed' && lead.closed_reason ? ` · ${{
-                    leased: 'Leased',
-                    found_another_place: 'Found Another Place',
-                    unresponsive: 'Unresponsive',
-                    budget_mismatch: 'Budget Mismatch',
-                    not_qualified: 'Not Qualified',
-                    other: 'Other',
-                  }[lead.closed_reason] ?? lead.closed_reason}` : ''}
+          {/* ── HEADER CARD ── */}
+          <div className="ld2-header">
+            <div className="ld2-avatar">{initials}</div>
+            <div className="ld2-hd-main">
+              <div className="ld2-name-row">
+                <span className="ld2-name">{lead.first_name}{lead.last_name ? ` ${lead.last_name}` : ''}</span>
+                <span className="ld2-badge ld2-badge-status">
+                  <span style={{ fontSize: '10px' }}>▣</span>
+                  {meta.label}
                 </span>
-                {heat.icon && <span style={{ fontSize: '13px' }} title={heat.label}>{heat.icon}</span>}
+                <span className={`ld2-badge ${heat.icon === '🔥' ? 'ld2-badge-heat-hot' : heat.icon === '🌡' ? 'ld2-badge-heat-warm' : heat.icon === '·' && heat.label.includes('Cool') ? 'ld2-badge-heat-cool' : 'ld2-badge-heat-cold'}`}>
+                  {heat.icon} {heat.label.split(' — ')[0]}
+                </span>
               </div>
-              <div className="ld-sub">
-                <a href={`mailto:${lead.email}`} style={{ color: '#9b9b9b', textDecoration: 'none' }}>{lead.email}</a>
-                {lead.phone ? <> · <a href={`tel:${lead.phone}`} style={{ color: '#9b9b9b', textDecoration: 'none' }}>+1 {formatPhoneDisplay(lead.phone)}</a></> : ''}
-                {' '}· {lead.created_at ? timeAgo(lead.created_at) : '—'}
+              <div className="ld2-contacts">
+                <div className="ld2-contact-item">
+                  <span style={{ fontSize: '13px' }}>✉</span>
+                  <a href={`mailto:${lead.email}`}>{lead.email}</a>
+                  <button className={`ld2-copy-icon${contactCopied === 'email' ? ' ok' : ''}`} title="Copy email"
+                    onClick={() => { navigator.clipboard.writeText(lead.email); setContactCopied('email'); setTimeout(() => setContactCopied(null), 2000) }}>
+                    {contactCopied === 'email' ? '✓' : '⎘'}
+                  </button>
+                </div>
+                {lead.phone && (
+                  <div className="ld2-contact-item">
+                    <span style={{ fontSize: '13px' }}>☏</span>
+                    <a href={`tel:${lead.phone}`}>+1 {formatPhoneDisplay(lead.phone)}</a>
+                    <button className={`ld2-copy-icon${contactCopied === 'phone' ? ' ok' : ''}`} title="Copy phone"
+                      onClick={() => { navigator.clipboard.writeText(`+1${lead.phone}`); setContactCopied('phone'); setTimeout(() => setContactCopied(null), 2000) }}>
+                      {contactCopied === 'phone' ? '✓' : '⎘'}
+                    </button>
+                  </div>
+                )}
+                <div className="ld2-contact-item" style={{ color: '#9b9b9b' }}>
+                  <span style={{ fontSize: '13px' }}>⏱</span>
+                  Submitted {lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'} · {lead.created_at ? timeAgo(lead.created_at) : ''}
+                </div>
               </div>
             </div>
             {property && (
-              <div className="ld-prop-block">
-                <div className="ld-prop-name">{property.name}</div>
-                <div className="ld-prop-addr">📍 {property.address}</div>
-                <div className="ld-prop-price">${property.price?.toLocaleString()}/mo</div>
+              <div className="ld2-listing">
+                <div className="ld2-listing-label">Listing</div>
+                <div className="ld2-listing-name">{property.name}</div>
+                <div className="ld2-listing-addr">
+                  <span style={{ fontSize: '11px' }}>◎</span>
+                  {property.address}
+                </div>
+                <div className="ld2-listing-price">
+                  ${property.price.toLocaleString()}<span>/mo</span>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Pipeline strip */}
-          <div className="ld-pipe">
+          {/* ── ACTION BAR ── */}
+          <div className="ld2-actions">
+            {activeReservation ? (
+              <button className="ld2-btn ld2-btn-primary" onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank')}>
+                <span>🔍</span>
+                {isActiveResAcc ? 'View Accepted Offer' : isActiveResExp ? 'View Expired Offer' : 'View / Send Offer'}
+              </button>
+            ) : (
+              <button className="ld2-btn ld2-btn-primary" onClick={() => setReserveModal(true)}>
+                <span>⊕</span> Build Offer
+              </button>
+            )}
+            {activeReservation && (
+              <button className="ld2-btn ld2-btn-ghost" onClick={() => setReserveModal(true)}>+ New Offer</button>
+            )}
+            <a href={`mailto:${lead.email}?subject=Regarding your interest at ${property?.name || 'our property'}`} className="ld2-btn ld2-btn-green" style={{ textDecoration: 'none' }}>
+              <span>✉</span> Email {lead.first_name || ''}
+            </a>
+            {lead.phone ? (
+              <a href={`tel:${lead.phone}`} className="ld2-btn ld2-btn-ghost" style={{ textDecoration: 'none' }}>
+                <span>☏</span> Call
+              </a>
+            ) : (
+              <button className="ld2-btn ld2-btn-ghost" disabled style={{ opacity: 0.45, cursor: 'not-allowed' }}>☏ Call</button>
+            )}
+            <button className="ld2-btn ld2-btn-cs">
+              <span>💬</span> SMS
+            </button>
+            <div className="ld2-sep" />
+            {tourData ? (
+              <button className="ld2-btn ld2-btn-ghost" onClick={() => setCancelTourModal(true)}>
+                <span>📅</span> Manage Tour
+              </button>
+            ) : (
+              <button className="ld2-btn ld2-btn-ghost" disabled={inviting} onClick={handleInviteToTour}>
+                <span>📅</span> {inviting ? '…' : tourInviteSent ? 'Resend Invite' : 'Invite to Tour'}
+              </button>
+            )}
+            <button className="ld2-btn ld2-btn-ghost" onClick={openGroupsModal}>
+              <span>👥</span> Roommate Groups
+            </button>
+            <button className="ld2-btn ld2-btn-ghost" onClick={() => setEditModal(true)}>
+              <span>✎</span> Edit details
+            </button>
+            {properties.length > 1 && (
+              <button className="ld2-btn ld2-btn-ghost" onClick={() => { setChangePropertySlug(lead.property || ''); setChangePropertyConfirm(false); setChangePropertyModal(true) }}>
+                <span>⇄</span> Move Lead
+              </button>
+            )}
+            <button className="ld2-more-btn" title="More options">···</button>
+            <div style={{ marginLeft: 'auto' }} />
+            {lead.status !== 'closed' && (
+              <button className="ld2-btn ld2-btn-danger" onClick={() => { setPendingStatus('closed'); setStatusModal(true) }}>
+                <span>✕</span> Close Lead
+              </button>
+            )}
+          </div>
+
+          {/* ── PIPELINE ── */}
+          <div className="ld2-pipeline">
             {STATUS_ORDER.map((s, i) => {
-              const sm = STATUS_META[s]
               const currentIdx = STATUS_ORDER.indexOf(lead.status)
               const isPast = i < currentIdx
               const isActive = lead.status === s
               return (
-                <button
-                  key={s}
-                  className={`ld-pipe-btn${isActive ? ' active' : isPast ? ' past' : ''}`}
-                  style={isActive ? { color: meta.color, borderBottomColor: meta.color, background: meta.bg } : {}}
-                  onClick={() => { setPendingStatus(s); setStatusModal(true) }}
-                  title={sm.desc}
-                >
-                  <span>{sm.icon}</span>
-                  <span>{sm.label}</span>
-                </button>
+                <div key={s} className={`ld2-stage ${isActive ? 'active' : isPast ? 'past' : 'future'}`}
+                  onClick={() => { if (!isActive) { setPendingStatus(s); setStatusModal(true) } }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
+                    <div className="ld2-stage-dot" />
+                  </div>
+                  <div className="ld2-stage-name">{STATUS_META[s].label}</div>
+                  <div className="ld2-stage-days">
+                    {isActive ? `${daysInStage}d in stage` : isPast ? '—' : '—'}
+                  </div>
+                </div>
               )
             })}
           </div>
 
-          {/* Action bar */}
-          <div className="ld-act-bar">
-            <button className="ld-act-btn ld-act-btn-gold" onClick={() => setStatusModal(true)}>🔄 Status</button>
-            <button className="ld-act-btn ld-act-btn-ghost" onClick={() => setEditModal(true)}>✎ Edit</button>
-            <div className="ld-act-sep" />
-            {needsRemind && (
-              <button className="ld-act-btn ld-act-btn-primary" disabled={reminding} onClick={sendReminder}>
-                {reminding ? '…' : '📧 Send Reminder'}
-              </button>
-            )}
-            {activeReservation ? (
-              <button className="ld-act-btn ld-act-btn-primary" onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank')}>
-                🔍 {isActiveResAcc ? 'View Accepted Offer' : isActiveResExp ? 'View Expired Offer' : 'View / Send Offer'}
-              </button>
-            ) : (
-              <button className="ld-act-btn ld-act-btn-primary" onClick={() => setReserveModal(true)}>🔒 Build Offer</button>
-            )}
-            {activeReservation && (
-              <button className="ld-act-btn ld-act-btn-ghost" onClick={() => setReserveModal(true)}>+ New Offer</button>
-            )}
-            <div className="ld-act-sep" />
-            {tourData ? (
-              <button className="ld-act-btn ld-act-btn-ghost" onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }}>
-                📅 Manage Tour
-              </button>
-            ) : (
-              <button className="ld-act-btn ld-act-btn-ghost" disabled={inviting} onClick={handleInviteToTour}>
-                {inviting ? '…' : tourInviteSent ? '🔄 Resend Invite' : '🎉 Invite to Tour'}
-              </button>
-            )}
-            <div className="ld-act-sep" />
-            <button className="ld-act-btn ld-act-btn-ghost" onClick={openGroupsModal}>
-              👥 {leadGroupIds.size > 0 ? `Groups (${leadGroupIds.size})` : 'Roommate Groups'}
-            </button>
-            <div className="ld-act-sep" />
-            <a href={`mailto:${lead.email}?subject=Regarding your interest at ${property?.name || lead.property || 'our property'}`} className="ld-act-btn ld-act-btn-ghost">✉ Email</a>
-            {lead.phone && <a href={`tel:${lead.phone}`} className="ld-act-btn ld-act-btn-ghost">📞 Call</a>}
-            {lead.status !== 'closed' && (
-              <>
-                <div className="ld-act-sep" />
-                <button
-                  className="ld-act-btn ld-act-btn-danger"
-                  onClick={() => { setPendingStatus('closed'); setStatusModal(true) }}
-                >
-                  🏁 Close Lead
+          {/* ── AI NEXT BEST ACTION ── */}
+          <div className="ld2-ai">
+            <div className="ld2-ai-left">
+              <div className="ld2-ai-label">✦ AI · Next Best Action</div>
+              <div className="ld2-ai-heading">
+                {lead.status === 'cold' && 'Send a personal reactivation note — this lead needs a warm nudge.'}
+                {lead.status === 'new' && `Reach out to ${lead.first_name || 'this lead'} now — responding within 1 hour triples conversion.`}
+                {lead.status === 'contacted' && `Follow up with ${lead.first_name || 'this lead'} — 24h nudge boosts reply rates significantly.`}
+                {lead.status === 'follow_up' && 'Try a different channel — switch from email to text or call.'}
+                {lead.status === 'engaged' && `Push toward a tour or offer — ${lead.first_name || 'this lead'} is actively engaged.`}
+                {lead.status === 'qualified' && 'Schedule a tour or build a reservation offer — this lead is fully qualified.'}
+                {lead.status === 'tour_scheduled' && `Prep the unit and send a reminder 24h before the tour.`}
+                {lead.status === 'closed' && 'This lead is closed — no action needed.'}
+              </div>
+              <div className="ld2-ai-body">{insight.paragraph}</div>
+              <div className="ld2-ai-chips">
+                {insight.chips.map((c, i) => <span key={i} className="ld2-ai-chip">{c.label}</span>)}
+              </div>
+            </div>
+            <div className="ld2-ai-right">
+              {needsRemind ? (
+                <button className="ld2-ai-cta" disabled={reminding} onClick={sendReminder}>
+                  ✦ {reminding ? 'Sending…' : 'Send reactivation'}
                 </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* ── AI INSIGHT CARD ── */}
-        <div className="ld-insight-wrap">
-          <div className="ld-insight">
-            <div className="ld-insight-hd">AI Lead Summary</div>
-            <div className="ld-insight-para">{insight.paragraph || 'No insights available yet.'}</div>
-            <div className="ld-chips">
-              {insight.chips.map((chip, i) => (
-                <span key={i} className="ld-chip" style={{ color: chip.color, background: chip.bg, borderColor: chip.color + '55' }}>
-                  {chip.label}
-                </span>
-              ))}
+              ) : tourData ? (
+                <button className="ld2-ai-cta" onClick={() => setSendingTourReminder ? setSendingTourReminder(true) : null} disabled style={{ opacity: 0.6 }}>
+                  ✦ Send tour reminder
+                </button>
+              ) : (
+                <button className="ld2-ai-cta" onClick={() => setReserveModal(true)}>
+                  ✦ Build offer
+                </button>
+              )}
+              <button className="ld2-ai-link" onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation?.id || ''}`, '_blank')}>Preview draft</button>
+              <button className="ld2-ai-link">Dismiss</button>
             </div>
           </div>
-        </div>
-
-        <div className="ld-body">
-
-          {/* Grouped inquiries banner */}
-          {groupedInquiries.length > 1 && (
-            <div style={{ background: 'rgba(139,92,246,0.06)', border: '1.5px solid rgba(139,92,246,0.22)', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px' }}>
-                <span style={{ fontSize: '13px' }}>🔁</span>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  {groupedInquiries.length} Inquiries from This Contact
-                </span>
-                <span style={{ fontSize: '10px', color: '#9b9b9b', marginLeft: 'auto' }}>Status changes apply to all</span>
-              </div>
-              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                {groupedInquiries.map((inq, i) => (
-                  <div
-                    key={inq.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: '5px', background: inq.id === leadId ? 'rgba(139,92,246,0.1)' : '#fff', border: `1px solid ${inq.id === leadId ? 'rgba(139,92,246,0.3)' : '#e8e5de'}`, borderRadius: '7px', padding: '5px 9px', cursor: inq.id !== leadId ? 'pointer' : 'default', fontSize: '11px' }}
-                    onClick={() => inq.id !== leadId && window.open(`/landlord/leads/${inq.id}`, '_blank')}
-                  >
-                    <span style={{ fontWeight: 700, color: '#8b5cf6' }}>#{i + 1}</span>
-                    <span style={{ color: '#3a3a3a' }}>
-                      {inq.created_at ? new Date(inq.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                    </span>
-                    {inq.id === leadId && <span style={{ fontWeight: 700, color: '#8b5cf6', fontSize: '10px' }}>← viewing</span>}
-                    {inq.id !== leadId && <span style={{ color: '#b0a898' }}>→</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* ── 3-COL GRID ── */}
-          <div className="ld-grid3">
+          <div className="ld2-grid">
 
-            {/* COL 1: Lead info + Prescreen */}
+            {/* ── LEFT COL ── */}
             <div>
-              <div className="ld-card">
-                <div className="ld-card-hd">
-                  <span className="ld-card-ttl">Lead Information</span>
-                  <button onClick={() => setEditModal(true)} style={{ background: 'none', border: 'none', fontSize: '11px', color: '#8C1D40', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>✎ Edit</button>
-                </div>
-                <div className="ld-card-bd">
-                  <div className="kv"><span className="kv-l">Name</span><span className="kv-r">{lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}</span></div>
-                  <div className="kv"><span className="kv-l">Email</span><span className="kv-r"><a href={`mailto:${lead.email}`} style={{ color: '#8C1D40', textDecoration: 'none' }}>{lead.email}</a></span></div>
-                  <div className="kv"><span className="kv-l">Phone</span><span className="kv-r">{lead.phone ? `+1 ${formatPhoneDisplay(lead.phone)}` : '—'}</span></div>
-                  <div className="kv"><span className="kv-l">Property</span><span className="kv-r">{property?.name || lead.property || '—'}</span></div>
-                  <div className="kv"><span className="kv-l">Move-in</span><span className="kv-r">{lead.move_in_date ? new Date(lead.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></div>
-                  <div className="kv"><span className="kv-l">Submitted</span><span className="kv-r">{lead.created_at ? timeAgo(lead.created_at) : '—'}</span></div>
-                  <div className="kv"><span className="kv-l">Lead Age</span><span className="kv-r" style={{ color: heat.color, fontWeight: 600 }}>{heat.icon} {heat.label}</span></div>
-                </div>
-              </div>
 
-              <div className="ld-card">
-                <div className="ld-card-hd">
-                  <span className="ld-card-ttl">Pre-Screen</span>
-                  {hasPrescreen
-                    ? <span style={{ fontSize: '10px', fontWeight: 600, color: '#10b981' }}>✓ Complete</span>
-                    : <span style={{ fontSize: '10px', fontWeight: 600, color: '#f97316' }}>Not submitted</span>
-                  }
+              {/* Match Score */}
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: matchScore && matchScore >= 65 ? '#22c55e' : matchScore ? '#f59e0b' : '#e2e8f0' }} />
+                    Match Score
+                  </div>
+                  <button className="ld2-card-action" style={{ fontSize: '11px', color: '#9b9b9b' }}>How is this calculated? ⓘ</button>
                 </div>
-                <div className="ld-card-bd">
-                  {!hasPrescreen ? (
-                    <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                      <div style={{ fontSize: '22px', marginBottom: '5px' }}>📋</div>
-                      <div style={{ fontSize: '12px', color: '#6b6b6b', marginBottom: '10px' }}>Pre-screen not yet submitted.</div>
+                <div className="ld2-card-body">
+                  {matchScore && matchVerdict ? (
+                    <>
+                      <div className="ld2-score-ring">
+                        <svg className="ld2-score-svg" viewBox="0 0 80 80">
+                          <circle cx="40" cy="40" r="34" fill="none" stroke="#f0ede6" strokeWidth="7" />
+                          <circle cx="40" cy="40" r="34" fill="none" stroke={matchVerdict.color} strokeWidth="7"
+                            strokeDasharray={`${(matchScore / 100) * 213.6} 213.6`} strokeLinecap="round" />
+                        </svg>
+                        <div className="ld2-score-num">{matchScore}<span className="ld2-score-denom">/100</span></div>
+                      </div>
+                      <div className="ld2-score-verdict" style={{ color: matchVerdict.color }}>{matchVerdict.label}</div>
+                      <div className="ld2-score-desc">
+                        {prescreen?.monthly_budget && property
+                          ? `Budget ${prescreen.monthly_budget >= property.price ? 'covers' : 'is below'} asking rent.${prescreen.notes ? ' ' + prescreen.notes.slice(0, 60) : ''}`
+                          : 'Pre-screen complete — score based on available data.'}
+                      </div>
+                      {budgetVsRent && (
+                        <div className="ld2-metric">
+                          <div className="ld2-metric-row">
+                            <span className="ld2-metric-label">Budget vs. rent</span>
+                            <span className="ld2-metric-val">{budgetVsRent}</span>
+                          </div>
+                          <div className="ld2-bar">
+                            <div className="ld2-bar-fill" style={{ width: `${Math.min(100, ((prescreen?.monthly_budget ?? 0) / (property?.price ?? 1)) * 80)}%`, background: (prescreen?.monthly_budget ?? 0) >= (property?.price ?? 0) ? '#22c55e' : '#f59e0b' }} />
+                          </div>
+                        </div>
+                      )}
+                      {prescreen?.move_in_date && (
+                        <div className="ld2-metric">
+                          <div className="ld2-metric-row">
+                            <span className="ld2-metric-label">Move-in alignment</span>
+                            <span className="ld2-metric-val">{prescreen.move_in_date}</span>
+                          </div>
+                          <div className="ld2-bar">
+                            <div className="ld2-bar-fill" style={{ width: '80%' }} />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="ld2-no-score">
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>⊙</div>
+                      <div>No pre-screen yet</div>
+                      <div style={{ fontSize: '11px', marginTop: '4px', color: '#b0a898' }}>Score calculated after pre-screen</div>
                       {needsRemind && (
-                        <button className="btn-primary" style={{ fontSize: '12px', padding: '6px 14px' }} disabled={reminding} onClick={sendReminder}>
-                          {reminding ? 'Sending…' : '📧 Send Reminder'}
+                        <button className="ld2-ns-btn" onClick={sendReminder} disabled={reminding}>
+                          {reminding ? 'Sending…' : '📧 Send reminder'}
                         </button>
                       )}
                     </div>
-                  ) : (
+                  )}
+                </div>
+              </div>
+
+              {/* Pre-screen Profile */}
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: prescreen ? '#22c55e' : '#f59e0b' }} />
+                    Pre-screen Profile
+                  </div>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: prescreen ? '#16a34a' : '#f59e0b' }}>
+                    {prescreen ? '✓ Complete' : '⚠ Pending'}
+                  </span>
+                </div>
+                <div className="ld2-card-body">
+                  {prescreen ? (
                     <>
                       {prescreen.about && (
-                        <div style={{ background: '#fdf2f5', borderLeft: '3px solid #8C1D40', borderRadius: '0 6px 6px 0', padding: '8px 10px', marginBottom: '9px', fontSize: '12px', color: '#3a3a3a', lineHeight: 1.6, fontStyle: 'italic' }}>
-                          &ldquo;{prescreen.about}&rdquo;
+                        <div className="ld2-quote">
+                          <div className="ld2-quote-text">"{prescreen.about}"</div>
+                          <div className="ld2-quote-attr">— Submitted {lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}</div>
                         </div>
                       )}
-                      <div className="ps-grid">
-                        {(prescreen.occupation || prescreen.is_student !== null) && (
-                          <div className="ps-tile">
-                            <div className="ps-tile-l">Occupation</div>
-                            <div className="ps-tile-v">{prescreen.occupation || (prescreen.is_student ? 'Student' : 'Non-student')}{(prescreen.occupation === 'Student' || prescreen.is_student) && prescreen.university ? ` — ${prescreen.university}` : ''}</div>
+                      <div className="ld2-fields">
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Occupation</div>
+                          <div className="ld2-field-val">{prescreen.is_student ? `Student${prescreen.university ? ` · ${prescreen.university}` : ''}` : (prescreen.occupation || '—')}</div>
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Gender</div>
+                          <div className="ld2-field-val">{prescreen.gender || '—'}</div>
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Age</div>
+                          <div className="ld2-field-val">
+                            {prescreen.birthdate
+                              ? `${Math.floor((Date.now() - new Date(prescreen.birthdate).getTime()) / (365.25 * 86400000))} · ${prescreen.birthdate}`
+                              : '—'}
                           </div>
-                        )}
-                        {prescreen.gender && <div className="ps-tile"><div className="ps-tile-l">Gender</div><div className="ps-tile-v">{prescreen.gender}</div></div>}
-                        {prescreen.birthdate && <div className="ps-tile"><div className="ps-tile-l">Birthdate</div><div className="ps-tile-v">{new Date(prescreen.birthdate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div></div>}
-                        {prescreen.move_in_date && <div className="ps-tile"><div className="ps-tile-l">Move-in</div><div className="ps-tile-v">{prescreen.move_in_date}</div></div>}
-                        {prescreen.group_size !== null && <div className="ps-tile"><div className="ps-tile-l">Group</div><div className="ps-tile-v">{prescreen.group_size === 1 ? 'Solo' : `${prescreen.group_size} people`}</div></div>}
-                        {prescreen.monthly_budget && <div className="ps-tile"><div className="ps-tile-l">Budget</div><div className="ps-tile-v" style={{ color: '#8C1D40', fontWeight: 700 }}>${prescreen.monthly_budget.toLocaleString()}/mo</div></div>}
-                        {prescreen.lease_length && <div className="ps-tile"><div className="ps-tile-l">Lease</div><div className="ps-tile-v">{prescreen.lease_length}</div></div>}
-                        {prescreen.lifestyle && <div className="ps-tile"><div className="ps-tile-l">Lifestyle</div><div className="ps-tile-v">{prescreen.lifestyle}</div></div>}
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Move-in</div>
+                          <div className="ld2-field-val">{prescreen.move_in_date ? new Date(prescreen.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div>
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Group</div>
+                          <div className="ld2-field-val">{prescreen.group_size === 1 ? 'Solo' : prescreen.group_size ? `${prescreen.group_size} people` : '—'}</div>
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Lease</div>
+                          <div className="ld2-field-val">{prescreen.lease_length || '—'}</div>
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Budget</div>
+                          <div className="ld2-field-val budget">{prescreen.monthly_budget ? `$${prescreen.monthly_budget.toLocaleString()}/mo` : '—'}</div>
+                        </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Lifestyle</div>
+                          <div className="ld2-field-val" style={{ textTransform: 'capitalize' }}>{prescreen.lifestyle || '—'}</div>
+                        </div>
                       </div>
                       {prescreen.notes && (
-                        <div style={{ marginTop: '9px', background: '#faf9f6', border: '1px solid #f0ede6', borderRadius: '6px', padding: '9px 11px', fontSize: '12px', color: '#4a4a4a', lineHeight: 1.6 }}>
-                          <div style={{ fontSize: '9px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Notes</div>
-                          {prescreen.notes}
+                        <div className="ld2-pet-tag">
+                          <span>🐾</span>
+                          <span>{prescreen.notes}</span>
                         </div>
                       )}
-                      <div style={{ marginTop: '7px', fontSize: '10px', color: '#b0a898', textAlign: 'right' }}>
-                        Submitted {prescreen.created_at ? timeAgo(prescreen.created_at) : '—'}
-                      </div>
                     </>
+                  ) : (
+                    <div className="ld2-no-prescreen">
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>📋</div>
+                      <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Pre-screen not submitted yet</div>
+                      <button className="ld2-ns-btn" style={{ marginTop: '10px' }} onClick={sendReminder} disabled={reminding}>
+                        {reminding ? '…' : '📧 Send reminder'}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* COL 2: Reservation + Tour */}
+            {/* ── MID COL ── */}
             <div>
 
-              {/* Reservation */}
-              <div className="ld-card">
-                <div className="ld-card-hd">
-                  <span className="ld-card-ttl">Spot Reservation</span>
-                  {activeReservation && (() => {
-                    if (isActiveResAcc) return <span style={{ fontSize: '10px', fontWeight: 600, color: '#10b981' }}>✓ Accepted</span>
-                    if (isActiveResExp) return <span style={{ fontSize: '10px', fontWeight: 600, color: '#ef4444' }}>⛔ Expired</span>
-                    return <span style={{ fontSize: '10px', fontWeight: 600, color: '#8C1D40' }}>🔒 Active</span>
+              {/* Tour Management */}
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: tourData ? '#8b5cf6' : '#e2e8f0' }} />
+                    Tour Management
+                  </div>
+                  {tourData && <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a' }}>✓ Confirmed</span>}
+                </div>
+                <div className="ld2-card-body">
+                  {tourData ? (() => {
+                    const td = new Date(tourData.scheduled_date + 'T12:00:00')
+                    return (
+                      <div className="ld2-tour-card">
+                        <div className="ld2-tour-date-box">
+                          <div className="ld2-tour-month">{td.toLocaleString('en-US', { month: 'short' })}</div>
+                          <div className="ld2-tour-day">{td.getDate()}</div>
+                          <div className="ld2-tour-dow">{td.toLocaleString('en-US', { weekday: 'short' })}</div>
+                        </div>
+                        <div className="ld2-tour-info">
+                          <div className="ld2-tour-tag">Confirmed Tour</div>
+                          <div className="ld2-tour-time">{fmtTourTime(tourData.time_slot)} · You hosting</div>
+                          <div className="ld2-tour-meta">
+                            {property?.name}{property?.address ? ` · ${property.address.split(',')[0]}` : ''}
+                          </div>
+                          {tourCountdown && (
+                            <div className="ld2-tour-countdown">
+                              <span>⏱</span> {tourCountdown}
+                            </div>
+                          )}
+                        </div>
+                        <div className="ld2-tour-actions">
+                          <button className="ld2-tour-btn ld2-tour-btn-ghost" disabled={sendingTourReminder} onClick={async () => {
+                            setSendingTourReminder(true)
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession()
+                              await fetch(`/api/tours/${tourData.id}/reminder`, { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } })
+                              showToast('Reminder sent!')
+                            } catch { showToast('Failed', 'error') }
+                            setSendingTourReminder(false)
+                          }}>
+                            <span>🔔</span> Resend reminder
+                          </button>
+                          <button className="ld2-tour-btn ld2-tour-btn-ghost" onClick={() => setManualTourModal(true)}>
+                            <span>↻</span> Reschedule
+                          </button>
+                          <button className="ld2-tour-btn ld2-tour-btn-danger" onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }}>
+                            <span>✕</span> Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })() : (
+                    <div className="ld2-no-tour">
+                      <p>No tour scheduled yet.</p>
+                      <div className="ld2-tour-invite-row">
+                        <button className="ld2-btn ld2-btn-ghost" disabled={inviting} onClick={handleInviteToTour}>
+                          {inviting ? '…' : tourInviteSent ? '🔄 Resend Invite' : '🎉 Invite to Tour'}
+                        </button>
+                        <button className="ld2-btn ld2-btn-ghost" onClick={() => setManualTourModal(true)}>📅 Book Manually</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tour checklist */}
+                  {tourData && (
+                    <div style={{ marginTop: '14px', borderTop: '1px solid #f0ede6', paddingTop: '14px' }}>
+                      {[
+                        { label: 'Send tour reminder', done: tourInviteSent, dueLabel: tourCountdown ? `Due ${tourCountdown}` : '' },
+                        { label: 'Unit show-ready (clean + lights)', done: false, dueLabel: 'Coming soon', cs: true },
+                        { label: 'Prepare lease packet', done: false, dueLabel: 'Coming soon', cs: true },
+                        { label: 'Build reservation offer after tour', done: !!activeReservation, dueLabel: 'Within 24h', cs: false, action: () => setReserveModal(true) },
+                      ].map((item, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 0', borderBottom: i < 3 ? '1px solid #f5f4f0' : 'none', opacity: item.cs ? 0.55 : 1 }}>
+                          <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: `2px solid ${item.done ? '#22c55e' : '#d0ccc5'}`, background: item.done ? '#22c55e' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {item.done && <span style={{ color: '#fff', fontSize: '10px' }}>✓</span>}
+                          </div>
+                          <span style={{ flex: 1, fontSize: '13px', color: '#1a1a1a' }}>{item.label}</span>
+                          {item.action && !item.done ? (
+                            <button onClick={item.action} style={{ fontSize: '11px', color: '#8C1D40', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}>→</button>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: item.cs ? '#b0a898' : '#9b9b9b' }}>{item.dueLabel}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Spot Reservation Offer */}
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: activeReservation && !isActiveResExp ? '#22c55e' : '#f59e0b' }} />
+                    Spot Reservation Offer
+                  </div>
+                  <button className="ld2-card-action" onClick={() => activeReservation ? window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank') : setReserveModal(true)}>
+                    {activeReservation ? 'View offer →' : 'Preview email →'}
+                  </button>
+                </div>
+                <div className="ld2-card-body">
+                  <div className="ld2-offer-desc">
+                    {activeReservation
+                      ? `Active offer — ${isActiveResAcc ? 'accepted by lead.' : isActiveResExp ? 'expired. Renew to re-engage.' : 'pending acceptance.'} Tap to view or resend.`
+                      : `Custom offer locks ${lead.first_name || 'the lead'} in. Preview before sending — no email goes out until you confirm.`}
+                  </div>
+                  <div className="ld2-offer-tiers">
+                    <div className="ld2-tier recommended">
+                      <div className="ld2-tier-badge">Recommended</div>
+                      <div className="ld2-tier-label">Standard</div>
+                      <div className="ld2-tier-price">${property?.price?.toLocaleString() ?? '—'}<span>/mo</span></div>
+                      <div className="ld2-tier-details">Listed rate · 12 mo lease · standard deposit</div>
+                      <div className="ld2-tier-stat">↗ Most common for this listing</div>
+                    </div>
+                    <div className="ld2-tier ld2-tier-cs" title="Coming soon">
+                      <div className="ld2-tier-label">Early-Move Discount</div>
+                      <div className="ld2-tier-price" style={{ opacity: 0.5 }}>
+                        {property?.price ? `$${Math.round(property.price * 0.955).toLocaleString()}` : '—'}<span>/mo</span>
+                      </div>
+                      <div className="ld2-tier-details">~5% off · move-in by next month</div>
+                      <div className="ld2-tier-stat" style={{ color: '#9b9b9b' }}>Coming soon</div>
+                    </div>
+                  </div>
+                  <div className="ld2-incentive-row" style={{ opacity: 0.5 }} title="Coming soon">
+                    <span>✦</span>
+                    <span>Add incentive: Free move-in cleaning · 1 mo free parking · Pet deposit waiver</span>
+                    <span style={{ marginLeft: 'auto', color: '#9b9b9b', fontSize: '12px' }}>Coming soon</span>
+                  </div>
+                  <div className="ld2-offer-actions">
+                    <button className="ld2-offer-cta" onClick={() => setReserveModal(true)}>
+                      ⊕ Build &amp; preview reservation offer
+                    </button>
+                    <button className="ld2-offer-draft">Save draft</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Reply */}
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: '#3b82f6' }} />
+                    Quick Reply
+                  </div>
+                  <span className="ld2-qr-meta">Copies template · paste to your phone</span>
+                </div>
+                <div className="ld2-card-body">
+                  <div className="ld2-qr-chips">
+                    <button className="ld2-qr-chip primary" onClick={() => copyQuickReply('Follow-Up')}>
+                      ✦ Reactivate cold lead
+                    </button>
+                    <button className="ld2-qr-chip" onClick={() => copyQuickReply('Tour')}>
+                      🔔 Tour reminder
+                    </button>
+                    <button className="ld2-qr-chip" onClick={() => copyQuickReply('Follow-Up')}>
+                      📋 Request pre-screen
+                    </button>
+                    <button className="ld2-qr-chip" onClick={() => { setReserveModal(true) }}>
+                      👋 Send offer
+                    </button>
+                    <button className="ld2-qr-chip" onClick={() => {
+                      const tmpl = smsTemplates.find(t => t.name.toLowerCase().includes('thank'))
+                      if (tmpl) { navigator.clipboard.writeText(fillTemplate(tmpl.body)); showToast('Post-tour template copied!') }
+                      else copyQuickReply('Tour')
+                    }}>
+                      🤝 Post-tour thank you
+                    </button>
+                    <button className="ld2-qr-chip cs">Blank</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SMS Templates */}
+              {smsTemplates.length > 0 && (
+                <div className="ld2-card">
+                  <div className="ld2-card-hd" style={{ cursor: 'pointer' }} onClick={() => setSmsPanelOpen(o => !o)}>
+                    <div className="ld2-card-title">
+                      <div className="ld2-card-dot" style={{ background: '#6366f1' }} />
+                      Text Message Templates
+                      <span style={{ fontSize: '10px', fontWeight: 400, color: '#9b9b9b' }}>— personalized for {lead.first_name || 'this lead'}</span>
+                    </div>
+                    <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{smsPanelOpen ? '▲' : '▼'}</span>
+                  </div>
+                  {smsPanelOpen && (() => {
+                    const CAT_ORDER = ['First Touch', 'Follow-Up', 'Tour', 'Check-In']
+                    const grouped = CAT_ORDER.reduce<Record<string, typeof smsTemplates>>((acc, c) => {
+                      acc[c] = smsTemplates.filter(t => t.category === c).sort((a, b) => a.position - b.position)
+                      return acc
+                    }, {})
+                    return (
+                      <>
+                        {CAT_ORDER.map(cat => {
+                          const catT = grouped[cat] || []
+                          if (!catT.length) return null
+                          return (
+                            <div key={cat}>
+                              <div className="ld2-sms-cat">{cat}</div>
+                              {catT.map(t => {
+                                const filled = fillTemplate(t.body)
+                                const ok = templatesCopied === t.id
+                                return (
+                                  <div key={t.id} className="ld2-sms-tmpl">
+                                    <div style={{ flex: 1 }}>
+                                      <div className="ld2-sms-name">{t.name}</div>
+                                      <div className="ld2-sms-body">{filled}</div>
+                                    </div>
+                                    <button className={`ld2-sms-copy${ok ? ' ok' : ''}`}
+                                      onClick={() => { navigator.clipboard.writeText(filled); setTemplatesCopied(t.id); setTimeout(() => setTemplatesCopied(null), 2000) }}>
+                                      {ok ? '✓ Copied' : '⎘ Copy'}
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })}
+                        <div className="ld2-sms-footer">
+                          <span style={{ fontSize: '11px', color: '#b0a898' }}>Variables filled · {property?.name}</span>
+                          <a href="/landlord/customizations" style={{ fontSize: '11px', color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>Edit templates →</a>
+                        </div>
+                      </>
+                    )
                   })()}
                 </div>
-                <div className="ld-card-bd">
-                  {activeReservation ? (
-                    <>
-                      <div style={{ background: isActiveResAcc ? 'rgba(16,185,129,0.05)' : isActiveResExp ? 'rgba(239,68,68,0.05)' : 'rgba(140,29,64,0.04)', border: `1.5px solid ${isActiveResAcc ? 'rgba(16,185,129,0.2)' : isActiveResExp ? 'rgba(239,68,68,0.2)' : 'rgba(140,29,64,0.15)'}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '9px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: isActiveResAcc ? '#10b981' : isActiveResExp ? '#ef4444' : '#8C1D40', marginBottom: '3px' }}>
-                          {isActiveResAcc ? 'Offer Accepted' : isActiveResExp ? 'Offer Expired' : 'Active — Send When Ready'}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.5 }}>
-                          {isActiveResAcc ? 'Lead accepted your reservation offer.' : isActiveResExp ? 'This offer expired. Create a new one.' : "Offer built — send email when you're ready."}
-                        </div>
-                        {activeReservation.expires_at && (
-                          <div style={{ fontSize: '11px', color: isActiveResExp ? '#ef4444' : '#9b9b9b', marginTop: '3px' }}>
-                            {isActiveResExp ? 'Expired ' : isActiveResAcc ? '' : 'Expires '}{new Date(activeReservation.expires_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank')}
-                        style={{ width: '100%', padding: '9px', background: 'linear-gradient(135deg,#8C1D40,#a02050)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px', boxShadow: '0 3px 10px rgba(140,29,64,0.22)' }}
-                      >
-                        🔍 View / Send Offer
-                      </button>
-                      <button
-                        onClick={() => setReserveModal(true)}
-                        style={{ width: '100%', padding: '7px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '7px', fontSize: '12px', fontWeight: 600, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                      >
-                        + Create New Offer
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '10px' }}>
-                        Build a custom pricing offer with optional discount — preview before sending.
-                      </div>
-                      <button
-                        onClick={() => setReserveModal(true)}
-                        style={{ width: '100%', padding: '11px', background: 'linear-gradient(135deg,#8C1D40,#a02050)', color: '#fff', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", boxShadow: '0 4px 14px rgba(140,29,64,0.26)' }}
-                      >
-                        🔒 Build Reservation Offer
-                      </button>
-                      <div style={{ fontSize: '11px', color: '#9b9b9b', textAlign: 'center', marginTop: '6px' }}>
-                        Preview &amp; edit before sending — no email until you choose
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Tour */}
-              <div className="ld-card">
-                <div className="ld-card-hd">
-                  <span className="ld-card-ttl">Tour Scheduling</span>
-                  {tourData && <span style={{ fontSize: '10px', fontWeight: 600, color: '#8b5cf6' }}>📅 Booked</span>}
-                </div>
-                <div className="ld-card-bd">
-                  {tourData ? (
-                    <>
-                      <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '10px 12px', marginBottom: '9px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Confirmed Tour</div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#1a1a1a', marginBottom: '2px' }}>
-                          {new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#6b6b6b' }}>
-                          {fmtTime(tourData.time_slot)} · {tourData.booked_by === 'tenant' ? 'Tenant booked' : 'You booked'}
-                        </div>
-                        {tourData.custom_note && (
-                          <div style={{ marginTop: '6px', fontSize: '11px', color: '#4a4a4a', fontStyle: 'italic', borderTop: '1px solid #ede9fe', paddingTop: '6px' }}>
-                            {tourData.custom_note}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={handleSendTourReminder}
-                        disabled={sendingTourReminder}
-                        style={{ width: '100%', padding: '8px', background: '#fff', border: '1.5px solid #e8e5de', borderRadius: '7px', fontSize: '12px', fontWeight: 600, color: '#1a1a1a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px' }}
-                      >
-                        {sendingTourReminder ? 'Sending…' : '⏰ Send Reminder'}
-                      </button>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button onClick={() => setManualTourModal(true)} style={{ flex: 1, padding: '7px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '7px', fontSize: '11px', fontWeight: 500, color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-                          ↺ Reschedule
-                        </button>
-                        <button onClick={() => { setCancelForm({ reason: '', notes: '' }); setCancelTourModal(true) }} style={{ flex: 1, padding: '7px', background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.25)', borderRadius: '7px', fontSize: '11px', fontWeight: 600, color: '#dc2626', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-                          ✕ Cancel
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={handleInviteToTour}
-                        disabled={inviting}
-                        style={{ width: '100%', padding: '11px', background: '#1a1a1a', color: '#FFC627', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: 700, cursor: inviting ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: inviting ? 0.6 : 1, marginBottom: '7px' }}
-                      >
-                        {inviting ? 'Sending…' : tourInviteSent ? '🔄 Resend Tour Invitation' : '🎉 Invite to Tour'}
-                      </button>
-                      {tourInviteSent && (
-                        <>
-                          <div style={{ fontSize: '11px', color: '#10b981', textAlign: 'center', marginBottom: '7px' }}>✓ Invitation sent — tenant selects time</div>
-                          <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '8px', padding: '9px 11px', marginBottom: '7px' }}>
-                            <div style={{ fontSize: '9px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Booking Link</div>
-                            <div style={{ fontSize: '10px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', border: '1px solid #e8e5de', borderRadius: '5px', padding: '5px 7px', marginBottom: '5px' }}>
-                              {(process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live')}/book-tour/{leadId}
-                            </div>
-                            <button
-                              onClick={() => { navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/book-tour/${leadId}`); setTourLinkCopied(true); setTimeout(() => setTourLinkCopied(false), 2000) }}
-                              style={{ width: '100%', padding: '5px', background: tourLinkCopied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${tourLinkCopied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '5px', fontSize: '11px', fontWeight: 600, color: tourLinkCopied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                            >
-                              {tourLinkCopied ? '✓ Copied!' : '⎘ Copy Link'}
-                            </button>
-                          </div>
-                        </>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '6px 0' }}>
-                        <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
-                        <span style={{ fontSize: '10px', color: '#9b9b9b' }}>or book manually</span>
-                        <div style={{ flex: 1, height: '1px', background: '#f0ede6' }} />
-                      </div>
-                      <button
-                        onClick={() => setManualTourModal(true)}
-                        style={{ width: '100%', padding: '9px', background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '12px', fontWeight: 600, color: '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                      >
-                        📋 Book Manually
-                      </button>
-                      <div style={{ fontSize: '10px', color: '#9b9b9b', textAlign: 'center', marginTop: '5px' }}>
-                        Requires availability in{' '}
-                        <a href={`/landlord/listings/${lead.property}/calendar`} style={{ color: '#8C1D40', textDecoration: 'none', fontWeight: 600 }}>Calendar →</a>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
+              )}
             </div>
 
-            {/* COL 3: Notes + Quick links + Email activity */}
+            {/* ── RIGHT COL ── */}
             <div>
 
               {/* Notes */}
-              <div className="ld-card">
-                <div className="ld-card-hd">
-                  <span className="ld-card-ttl">Notes</span>
-                  <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{notes.length} note{notes.length !== 1 ? 's' : ''}</span>
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: '#3b82f6' }} />
+                    Notes · <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>always visible</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{notes.length} {notes.length === 1 ? 'note' : 'notes'}</span>
                 </div>
-                <div className="ld-card-bd">
-                  {/* Compose */}
-                  <div className="note-compose" style={{ marginBottom: '12px' }}>
+                <div className="ld2-card-body">
+                  <div className="ld2-note-compose">
                     <textarea
-                      className="note-textarea"
-                      placeholder="Add a note — call outcomes, objections, next steps…"
+                      className="ld2-note-textarea"
+                      placeholder={`Jot a note — call outcome, objection, next step…`}
                       value={noteInput}
                       onChange={e => setNoteInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddNote() }}
+                      onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); if (noteInput.trim()) { setSavingNote(true); fetch(`/api/leads/${leadId}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: noteInput.trim() }) }).then(r => r.ok ? r.json() : null).then(d => { if (d?.note) { setNotes(prev => [d.note, ...prev]); setNoteInput('') } }).finally(() => setSavingNote(false)) } } }}
                     />
-                    <div className="note-actions">
-                      <span style={{ fontSize: '10px', color: '#c0b9b0' }}>⌘↵ to save</span>
-                      <button
-                        onClick={handleAddNote}
-                        disabled={savingNote || !noteInput.trim()}
-                        style={{ background: noteInput.trim() ? '#8C1D40' : '#e8e5de', color: noteInput.trim() ? '#fff' : '#9b9b9b', border: 'none', borderRadius: '7px', padding: '5px 13px', fontSize: '12px', fontWeight: 600, cursor: noteInput.trim() ? 'pointer' : 'not-allowed', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
-                      >
-                        {savingNote ? 'Saving…' : 'Save'}
+                    <div className="ld2-note-actions">
+                      <span className="ld2-note-save-hint" style={{ fontSize: '11px', color: '#b0a898' }}>⌘ + ↵ to save</span>
+                      <button className="ld2-note-add" disabled={savingNote || !noteInput.trim()}
+                        onClick={async () => {
+                          if (!noteInput.trim()) return
+                          setSavingNote(true)
+                          const r = await fetch(`/api/leads/${leadId}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: noteInput.trim() }) })
+                          if (r.ok) { const d = await r.json(); if (d.note) { setNotes(prev => [d.note, ...prev]); setNoteInput('') } }
+                          setSavingNote(false)
+                        }}>
+                        + Add note
                       </button>
                     </div>
                   </div>
-
-                  {/* Note list */}
                   {notesLoading ? (
-                    <div style={{ textAlign: 'center', padding: '12px 0', fontSize: '12px', color: '#9b9b9b' }}>Loading…</div>
+                    <div style={{ fontSize: '12px', color: '#9b9b9b', textAlign: 'center', padding: '12px 0' }}>Loading…</div>
                   ) : notes.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '14px 0', color: '#9b9b9b', fontSize: '12px' }}>No notes yet — jot down key context above.</div>
-                  ) : (
-                    notes.map(note => (
-                      <div key={note.id} className="note-item">
-                        {editingNoteId === note.id ? (
-                          <>
-                            <textarea
-                              className="note-edit-area"
-                              value={editingNoteContent}
-                              onChange={e => setEditingNoteContent(e.target.value)}
-                              autoFocus
-                            />
-                            <div className="note-edit-btns">
-                              <button
-                                onClick={() => handleUpdateNote(note.id)}
-                                disabled={!editingNoteContent.trim()}
-                                style={{ flex: 2, background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => { setEditingNoteId(null); setEditingNoteContent('') }}
-                                style={{ flex: 1, background: '#fff', color: '#6b6b6b', border: '1.5px solid #e8e5de', borderRadius: '6px', padding: '6px', fontSize: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
-                              <p className="note-content">{note.content}</p>
-                              <div className="note-item-actions" style={{ flexShrink: 0 }}>
-                                <button
-                                  className="note-item-btn note-item-btn-edit"
-                                  onClick={() => { setEditingNoteId(note.id); setEditingNoteContent(note.content) }}
-                                  title="Edit note"
-                                >✎</button>
-                                <button
-                                  className="note-item-btn note-item-btn-del"
-                                  disabled={deletingNoteId === note.id}
-                                  onClick={() => handleDeleteNote(note.id)}
-                                  title="Delete note"
-                                >{deletingNoteId === note.id ? '…' : '✕'}</button>
-                              </div>
-                            </div>
-                            <div className="note-meta">
-                              {note.updated_at !== note.created_at
-                                ? `Edited ${timeAgo(note.updated_at)}`
-                                : timeAgo(note.created_at)}
-                            </div>
-                          </>
-                        )}
+                    <div style={{ fontSize: '12px', color: '#b0a898', textAlign: 'center', padding: '12px 0' }}>No notes yet</div>
+                  ) : notes.map(n => (
+                    <div key={n.id} className="ld2-note-item">
+                      <div className="ld2-note-author">
+                        <span>You</span>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span className="ld2-note-date">{new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          <button className="ld2-note-del" onClick={async () => {
+                            setDeletingNoteId(n.id)
+                            await fetch(`/api/leads/${leadId}/notes/${n.id}`, { method: 'DELETE' })
+                            setNotes(prev => prev.filter(x => x.id !== n.id))
+                            setDeletingNoteId(null)
+                          }} disabled={deletingNoteId === n.id}>✕</button>
+                        </div>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Pre-screen link */}
-              <div className="ld-card">
-                <div className="ld-card-hd"><span className="ld-card-ttl">Pre-Screen Link</span></div>
-                <div className="ld-card-bd">
-                  <div style={{ fontSize: '10px', color: '#4a4a4a', wordBreak: 'break-all', fontFamily: 'monospace', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '6px', padding: '7px 9px', marginBottom: '7px' }}>
-                    {prescreenUrl}
-                  </div>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(prescreenUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-                    style={{ width: '100%', padding: '7px', background: copied ? 'rgba(16,185,129,0.08)' : '#fff', border: `1.5px solid ${copied ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '6px', fontSize: '12px', fontWeight: 600, color: copied ? '#10b981' : '#3a3a3a', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s' }}
-                  >
-                    {copied ? '✓ Copied!' : '⎘ Copy Link'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Email Activity */}
-              <div className="ld-card">
-                <div className="ld-card-hd">
-                  <span className="ld-card-ttl">Email Activity</span>
-                  <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{emails.length} sent</span>
-                </div>
-                <div className="ld-card-bd">
-                  {emails.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '14px 0', color: '#9b9b9b', fontSize: '12px' }}>No emails logged yet</div>
-                  ) : (
-                    emails.map(email => {
-                      const tm = EMAIL_TYPE_META[email.type] || { label: email.type, icon: '📧', color: '#6b7280' }
-                      return (
-                        <div key={email.id} className="tl-row">
-                          <div className="tl-dot" style={{ background: tm.color }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="tl-type">{tm.icon} {tm.label}</div>
-                            <div className="tl-meta">{email.subject?.length > 44 ? email.subject.slice(0, 44) + '…' : email.subject}</div>
-                            <div className="tl-meta" style={{ marginTop: '1px' }}>{timeAgo(email.sent_at)}</div>
+                      {editingNoteId === n.id ? (
+                        <div>
+                          <textarea style={{ width: '100%', border: '1.5px solid #8C1D40', borderRadius: '7px', padding: '8px', fontSize: '12px', fontFamily: "'DM Sans',sans-serif", resize: 'vertical', outline: 'none', minHeight: '60px' }}
+                            value={editingNoteContent} onChange={e => setEditingNoteContent(e.target.value)} />
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                            <button style={{ fontSize: '11px', fontWeight: 700, background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}
+                              onClick={async () => {
+                                await fetch(`/api/leads/${leadId}/notes/${n.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: editingNoteContent.trim() }) })
+                                setNotes(prev => prev.map(x => x.id === n.id ? { ...x, content: editingNoteContent.trim() } : x))
+                                setEditingNoteId(null)
+                              }}>Save</button>
+                            <button style={{ fontSize: '11px', background: 'none', border: '1px solid #e8e5de', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", color: '#6b6b6b' }} onClick={() => setEditingNoteId(null)}>Cancel</button>
                           </div>
                         </div>
-                      )
-                    })
-                  )}
+                      ) : (
+                        <div className="ld2-note-content" onClick={() => { setEditingNoteId(n.id); setEditingNoteContent(n.content) }} style={{ cursor: 'text' }}>{n.content}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Activity Timeline */}
+              <div className="ld2-card">
+                <div className="ld2-card-hd">
+                  <div className="ld2-card-title">
+                    <div className="ld2-card-dot" style={{ background: '#3b82f6' }} />
+                    Activity Timeline
+                  </div>
+                  <button className="ld2-card-action">View all →</button>
+                </div>
+                <div className="ld2-card-body">
+                  {(() => {
+                    const EMAIL_ICONS: Record<string, { icon: string; color: string; bg: string }> = {
+                      lead_welcome:               { icon: '✉', color: '#3b82f6', bg: '#eff6ff' },
+                      prescreen_reminder:         { icon: '⏰', color: '#f97316', bg: '#fff7ed' },
+                      lead_qualified_landlord:    { icon: '✓', color: '#10b981', bg: '#f0fdf4' },
+                      new_lead_landlord:          { icon: '🔔', color: '#8b5cf6', bg: '#f5f3ff' },
+                      tour_invitation:            { icon: '🎉', color: '#8C1D40', bg: '#fdf2f5' },
+                      tour_confirmation_tenant:   { icon: '📅', color: '#0ea5e9', bg: '#f0f9ff' },
+                      tour_confirmation_landlord: { icon: '📅', color: '#0ea5e9', bg: '#f0f9ff' },
+                      tour_reminder:              { icon: '⏰', color: '#d97706', bg: '#fffbeb' },
+                      tour_cancellation_tenant:   { icon: '✕', color: '#ef4444', bg: '#fef2f2' },
+                      tour_cancellation_landlord: { icon: '✕', color: '#ef4444', bg: '#fef2f2' },
+                      reservation_sent:           { icon: '🔒', color: '#8C1D40', bg: '#fdf2f5' },
+                    }
+                    const timelineItems = [
+                      ...emails.map(e => ({ id: e.id, type: 'email', emailType: e.type, title: EMAIL_TYPE_META[e.type]?.label || e.type, body: e.subject, time: e.sent_at })),
+                      { id: 'sub', type: 'submit', emailType: '', title: 'New lead submitted', body: `${lead.first_name || ''} → ${property?.name || lead.property || ''}`, time: lead.created_at || '' },
+                    ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 12)
+
+                    return timelineItems.length === 0
+                      ? <div style={{ fontSize: '12px', color: '#9b9b9b', textAlign: 'center', padding: '16px 0' }}>No activity yet</div>
+                      : timelineItems.map((item, i) => {
+                        const meta = item.type === 'email' ? (EMAIL_ICONS[item.emailType] || { icon: '✉', color: '#3b82f6', bg: '#eff6ff' }) : { icon: '◉', color: '#6b7280', bg: '#f9fafb' }
+                        return (
+                          <div key={i} className="ld2-tl-item">
+                            <div className="ld2-tl-icon" style={{ background: meta.bg, color: meta.color }}>{meta.icon}</div>
+                            <div className="ld2-tl-content">
+                              <div className="ld2-tl-title">{item.title}</div>
+                              <div className="ld2-tl-body">{item.body}</div>
+                            </div>
+                            <div className="ld2-tl-time">
+                              {item.time ? new Date(item.time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                              <br />
+                              {item.time ? new Date(item.time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}
+                            </div>
+                          </div>
+                        )
+                      })
+                  })()}
                 </div>
               </div>
 
@@ -1373,6 +1810,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
           </div>
         </div>
       </div>
+
+      {toast && <div className={`ld2-toast${toast.type === 'error' ? ' error' : ''}`}>{toast.msg}</div>}
+
 
       {/* ── MANUAL TOUR MODAL ── */}
       {manualTourModal && (
@@ -1599,91 +2039,189 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
             <div className="edit-sheet-body">
 
-              {/* Room selector (only if by_room) */}
+              {/* Room selector (only if by_room property) */}
               {reserveRooms.length > 0 && (
                 <div className="edit-field">
                   <label className="edit-field-label">Reserve Which Spot?</label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+                    {/* Entire Property option */}
                     <button
-                      className={`reserve-mode-opt${reserveForm.room_id === '' ? ' selected' : ''}`}
-                      onClick={() => setReserveForm(f => ({ ...f, room_id: '' }))}
+                      className={`reserve-mode-opt${reserveForm.mode === 'whole' ? ' selected' : ''}`}
+                      onClick={() => setReserveForm(f => ({ ...f, mode: 'whole', selectedRoomIds: [] }))}
                     >
-                      <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: reserveForm.room_id === '' ? 'rgba(140,29,64,0.1)' : '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🏠</div>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: reserveForm.mode === 'whole' ? 'rgba(140,29,64,0.1)' : '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🏠</div>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>Entire Property</div>
                         <div style={{ fontSize: '12px', color: '#9b9b9b' }}>
-                          ${(reserveRooms.length > 0 ? reserveRooms.reduce((s, r) => s + r.price, 0) : property?.price ?? 0).toLocaleString()}/mo
-                          {reserveRooms.length > 0 && <span style={{ color: '#b0a898' }}> (all {reserveRooms.length} rooms)</span>}
+                          ${reserveRooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo
+                          <span style={{ color: '#b0a898' }}> (all {reserveRooms.length} rooms)</span>
                         </div>
                       </div>
                     </button>
-                    {reserveRooms.map(room => (
-                      <button
-                        key={room.id}
-                        className={`reserve-mode-opt${reserveForm.room_id === room.id ? ' selected' : ''}`}
-                        onClick={() => setReserveForm(f => ({ ...f, room_id: room.id }))}
-                      >
-                        <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: reserveForm.room_id === room.id ? 'rgba(140,29,64,0.1)' : '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🛏</div>
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
-                          <div style={{ fontSize: '12px', color: '#9b9b9b' }}>${room.price.toLocaleString()}/mo</div>
-                        </div>
-                      </button>
-                    ))}
+
+                    {/* Specific rooms — checkboxes, max 2 */}
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '2px', marginBottom: '2px' }}>
+                      Or select up to 2 specific rooms
+                    </div>
+                    {reserveRooms.map(room => {
+                      const checked = reserveForm.selectedRoomIds.includes(room.id)
+                      const atMax = !checked && reserveForm.selectedRoomIds.length >= 2
+                      return (
+                        <button
+                          key={room.id}
+                          className={`reserve-mode-opt${checked ? ' selected' : ''}`}
+                          disabled={atMax}
+                          style={{ opacity: atMax ? 0.45 : 1 }}
+                          onClick={() => setReserveForm(f => {
+                            const newIds = checked
+                              ? f.selectedRoomIds.filter(id => id !== room.id)
+                              : [...f.selectedRoomIds, room.id]
+                            const newDiscounts = { ...f.roomDiscounts }
+                            if (checked) delete newDiscounts[room.id]
+                            return { ...f, mode: 'rooms', selectedRoomIds: newIds, roomDiscounts: newDiscounts }
+                          })}
+                        >
+                          <div style={{ width: '22px', height: '22px', borderRadius: '5px', border: `2px solid ${checked ? '#8C1D40' : '#d0ccc5'}`, background: checked ? '#8C1D40' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: '#fff', flexShrink: 0 }}>
+                            {checked ? '✓' : ''}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
+                            <div style={{ fontSize: '12px', color: '#9b9b9b' }}>${room.price.toLocaleString()}/mo</div>
+                          </div>
+                        </button>
+                      )
+                    })}
+
+                    {/* Selected rooms summary */}
+                    {reserveForm.mode === 'rooms' && reserveForm.selectedRoomIds.length > 0 && (
+                      <div style={{ fontSize: '12px', color: '#8C1D40', fontWeight: 600, padding: '6px 10px', background: 'rgba(140,29,64,0.05)', borderRadius: '7px' }}>
+                        {reserveForm.selectedRoomIds.length === 1 ? '1 room selected' : `${reserveForm.selectedRoomIds.length} rooms selected`}
+                        {' · '}${reserveForm.selectedRoomIds.reduce((s, id) => s + (reserveRooms.find(r => r.id === id)?.price ?? 0), 0).toLocaleString()}/mo total
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Discount */}
+              {/* Discount section */}
               <div className="edit-field">
                 <label className="edit-field-label">Offer a Discount? (optional)</label>
-                <div className="reserve-discount-toggle" style={{ marginBottom: '8px' }}>
-                  <button
-                    className={`reserve-discount-opt${reserveForm.discount_type === '' ? ' selected' : ''}`}
-                    onClick={() => setReserveForm(f => ({ ...f, discount_type: '', discount_amount: '' }))}
-                  >
-                    No discount
-                  </button>
-                  <button
-                    className={`reserve-discount-opt${reserveForm.discount_type === 'dollars' ? ' selected' : ''}`}
-                    onClick={() => setReserveForm(f => ({ ...f, discount_type: 'dollars' }))}
-                  >
-                    $ Off
-                  </button>
-                  <button
-                    className={`reserve-discount-opt${reserveForm.discount_type === 'percent' ? ' selected' : ''}`}
-                    onClick={() => setReserveForm(f => ({ ...f, discount_type: 'percent' }))}
-                  >
-                    % Off
-                  </button>
-                </div>
-                {reserveForm.discount_type && (
-                  <input
-                    className="edit-input"
-                    type="number"
-                    min="1"
-                    max={reserveForm.discount_type === 'percent' ? '100' : undefined}
-                    placeholder={reserveForm.discount_type === 'dollars' ? 'e.g. 100' : 'e.g. 10'}
-                    value={reserveForm.discount_amount}
-                    onChange={e => setReserveForm(f => ({ ...f, discount_amount: e.target.value }))}
-                  />
+
+                {/* Multi-room: show bundle vs per-room toggle */}
+                {reserveForm.mode === 'rooms' && reserveForm.selectedRoomIds.length > 0 && (
+                  <div className="reserve-discount-toggle" style={{ marginBottom: '12px' }}>
+                    <button
+                      className={`reserve-discount-opt${reserveForm.discount_mode === 'bundle' ? ' selected' : ''}`}
+                      onClick={() => setReserveForm(f => ({ ...f, discount_mode: 'bundle' }))}
+                    >
+                      Bundle Discount
+                    </button>
+                    <button
+                      className={`reserve-discount-opt${reserveForm.discount_mode === 'per_room' ? ' selected' : ''}`}
+                      onClick={() => setReserveForm(f => ({ ...f, discount_mode: 'per_room' }))}
+                    >
+                      Per Room
+                    </button>
+                  </div>
                 )}
-                {reserveForm.discount_type && reserveForm.discount_amount && (() => {
-                  const basePrice = reserveForm.room_id
-                    ? (reserveRooms.find(r => r.id === reserveForm.room_id)?.price ?? 0)
-                    : reserveRooms.length > 0
-                      ? reserveRooms.reduce((s, r) => s + r.price, 0)
-                      : (property?.price ?? 0)
-                  const disc = parseInt(reserveForm.discount_amount, 10)
-                  const final = reserveForm.discount_type === 'dollars'
-                    ? Math.max(0, basePrice - disc)
-                    : Math.round(basePrice * (1 - disc / 100))
-                  return (
-                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#8C1D40', fontWeight: 600 }}>
-                      Offer: ${basePrice.toLocaleString()} → <strong>${final.toLocaleString()}/mo</strong>
+
+                {/* Bundle discount or whole-property discount */}
+                {(reserveForm.mode === 'whole' || reserveForm.discount_mode === 'bundle') && (
+                  <>
+                    <div className="reserve-discount-toggle" style={{ marginBottom: '8px' }}>
+                      <button
+                        className={`reserve-discount-opt${reserveForm.discount_type === '' ? ' selected' : ''}`}
+                        onClick={() => setReserveForm(f => ({ ...f, discount_type: '', discount_amount: '' }))}
+                      >
+                        No discount
+                      </button>
+                      <button
+                        className={`reserve-discount-opt${reserveForm.discount_type === 'dollars' ? ' selected' : ''}`}
+                        onClick={() => setReserveForm(f => ({ ...f, discount_type: 'dollars' }))}
+                      >
+                        $ Off
+                      </button>
+                      <button
+                        className={`reserve-discount-opt${reserveForm.discount_type === 'percent' ? ' selected' : ''}`}
+                        onClick={() => setReserveForm(f => ({ ...f, discount_type: 'percent' }))}
+                      >
+                        % Off
+                      </button>
                     </div>
-                  )
-                })()}
+                    {reserveForm.discount_type && (
+                      <input
+                        className="edit-input"
+                        type="number"
+                        min="1"
+                        max={reserveForm.discount_type === 'percent' ? '100' : undefined}
+                        placeholder={reserveForm.discount_type === 'dollars' ? 'e.g. 100' : 'e.g. 10'}
+                        value={reserveForm.discount_amount}
+                        onChange={e => setReserveForm(f => ({ ...f, discount_amount: e.target.value }))}
+                      />
+                    )}
+                    {reserveForm.discount_type && reserveForm.discount_amount && (() => {
+                      const basePrice = reserveForm.mode === 'rooms'
+                        ? reserveForm.selectedRoomIds.reduce((s, id) => s + (reserveRooms.find(r => r.id === id)?.price ?? 0), 0)
+                        : reserveRooms.length > 0
+                          ? reserveRooms.reduce((s, r) => s + r.price, 0)
+                          : (property?.price ?? 0)
+                      const disc = parseInt(reserveForm.discount_amount, 10)
+                      const final = reserveForm.discount_type === 'dollars'
+                        ? Math.max(0, basePrice - disc)
+                        : Math.round(basePrice * (1 - disc / 100))
+                      return (
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: '#8C1D40', fontWeight: 600 }}>
+                          {reserveForm.discount_mode === 'bundle' ? 'Bundle' : 'Offer'}: ${basePrice.toLocaleString()} → <strong>${final.toLocaleString()}/mo</strong>
+                        </div>
+                      )
+                    })()}
+                  </>
+                )}
+
+                {/* Per-room discounts */}
+                {reserveForm.mode === 'rooms' && reserveForm.discount_mode === 'per_room' && reserveForm.selectedRoomIds.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {reserveForm.selectedRoomIds.map(rid => {
+                      const room = reserveRooms.find(r => r.id === rid)
+                      if (!room) return null
+                      const rd = reserveForm.roomDiscounts[rid] ?? { discount_type: '' as const, discount_amount: '' }
+                      const setRd = (patch: Partial<RoomDiscount>) =>
+                        setReserveForm(f => ({ ...f, roomDiscounts: { ...f.roomDiscounts, [rid]: { ...rd, ...patch } } }))
+                      return (
+                        <div key={rid} style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#1a1a1a', marginBottom: '8px' }}>
+                            🛏 {room.name} <span style={{ color: '#9b9b9b', fontWeight: 400 }}>${room.price.toLocaleString()}/mo</span>
+                          </div>
+                          <div className="reserve-discount-toggle" style={{ marginBottom: '6px' }}>
+                            <button className={`reserve-discount-opt${rd.discount_type === '' ? ' selected' : ''}`} onClick={() => setRd({ discount_type: '', discount_amount: '' })}>No discount</button>
+                            <button className={`reserve-discount-opt${rd.discount_type === 'dollars' ? ' selected' : ''}`} onClick={() => setRd({ discount_type: 'dollars' })}>$ Off</button>
+                            <button className={`reserve-discount-opt${rd.discount_type === 'percent' ? ' selected' : ''}`} onClick={() => setRd({ discount_type: 'percent' })}>% Off</button>
+                          </div>
+                          {rd.discount_type && (
+                            <input
+                              className="edit-input"
+                              type="number"
+                              min="1"
+                              max={rd.discount_type === 'percent' ? '100' : undefined}
+                              placeholder={rd.discount_type === 'dollars' ? 'e.g. 50' : 'e.g. 5'}
+                              value={rd.discount_amount}
+                              onChange={e => setRd({ discount_amount: e.target.value })}
+                              style={{ marginTop: '4px' }}
+                            />
+                          )}
+                          {rd.discount_type && rd.discount_amount && (() => {
+                            const disc = parseInt(rd.discount_amount, 10)
+                            const final = rd.discount_type === 'dollars'
+                              ? Math.max(0, room.price - disc)
+                              : Math.round(room.price * (1 - disc / 100))
+                            return <div style={{ marginTop: '5px', fontSize: '12px', color: '#8C1D40', fontWeight: 600 }}>${room.price.toLocaleString()} → <strong>${final.toLocaleString()}/mo</strong></div>
+                          })()}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Expiration */}
@@ -1720,7 +2258,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
             <div className="edit-sheet-footer">
               <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setReserveModal(false)}>Cancel</button>
               <button
-                disabled={reserveSending || (reserveForm.expires_mode === 'custom' && !reserveForm.custom_expires)}
+                disabled={reserveSending || (reserveForm.expires_mode === 'custom' && !reserveForm.custom_expires) || (reserveForm.mode === 'rooms' && reserveForm.selectedRoomIds.length === 0)}
                 onClick={handleSendReservation}
                 style={{
                   flex: 2, background: reserveSending ? '#9b9b9b' : 'linear-gradient(135deg, #8C1D40, #a02050)',
@@ -1732,6 +2270,142 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               >
                 {reserveSending ? 'Creating…' : '🔍 Preview Offer →'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CHANGE PROPERTY MODAL ── */}
+      {changePropertyModal && (
+        <div className="edit-overlay" onClick={() => { setChangePropertyModal(false); setChangePropertyConfirm(false) }}>
+          <div className="edit-sheet" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="edit-sheet-handle" />
+            <div className="edit-sheet-header">
+              <div>
+                <div className="edit-sheet-title">⇄ Move Lead to Another Property</div>
+                <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>
+                  {changePropertyConfirm ? 'Confirm the property change below.' : 'Select the property this lead should be moved to.'}
+                </div>
+              </div>
+              <button onClick={() => { setChangePropertyModal(false); setChangePropertyConfirm(false) }} style={{ background: '#f0ede6', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', fontSize: '14px', color: '#6b6b6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+
+            <div className="edit-sheet-body">
+              {!changePropertyConfirm ? (
+                <>
+                  {/* Current property */}
+                  <div className="edit-field">
+                    <label className="edit-field-label">Currently Assigned To</label>
+                    <div style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>
+                        {properties.find(p => p.slug === lead.property)?.name || lead.property || '—'}
+                      </div>
+                      {properties.find(p => p.slug === lead.property)?.address && (
+                        <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '2px' }}>
+                          📍 {properties.find(p => p.slug === lead.property)?.address}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* New property selector */}
+                  <div className="edit-field">
+                    <label className="edit-field-label">Move To</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {properties.filter(p => p.slug !== lead.property).map(p => (
+                        <button
+                          key={p.slug}
+                          onClick={() => setChangePropertySlug(p.slug)}
+                          style={{
+                            display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px',
+                            border: `1.5px solid ${changePropertySlug === p.slug ? '#8C1D40' : '#e8e5de'}`,
+                            borderRadius: '10px',
+                            background: changePropertySlug === p.slug ? 'rgba(140,29,64,0.04)' : '#fff',
+                            cursor: 'pointer', textAlign: 'left', fontFamily: "'DM Sans', sans-serif",
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${changePropertySlug === p.slug ? '#8C1D40' : '#d0ccc5'}`, background: changePropertySlug === p.slug ? '#8C1D40' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                            {changePropertySlug === p.slug && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fff' }} />}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{p.name}</div>
+                            {p.address && <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '2px' }}>📍 {p.address}</div>}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Confirmation step */
+                <div>
+                  <div style={{ background: '#fff8e6', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '16px 18px', marginBottom: '20px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Confirm Move</div>
+                    <div style={{ fontSize: '13px', color: '#4a3800', lineHeight: 1.65 }}>
+                      This will reassign <strong>{lead.first_name || lead.email}</strong>&apos;s lead to a different property. Any existing offer or tour may no longer apply.
+                    </div>
+                  </div>
+
+                  {/* From → To card */}
+                  <div style={{ display: 'flex', alignItems: 'stretch', gap: '10px', marginBottom: '6px' }}>
+                    <div style={{ flex: 1, background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '5px' }}>From</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{properties.find(p => p.slug === lead.property)?.name || lead.property || '—'}</div>
+                      {properties.find(p => p.slug === lead.property)?.address && (
+                        <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '3px' }}>📍 {properties.find(p => p.slug === lead.property)?.address}</div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', fontSize: '20px', color: '#8C1D40', fontWeight: 700, flexShrink: 0 }}>→</div>
+
+                    <div style={{ flex: 1, background: 'rgba(140,29,64,0.04)', border: '1.5px solid rgba(140,29,64,0.25)', borderRadius: '10px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '5px' }}>To</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{properties.find(p => p.slug === changePropertySlug)?.name || changePropertySlug}</div>
+                      {properties.find(p => p.slug === changePropertySlug)?.address && (
+                        <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '3px' }}>📍 {properties.find(p => p.slug === changePropertySlug)?.address}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="edit-sheet-footer">
+              {!changePropertyConfirm ? (
+                <>
+                  <button className="btn-ghost" style={{ flex: 1 }} onClick={() => { setChangePropertyModal(false); setChangePropertyConfirm(false) }}>Cancel</button>
+                  <button
+                    disabled={!changePropertySlug || changePropertySlug === lead.property}
+                    onClick={() => setChangePropertyConfirm(true)}
+                    style={{
+                      flex: 2, background: (!changePropertySlug || changePropertySlug === lead.property) ? '#d0ccc5' : 'linear-gradient(135deg, #8C1D40, #a02050)',
+                      color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px',
+                      fontSize: '14px', fontWeight: 700, cursor: (!changePropertySlug || changePropertySlug === lead.property) ? 'not-allowed' : 'pointer',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    Next: Confirm →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setChangePropertyConfirm(false)}>← Back</button>
+                  <button
+                    disabled={changingProperty}
+                    onClick={handleChangeProperty}
+                    style={{
+                      flex: 2, background: changingProperty ? '#9b9b9b' : 'linear-gradient(135deg, #8C1D40, #a02050)',
+                      color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 16px',
+                      fontSize: '14px', fontWeight: 700, cursor: changingProperty ? 'not-allowed' : 'pointer',
+                      fontFamily: "'DM Sans', sans-serif",
+                      boxShadow: changingProperty ? 'none' : '0 4px 16px rgba(140,29,64,0.3)',
+                    }}
+                  >
+                    {changingProperty ? 'Moving…' : '⇄ Confirm Move'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

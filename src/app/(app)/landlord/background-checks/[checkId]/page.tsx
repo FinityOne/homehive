@@ -43,6 +43,8 @@ type BgCheck = {
   criminal_check: 'clear' | 'not_clear' | null
   eviction_check: 'clear' | 'not_clear' | null
   notes: string | null
+  decision: 'passed' | 'failed' | null
+  tenant_id: string | null
   created_at: string; updated_at: string
   leads: Lead | null
   bg_check_references: Reference[]
@@ -201,6 +203,13 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
   const [copiedText, setCopiedText] = useState<string | null>(null)
 
+  // Final decision state
+  const [decision, setDecision] = useState<'passed' | 'failed' | null>(null)
+  const [tenantId, setTenantId] = useState<string | null>(null)
+  const [decisionSaving, setDecisionSaving] = useState(false)
+  const [showConvertModal, setShowConvertModal] = useState(false)
+  const [convertForm, setConvertForm] = useState({ first_name: '', last_name: '', email: '', phone: '', notes: '' })
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
@@ -230,6 +239,19 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
         eviction_check: c.eviction_check,
         notes: c.notes || '',
       })
+      setDecision(c.decision ?? null)
+      setTenantId(c.tenant_id ?? null)
+      // Pre-fill convert form from lead
+      const l = c.leads
+      if (l) {
+        setConvertForm({
+          first_name: l.first_name || '',
+          last_name: l.last_name || '',
+          email: l.email || '',
+          phone: l.phone || '',
+          notes: '',
+        })
+      }
       setLoading(false)
     }
     load()
@@ -418,6 +440,44 @@ Really appreciate your time — thank you!`
     }
   }
 
+  const handleDeclineFinal = async () => {
+    setDecisionSaving(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ decision: 'failed' }),
+    })
+    if (res.ok) {
+      setDecision('failed')
+      showToast('Application declined')
+    } else {
+      showToast('Failed to update', 'error')
+    }
+    setDecisionSaving(false)
+  }
+
+  const handleConvertToTenant = async () => {
+    if (!convertForm.first_name || !convertForm.email) return
+    setDecisionSaving(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify(convertForm),
+    })
+    const json = await res.json()
+    if (res.ok) {
+      setDecision('passed')
+      setTenantId(json.tenantId)
+      setShowConvertModal(false)
+      showToast('Tenant created successfully!')
+    } else {
+      showToast(json.error || 'Failed to create tenant', 'error')
+    }
+    setDecisionSaving(false)
+  }
+
   if (loading) return (
     <div style={{ padding: '32px', fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap'); @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
@@ -521,6 +581,23 @@ Really appreciate your time — thank you!`
 
         .progress-bar-wrap { height: 5px; background: #f0ede6; border-radius: 3px; overflow: hidden; margin-top: 10px; }
         .progress-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
+
+        .decision-card-undecided { border: 1.5px solid #e8e5de; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; background: #fff; }
+        .decision-card-passed { border: 1.5px solid rgba(16,185,129,0.4); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; background: rgba(16,185,129,0.05); }
+        .decision-card-failed { border: 1.5px solid rgba(239,68,68,0.4); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; background: rgba(239,68,68,0.04); }
+        .btn-approve { flex: 1; background: #0f172a; color: #34d399; border: none; border-radius: 9px; padding: 11px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
+        .btn-approve:hover:not(:disabled) { opacity: 0.88; }
+        .btn-decline { flex: 1; background: rgba(239,68,68,0.06); color: #dc2626; border: 1.5px solid rgba(239,68,68,0.3); border-radius: 9px; padding: 11px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+        .btn-decline:hover:not(:disabled) { background: rgba(239,68,68,0.1); }
+        .btn-approve:disabled, .btn-decline:disabled { opacity: 0.5; cursor: not-allowed; }
+        .decision-badge-pass { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.12); color: #059669; font-size: 13px; font-weight: 700; padding: 5px 12px; border-radius: 20px; }
+        .decision-badge-fail { display: inline-flex; align-items: center; gap: 6px; background: rgba(239,68,68,0.1); color: #dc2626; font-size: 13px; font-weight: 700; padding: 5px 12px; border-radius: 20px; }
+        .tenant-link-btn { display: inline-block; margin-top: 10px; background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 8px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; }
+        .tenant-link-btn:hover { opacity: 0.88; }
+        .undo-link { background: none; border: none; font-size: 11px; color: #9b9b9b; text-decoration: underline; cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 8px; display: block; }
+
+        .convert-modal-input { width: 100%; border: 1.5px solid #e8e5de; border-radius: 9px; padding: 9px 12px; font-size: 14px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; background: #faf9f6; outline: none; margin-bottom: 10px; box-sizing: border-box; }
+        .convert-modal-input:focus { border-color: #10b981; background: #fff; }
       `}</style>
 
       <div className="bgd-page">
@@ -735,6 +812,79 @@ Really appreciate your time — thank you!`
           {/* RIGHT COLUMN */}
           <div>
 
+            {/* ── Final Decision ── */}
+            {decision === null && (
+              <div className="decision-card-undecided">
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>Final Decision</div>
+                <div style={{ fontSize: '13px', color: '#6b6b6b', marginBottom: '14px', lineHeight: 1.5 }}>
+                  Ready to make a call? Approving will create a tenant profile you can immediately link to a lease.
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className="btn-approve"
+                    disabled={decisionSaving}
+                    onClick={() => setShowConvertModal(true)}
+                  >
+                    ✓ Approve &amp; Create Tenant
+                  </button>
+                  <button
+                    className="btn-decline"
+                    disabled={decisionSaving}
+                    onClick={handleDeclineFinal}
+                  >
+                    ✕ Decline
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {decision === 'passed' && (
+              <div className="decision-card-passed">
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>Final Decision</div>
+                <div className="decision-badge-pass">✓ Approved</div>
+                {tenantId && (
+                  <a href={`/landlord/tenants`} className="tenant-link-btn">
+                    View in Tenants →
+                  </a>
+                )}
+                <button className="undo-link" onClick={async () => {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  await fetch(`/api/background-checks/${checkId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+                    body: JSON.stringify({ decision: null }),
+                  })
+                  setDecision(null)
+                }}>Undo decision</button>
+              </div>
+            )}
+
+            {decision === 'failed' && (
+              <div className="decision-card-failed">
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>Final Decision</div>
+                <div className="decision-badge-fail">✕ Declined</div>
+                <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn-approve"
+                    style={{ flex: '0 0 auto' }}
+                    disabled={decisionSaving}
+                    onClick={() => { setDecision(null); setShowConvertModal(true) }}
+                  >
+                    ✓ Approve Instead
+                  </button>
+                </div>
+                <button className="undo-link" onClick={async () => {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  await fetch(`/api/background-checks/${checkId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+                    body: JSON.stringify({ decision: null }),
+                  })
+                  setDecision(null)
+                }}>Undo decision</button>
+              </div>
+            )}
+
             {/* ── Score Widget ── */}
             {(() => {
               const s = computeScore(form)
@@ -917,6 +1067,88 @@ Really appreciate your time — thank you!`
           </div>
         </div>
       </div>
+
+      {/* ── CONVERT TO TENANT MODAL ── */}
+      {showConvertModal && (
+        <div className="modal-overlay" onClick={() => setShowConvertModal(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+              <div>
+                <div className="modal-ttl">Create Tenant Profile</div>
+                <div className="modal-sub">Review and confirm details from the lead — edit anything before saving.</div>
+              </div>
+              <button onClick={() => setShowConvertModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#9b9b9b', cursor: 'pointer', padding: '2px', lineHeight: 1 }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: 0 }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>First Name *</label>
+                <input
+                  className="convert-modal-input"
+                  type="text"
+                  value={convertForm.first_name}
+                  onChange={e => setConvertForm(f => ({ ...f, first_name: e.target.value }))}
+                  placeholder="First name"
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Last Name</label>
+                <input
+                  className="convert-modal-input"
+                  type="text"
+                  value={convertForm.last_name}
+                  onChange={e => setConvertForm(f => ({ ...f, last_name: e.target.value }))}
+                  placeholder="Last name"
+                />
+              </div>
+            </div>
+
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Email *</label>
+            <input
+              className="convert-modal-input"
+              type="email"
+              value={convertForm.email}
+              onChange={e => setConvertForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="tenant@email.com"
+            />
+
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Phone</label>
+            <input
+              className="convert-modal-input"
+              type="tel"
+              value={convertForm.phone}
+              onChange={e => setConvertForm(f => ({ ...f, phone: e.target.value }))}
+              placeholder="Phone number"
+            />
+
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Tenant Notes</label>
+            <textarea
+              className="convert-modal-input"
+              rows={3}
+              style={{ resize: 'vertical' }}
+              value={convertForm.notes}
+              onChange={e => setConvertForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Internal notes for this tenant (optional)"
+            />
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+              <button
+                disabled={!convertForm.first_name || !convertForm.email || decisionSaving}
+                onClick={handleConvertToTenant}
+                style={{ flex: 2, background: decisionSaving || !convertForm.first_name || !convertForm.email ? '#9b9b9b' : '#0f172a', color: '#34d399', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '14px', fontWeight: 700, cursor: decisionSaving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              >
+                {decisionSaving ? 'Creating…' : 'Create Tenant'}
+              </button>
+              <button
+                onClick={() => setShowConvertModal(false)}
+                style={{ flex: 1, background: '#f5f4f0', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '13px', color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif', fontWeight: 600" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── TEMPLATE MODAL ── */}
       {templateModal && (

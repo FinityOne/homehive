@@ -23,6 +23,7 @@ const STATUS_CFG: Record<string, { bg: string; color: string; label: string; dot
   pending: { bg: '#f1f5f9', color: '#475569', label: 'Pending', dot: '#94a3b8' },
   late:    { bg: '#fee2e2', color: '#991b1b', label: 'Late',    dot: '#ef4444' },
   missed:  { bg: '#fce7f3', color: '#9d174d', label: 'Missed',  dot: '#db2777' },
+  voided:  { bg: '#f1f5f9', color: '#94a3b8', label: 'Voided',  dot: '#cbd5e1' },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -99,12 +100,14 @@ function PaymentRow({
 
   const iS: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e2e8f0', borderRadius: '7px', outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a', boxSizing: 'border-box' }
 
+  const isVoided = payment.status === 'voided'
+
   return (
-    <div style={{ borderBottom: '1px solid #f1f5f9' }}>
+    <div style={{ borderBottom: '1px solid #f1f5f9', opacity: isVoided ? 0.55 : 1 }}>
       <div
-        style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, alignItems: 'center', padding: '11px 16px', cursor: 'pointer', transition: 'background 0.1s' }}
-        onClick={() => setOpen(v => !v)}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#fafafa'}
+        style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, alignItems: 'center', padding: '11px 16px', cursor: isVoided ? 'default' : 'pointer', transition: 'background 0.1s' }}
+        onClick={() => !isVoided && setOpen(v => !v)}
+        onMouseEnter={e => !isVoided && ((e.currentTarget as HTMLElement).style.background = '#fafafa')}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
       >
         {/* Tenant */}
@@ -136,7 +139,7 @@ function PaymentRow({
 
         {/* Status */}
         <div style={{ textAlign: 'center' }}>
-          <StatusBadge status={effStatus} />
+          <StatusBadge status={isVoided ? 'voided' : effStatus} />
         </div>
 
         {/* Days late (from paid_date, not today) */}
@@ -274,10 +277,12 @@ function MonthGroup({
   defaultOpen: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const paid     = payments.filter(p => p.status === 'paid').length
-  const overdue  = payments.filter(p => isOverdue(p)).length
-  const expected = payments.reduce((s, p) => s + p.amount, 0)
-  const collected = payments.filter(p => p.status === 'paid').reduce((s, p) => s + p.paid_amount, 0)
+  const active   = payments.filter(p => p.status !== 'voided')
+  const paid     = active.filter(p => p.status === 'paid').length
+  const overdue  = active.filter(p => isOverdue(p)).length
+  const expected = active.reduce((s, p) => s + p.amount, 0)
+  const collected = active.filter(p => p.status === 'paid').reduce((s, p) => s + p.paid_amount, 0)
+  const voided   = payments.filter(p => p.status === 'voided').length
 
   return (
     <div style={{ marginBottom: 6, border: '1px solid #e2e8f0', borderRadius: '11px', overflow: 'hidden', background: '#fff' }}>
@@ -288,11 +293,12 @@ function MonthGroup({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtMonth(month)}</span>
           {overdue > 0 && <span style={{ background: '#fee2e2', color: '#991b1b', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{overdue} overdue</span>}
-          {overdue === 0 && paid === payments.length && <span style={{ background: '#dcfce7', color: '#166534', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>All paid ✓</span>}
+          {overdue === 0 && paid === active.length && active.length > 0 && <span style={{ background: '#dcfce7', color: '#166534', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>All paid ✓</span>}
+          {voided > 0 && <span style={{ background: '#f1f5f9', color: '#94a3b8', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{voided} voided</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ fontSize: '12px', color: '#64748b' }}>
-            {paid}/{payments.length} paid · {fmtCurrency(collected)}/{fmtCurrency(expected)}
+            {paid}/{active.length} paid · {fmtCurrency(collected)}/{fmtCurrency(expected)}
           </span>
           <span style={{ fontSize: '11px', color: '#94a3b8', transition: 'transform 0.2s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0)' }}>▾</span>
         </div>
