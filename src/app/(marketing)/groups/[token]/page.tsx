@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 
@@ -81,6 +81,27 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   const [joinError, setJoinError] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null)
   const [copiedShare, setCopiedShare] = useState(false)
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; roomName: string } | null>(null)
+
+  const openLightbox = useCallback((images: string[], index: number, roomName: string) => {
+    setLightbox({ images, index, roomName })
+  }, [])
+
+  const closeLightbox = useCallback(() => setLightbox(null), [])
+
+  const lightboxPrev = useCallback(() => setLightbox(lb => lb ? { ...lb, index: (lb.index - 1 + lb.images.length) % lb.images.length } : lb), [])
+  const lightboxNext = useCallback(() => setLightbox(lb => lb ? { ...lb, index: (lb.index + 1) % lb.images.length } : lb), [])
+
+  useEffect(() => {
+    if (!lightbox) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') lightboxPrev()
+      else if (e.key === 'ArrowRight') lightboxNext()
+      else if (e.key === 'Escape') closeLightbox()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [lightbox, lightboxPrev, lightboxNext, closeLightbox])
 
   useEffect(() => {
     fetch(`/api/groups/share/${token}`)
@@ -367,7 +388,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           {/* Members — first on mobile, left col on desktop */}
           <div className="gp-hr" />
           <div className="gp-section">
-            <MembersSection members={members} roomMap={roomMap} acMain={ac.main} />
+            <MembersSection members={members} roomMap={roomMap} acMain={ac.main} onPhotoClick={openLightbox} />
           </div>
 
           {/* Property — below members on mobile, left col desktop */}
@@ -423,7 +444,8 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                         <img
                           src={thumbUrl}
                           alt={room.name}
-                          style={{ width: 52, height: 40, objectFit: 'cover', borderRadius: 7, border: '1px solid #ede9e0', flexShrink: 0, marginRight: 10 }}
+                          onClick={() => openLightbox(room.images, 0, room.name)}
+                          style={{ width: 52, height: 40, objectFit: 'cover', borderRadius: 7, border: '1px solid #ede9e0', flexShrink: 0, marginRight: 10, cursor: 'pointer' }}
                         />
                       )}
                       <div style={{ flex: 1 }}>
@@ -574,11 +596,88 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           .gp-section { padding-top: 0 !important; margin-bottom: 20px; }
         }
       `}</style>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          onClick={closeLightbox}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.93)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {/* Main image */}
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightbox.images[lightbox.index]}
+              alt={`${lightbox.roomName} photo ${lightbox.index + 1}`}
+              style={{ maxWidth: '90vw', maxHeight: '78vh', objectFit: 'contain', borderRadius: 10, userSelect: 'none', display: 'block' }}
+              draggable={false}
+            />
+
+            {/* Room name + counter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', opacity: 0.9 }}>{lightbox.roomName}</span>
+              {lightbox.images.length > 1 && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>{lightbox.index + 1} / {lightbox.images.length}</span>
+              )}
+            </div>
+
+            {/* Prev / Next */}
+            {lightbox.images.length > 1 && (
+              <>
+                <button
+                  onClick={e => { e.stopPropagation(); lightboxPrev() }}
+                  style={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif', backdropFilter: 'blur(4px)' }}
+                  aria-label="Previous photo"
+                >‹</button>
+                <button
+                  onClick={e => { e.stopPropagation(); lightboxNext() }}
+                  style={{ position: 'absolute', right: -60, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif', backdropFilter: 'blur(4px)' }}
+                  aria-label="Next photo"
+                >›</button>
+              </>
+            )}
+
+            {/* Dot indicators */}
+            {lightbox.images.length > 1 && (
+              <div style={{ display: 'flex', gap: 6 }}>
+                {lightbox.images.map((_, di) => (
+                  <button
+                    key={di}
+                    onClick={e => { e.stopPropagation(); setLightbox(lb => lb ? { ...lb, index: di } : lb) }}
+                    style={{ width: di === lightbox.index ? 20 : 8, height: 8, borderRadius: 4, background: di === lightbox.index ? '#fff' : 'rgba(255,255,255,0.3)', border: 'none', cursor: 'pointer', padding: 0, transition: 'all 0.2s' }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={closeLightbox}
+            style={{ position: 'fixed', top: 18, right: 18, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif', backdropFilter: 'blur(4px)' }}
+            aria-label="Close"
+          >×</button>
+
+          {/* Mobile tap zones (hidden on desktop where we have arrow buttons) */}
+          <style>{`@media (min-width: 768px) { .gp-lb-tap { display: none !important; } }`}</style>
+          {lightbox.images.length > 1 && (
+            <>
+              <div className="gp-lb-tap" onClick={e => { e.stopPropagation(); lightboxPrev() }} style={{ position: 'fixed', left: 0, top: 60, bottom: 60, width: '38%', cursor: 'pointer', zIndex: 1 }} />
+              <div className="gp-lb-tap" onClick={e => { e.stopPropagation(); lightboxNext() }} style={{ position: 'fixed', right: 0, top: 60, bottom: 60, width: '38%', cursor: 'pointer', zIndex: 1 }} />
+            </>
+          )}
+        </div>
+      )}
     </>
   )
 }
 
-function MembersSection({ members, roomMap, acMain }: { members: Member[]; roomMap: Record<string, Room>; acMain: string }) {
+function MembersSection({ members, roomMap, acMain, onPhotoClick }: {
+  members: Member[]
+  roomMap: Record<string, Room>
+  acMain: string
+  onPhotoClick: (images: string[], index: number, roomName: string) => void
+}) {
   const ac = { main: acMain }
   return (
     <div>
@@ -640,16 +739,22 @@ function MembersSection({ members, roomMap, acMain }: { members: Member[]; roomM
                 )}
                 {/* Room photo strip — shown when member is assigned a room that has photos */}
                 {assignedRoom && roomPhotos.length > 0 && (
-                  <div style={{ marginTop: 12, display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-                    {roomPhotos.map((url, pi) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={pi}
-                        src={url}
-                        alt={`${assignedRoom.name} photo ${pi + 1}`}
-                        style={{ height: 100, width: 'auto', minWidth: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid #ede9e0', flexShrink: 0 }}
-                      />
-                    ))}
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                      {roomPhotos.map((url, pi) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={pi}
+                          src={url}
+                          alt={`${assignedRoom.name} photo ${pi + 1}`}
+                          onClick={() => onPhotoClick(roomPhotos, pi, assignedRoom.name)}
+                          style={{ height: 100, width: 'auto', minWidth: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid #ede9e0', flexShrink: 0, cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLImageElement).style.transform = 'scale(1.03)'; (e.currentTarget as HTMLImageElement).style.boxShadow = '0 4px 14px rgba(0,0,0,0.15)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLImageElement).style.transform = ''; (e.currentTarget as HTMLImageElement).style.boxShadow = '' }}
+                        />
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#b0a898', marginTop: 4 }}>Tap a photo to view room</div>
                   </div>
                 )}
               </div>
