@@ -11,11 +11,6 @@ const DEFAULT_OG_IMAGE = 'https://images.unsplash.com/photo-1562516155-e0c1ee440
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  icons: {
-    icon: [{ url: '/hh-icon.png', type: 'image/png' }],
-    apple: '/hh-icon.png',
-    shortcut: '/hh-icon.png',
-  },
   title: {
     default: 'HomeHive — #1 Off-Campus Housing for ASU Students in Tempe',
     template: '%s | HomeHive',
@@ -86,9 +81,15 @@ export const metadata: Metadata = {
 const organizationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
+  '@id': `${SITE_URL}/#organization`,
   name: 'HomeHive',
   url: SITE_URL,
-  logo: `${SITE_URL}/hh-icon.png`,
+  logo: {
+    '@type': 'ImageObject',
+    url: `${SITE_URL}/hh-icon.png`,
+    width: 32,
+    height: 32,
+  },
   description: 'The #1 off-campus housing platform for Arizona State University students in Tempe, AZ. Verified apartments, subleases, and lease transfers.',
   sameAs: [],
   contactPoint: {
@@ -99,17 +100,21 @@ const organizationJsonLd = {
   },
 }
 
+// WebSite with @id — all sub-pages reference this via isPartOf
+// potentialAction enables the Google Sitelinks Search Box
 const websiteJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
+  '@id': `${SITE_URL}/#website`,
   url: SITE_URL,
   name: 'HomeHive',
-  description: 'Off-campus housing platform for ASU students in Tempe, Arizona.',
+  description: 'The #1 off-campus housing platform for ASU students in Tempe, Arizona. Verified apartments, subleases, and lease transfers. Free for students.',
+  publisher: { '@id': `${SITE_URL}/#organization` },
   potentialAction: {
     '@type': 'SearchAction',
     target: {
       '@type': 'EntryPoint',
-      urlTemplate: `${SITE_URL}/homes`,
+      urlTemplate: `${SITE_URL}/homes?q={search_term_string}`,
     },
     'query-input': 'required name=search_term_string',
   },

@@ -9,74 +9,80 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Featured listings get elevated priority — these are the two we want in sitelinks
+const FEATURED_SLUGS = new Set(['palace-jacuzzi', 'delrio-house'])
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // Static marketing pages
+  const now = new Date()
+
   const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: SITE_URL,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'daily',
       priority: 1.0,
     },
+    // Primary conversion page — students browse listings here
     {
       url: `${SITE_URL}/homes`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'daily',
-      priority: 0.9,
+      priority: 0.95,
     },
+    // Key editorial pages — core for sitelinks
     {
       url: `${SITE_URL}/how-it-works`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${SITE_URL}/for-landlords`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${SITE_URL}/roommates`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.7,
+      priority: 0.85,
     },
     {
       url: `${SITE_URL}/student-guide`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'monthly',
-      priority: 0.8,
+      priority: 0.85,
+    },
+    {
+      url: `${SITE_URL}/for-landlords`,
+      lastModified: now,
+      changeFrequency: 'monthly',
+      priority: 0.80,
     },
     {
       url: `${SITE_URL}/pricing`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'monthly',
-      priority: 0.6,
+      priority: 0.75,
     },
     {
       url: `${SITE_URL}/blog`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'weekly',
-      priority: 0.8,
+      priority: 0.75,
+    },
+    {
+      url: `${SITE_URL}/roommates`,
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.65,
     },
     {
       url: `${SITE_URL}/contact`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'yearly',
-      priority: 0.4,
+      priority: 0.40,
     },
   ]
 
-  // Blog articles (hardcoded)
+  // Blog articles
   const blogRoutes: MetadataRoute.Sitemap = ARTICLES.map(article => ({
     url: `${SITE_URL}/blog/${article.slug}`,
     lastModified: new Date(article.dateIso),
     changeFrequency: 'monthly' as const,
-    priority: article.featured ? 0.85 : 0.7,
+    priority: article.featured ? 0.80 : 0.65,
   }))
 
-  // Active property listings (dynamic from Supabase)
+  // Active property listings — featured ones get priority 0.95 to signal importance
   let propertyRoutes: MetadataRoute.Sitemap = []
   try {
     const { data } = await supabase
@@ -90,8 +96,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       propertyRoutes = data.map(p => ({
         url: `${SITE_URL}/homes/${p.slug}`,
         lastModified: new Date(p.created_at),
-        changeFrequency: 'weekly' as const,
-        priority: 0.85,
+        changeFrequency: FEATURED_SLUGS.has(p.slug) ? ('daily' as const) : ('weekly' as const),
+        priority: FEATURED_SLUGS.has(p.slug) ? 0.95 : 0.80,
       }))
     }
   } catch {

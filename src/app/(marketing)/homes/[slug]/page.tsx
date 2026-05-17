@@ -21,13 +21,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }
   }
 
-  const title = `${property.name} — Student Housing Near ASU | HomeHive`
-  const description = [
-    property.description?.slice(0, 120),
-    property.address ? `📍 ${property.address}` : null,
-    property.price ? `$${property.price.toLocaleString()}/mo per room` : null,
+  const title = `${property.name} — Off-Campus Housing Near ASU Tempe | HomeHive`
+  const descParts = [
+    property.description?.slice(0, 140) ?? null,
+    property.price ? `From $${property.price.toLocaleString()}/mo` : null,
     property.beds ? `${property.beds} bed · ${property.baths} bath` : null,
-  ].filter(Boolean).join(' · ')
+    property.address ? `📍 ${property.address}` : null,
+    'No broker fees.',
+  ].filter(Boolean)
+  const description = descParts.join(' · ')
 
   const ogImage = property.images?.[0] || DEFAULT_OG
   const url = `${SITE_URL}/homes/${slug}`
@@ -118,12 +120,28 @@ export default async function PropertyPage(props: Props) {
       }
     : null
 
+  const breadcrumbJsonLd = property ? {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'HomeHive', item: SITE_URL },
+      { '@type': 'ListItem', position: 2, name: 'Homes Near ASU', item: `${SITE_URL}/homes` },
+      { '@type': 'ListItem', position: 3, name: property.name, item: `${SITE_URL}/homes/${slug}` },
+    ],
+  } : null
+
   return (
     <>
       {jsonLd && (
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      {breadcrumbJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
         />
       )}
       <PropertyPageClient {...props} />

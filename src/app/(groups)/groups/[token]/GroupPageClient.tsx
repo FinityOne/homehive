@@ -287,6 +287,22 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         @keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
 
+        /* ── FOCUSED NAV ── */
+        .gp-nav { background: rgba(15,23,42,0.96); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(255,255,255,0.06); padding: 0 20px; height: 52px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; }
+        .gp-nav-logo { text-decoration: none; display: inline-flex; align-items: center; }
+        .gp-nav-logo img { height: 22px; width: auto; display: block; }
+        .gp-nav-right { display: flex; align-items: center; gap: 10px; }
+        .gp-nav-homes { font-size: 12px; color: rgba(255,255,255,0.55); text-decoration: none; font-weight: 500; padding: 5px 10px; border-radius: 6px; transition: color 0.15s, background 0.15s; }
+        .gp-nav-homes:hover { color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.07); }
+        .gp-nav-auth { font-size: 12px; font-weight: 600; padding: 6px 13px; border-radius: 7px; text-decoration: none; cursor: pointer; font-family: 'DM Sans',sans-serif; transition: opacity 0.15s; }
+        .gp-nav-signup { background: #FFC627; color: #1a1a1a; border: none; }
+        .gp-nav-signup:hover { opacity: 0.88; }
+        .gp-nav-login { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.14); }
+        .gp-nav-login:hover { background: rgba(255,255,255,0.14); }
+        .gp-nav-user { display: flex; align-items: center; gap: 7px; }
+        .gp-nav-avatar { width: 28px; height: 28px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .gp-nav-email { font-size: 11px; color: rgba(255,255,255,0.55); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
         /* ── HERO ── */
         .gp-hero-dark {
           position: relative; overflow: hidden;
@@ -383,6 +399,30 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           .gp-col-left { display: flex; flex-direction: column; gap: 16px; }
         }
       `}</style>
+
+      {/* ── FOCUSED NAV ── */}
+      <nav className="gp-nav">
+        <a href="/" className="gp-nav-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/hh-logo.png" alt="HomeHive" />
+        </a>
+        <div className="gp-nav-right">
+          <a href="/homes" className="gp-nav-homes">Browse homes →</a>
+          {currentUser ? (
+            <div className="gp-nav-user">
+              <div className="gp-nav-avatar">
+                {currentUser.email?.[0]?.toUpperCase() ?? '?'}
+              </div>
+              <span className="gp-nav-email">{currentUser.email}</span>
+            </div>
+          ) : (
+            <>
+              <a href={`/login?next=/groups/${token}`} className="gp-nav-auth gp-nav-login">Log in</a>
+              <a href={`/signup?next=/groups/${token}`} className="gp-nav-auth gp-nav-signup">Sign up free</a>
+            </>
+          )}
+        </div>
+      </nav>
 
       <div className="gp-page">
 
