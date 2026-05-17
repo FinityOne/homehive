@@ -220,10 +220,10 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
     if (chatOpen) setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60)
   }, [chatMessages, chatOpen])
 
-  const openJoinModal = () => {
+  const openJoinModal = (preSelectRoomId?: string) => {
     if (joined) return
     setJoinModalOpen(true)
-    setSelectedRoomId(null)
+    setSelectedRoomId(preSelectRoomId ?? null)
     setJoinError(null)
   }
 
@@ -284,6 +284,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; -webkit-font-smoothing: antialiased; }
+        :root { --ac-main: ${ac.main}; --ac-gradient: ${ac.gradient}; --ac-light: ${ac.light}; }
         @keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
 
@@ -359,7 +360,13 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         .gp-tag { font-size: 11px; color: #6b6b6b; background: #f5f4f0; border: 1px solid #ede9e0; padding: 3px 9px; border-radius: 20px; }
 
         /* ── ROOM ROWS ── */
-        .gp-room { display: flex; align-items: center; padding: 12px 14px; border-radius: 12px; background: #faf9f7; border: 1px solid #ede9e0; margin-bottom: 8px; gap: 10px; }
+        .gp-room { display: flex; align-items: center; padding: 13px 14px; border-radius: 12px; background: #faf9f7; border: 1.5px solid #ede9e0; margin-bottom: 8px; gap: 10px; transition: border-color 0.15s, box-shadow 0.15s; }
+        .gp-room-available { cursor: pointer; }
+        .gp-room-available:hover { border-color: var(--ac-main); box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+        .gp-room-reserved { opacity: 0.75; }
+        .gp-room-reserve-btn { flex-shrink: 0; padding: 7px 13px; border-radius: 8px; font-size: 12px; font-weight: 700; border: none; cursor: pointer; font-family: 'DM Sans',sans-serif; transition: opacity 0.15s; white-space: nowrap; }
+        .gp-room-assignee { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .gp-room-assignee-avatar { width: 24px; height: 24px; border-radius: 50%; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
         /* ── SHARE ── */
         .gp-share-input { flex: 1; background: #f5f4f0; border: 1px solid #ede9e0; border-radius: 8px; padding: 9px 12px; font-size: 12px; color: #6b6b6b; outline: none; font-family: 'DM Sans',sans-serif; min-width: 0; }
@@ -532,17 +539,27 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
             {pricedRooms.length > 0 && (
               <div className="gp-card">
                 <div className="gp-card-body">
-                  <div className="gp-section-label">Rooms &amp; Pricing</div>
-                  {pricedRooms.map(room => {
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div className="gp-section-label" style={{ marginBottom: 0 }}>Rooms &amp; Pricing</div>
+                    <span style={{ fontSize: 11, color: '#10b981', fontWeight: 700 }}>
+                      {openRooms > 0 ? `${openRooms} open` : 'All reserved'}
+                    </span>
+                  </div>
+                  {pricedRooms.map((room, idx) => {
                     const assignedMember = members.find(m => m.room_id === room.id)
                     const available = room.is_available && !assignedMember
                     const thumbUrl = room.images?.[0] ?? null
+                    const pal = avatarColors(idx)
                     return (
-                      <div className="gp-room" key={room.id} style={!available ? { opacity: 0.7 } : {}}>
-                        {thumbUrl && (
+                      <div
+                        key={room.id}
+                        className={`gp-room ${available && !joined && !hasChat ? 'gp-room-available' : ''} ${!available ? 'gp-room-reserved' : ''}`}
+                        onClick={() => available && !joined && !hasChat ? openJoinModal(room.id) : undefined}
+                      >
+                        {thumbUrl ? (
                           <div
                             className="gp-room-thumb"
-                            onClick={() => openLightbox(room.images, 0, room.name)}
+                            onClick={e => { e.stopPropagation(); openLightbox(room.images, 0, room.name) }}
                             title={`View ${room.images.length} photo${room.images.length !== 1 ? 's' : ''}`}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -554,23 +571,38 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                               )}
                             </div>
                           </div>
+                        ) : (
+                          <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f5f4f0', border: '1px solid #ede9e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>🛏</div>
                         )}
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
-                          {assignedMember && (
-                            <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>
-                              Reserved for {assignedMember.first_name ?? 'a member'}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginTop: 1 }}>
                             ${room.price.toLocaleString()}<span style={{ fontSize: 11, fontWeight: 400, color: '#9b9b9b' }}>/mo</span>
                           </div>
-                          <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, color: available ? '#10b981' : '#9b9b9b' }}>
-                            {available ? 'Available' : assignedMember ? 'Reserved' : 'Taken'}
-                          </div>
                         </div>
+                        {available && !joined && !hasChat ? (
+                          <button
+                            className="gp-room-reserve-btn"
+                            style={{ background: ac.gradient, color: '#fff' }}
+                            onClick={e => { e.stopPropagation(); openJoinModal(room.id) }}
+                          >
+                            Reserve →
+                          </button>
+                        ) : assignedMember ? (
+                          <div className="gp-room-assignee">
+                            <div className="gp-room-assignee-avatar" style={{ background: pal.bg, color: pal.fg }}>
+                              {(assignedMember.first_name?.[0] ?? '?').toUpperCase()}
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: ac.main }}>{assignedMember.first_name ?? 'Member'}</div>
+                              <div style={{ fontSize: 10, color: '#9b9b9b', fontWeight: 600 }}>Reserved</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: available ? '#10b981' : '#9b9b9b', flexShrink: 0 }}>
+                            {available ? 'Available' : 'Taken'}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
