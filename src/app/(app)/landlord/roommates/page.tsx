@@ -48,6 +48,11 @@ type GroupMember = {
 
 type GroupDetail = { group: RoommateGroup; members: GroupMember[] }
 
+type ChatMessage = {
+  id: string; sender_id: string | null; sender_name: string
+  content: string; is_bot: boolean; created_at: string
+}
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
 const GENDER_PREF_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -112,6 +117,8 @@ export default function RoommatesPage() {
   const [editGroupModal, setEditGroupModal] = useState(false)
   const [editGroupForm, setEditGroupForm] = useState({ name: '', description: '', gender_preference: 'any' })
   const [savingGroup, setSavingGroup] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatLoading, setChatLoading] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -131,6 +138,7 @@ export default function RoommatesPage() {
 
   const loadGroupDetail = async (groupId: string) => {
     setGroupDetailLoading(true)
+    setChatMessages([])
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`/api/roommate-groups/${groupId}`, {
       headers: { Authorization: `Bearer ${session?.access_token}` },
@@ -151,6 +159,18 @@ export default function RoommatesPage() {
         }
       } else {
         setPropertyRooms([])
+      }
+      // Load chat messages
+      if (detail.group?.share_token) {
+        setChatLoading(true)
+        const chatRes = await fetch(`/api/groups/share/${detail.group.share_token}/messages`, {
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        })
+        if (chatRes.ok) {
+          const chatData = await chatRes.json()
+          setChatMessages(chatData.messages ?? [])
+        }
+        setChatLoading(false)
       }
     }
     setGroupDetailLoading(false)
@@ -556,6 +576,55 @@ export default function RoommatesPage() {
                       })}
                     </div>
                   )}
+
+                  {/* ── Group Chat ── */}
+                  <div style={{ marginTop: 20, background: '#fff', border: '1px solid #e8e5de', borderRadius: 14, overflow: 'hidden' }}>
+                    <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 18 }}>🐝</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>Group Chat</span>
+                      <span style={{ fontSize: 11, color: '#9b9b9b' }}>— read-only view</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9b9b9b' }}>{chatMessages.length} message{chatMessages.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div style={{ maxHeight: 360, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 12, background: '#faf9f6' }}>
+                      {chatLoading ? (
+                        <div style={{ textAlign: 'center', padding: '24px 0', color: '#b0a898', fontSize: 13 }}>Loading chat…</div>
+                      ) : chatMessages.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '24px 0', color: '#b0a898', fontSize: 13 }}>No messages yet in this group.</div>
+                      ) : chatMessages.map(msg => {
+                        const isBot = msg.is_bot
+                        const initials = msg.sender_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+                        const ts = (() => {
+                          const diff = Date.now() - new Date(msg.created_at).getTime()
+                          if (diff < 60000) return 'just now'
+                          if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+                          if (diff < 86400000) return new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                          return new Date(msg.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                        })()
+                        if (isBot) {
+                          return (
+                            <div key={msg.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', maxWidth: '75%' }}>
+                              <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>🐝</div>
+                              <div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: '#b45309', marginBottom: 3 }}>Honeybee · {ts}</div>
+                                <div style={{ background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: '4px 12px 12px 12px', padding: '9px 13px', fontSize: 13, color: '#1a1a1a', lineHeight: 1.6 }}>{msg.content}</div>
+                              </div>
+                            </div>
+                          )
+                        }
+                        const member = selectedGroup.members.find(m => m.leads && m.leads.id === msg.sender_id)
+                        const memberName = member?.leads ? `${member.leads.first_name ?? ''} ${member.leads.last_name ?? ''}`.trim() || msg.sender_name : msg.sender_name
+                        return (
+                          <div key={msg.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', maxWidth: '75%' }}>
+                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: '#6b6b6b', marginBottom: 3 }}>{memberName} · {ts}</div>
+                              <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '4px 12px 12px 12px', padding: '9px 13px', fontSize: 13, color: '#1a1a1a', lineHeight: 1.6, wordBreak: 'break-word' }}>{msg.content}</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
 
                   <div style={{ marginTop: 14, fontSize: 11, color: '#b0a898', textAlign: 'right' }}>
                     Group created {timeAgo(selectedGroup.group.created_at)}

@@ -296,29 +296,36 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         /* ── HERO ── */
         .gp-hero-dark {
           position: relative; overflow: hidden;
-          padding: 48px 24px 40px;
-          min-height: 300px;
+          padding: 18px 24px 16px;
           display: flex; flex-direction: column; justify-content: flex-end;
         }
         .gp-hero-bg {
           position: absolute; inset: 0;
           background-size: cover; background-position: center;
-          opacity: 0.12; z-index: 0;
+          opacity: 0.1; z-index: 0;
         }
         .gp-hero-overlay { position: absolute; inset: 0; z-index: 1; }
         .gp-hero-content { position: relative; z-index: 2; animation: fadeUp 0.5s ease both; }
-        .gp-private-label { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.4); margin-bottom: 10px; }
-        .gp-gender-badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; margin-bottom: 14px; }
-        .gp-hero-emoji { font-size: 52px; line-height: 1; margin-bottom: 10px; display: block; }
-        .gp-hero-name { font-size: 28px; font-weight: 700; color: #fff; line-height: 1.2; letter-spacing: -0.5px; margin-bottom: 8px; }
-        .gp-hero-tagline { font-size: 15px; color: rgba(255,255,255,0.6); margin-bottom: 18px; }
-        .gp-hero-stats { display: flex; align-items: center; gap: 16px; }
-        .gp-stat-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; margin-right: 6px; box-shadow: 0 0 8px #22c55e; }
-        .gp-stat-text { font-size: 13px; color: rgba(255,255,255,0.7); font-weight: 500; }
-        .gp-hero-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
-        .gp-hero-action-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans',sans-serif; text-decoration: none; transition: background 0.15s, opacity 0.15s; }
-        .gp-hero-btn-ghost { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.15); }
+        .gp-private-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+        .gp-gender-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid; }
+        .gp-hero-emoji { font-size: 28px; line-height: 1; }
+        .gp-hero-name { font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; letter-spacing: -0.4px; }
+        .gp-hero-tagline { font-size: 12px; color: rgba(255,255,255,0.5); }
+        .gp-hero-stats { display: flex; align-items: center; gap: 12px; }
+        .gp-stat-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block; margin-right: 5px; box-shadow: 0 0 6px #22c55e; }
+        .gp-stat-text { font-size: 12px; color: rgba(255,255,255,0.65); font-weight: 500; }
+        .gp-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .gp-hero-action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans',sans-serif; text-decoration: none; transition: background 0.15s, opacity 0.15s; }
+        .gp-hero-btn-ghost { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); border: 1px solid rgba(255,255,255,0.14); }
         .gp-hero-btn-ghost:hover { background: rgba(255,255,255,0.14); }
+
+        /* ── ROOM PHOTO CLICK ── */
+        .gp-room-thumb { position: relative; flex-shrink: 0; cursor: pointer; border-radius: 8px; overflow: hidden; }
+        .gp-room-thumb img { display: block; width: 72px; height: 56px; object-fit: cover; border: 1px solid #ede9e0; border-radius: 8px; transition: filter 0.15s; }
+        .gp-room-thumb:hover img { filter: brightness(0.78); }
+        .gp-room-thumb-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; pointer-events: none; }
+        .gp-room-thumb-icon { font-size: 14px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
+        .gp-room-thumb-count { font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.7); letter-spacing: 0.3px; }
 
         /* ── PAGE LAYOUT ── */
         .gp-page { max-width: 1080px; margin: 0 auto; }
@@ -368,14 +375,14 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
 
         /* ── DESKTOP ── */
         @media (min-width: 768px) {
-          .gp-hero-dark { padding: 64px 48px 52px; min-height: 380px; }
-          .gp-hero-name { font-size: 38px; }
+          .gp-hero-dark { padding: 20px 48px 18px; }
+          .gp-hero-name { font-size: 22px; }
           .gp-columns { padding: 32px 48px 60px; flex-direction: row; align-items: flex-start; gap: 28px; }
           .gp-col-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
           .gp-col-right { width: 360px; flex-shrink: 0; position: sticky; top: 72px; display: flex; flex-direction: column; gap: 14px; }
           .gp-sticky-footer { display: none; }
           .gp-prop-img { height: 240px; }
-          .gp-hero-emoji { font-size: 64px; }
+          .gp-hero-emoji { font-size: 32px; }
         }
         @media (max-width: 767px) {
           .gp-col-right { display: none; }
@@ -402,44 +409,43 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
           )}
           <div className="gp-hero-overlay" style={{ background: ac.hero }} />
           <div className="gp-hero-content">
-            <div className="gp-private-label">Private Roommate Group</div>
-            <span
-              className="gp-gender-badge"
-              style={{ background: `${ac.light}`, borderColor: ac.border, color: ac.main }}
-            >
-              {genderLabel(group.gender_preference)}
-            </span>
-            <div className="gp-hero-emoji">{group.emoji}</div>
-            <div className="gp-hero-name">{group.name}</div>
-            <div className="gp-hero-tagline">{heroTagline(group.gender_preference, propertyName)}</div>
-            {group.description && (
-              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 14, maxWidth: 520 }}>
-                {group.description}
-              </div>
-            )}
-            <div className="gp-hero-stats">
+            {/* Row 1: identity */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <span className="gp-hero-emoji">{group.emoji}</span>
+              <span className="gp-hero-name">{group.name}</span>
+              <span
+                className="gp-gender-badge"
+                style={{ background: ac.light, borderColor: ac.border, color: ac.main }}
+              >
+                {genderLabel(group.gender_preference)}
+              </span>
+              <span className="gp-private-label">Private Group</span>
+            </div>
+            {/* Row 2: stats + tagline + actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <span className="gp-stat-text">
                 <span className="gp-stat-dot" />
-                {members.length} confirmed{openRooms > 0 ? ` · ${openRooms} room${openRooms !== 1 ? 's' : ''} open` : ''}
+                {members.length} member{members.length !== 1 ? 's' : ''}{openRooms > 0 ? ` · ${openRooms} room${openRooms !== 1 ? 's' : ''} open` : ''}
               </span>
-            </div>
-            <div className="gp-hero-actions">
-              {property && (
-                <a
-                  href={`/homes/${property.slug ?? group.property_slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              <span className="gp-hero-tagline">{heroTagline(group.gender_preference, propertyName)}</span>
+              <div className="gp-hero-actions" style={{ marginLeft: 'auto' }}>
+                {property && (
+                  <a
+                    href={`/homes/${property.slug ?? group.property_slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gp-hero-action-btn gp-hero-btn-ghost"
+                  >
+                    View Listing ↗
+                  </a>
+                )}
+                <button
                   className="gp-hero-action-btn gp-hero-btn-ghost"
+                  onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
                 >
-                  View Full Listing ↗
-                </a>
-              )}
-              <button
-                className="gp-hero-action-btn gp-hero-btn-ghost"
-                onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
-              >
-                🔗 {copiedShare ? 'Link Copied!' : 'Share Invite'}
-              </button>
+                  🔗 {copiedShare ? 'Copied!' : 'Share'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -521,13 +527,20 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                     return (
                       <div className="gp-room" key={room.id} style={!available ? { opacity: 0.7 } : {}}>
                         {thumbUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={thumbUrl}
-                            alt={room.name}
+                          <div
+                            className="gp-room-thumb"
                             onClick={() => openLightbox(room.images, 0, room.name)}
-                            style={{ width: 56, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid #ede9e0', flexShrink: 0, cursor: 'pointer' }}
-                          />
+                            title={`View ${room.images.length} photo${room.images.length !== 1 ? 's' : ''}`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={thumbUrl} alt={room.name} />
+                            <div className="gp-room-thumb-overlay">
+                              <span className="gp-room-thumb-icon">🔍</span>
+                              {room.images.length > 1 && (
+                                <span className="gp-room-thumb-count">{room.images.length} photos</span>
+                              )}
+                            </div>
+                          </div>
                         )}
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
