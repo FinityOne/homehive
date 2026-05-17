@@ -35,6 +35,7 @@ export async function GET(
         .from('property_images')
         .select('url, position')
         .eq('property_id', prop.id)
+        .is('room_id', null)
         .order('position', { ascending: true })
         .limit(1)
 
