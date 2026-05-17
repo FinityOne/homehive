@@ -183,6 +183,8 @@ export default function AdminLeadsPage() {
     setLoading(false)
   }, [])
 
+  useEffect(() => { document.title = 'All Leads — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
     fetchLeads()

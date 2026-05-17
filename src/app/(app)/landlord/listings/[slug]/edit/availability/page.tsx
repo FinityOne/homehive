@@ -26,6 +26,8 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
   const [isFeatured, setIsFeatured] = useState(false)
   const [availableFrom, setAvailableFrom] = useState('')
 
+  useEffect(() => { document.title = 'Availability — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

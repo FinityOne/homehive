@@ -92,6 +92,8 @@ export default function TenantsPage() {
   const [searchQ, setSearchQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<TenantStatus | 'all'>('all')
 
+  useEffect(() => { document.title = 'Tenants — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

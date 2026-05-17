@@ -227,6 +227,8 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const [offerSaving, setOfferSaving]           = useState(false)
   const [offerMsg, setOfferMsg]                 = useState<{ ok: boolean; text: string } | null>(null)
 
+  useEffect(() => { document.title = 'Listing Details — Landlord | HomeHive' }, [])
+
   // ── Load ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {

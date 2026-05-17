@@ -39,6 +39,8 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true)
   const [portalLoading, setPortalLoading] = useState(false)
 
+  useEffect(() => { document.title = 'Billing — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

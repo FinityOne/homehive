@@ -33,6 +33,8 @@ export default function EditDetailsPage({ params }: { params: Promise<{ slug: st
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
 
+  useEffect(() => { document.title = 'Edit Details — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

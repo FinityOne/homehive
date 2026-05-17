@@ -73,6 +73,8 @@ export default function AdminUpgradeRequestsPage() {
     setLoading(false)
   }, [])
 
+  useEffect(() => { document.title = 'Upgrade Requests — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

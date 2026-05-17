@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 export default function AdminListingsRedirect() {
   const router = useRouter()
+  useEffect(() => { document.title = 'All Listings — Admin | HomeHive' }, [])
   useEffect(() => { router.replace('/admin/properties') }, [router])
   return null
 }

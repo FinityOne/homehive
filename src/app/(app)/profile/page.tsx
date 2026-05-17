@@ -480,6 +480,8 @@ function ProfilePageInner() {
     setTimeout(() => setToast(null), 3500)
   }
 
+  useEffect(() => { document.title = 'My Profile — My Portal | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()

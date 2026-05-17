@@ -34,6 +34,8 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
   // Ref map for per-room file inputs
   const roomFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
+  useEffect(() => { document.title = 'Edit Photos — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

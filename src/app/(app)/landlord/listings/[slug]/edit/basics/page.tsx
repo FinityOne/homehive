@@ -39,6 +39,8 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
 
   const [rooms, setRooms] = useState<RoomRow[]>([{ name: '', price: '', is_available: true }])
 
+  useEffect(() => { document.title = 'Edit Basics — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

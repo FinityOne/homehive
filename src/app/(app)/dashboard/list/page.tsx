@@ -23,6 +23,8 @@ export default function ListYourPlacePage() {
   const [submitting, setSubmitting]       = useState(false)
   const [error, setError]                 = useState('')
 
+  useEffect(() => { document.title = 'My Applications — My Portal | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()

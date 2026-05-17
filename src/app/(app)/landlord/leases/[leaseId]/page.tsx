@@ -66,6 +66,8 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
   const [terminateSaving, setTerminateSaving] = useState(false)
   const [terminatePreview, setTerminatePreview] = useState<number | null>(null)
 
+  useEffect(() => { document.title = 'Lease Details — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

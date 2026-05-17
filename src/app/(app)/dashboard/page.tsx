@@ -90,6 +90,8 @@ function DashboardInner() {
   const [upcomingTourData, setUpcomingTourData] = useState<TourRecord | null>(null)
   const [loading, setLoading]       = useState(true)
 
+  useEffect(() => { document.title = 'Dashboard — My Portal | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()

@@ -131,6 +131,8 @@ export default function RoommatesPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
+  useEffect(() => { document.title = 'Roommates — Landlord | HomeHive' }, [])
+
   const loadRoommateGroups = useCallback(async () => {
     if (!userId) return
     setRoommateLoading(true)

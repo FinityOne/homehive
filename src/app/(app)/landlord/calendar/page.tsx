@@ -41,6 +41,8 @@ export default function LandlordCalendarPage() {
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
+  useEffect(() => { document.title = 'Calendar — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       setLoading(true)

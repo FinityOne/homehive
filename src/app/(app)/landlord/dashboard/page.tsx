@@ -56,6 +56,8 @@ export default function LandlordDashboard() {
   const [plans, setPlans]           = useState<PaymentPlan[]>([])
   const [loading, setLoading]       = useState(true)
 
+  useEffect(() => { document.title = 'Dashboard — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

@@ -132,6 +132,8 @@ export default function LandlordLeadsPage() {
   // Manually dismissed insight suggestion IDs (persisted to localStorage with 7-day TTL)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
 
+  useEffect(() => { document.title = 'Leads — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem('hh_dismissed_insights')

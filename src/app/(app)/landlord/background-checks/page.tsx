@@ -60,6 +60,8 @@ export default function BackgroundChecksPage() {
   const [selectedLead, setSelectedLead] = useState('')
   const [leadSearch, setLeadSearch] = useState('')
 
+  useEffect(() => { document.title = 'Background Checks — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()

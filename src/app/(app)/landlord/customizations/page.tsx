@@ -41,6 +41,8 @@ export default function CustomizationsPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
+  useEffect(() => { document.title = 'Customizations — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()

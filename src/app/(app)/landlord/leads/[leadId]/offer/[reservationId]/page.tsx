@@ -92,6 +92,8 @@ export default function OfferPreviewPage({
     setTimeout(() => setToast(null), 3500)
   }
 
+  useEffect(() => { document.title = 'Offer — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()

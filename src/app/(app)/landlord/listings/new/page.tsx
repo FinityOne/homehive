@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { createProperty, replacePropertyRooms, uploadPropertyImage } from '@/lib/properties'
@@ -96,6 +96,8 @@ export default function NewListingWizard() {
   const [submitting, setSubmitting] = useState(false)
   const [uploadStatus, setUploadStatus] = useState('')
   const [submitError, setSubmitError] = useState('')
+
+  useEffect(() => { document.title = 'New Listing — Landlord | HomeHive' }, [])
 
   const set = (k: keyof FormData, v: string) => {
     setForm(f => ({ ...f, [k]: v }))

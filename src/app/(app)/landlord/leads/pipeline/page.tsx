@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 const STAGES = [
   {
     status: 'new',
@@ -58,6 +60,7 @@ const STAGES = [
 ]
 
 export default function PipelineGuidePage() {
+  useEffect(() => { document.title = 'Pipeline — Landlord | HomeHive' }, [])
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif", background: '#f8fafc', minHeight: '100vh' }}>
       <style>{`

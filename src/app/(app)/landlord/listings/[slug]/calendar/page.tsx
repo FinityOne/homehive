@@ -75,6 +75,8 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
     setTimeout(() => setToast(null), 3000)
   }
 
+  useEffect(() => { document.title = 'Listing Calendar — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     init()
   }, [slug])

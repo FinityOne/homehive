@@ -25,6 +25,8 @@ export default function EditLocationPage({ params }: { params: Promise<{ slug: s
   const [lng, setLng] = useState('')
   const [mapEmbedUrl, setMapEmbedUrl] = useState('')
 
+  useEffect(() => { document.title = 'Edit Location — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

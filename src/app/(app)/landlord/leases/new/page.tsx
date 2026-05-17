@@ -37,6 +37,8 @@ export default function NewLeasePage() {
   const [tenantSearch, setTenantSearch] = useState('')
   const [showTenantSearch, setShowTenantSearch] = useState(false)
 
+  useEffect(() => { document.title = 'New Lease — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

@@ -200,6 +200,8 @@ export default function AdminUsersPage() {
     setLoading(false)
   }, [])
 
+  useEffect(() => { document.title = 'Users — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
     fetchData()

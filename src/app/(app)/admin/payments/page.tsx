@@ -292,6 +292,8 @@ export default function AdminPaymentsPage() {
     setLoading(false)
   }, [router])
 
+  useEffect(() => { document.title = 'Payments — Admin | HomeHive' }, [])
+
   useEffect(() => { load() }, [load])
 
   if (loading) return (

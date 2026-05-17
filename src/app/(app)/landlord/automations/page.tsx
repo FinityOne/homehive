@@ -34,6 +34,8 @@ export default function AutomationsPage() {
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/api/inbound-email`
 
+  useEffect(() => { document.title = 'Automations — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

@@ -43,6 +43,8 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
   const [loading, setLoading] = useState(true)
   const [activePhoto, setActivePhoto] = useState(0)
 
+  useEffect(() => { document.title = 'Preview Listing — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

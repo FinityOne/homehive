@@ -24,6 +24,8 @@ export default function LandlordLeasesPage() {
   const [statusFilter, setStatusFilter] = useState<LeaseStatus | 'all'>('all')
   const [hasListings, setHasListings] = useState(true)
 
+  useEffect(() => { document.title = 'Leases — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

@@ -1317,6 +1317,8 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     getPlanById(planId).then(p => { setPlan(p); setLoading(false) })
   }
 
+  useEffect(() => { document.title = 'Payment Plan — Landlord | HomeHive' }, [])
+
   useEffect(() => { load() }, [planId])
 
   const handleUpdateScheduled = async (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => {

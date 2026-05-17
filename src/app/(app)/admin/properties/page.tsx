@@ -42,6 +42,8 @@ export default function AdminPropertiesPage() {
     setLoading(false)
   }, [])
 
+  useEffect(() => { document.title = 'Properties — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
     load()

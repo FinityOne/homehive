@@ -41,6 +41,8 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
   const [tenantSearch, setTenantSearch] = useState('')
   const [showTenantSearch, setShowTenantSearch] = useState(false)
 
+  useEffect(() => { document.title = 'Edit Lease — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/login'); return }

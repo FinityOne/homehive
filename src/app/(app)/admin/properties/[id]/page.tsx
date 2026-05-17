@@ -71,6 +71,8 @@ export default function AdminPropertyDetailPage({ params }: { params: Promise<{ 
   const [saved, setSaved] = useState(false)
   const [claimCopied, setClaimCopied] = useState(false)
 
+  useEffect(() => { document.title = 'Property Details — Admin | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

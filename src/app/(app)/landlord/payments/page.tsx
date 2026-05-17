@@ -158,6 +158,8 @@ export default function PaymentsOverviewPage() {
   const [plans, setPlans]   = useState<PaymentPlan[]>([])
   const [loading, setLoading] = useState(true)
 
+  useEffect(() => { document.title = 'Payments — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return

@@ -252,6 +252,8 @@ export default function AdminNewPropertyPage() {
   const [copied, setCopied] = useState(false)
   const [copiedDm, setCopiedDm] = useState(false)
 
+  useEffect(() => { document.title = 'New Property — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
     fetch('/api/admin/owners')

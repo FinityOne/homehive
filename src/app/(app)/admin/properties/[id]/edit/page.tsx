@@ -91,6 +91,8 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
 
+  useEffect(() => { document.title = 'Edit Property — Admin | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

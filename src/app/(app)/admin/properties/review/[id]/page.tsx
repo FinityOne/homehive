@@ -37,6 +37,8 @@ export default function ReviewListingPage({ params }: { params: Promise<{ id: st
   const [done, setDone] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
+  useEffect(() => { document.title = 'Review Property — Admin | HomeHive' }, [])
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()

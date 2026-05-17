@@ -148,6 +148,8 @@ export default function AdminUserDetailPage() {
   const [overriding, setOverriding] = useState(false)
   const [overrideMsg, setOverrideMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
+  useEffect(() => { document.title = 'User Details — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: d }) => { if (!d.user) router.push('/login') })
   }, [router])

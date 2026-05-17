@@ -112,6 +112,8 @@ export default function NewPaymentPlanPage() {
   // Step 4 — special charges
   const [specials, setSpecials] = useState<SpecialDraft[]>([])
 
+  useEffect(() => { document.title = 'New Payment — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return

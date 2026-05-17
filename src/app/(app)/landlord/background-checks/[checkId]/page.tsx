@@ -215,6 +215,8 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     setTimeout(() => setToast(null), 3000)
   }
 
+  useEffect(() => { document.title = 'Background Check — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()

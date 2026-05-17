@@ -267,6 +267,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     setTimeout(() => setToast(null), 3500)
   }
 
+  useEffect(() => { document.title = 'Lead Details — Landlord | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()

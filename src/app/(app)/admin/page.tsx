@@ -272,6 +272,8 @@ export default function AdminOverview() {
     setLoading(false)
   }, [])
 
+  useEffect(() => { document.title = 'Overview — Admin | HomeHive' }, [])
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
     fetchData()

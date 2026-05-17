@@ -70,6 +70,8 @@ export default function MyGroupsPage() {
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('')
 
+  useEffect(() => { document.title = 'My Groups — My Portal | HomeHive' }, [])
+
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
