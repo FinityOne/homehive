@@ -131,6 +131,9 @@ export default function LandlordLeadsPage() {
 
   // Manually dismissed insight suggestion IDs (persisted to localStorage with 7-day TTL)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const [selectedInsightIds, setSelectedInsightIds] = useState<Set<string>>(new Set())
+  const [bulkSending, setBulkSending] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => { document.title = 'Leads — Landlord | HomeHive' }, [])
 
@@ -407,30 +410,54 @@ export default function LandlordLeadsPage() {
     setRemindingId(null)
   }
 
+  // Core reminder logic (no event required) — used by both single-send and bulk
+  const sendReminderCore = async (lead: Lead) => {
+    const res = await fetch(`/api/leads/${lead.id}/send-reminder`, { method: 'POST' })
+    if (res.ok) {
+      setLastContactedAt(prev => ({ ...prev, [lead.id]: new Date().toISOString() }))
+      const nextStatus = insightNextStatus(lead.status)
+      if (nextStatus) {
+        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: nextStatus } : l))
+        await updateLeadStatus(lead.id, nextStatus)
+        ph?.capture('lead_insight_sent', { lead_id: lead.id, property: lead.property, from_status: lead.status, to_status: nextStatus })
+      }
+    }
+    return res.ok
+  }
+
   // Insights-specific send: advances lead status + marks as recently contacted so the card disappears immediately
   const sendInsightReminder = async (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
     setRemindingId(lead.id)
     try {
-      const res = await fetch(`/api/leads/${lead.id}/send-reminder`, { method: 'POST' })
-      if (res.ok) {
-        // Mark as recently contacted — suppresses the card even if status update is delayed
-        setLastContactedAt(prev => ({ ...prev, [lead.id]: new Date().toISOString() }))
+      const ok = await sendReminderCore(lead)
+      if (ok) {
         const nextStatus = insightNextStatus(lead.status)
-        if (nextStatus) {
-          // Optimistic status update — card vanishes from Insights immediately
-          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: nextStatus } : l))
-          await updateLeadStatus(lead.id, nextStatus)
-          showToast(`Email sent · Moved to ${STATUS_META[nextStatus].label}`)
-          ph?.capture('lead_insight_sent', { lead_id: lead.id, property: lead.property, from_status: lead.status, to_status: nextStatus })
-        } else {
-          showToast(`Email sent to ${lead.first_name || lead.email}`)
-        }
+        showToast(nextStatus ? `Email sent · Moved to ${STATUS_META[nextStatus].label}` : `Email sent to ${lead.first_name || lead.email}`)
       } else {
         showToast('Failed to send email')
       }
     } catch { showToast('Failed to send email') }
     setRemindingId(null)
+  }
+
+  const bulkSendReminders = async (suggestions: { lead: Lead; cta: string; id: string }[]) => {
+    const targets = suggestions.filter(s => s.cta === 'remind')
+    if (targets.length === 0) return
+    setBulkSending(true)
+    setBulkProgress({ done: 0, total: targets.length })
+    let sent = 0; let failed = 0
+    for (let i = 0; i < targets.length; i++) {
+      setBulkProgress({ done: i, total: targets.length })
+      try {
+        const ok = await sendReminderCore(targets[i].lead)
+        if (ok) sent++; else failed++
+      } catch { failed++ }
+    }
+    setBulkProgress(null)
+    setBulkSending(false)
+    setSelectedInsightIds(new Set())
+    showToast(failed === 0 ? `✓ ${sent} email${sent !== 1 ? 's' : ''} sent` : `${sent} sent · ${failed} failed`)
   }
 
   const handleAddLead = async () => {
@@ -1203,85 +1230,159 @@ export default function LandlordLeadsPage() {
 
         {/* ── INSIGHTS TAB ── */}
         {activeTab === 'insights' && (
-          <div style={{ padding: '20px 24px' }}>
+          <div style={{ padding: '16px 20px' }}>
             {visibleSuggestions.length === 0 ? (
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 14, padding: '32px', textAlign: 'center' }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>🎉</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#166534', marginBottom: 6 }}>You're all caught up!</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#166534', marginBottom: 6 }}>You&apos;re all caught up!</div>
                 <div style={{ fontSize: 13, color: '#16a34a' }}>No follow-ups needed right now. Check back as new leads come in.</div>
               </div>
             ) : (
               <>
-                {/* Priority summary */}
-                {urgentCount > 0 && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: 10, padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 18 }}>🚨</span>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626' }}>{urgentCount} urgent action{urgentCount !== 1 ? 's' : ''} needed</div>
-                      <div style={{ fontSize: 12, color: '#b91c1c' }}>These leads are at risk of going cold. Act today.</div>
+                {/* ── Bulk action bar ── */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                  {urgentCount > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#dc2626' }}>
+                      🚨 {urgentCount} urgent
                     </div>
-                  </div>
-                )}
+                  )}
+                  <button
+                    disabled={bulkSending}
+                    onClick={() => {
+                      const urgentSugs = visibleSuggestions.filter(s => s.priority === 'urgent' && s.cta === 'remind')
+                      bulkSendReminders(urgentSugs)
+                    }}
+                    style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: urgentCount > 0 ? '#dc2626' : '#94a3b8', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: urgentCount > 0 && !bulkSending ? 'pointer' : 'default', fontFamily: "'DM Sans', sans-serif", opacity: bulkSending ? 0.6 : 1 }}
+                  >
+                    {bulkProgress ? `Sending ${bulkProgress.done + 1}/${bulkProgress.total}…` : `📧 Send All Urgent (${urgentCount})`}
+                  </button>
+                  {selectedInsightIds.size > 0 && (
+                    <button
+                      disabled={bulkSending}
+                      onClick={() => {
+                        const selected = visibleSuggestions.filter(s => selectedInsightIds.has(s.id))
+                        bulkSendReminders(selected)
+                      }}
+                      style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#8C1D40', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                    >
+                      📧 Send Selected ({selectedInsightIds.size})
+                    </button>
+                  )}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b', cursor: 'pointer', marginLeft: 'auto' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedInsightIds.size === visibleSuggestions.filter(s => s.cta === 'remind').length && visibleSuggestions.length > 0}
+                      onChange={e => {
+                        if (e.target.checked) setSelectedInsightIds(new Set(visibleSuggestions.filter(s => s.cta === 'remind').map(s => s.id)))
+                        else setSelectedInsightIds(new Set())
+                      }}
+                    />
+                    Select all
+                  </label>
+                </div>
 
-                {/* Suggestion cards */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
-                  {visibleSuggestions.map(s => {
-                    const borderColors = { urgent: '#fecaca', medium: '#fed7aa', low: '#bbf7d0' }
+                {/* ── Compact table ── */}
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', marginBottom: 28 }}>
+                  {/* Table header */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '32px 22px 1fr 90px 110px 50px 160px', gap: 0, padding: '8px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px', alignItems: 'center' }}>
+                    <div />
+                    <div />
+                    <div>Lead</div>
+                    <div>Status</div>
+                    <div>Property</div>
+                    <div>Days</div>
+                    <div style={{ textAlign: 'right' }}>Actions</div>
+                  </div>
+                  {visibleSuggestions.map((s, idx) => {
                     const accentColors = { urgent: '#dc2626', medium: '#d97706', low: '#16a34a' }
-                    const bgColors     = { urgent: '#fef2f2', medium: '#fffbeb', low: '#f0fdf4' }
                     const propMeta = STATUS_META[s.lead.status]
+                    const isSelected = selectedInsightIds.has(s.id)
+                    const isSending = remindingId === s.lead.id || bulkSending
                     return (
-                      <div key={s.id} style={{ background: '#fff', border: `1px solid ${borderColors[s.priority]}`, borderLeft: `4px solid ${accentColors[s.priority]}`, borderRadius: 12, padding: '16px 18px', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                        <div style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>{s.emoji}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                            <div>
-                              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 3 }}>{s.headline}</div>
-                              <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6, marginBottom: 10 }}>{s.body}</div>
-                            </div>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: accentColors[s.priority], background: bgColors[s.priority], border: `1px solid ${borderColors[s.priority]}`, borderRadius: 20, padding: '2px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                              {s.priority === 'urgent' ? '🔴 Urgent' : s.priority === 'medium' ? '🟡 Soon' : '🟢 Low'}
-                            </span>
+                      <div
+                        key={s.id}
+                        style={{
+                          display: 'grid', gridTemplateColumns: '32px 22px 1fr 90px 110px 50px 160px', gap: 0,
+                          padding: '9px 14px', alignItems: 'center',
+                          borderBottom: idx < visibleSuggestions.length - 1 ? '1px solid #f1f5f9' : 'none',
+                          background: isSelected ? '#fdf5f7' : '#fff',
+                          borderLeft: `3px solid ${accentColors[s.priority]}`,
+                          transition: 'background 0.1s',
+                        }}
+                      >
+                        {/* Checkbox */}
+                        <div>
+                          {s.cta === 'remind' && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={e => setSelectedInsightIds(prev => {
+                                const next = new Set(prev)
+                                if (e.target.checked) next.add(s.id); else next.delete(s.id)
+                                return next
+                              })}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          )}
+                        </div>
+                        {/* Priority dot */}
+                        <div style={{ fontSize: 13 }}>
+                          {s.priority === 'urgent' ? '🔴' : s.priority === 'medium' ? '🟡' : '🟢'}
+                        </div>
+                        {/* Lead name + headline */}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {s.lead.first_name} {s.lead.last_name}
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: propMeta.color, background: propMeta.bg, border: `1px solid ${propMeta.border}`, borderRadius: 20, padding: '2px 8px' }}>
-                              {propMeta.label}
-                            </span>
-                            <span style={{ fontSize: 11, color: '#94a3b8' }}>{s.propName}</span>
-                            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                              {s.cta === 'remind' && (
-                                <>
-                                  <button
-                                    style={{ fontSize: 12, fontWeight: 600, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                    onClick={() => { const { subject, html } = buildPreviewEmail(s.lead, s.propName); setEmailPreview({ lead: s.lead, subject, html }) }}
-                                    title="Preview email"
-                                  >
-                                    👁 Preview
-                                  </button>
-                                  <button
-                                    style={{ fontSize: 12, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                    disabled={remindingId === s.lead.id}
-                                    onClick={async (e) => { e.stopPropagation(); await sendInsightReminder(s.lead, e) }}
-                                  >
-                                    {remindingId === s.lead.id ? 'Sending…' : '📧 Send'}
-                                  </button>
-                                </>
-                              )}
+                          <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {s.headline}
+                          </div>
+                        </div>
+                        {/* Status badge */}
+                        <div>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: propMeta.color, background: propMeta.bg, border: `1px solid ${propMeta.border}`, borderRadius: 20, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                            {propMeta.label}
+                          </span>
+                        </div>
+                        {/* Property */}
+                        <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.propName}</div>
+                        {/* Days stale */}
+                        <div style={{ fontSize: 12, fontWeight: 700, color: accentColors[s.priority] }}>
+                          {staleDays(s.lead)}d
+                        </div>
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                          {s.cta === 'remind' && (
+                            <>
                               <button
-                                style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                onClick={() => window.open(`/landlord/leads/${s.lead.id}`, '_blank')}
+                                title="Preview email"
+                                style={{ fontSize: 11, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                                onClick={() => { const { subject, html } = buildPreviewEmail(s.lead, s.propName); setEmailPreview({ lead: s.lead, subject, html }) }}
                               >
-                                View →
+                                👁
                               </button>
                               <button
-                                style={{ fontSize: 12, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                onClick={() => { dismissSuggestion(s.id); showToast('Marked as done') }}
-                                title="Already handled — remove from insights"
+                                disabled={isSending}
+                                style={{ fontSize: 11, fontWeight: 700, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 6, padding: '4px 8px', cursor: isSending ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: isSending ? 0.5 : 1 }}
+                                onClick={async (e) => { e.stopPropagation(); await sendInsightReminder(s.lead, e) }}
                               >
-                                ✓ Done
+                                {remindingId === s.lead.id ? '…' : '📧'}
                               </button>
-                            </div>
-                          </div>
+                            </>
+                          )}
+                          <button
+                            style={{ fontSize: 11, color: '#0f172a', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                            onClick={() => window.open(`/landlord/leads/${s.lead.id}`, '_blank')}
+                          >
+                            →
+                          </button>
+                          <button
+                            title="Mark as done"
+                            style={{ fontSize: 11, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                            onClick={() => { dismissSuggestion(s.id); showToast('Marked as done') }}
+                          >
+                            ✓
+                          </button>
                         </div>
                       </div>
                     )
