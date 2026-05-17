@@ -38,6 +38,14 @@ function formatTime(ts: string) {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function daysAgo(ts: string) {
+  const diff = Date.now() - new Date(ts).getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return 'today'
+  if (days === 1) return '1 day ago'
+  return `${days} days ago`
+}
+
 const LIFESTYLE_LABELS: Record<string, string> = {
   'Early riser / quiet': '☀️ Early riser',
   'Night owl / social': '🌙 Night owl',
@@ -47,9 +55,9 @@ const LIFESTYLE_LABELS: Record<string, string> = {
 }
 
 function accentColor(pref: string) {
-  if (pref === 'girls_only') return { main: '#db2777', light: 'rgba(236,72,153,0.08)', border: 'rgba(236,72,153,0.2)', gradient: 'linear-gradient(135deg,#db2777,#9d174d)', soft: '#fdf2f8' }
-  if (pref === 'boys_only') return { main: '#2563eb', light: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.2)', gradient: 'linear-gradient(135deg,#2563eb,#1d4ed8)', soft: '#eff6ff' }
-  return { main: '#8C1D40', light: 'rgba(140,29,64,0.07)', border: 'rgba(140,29,64,0.18)', gradient: 'linear-gradient(135deg,#8C1D40,#6b1530)', soft: '#fdf5f7' }
+  if (pref === 'girls_only') return { main: '#db2777', light: 'rgba(236,72,153,0.08)', border: 'rgba(236,72,153,0.2)', gradient: 'linear-gradient(135deg,#db2777,#9d174d)', soft: '#fdf2f8', hero: 'linear-gradient(160deg,#1a0a12 0%,#3b0a22 60%,#1a0a12 100%)' }
+  if (pref === 'boys_only') return { main: '#2563eb', light: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.2)', gradient: 'linear-gradient(135deg,#2563eb,#1d4ed8)', soft: '#eff6ff', hero: 'linear-gradient(160deg,#06101f 0%,#0d2240 60%,#06101f 100%)' }
+  return { main: '#8C1D40', light: 'rgba(140,29,64,0.07)', border: 'rgba(140,29,64,0.18)', gradient: 'linear-gradient(135deg,#8C1D40,#6b1530)', soft: '#fdf5f7', hero: 'linear-gradient(160deg,#0f172a 0%,#1e1224 60%,#0f172a 100%)' }
 }
 
 function genderLabel(pref: string) {
@@ -58,17 +66,17 @@ function genderLabel(pref: string) {
   return '⚤ Open to All'
 }
 
-function headlineText(pref: string, propertyName: string) {
-  if (pref === 'girls_only') return `All-girls group forming for ${propertyName}`
-  if (pref === 'boys_only') return `All-guys group forming for ${propertyName}`
-  return `Roommate group forming for ${propertyName}`
+function heroTagline(pref: string, propertyName: string) {
+  if (pref === 'girls_only') return `All-girls group forming at ${propertyName}`
+  if (pref === 'boys_only') return `All-guys group forming at ${propertyName}`
+  return `Roommate group forming at ${propertyName}`
 }
 
 function persuasiveLine(pref: string, count: number) {
   const n = count === 0 ? 'No one yet' : count === 1 ? '1 person' : `${count} people`
   if (pref === 'girls_only') return `${n} in the group · All-female household · Safe, like-minded space`
   if (pref === 'boys_only') return `${n} in the group · All-male household · Low-key, easy setup`
-  return `${n} in the group · Mixed household · Join for free, no commitment`
+  return `${n} in the group · Mixed household · Join free, no commitment`
 }
 
 function avatarColors(i: number) {
@@ -107,6 +115,8 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   const [chatInput, setChatInput] = useState('')
   const [sending, setSending] = useState(false)
   const [chatUnread, setChatUnread] = useState(0)
+  const [memberJoinedAt, setMemberJoinedAt] = useState<string | null>(null)
+  const [memberRoomName, setMemberRoomName] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatOpenRef = useRef(false)
 
@@ -140,6 +150,18 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
       setChatGroupId(d.group_id)
       setChatMessages(d.messages)
       setJoined(true)
+      // Try to get member's joined_at and room from the user/groups endpoint
+      try {
+        const gr = await fetch('/api/user/groups', { headers: { Authorization: `Bearer ${accessToken}` } })
+        if (gr.ok) {
+          const gd = await gr.json()
+          const myGroup = (gd.groups || []).find((g: { id: string }) => g.id === d.group_id)
+          if (myGroup) {
+            setMemberJoinedAt(myGroup.joined_at)
+            setMemberRoomName(myGroup.room_name)
+          }
+        }
+      } catch { /* ignore */ }
     }
   }, [token])
 
@@ -231,10 +253,10 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 32, marginBottom: 12 }}>👥</div>
-        <div style={{ fontSize: 14, color: '#9b9b9b' }}>Loading group…</div>
+        <div style={{ fontSize: 40, marginBottom: 14, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</div>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>Loading group…</div>
       </div>
     </div>
   )
@@ -254,109 +276,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   const roomMap = Object.fromEntries(rooms.map(r => [r.id, r]))
   const shareUrl = `${SITE_URL}/groups/${token}`
   const propertyName = property?.name ?? 'this home'
-
-  const MembersPanel = () => (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#9b9b9b', marginBottom: 14 }}>
-        Who&apos;s in the group
-      </div>
-      {members.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '28px 20px', background: '#fff', border: '1px dashed #ddd9d1', borderRadius: 14 }}>
-          <div style={{ fontSize: 26, marginBottom: 8 }}>👀</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>No one yet — be the first!</div>
-          <div style={{ fontSize: 12, color: '#9b9b9b' }}>Your name will show up here after you join.</div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {members.map((m, i) => {
-            const initials = ((m.first_name?.[0] || '') + (m.last_name?.[0] || '')).toUpperCase() || `${i + 1}`
-            const pal = avatarColors(i)
-            const assignedRoom = m.room_id ? roomMap[m.room_id] : null
-            const tags = [
-              m.occupation,
-              m.university ? `🎓 ${m.university}` : null,
-              m.lifestyle ? (LIFESTYLE_LABELS[m.lifestyle] ?? m.lifestyle) : null,
-              m.gender && m.gender !== 'Prefer not to say' ? m.gender : null,
-            ].filter(Boolean) as string[]
-            return (
-              <div key={m.id} style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: 14, padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: pal.bg, color: pal.fg, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    {initials}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{m.first_name ?? 'Member'} {m.last_name ?? ''}</div>
-                      {m.has_prescreen && (
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.09)', border: '1px solid rgba(16,185,129,0.22)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                          ✓ Screened
-                        </span>
-                      )}
-                    </div>
-                    {assignedRoom && (
-                      <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>
-                        {assignedRoom.name}{assignedRoom.price ? ` · $${assignedRoom.price}/mo` : ''}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {m.about && (
-                  <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.6, margin: '10px 0 0', paddingLeft: 12, borderLeft: '2px solid #ede9e0' }}>
-                    {m.about}
-                  </div>
-                )}
-                {tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                    {tags.map(t => (
-                      <span key={t} style={{ fontSize: 11, color: '#6b6b6b', background: '#f5f4f0', border: '1px solid #ede9e0', padding: '3px 9px', borderRadius: 20 }}>{t}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-
-  const JoinWidget = ({ sticky }: { sticky?: boolean }) => (
-    <div style={{
-      background: '#fff', border: '1px solid #ede9e0', borderRadius: sticky ? 0 : 16,
-      padding: sticky ? '14px 20px 28px' : '20px',
-      ...(sticky ? { borderLeft: 'none', borderRight: 'none', borderBottom: 'none' } : {}),
-    }}>
-      {joined ? (
-        <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '16px 18px', textAlign: 'center' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#15803d', marginBottom: 3 }}>You&apos;re in the group 🎉</div>
-          <div style={{ fontSize: 12, color: '#166534', marginBottom: joinResult && !joinResult.has_prescreen ? 10 : 0 }}>The landlord will reach out to coordinate next steps.</div>
-          {joinResult && !joinResult.has_prescreen && (
-            <a
-              href={`/pre-screen/${joinResult.lead_id}`}
-              style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#15803d', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, padding: '8px 14px', textDecoration: 'none' }}
-            >
-              ✏️ Tell your roommates about yourself →
-            </a>
-          )}
-        </div>
-      ) : (
-        <>
-          <button
-            onClick={openJoinModal}
-            style={{
-              width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
-              border: 'none', background: ac.gradient, color: '#fff',
-              letterSpacing: '-0.2px',
-            }}
-          >
-            {currentUser ? 'Join This Group →' : 'Sign In to Join →'}
-          </button>
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 7 }}>Free · No commitment · Just express interest</div>
-        </>
-      )}
-    </div>
-  )
+  const openRooms = pricedRooms.filter(r => r.is_available && !members.find(m => m.room_id === r.id)).length
 
   return (
     <>
@@ -364,423 +284,476 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; -webkit-font-smoothing: antialiased; }
+        @keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
 
-        /* NAV */
-        .gp-nav { background: #fff; border-bottom: 1px solid #ede9e0; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; }
-        .gp-logo { font-size: 16px; font-weight: 700; color: #8C1D40; text-decoration: none; letter-spacing: -0.4px; }
-        .gp-nav-link { font-size: 12px; color: #9b9b9b; text-decoration: none; font-weight: 500; }
-        .gp-nav-link:hover { color: #1a1a1a; }
+        /* ── NAV ── */
+        .gp-nav { background: rgba(15,23,42,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.06); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; }
+        .gp-logo { font-size: 16px; font-weight: 700; color: #FFC627; text-decoration: none; letter-spacing: -0.4px; }
+        .gp-nav-link { font-size: 12px; color: rgba(255,255,255,0.5); text-decoration: none; font-weight: 500; transition: color 0.15s; }
+        .gp-nav-link:hover { color: rgba(255,255,255,0.9); }
 
-        /* ── MOBILE layout (default) ── */
-        .gp-page { max-width: 520px; margin: 0 auto; padding-bottom: 110px; }
+        /* ── HERO ── */
+        .gp-hero-dark {
+          position: relative; overflow: hidden;
+          padding: 48px 24px 40px;
+          min-height: 300px;
+          display: flex; flex-direction: column; justify-content: flex-end;
+        }
+        .gp-hero-bg {
+          position: absolute; inset: 0;
+          background-size: cover; background-position: center;
+          opacity: 0.12; z-index: 0;
+        }
+        .gp-hero-overlay { position: absolute; inset: 0; z-index: 1; }
+        .gp-hero-content { position: relative; z-index: 2; animation: fadeUp 0.5s ease both; }
+        .gp-private-label { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.4); margin-bottom: 10px; }
+        .gp-gender-badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; margin-bottom: 14px; }
+        .gp-hero-emoji { font-size: 52px; line-height: 1; margin-bottom: 10px; display: block; }
+        .gp-hero-name { font-size: 28px; font-weight: 700; color: #fff; line-height: 1.2; letter-spacing: -0.5px; margin-bottom: 8px; }
+        .gp-hero-tagline { font-size: 15px; color: rgba(255,255,255,0.6); margin-bottom: 18px; }
+        .gp-hero-stats { display: flex; align-items: center; gap: 16px; }
+        .gp-stat-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block; margin-right: 6px; box-shadow: 0 0 8px #22c55e; }
+        .gp-stat-text { font-size: 13px; color: rgba(255,255,255,0.7); font-weight: 500; }
+        .gp-hero-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+        .gp-hero-action-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans',sans-serif; text-decoration: none; transition: background 0.15s, opacity 0.15s; }
+        .gp-hero-btn-ghost { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.15); }
+        .gp-hero-btn-ghost:hover { background: rgba(255,255,255,0.14); }
 
-        .gp-hero { padding: 20px 20px 0; }
-        .gp-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; margin-bottom: 10px; }
-        .gp-headline { font-size: 20px; font-weight: 700; color: #1a1a1a; line-height: 1.25; letter-spacing: -0.4px; margin-bottom: 6px; }
-        .gp-persuade { font-size: 13px; color: #6b6b6b; margin-top: 4px; }
+        /* ── PAGE LAYOUT ── */
+        .gp-page { max-width: 1080px; margin: 0 auto; }
+        .gp-columns { padding: 28px 20px 80px; display: flex; flex-direction: column; gap: 20px; }
 
-        .gp-hr { height: 1px; background: #ede9e0; margin: 16px 20px 0; }
-
-        .gp-section { padding: 18px 20px 0; }
+        /* ── CARDS ── */
+        .gp-card { background: #fff; border: 1px solid #ede9e0; border-radius: 18px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
+        .gp-card-body { padding: 22px; }
         .gp-section-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9b9b9b; margin-bottom: 14px; }
 
-        /* room rows */
-        .gp-room { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 10px; background: #faf9f7; border: 1px solid #ede9e0; margin-bottom: 8px; }
+        /* ── STATUS CARD (member) ── */
+        .gp-status-card { background: linear-gradient(135deg,#fef3c7,#fef9e7); border: 1.5px solid #fde68a; border-radius: 16px; padding: 18px 20px; }
+        .gp-status-title { font-size: 16px; font-weight: 700; color: #92400e; margin-bottom: 4px; }
+        .gp-status-sub { font-size: 13px; color: #b45309; }
 
-        /* sticky mobile join footer */
-        .gp-sticky-footer { display: block; position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; background: #fff; border-top: 1px solid #ede9e0; }
-        .gp-sticky-inner { max-width: 520px; margin: 0 auto; padding: 12px 20px 28px; }
+        /* ── PRIMARY ACTION ── */
+        .gp-primary-action { width: 100%; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: 'DM Sans',sans-serif; border: none; letter-spacing: -0.2px; transition: opacity 0.15s, box-shadow 0.15s; }
+        .gp-join-btn { background: var(--ac-gradient); color: #fff; }
+        .gp-join-btn:hover { opacity: 0.9; }
+        .gp-chat-btn { background: linear-gradient(135deg,#FFC627,#f5a623); color: #1a1a1a; display: flex; align-items: center; justify-content: center; gap: 12px; }
+        .gp-chat-btn:hover { box-shadow: 0 6px 24px rgba(255,198,39,0.45); }
+        .gp-action-note { text-align: center; font-size: 11px; color: #9b9b9b; margin-top: 7px; }
 
-        /* property card */
-        .gp-prop-card { background: #fff; border: 1px solid #ede9e0; border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
-        .gp-prop-img { width: 100%; height: 170px; object-fit: cover; display: block; }
-        .gp-prop-body { padding: 14px 16px; }
+        /* ── MEMBER CARDS ── */
+        .gp-member-card { background: #fff; border: 1px solid #ede9e0; border-radius: 16px; padding: 18px; transition: box-shadow 0.15s; }
+        .gp-member-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
+        .gp-member-avatar { width: 48px; height: 48px; border-radius: 50%; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .gp-member-name { font-size: 16px; font-weight: 700; color: #1a1a1a; line-height: 1.2; }
+        .gp-member-about { font-size: 13px; color: #4b5563; line-height: 1.6; margin-top: 10px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .gp-tag { font-size: 11px; color: #6b6b6b; background: #f5f4f0; border: 1px solid #ede9e0; padding: 3px 9px; border-radius: 20px; }
 
-        /* share card */
-        .gp-share-card { background: #fff; border: 1px solid #ede9e0; border-radius: 14px; padding: 16px; }
-        .gp-share-row { display: flex; gap: 8px; margin-top: 10px; }
-        .gp-share-input { flex: 1; background: #f5f4f0; border: 1px solid #ede9e0; border-radius: 8px; padding: 9px 12px; font-size: 12px; color: #6b6b6b; outline: none; font-family: 'DM Sans', sans-serif; min-width: 0; }
-        .gp-share-btn { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: 'DM Sans', sans-serif; }
+        /* ── ROOM ROWS ── */
+        .gp-room { display: flex; align-items: center; padding: 12px 14px; border-radius: 12px; background: #faf9f7; border: 1px solid #ede9e0; margin-bottom: 8px; gap: 10px; }
 
-        /* ── DESKTOP layout ── */
+        /* ── SHARE ── */
+        .gp-share-input { flex: 1; background: #f5f4f0; border: 1px solid #ede9e0; border-radius: 8px; padding: 9px 12px; font-size: 12px; color: #6b6b6b; outline: none; font-family: 'DM Sans',sans-serif; min-width: 0; }
+        .gp-share-btn { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: 'DM Sans',sans-serif; }
+
+        /* ── PROPERTY CARD ── */
+        .gp-prop-img { width: 100%; height: 200px; object-fit: cover; display: block; }
+
+        /* ── CHAT LOCKED ── */
+        .gp-chat-locked { background: #fff; border: 1.5px solid #ede9e0; border-radius: 14px; overflow: hidden; }
+
+        /* ── MOBILE STICKY FOOTER ── */
+        .gp-sticky-footer { display: block; position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; background: rgba(255,255,255,0.96); backdrop-filter: blur(12px); border-top: 1px solid #ede9e0; padding: 14px 20px 28px; }
+
+        /* ── DESKTOP ── */
         @media (min-width: 768px) {
-          .gp-page {
-            max-width: 1080px;
-            margin: 0 auto;
-            padding: 36px 32px 60px;
-            display: grid;
-            grid-template-columns: 1fr 380px;
-            grid-template-rows: auto;
-            gap: 0 28px;
-            align-items: start;
-          }
-
-          /* hero spans full width above the columns */
-          .gp-dt-hero { grid-column: 1 / -1; margin-bottom: 28px; }
-          .gp-dt-left { grid-column: 1; }
-          .gp-dt-right { grid-column: 2; position: sticky; top: 80px; }
-
-          /* on desktop we don't use the mobile hr/section padding */
-          .gp-hr { display: none; }
-          .gp-section { padding: 0; margin-bottom: 20px; }
-          .gp-hero { display: none; } /* hidden — desktop uses gp-dt-hero instead */
-          .gp-sticky-footer { display: none; } /* join widget is in right column */
-
-          .gp-prop-img { height: 220px; }
+          .gp-hero-dark { padding: 64px 48px 52px; min-height: 380px; }
+          .gp-hero-name { font-size: 38px; }
+          .gp-columns { padding: 32px 48px 60px; flex-direction: row; align-items: flex-start; gap: 28px; }
+          .gp-col-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+          .gp-col-right { width: 360px; flex-shrink: 0; position: sticky; top: 72px; display: flex; flex-direction: column; gap: 14px; }
+          .gp-sticky-footer { display: none; }
+          .gp-prop-img { height: 240px; }
+          .gp-hero-emoji { font-size: 64px; }
+        }
+        @media (max-width: 767px) {
+          .gp-col-right { display: none; }
+          .gp-col-left { display: flex; flex-direction: column; gap: 16px; }
         }
       `}</style>
 
-      {/* Nav */}
+      {/* ── NAV ── */}
       <div className="gp-nav">
-        <a href="/" className="gp-logo">HomeHive</a>
+        <a href="/" className="gp-logo">HomeHive 🐝</a>
         <a href="/homes" className="gp-nav-link">Browse all homes →</a>
       </div>
 
-      {/* ─── MOBILE: single-column page ─── */}
       <div className="gp-page">
 
-        {/* Mobile hero */}
-        <div className="gp-hero">
-          <div className="gp-badge" style={{ background: ac.light, borderColor: ac.border, color: ac.main }}>
-            {genderLabel(group.gender_preference)}
+        {/* ═══════════════ HERO ═══════════════ */}
+        <div className="gp-hero-dark" style={{ background: ac.hero }}>
+          {/* Background image */}
+          {property?.hero_image && (
+            <div
+              className="gp-hero-bg"
+              style={{ backgroundImage: `url(${property.hero_image})` }}
+            />
+          )}
+          <div className="gp-hero-overlay" style={{ background: ac.hero }} />
+          <div className="gp-hero-content">
+            <div className="gp-private-label">Private Roommate Group</div>
+            <span
+              className="gp-gender-badge"
+              style={{ background: `${ac.light}`, borderColor: ac.border, color: ac.main }}
+            >
+              {genderLabel(group.gender_preference)}
+            </span>
+            <div className="gp-hero-emoji">{group.emoji}</div>
+            <div className="gp-hero-name">{group.name}</div>
+            <div className="gp-hero-tagline">{heroTagline(group.gender_preference, propertyName)}</div>
+            {group.description && (
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 14, maxWidth: 520 }}>
+                {group.description}
+              </div>
+            )}
+            <div className="gp-hero-stats">
+              <span className="gp-stat-text">
+                <span className="gp-stat-dot" />
+                {members.length} confirmed{openRooms > 0 ? ` · ${openRooms} room${openRooms !== 1 ? 's' : ''} open` : ''}
+              </span>
+            </div>
+            <div className="gp-hero-actions">
+              {property && (
+                <a
+                  href={`/homes/${property.slug ?? group.property_slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="gp-hero-action-btn gp-hero-btn-ghost"
+                >
+                  View Full Listing ↗
+                </a>
+              )}
+              <button
+                className="gp-hero-action-btn gp-hero-btn-ghost"
+                onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
+              >
+                🔗 {copiedShare ? 'Link Copied!' : 'Share Invite'}
+              </button>
+            </div>
           </div>
-          <div className="gp-headline">{group.emoji} {headlineText(group.gender_preference, propertyName)}</div>
-          {group.description && <div style={{ fontSize: 13, color: '#6b6b6b', lineHeight: 1.6, marginTop: 6 }}>{group.description}</div>}
-          <div className="gp-persuade">{persuasiveLine(group.gender_preference, members.length)}</div>
         </div>
 
-        {/* ─── DESKTOP hero (above columns) ─── */}
-        <div className="gp-dt-hero" style={{ display: 'none' }}>
-          <div style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: 18, padding: '28px 32px', display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div className="gp-badge" style={{ background: ac.light, borderColor: ac.border, color: ac.main, marginBottom: 12 }}>
-                {genderLabel(group.gender_preference)}
+        {/* ═══════════════ COLUMNS ═══════════════ */}
+        <div className="gp-columns">
+
+          {/* ─── LEFT COLUMN ─── */}
+          <div className="gp-col-left">
+
+            {/* YOUR STATUS — member only */}
+            {hasChat && (
+              <div className="gp-status-card">
+                <div className="gp-status-title">You&apos;re in 🎯</div>
+                <div className="gp-status-sub">
+                  {memberRoomName ? `🛏 ${memberRoomName}` : 'Room TBD by landlord'}
+                  {memberJoinedAt ? ` · Joined ${daysAgo(memberJoinedAt)}` : ''}
+                  {' · Including you, '}
+                  {members.length} member{members.length !== 1 ? 's' : ''} total
+                </div>
               </div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2, letterSpacing: '-0.5px', marginBottom: 8 }}>
-                {group.emoji} {headlineText(group.gender_preference, propertyName)}
+            )}
+
+            {/* WHO'S IN THE GROUP */}
+            <div className="gp-card">
+              <div className="gp-card-body">
+                <div className="gp-section-label">
+                  Your Future Roommates
+                  {hasChat && members.length > 0 && (
+                    <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 12, color: '#9b9b9b', marginLeft: 8 }}>
+                      · Including you!
+                    </span>
+                  )}
+                </div>
+                <MembersSection members={members} roomMap={roomMap} acMain={ac.main} onPhotoClick={openLightbox} />
               </div>
-              {group.description && (
-                <div style={{ fontSize: 14, color: '#6b6b6b', lineHeight: 1.65, marginBottom: 10 }}>{group.description}</div>
-              )}
-              <div style={{ fontSize: 13, color: '#6b6b6b' }}>{persuasiveLine(group.gender_preference, members.length)}</div>
             </div>
+
+            {/* THE HOME */}
             {property && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: ac.soft, border: `1px solid ${ac.border}`, borderRadius: 12, padding: '14px 18px', minWidth: 220 }}>
-                <div style={{ fontSize: 28 }}>🏠</div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{property.name}</div>
-                  <div style={{ fontSize: 12, color: '#9b9b9b', marginTop: 2 }}>📍 {property.address}</div>
-                  <div style={{ fontSize: 12, color: '#6b6b6b', marginTop: 4, display: 'flex', gap: 10 }}>
-                    {property.beds > 0 && <span><strong>{property.beds}</strong> bed{property.beds !== 1 ? 's' : ''}</span>}
-                    {property.baths > 0 && <span><strong>{property.baths}</strong> bath{property.baths !== 1 ? 's' : ''}</span>}
-                    {property.sqft && <span>{property.sqft} sqft</span>}
+              <div className="gp-card">
+                {property.hero_image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={property.hero_image} alt={property.name} className="gp-prop-img" />
+                )}
+                <div className="gp-card-body">
+                  <div className="gp-section-label">The Home</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>{property.name}</div>
+                  <div style={{ fontSize: 12, color: '#9b9b9b', marginBottom: 12 }}>📍 {property.address}</div>
+                  <div style={{ display: 'flex', gap: 16, marginBottom: property.description ? 12 : 0 }}>
+                    {property.beds > 0 && <span style={{ fontSize: 13, color: '#6b6b6b' }}><strong style={{ color: '#1a1a1a' }}>{property.beds}</strong> bed{property.beds !== 1 ? 's' : ''}</span>}
+                    {property.baths > 0 && <span style={{ fontSize: 13, color: '#6b6b6b' }}><strong style={{ color: '#1a1a1a' }}>{property.baths}</strong> bath{property.baths !== 1 ? 's' : ''}</span>}
+                    {property.sqft && <span style={{ fontSize: 13, color: '#6b6b6b' }}>{property.sqft} sqft</span>}
                   </div>
+                  {property.description && (
+                    <div style={{ fontSize: 13, color: '#6b6b6b', lineHeight: 1.65, marginBottom: 14 }}>{property.description}</div>
+                  )}
                   <a
                     href={`/homes/${property.slug ?? group.property_slug}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ display: 'inline-block', marginTop: 8, fontSize: 12, fontWeight: 600, color: ac.main, textDecoration: 'none' }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: ac.main, textDecoration: 'none' }}
                   >
-                    View listing ↗
+                    View full listing ↗
                   </a>
                 </div>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* ─── LEFT COLUMN (desktop) / sections (mobile) ─── */}
-        <div className="gp-dt-left">
-
-          {/* Members — first on mobile, left col on desktop */}
-          <div className="gp-hr" />
-          <div className="gp-section">
-            <MembersSection members={members} roomMap={roomMap} acMain={ac.main} onPhotoClick={openLightbox} />
-          </div>
-
-          {/* Property — below members on mobile, left col desktop */}
-          {property && (
-            <>
-              <div className="gp-hr" style={{ marginTop: 18 }} />
-              <div className="gp-section" style={{ paddingTop: 18 }}>
-                <div className="gp-section-label">The home</div>
-                <div className="gp-prop-card">
-                  {property.hero_image && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={property.hero_image} alt={property.name} className="gp-prop-img" />
-                  )}
-                  <div className="gp-prop-body">
-                    <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a', marginBottom: 3 }}>{property.name}</div>
-                    <div style={{ fontSize: 12, color: '#9b9b9b', marginBottom: 10 }}>📍 {property.address}</div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      {property.beds > 0 && <span style={{ fontSize: 13, color: '#6b6b6b' }}><strong style={{ color: '#1a1a1a' }}>{property.beds}</strong> bed{property.beds !== 1 ? 's' : ''}</span>}
-                      {property.baths > 0 && <span style={{ fontSize: 13, color: '#6b6b6b' }}><strong style={{ color: '#1a1a1a' }}>{property.baths}</strong> bath{property.baths !== 1 ? 's' : ''}</span>}
-                      {property.sqft && <span style={{ fontSize: 13, color: '#6b6b6b' }}>{property.sqft} sqft</span>}
-                    </div>
-                    {property.description && (
-                      <div style={{ marginTop: 10, fontSize: 13, color: '#6b6b6b', lineHeight: 1.65 }}>{property.description}</div>
-                    )}
-                    <a
-                      href={`/homes/${property.slug ?? group.property_slug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 14, fontSize: 13, fontWeight: 600, color: ac.main, textDecoration: 'none' }}
-                    >
-                      View full listing ↗
-                    </a>
-                  </div>
+            {/* ROOMS & PRICING */}
+            {pricedRooms.length > 0 && (
+              <div className="gp-card">
+                <div className="gp-card-body">
+                  <div className="gp-section-label">Rooms &amp; Pricing</div>
+                  {pricedRooms.map(room => {
+                    const assignedMember = members.find(m => m.room_id === room.id)
+                    const available = room.is_available && !assignedMember
+                    const thumbUrl = room.images?.[0] ?? null
+                    return (
+                      <div className="gp-room" key={room.id} style={!available ? { opacity: 0.7 } : {}}>
+                        {thumbUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={thumbUrl}
+                            alt={room.name}
+                            onClick={() => openLightbox(room.images, 0, room.name)}
+                            style={{ width: 56, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid #ede9e0', flexShrink: 0, cursor: 'pointer' }}
+                          />
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
+                          {assignedMember && (
+                            <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>
+                              Reserved for {assignedMember.first_name ?? 'a member'}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>
+                            ${room.price.toLocaleString()}<span style={{ fontSize: 11, fontWeight: 400, color: '#9b9b9b' }}>/mo</span>
+                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, color: available ? '#10b981' : '#9b9b9b' }}>
+                            {available ? 'Available' : assignedMember ? 'Reserved' : 'Taken'}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-            </>
-          )}
+            )}
 
-          {/* Rooms */}
-          {pricedRooms.length > 0 && (
-            <>
-              <div className="gp-hr" style={{ marginTop: property ? 0 : 18 }} />
-              <div className="gp-section" style={{ paddingTop: 18 }}>
-                <div className="gp-section-label">Rooms &amp; pricing</div>
-                {pricedRooms.map(room => {
-                  const assignedMember = members.find(m => m.room_id === room.id)
-                  const available = room.is_available && !assignedMember
-                  const thumbUrl = room.images?.[0] ?? null
-                  return (
-                    <div className="gp-room" key={room.id} style={!available ? { opacity: 0.7 } : {}}>
-                      {thumbUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={thumbUrl}
-                          alt={room.name}
-                          onClick={() => openLightbox(room.images, 0, room.name)}
-                          style={{ width: 52, height: 40, objectFit: 'cover', borderRadius: 7, border: '1px solid #ede9e0', flexShrink: 0, marginRight: 10, cursor: 'pointer' }}
-                        />
-                      )}
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
-                        {assignedMember && (
-                          <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>
-                            Reserved for {assignedMember.first_name ?? 'a member'}
-                          </div>
+            {/* GROUP CHAT — secondary access (member) or locked (non-member) */}
+            <div className="gp-card">
+              <div className="gp-card-body">
+                <div className="gp-section-label">Group Chat</div>
+                {hasChat ? (
+                  <button
+                    onClick={() => { setChatOpen(true); setChatUnread(0) }}
+                    className="gp-primary-action gp-chat-btn"
+                  >
+                    <span style={{ fontSize: 28, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</span>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>
+                        Open Group Chat
+                        {chatUnread > 0 && (
+                          <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>{chatUnread} new</span>
                         )}
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>
-                          ${room.price.toLocaleString()}<span style={{ fontSize: 11, fontWeight: 400, color: '#9b9b9b' }}>/mo</span>
-                        </div>
-                        <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, color: available ? '#10b981' : '#9b9b9b' }}>
-                          {available ? 'Available' : assignedMember ? 'Reserved' : 'Taken'}
-                        </div>
+                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 1, fontWeight: 400 }}>
+                        Chat with your {members.length > 0 ? `${members.length} roommate${members.length !== 1 ? 's' : ''}` : 'future roommates'}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-
-          {/* Share */}
-          <div className="gp-hr" style={{ marginTop: 18 }} />
-          <div className="gp-section" style={{ paddingTop: 18, paddingBottom: 4 }}>
-            <div className="gp-section-label">Share this group</div>
-            <div className="gp-share-card">
-              <div style={{ fontSize: 13, color: '#6b6b6b' }}>Invite others by sending them this link.</div>
-              <div className="gp-share-row">
-                <input className="gp-share-input" readOnly value={shareUrl} onFocus={e => e.target.select()} />
-                <button
-                  className="gp-share-btn"
-                  onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
-                >
-                  {copiedShare ? '✓ Copied' : 'Copy'}
-                </button>
+                    <span style={{ fontSize: 18, color: 'rgba(0,0,0,0.3)', marginLeft: 'auto' }}>→</span>
+                  </button>
+                ) : (
+                  <div className="gp-chat-locked">
+                    {/* Blurred preview */}
+                    <div style={{ padding: '16px 18px 14px', filter: 'blur(3px)', pointerEvents: 'none', userSelect: 'none', opacity: 0.5 }}>
+                      <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🐝</div>
+                        <div style={{ background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: '4px 14px 14px 14px', padding: '10px 14px', fontSize: 12, color: '#1a1a1a', maxWidth: 240, lineHeight: 1.5 }}>
+                          Hey! Welcome to the group chat 🎉 Introduce yourself to your future roommates!
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginBottom: 4 }}>
+                        <div style={{ background: ac.light, border: `1px solid ${ac.border}`, borderRadius: '14px 4px 14px 14px', padding: '8px 14px', fontSize: 12, color: '#1a1a1a', maxWidth: 180 }}>
+                          Hey everyone! Can&apos;t wait to move in 🙌
+                        </div>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#1d4ed8', flexShrink: 0 }} />
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #ede9e0', background: '#faf9f7', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ fontSize: 24, flexShrink: 0 }}>🔒</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>Join the group to chat</div>
+                        <div style={{ fontSize: 12, color: '#9b9b9b' }}>
+                          {!currentUser ? 'Sign in and request to join.' : 'Request to join to unlock the chat.'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={openJoinModal}
+                        style={{ background: ac.gradient, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}
+                      >
+                        {currentUser ? 'Join →' : 'Sign In →'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
 
-          {/* Group Chat — prominent in-page section */}
-          <div className="gp-hr" style={{ marginTop: 18 }} />
-          <div className="gp-section" style={{ paddingTop: 18, paddingBottom: 20 }}>
-            <div className="gp-section-label">Group Chat</div>
-            {hasChat ? (
-              /* Member: open chat button */
-              <button
-                onClick={() => { setChatOpen(true); setChatUnread(0) }}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 14,
-                  background: 'linear-gradient(135deg,#FFC627,#f5a623)',
-                  border: 'none', borderRadius: 14, padding: '16px 20px',
-                  cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
-                  boxShadow: '0 4px 20px rgba(255,198,39,0.4)',
-                }}
-              >
-                <span style={{ fontSize: 28, animation: 'beeWiggle 1.8s ease-in-out infinite' }}>🐝</span>
-                <div style={{ flex: 1, textAlign: 'left' }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>
-                    Open Group Chat
-                    {chatUnread > 0 && (
-                      <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 800 }}>{chatUnread} new</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 2 }}>
-                    Chat with your {members.length > 0 ? `${members.length} roommate${members.length !== 1 ? 's' : ''}` : 'future roommates'}
-                  </div>
-                </div>
-                <span style={{ fontSize: 18, color: 'rgba(0,0,0,0.35)' }}>→</span>
-              </button>
-            ) : (
-              /* Non-member: locked state */
-              <div style={{ background: '#fff', border: '1.5px solid #ede9e0', borderRadius: 14, overflow: 'hidden' }}>
-                {/* Blurred preview of chat */}
-                <div style={{ padding: '16px 18px 14px', filter: 'blur(3px)', pointerEvents: 'none', userSelect: 'none', opacity: 0.5 }}>
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🐝</div>
-                    <div style={{ background: '#FFF8E1', border: '1px solid #FFE082', borderRadius: '4px 14px 14px 14px', padding: '10px 14px', fontSize: 12, color: '#1a1a1a', maxWidth: 240, lineHeight: 1.5 }}>
-                      Hey! Welcome to the group chat 🎉 Introduce yourself to your future roommates!
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginBottom: 4 }}>
-                    <div style={{ background: ac.light, border: `1px solid ${ac.border}`, borderRadius: '14px 4px 14px 14px', padding: '8px 14px', fontSize: 12, color: '#1a1a1a', maxWidth: 180 }}>
-                      Hey everyone! Can&apos;t wait to move in 🙌
-                    </div>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#1d4ed8', flexShrink: 0 }} />
-                  </div>
-                </div>
-                {/* Lock overlay */}
-                <div style={{ borderTop: '1px solid #ede9e0', background: '#faf9f7', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ fontSize: 24, flexShrink: 0 }}>🔒</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>Join the group to chat</div>
-                    <div style={{ fontSize: 12, color: '#9b9b9b' }}>
-                      {!currentUser ? 'Sign in and request to join to unlock the group chat.' : 'Request to join above to connect with everyone in this group.'}
-                    </div>
-                  </div>
+            {/* SHARE */}
+            <div className="gp-card">
+              <div className="gp-card-body">
+                <div className="gp-section-label">Share This Group</div>
+                <div style={{ fontSize: 13, color: '#6b6b6b', marginBottom: 10 }}>Invite others by sending them this link.</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="gp-share-input" readOnly value={shareUrl} onFocus={e => e.target.select()} />
                   <button
-                    onClick={openJoinModal}
-                    style={{ background: ac.gradient, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}
+                    className="gp-share-btn"
+                    onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
                   >
-                    {currentUser ? 'Join →' : 'Sign In →'}
+                    {copiedShare ? '✓ Copied' : 'Copy'}
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-
-        </div>
-
-        {/* ─── RIGHT COLUMN (desktop only) — join widget ─── */}
-        <div className="gp-dt-right" style={{ display: 'none' }}>
-          <div style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: 16, padding: '22px 22px', marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>
-              {members.length} {members.length === 1 ? 'person' : 'people'} in this group
             </div>
-            <div style={{ fontSize: 12, color: '#9b9b9b', marginBottom: 18 }}>Free to join · No commitment</div>
-            {joined ? (
-              <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '16px', textAlign: 'center' }}>
-                <div style={{ fontSize: 20, marginBottom: 6 }}>🎉</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#15803d', marginBottom: 3 }}>You&apos;re in!</div>
-                <div style={{ fontSize: 12, color: '#166534', marginBottom: joinResult && !joinResult.has_prescreen ? 10 : 0 }}>The landlord will be in touch to coordinate.</div>
-                {joinResult && !joinResult.has_prescreen && (
-                  <a
-                    href={`/pre-screen/${joinResult.lead_id}`}
-                    style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#15803d', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, padding: '8px 14px', textDecoration: 'none' }}
-                  >
-                    ✏️ Tell your roommates about yourself →
-                  </a>
-                )}
-              </div>
-            ) : (
-              <>
-                <button
-                  onClick={openJoinModal}
-                  style={{
-                    width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
-                    cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
-                    border: 'none', background: ac.gradient, color: '#fff',
-                    letterSpacing: '-0.2px', marginBottom: 8,
-                  }}
-                >
-                  {currentUser ? 'Join This Group →' : 'Sign In to Join →'}
-                </button>
-                <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b' }}>Free · No commitment · Just express interest</div>
-              </>
-            )}
+
           </div>
 
-          {/* Mini rooms summary on desktop sidebar */}
-          {pricedRooms.length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: 16, padding: '18px 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#9b9b9b', marginBottom: 12 }}>Rooms</div>
-              {pricedRooms.map(room => {
-                const assignedMember = members.find(m => m.room_id === room.id)
-                const available = room.is_available && !assignedMember
-                return (
-                  <div key={room.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid #f5f4f0', opacity: available ? 1 : 0.65 }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
-                      {assignedMember && <div style={{ fontSize: 11, color: ac.main, fontWeight: 600 }}>→ {assignedMember.first_name}</div>}
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>${room.price.toLocaleString()}<span style={{ fontSize: 10, color: '#9b9b9b', fontWeight: 400 }}>/mo</span></div>
-                      <div style={{ fontSize: 10, color: available ? '#10b981' : '#9b9b9b', fontWeight: 700 }}>
-                        {available ? 'Open' : 'Reserved'}
+          {/* ─── RIGHT COLUMN (desktop sticky) ─── */}
+          <div className="gp-col-right">
+
+            {/* JOIN WIDGET or STATUS */}
+            <div className="gp-card">
+              <div className="gp-card-body">
+                {hasChat ? (
+                  <>
+                    <div className="gp-status-card" style={{ marginBottom: 14 }}>
+                      <div className="gp-status-title">You&apos;re in 🎯</div>
+                      <div className="gp-status-sub">
+                        {memberRoomName ? `🛏 ${memberRoomName}` : 'Room TBD by landlord'}
+                        {memberJoinedAt ? ` · Joined ${daysAgo(memberJoinedAt)}` : ''}
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                    {joinResult && !joinResult.has_prescreen && (
+                      <a
+                        href={`/pre-screen/${joinResult.lead_id}`}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '12px', borderRadius: 12, fontSize: 14, fontWeight: 700, color: '#15803d', background: '#dcfce7', border: '1.5px solid #86efac', textDecoration: 'none', marginBottom: 8 }}
+                      >
+                        ✏️ Tell your roommates about yourself →
+                      </a>
+                    )}
+                    <button
+                      onClick={() => { setChatOpen(true); setChatUnread(0) }}
+                      className="gp-primary-action gp-chat-btn"
+                    >
+                      <span style={{ fontSize: 26, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</span>
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>
+                          Open Group Chat
+                          {chatUnread > 0 && (
+                            <span style={{ marginLeft: 8, background: '#ef4444', color: '#fff', borderRadius: 20, padding: '2px 7px', fontSize: 10, fontWeight: 800 }}>{chatUnread}</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)', marginTop: 1, fontWeight: 400 }}>
+                          {members.length} roommate{members.length !== 1 ? 's' : ''} inside
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 16, color: 'rgba(0,0,0,0.3)', marginLeft: 'auto' }}>→</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 3 }}>
+                      {members.length} {members.length === 1 ? 'person' : 'people'} in this group
+                    </div>
+                    <div style={{ fontSize: 12, color: '#9b9b9b', marginBottom: 16 }}>{persuasiveLine(group.gender_preference, members.length)}</div>
+                    <button
+                      onClick={openJoinModal}
+                      className="gp-primary-action"
+                      style={{ background: ac.gradient, color: '#fff', marginBottom: 8 }}
+                    >
+                      {currentUser ? 'Request to Join This Group →' : 'Sign In to Join →'}
+                    </button>
+                    <div className="gp-action-note">Free · No commitment · Just express interest</div>
+                  </>
+                )}
+              </div>
             </div>
-          )}
-        </div>
 
+            {/* MINI ROOMS — desktop sidebar */}
+            {pricedRooms.length > 0 && (
+              <div className="gp-card">
+                <div className="gp-card-body">
+                  <div className="gp-section-label">Rooms</div>
+                  {pricedRooms.map(room => {
+                    const assignedMember = members.find(m => m.room_id === room.id)
+                    const available = room.is_available && !assignedMember
+                    return (
+                      <div key={room.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid #f5f4f0', opacity: available ? 1 : 0.65 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{room.name}</div>
+                          {assignedMember && <div style={{ fontSize: 11, color: ac.main, fontWeight: 600 }}>→ {assignedMember.first_name}</div>}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>${room.price.toLocaleString()}<span style={{ fontSize: 10, color: '#9b9b9b', fontWeight: 400 }}>/mo</span></div>
+                          <div style={{ fontSize: 10, color: available ? '#10b981' : '#9b9b9b', fontWeight: 700 }}>
+                            {available ? 'Open' : 'Reserved'}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
       </div>
 
-      {/* Mobile sticky footer */}
+      {/* ── MOBILE STICKY FOOTER ── */}
       <div className="gp-sticky-footer">
-        <div className="gp-sticky-inner">
-          {joined ? (
-            <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginBottom: 2 }}>You&apos;re in the group 🎉</div>
-              <div style={{ fontSize: 11, color: '#166534', marginBottom: joinResult && !joinResult.has_prescreen ? 8 : 0 }}>The landlord will reach out to coordinate.</div>
-              {joinResult && !joinResult.has_prescreen && (
-                <a
-                  href={`/pre-screen/${joinResult.lead_id}`}
-                  style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, color: '#15803d', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, padding: '7px 14px', textDecoration: 'none' }}
-                >
-                  ✏️ Tell your roommates about yourself →
-                </a>
-              )}
-            </div>
-          ) : (
-            <>
-              <button
-                onClick={openJoinModal}
-                style={{
-                  width: '100%', padding: '15px', borderRadius: 12, fontSize: 16, fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
-                  border: 'none', background: ac.gradient, color: '#fff',
-                }}
-              >
-                {currentUser ? 'Join This Group →' : 'Sign In to Join →'}
-              </button>
-              <div style={{ textAlign: 'center', fontSize: 11, color: '#9b9b9b', marginTop: 6 }}>Free · No commitment · Just express interest</div>
-            </>
-          )}
-        </div>
+        {hasChat ? (
+          <button
+            onClick={() => { setChatOpen(true); setChatUnread(0) }}
+            className="gp-primary-action gp-chat-btn"
+          >
+            <span style={{ fontSize: 24, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</span>
+            <span>Open Group Chat {chatUnread > 0 ? `(${chatUnread} new)` : ''}</span>
+            <span style={{ marginLeft: 'auto' }}>→</span>
+          </button>
+        ) : joined ? (
+          <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginBottom: 2 }}>You&apos;re in the group 🎉</div>
+            <div style={{ fontSize: 11, color: '#166534' }}>The landlord will reach out to coordinate.</div>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={openJoinModal}
+              className="gp-primary-action"
+              style={{ background: ac.gradient, color: '#fff' }}
+            >
+              {currentUser ? 'Request to Join This Group →' : 'Sign In to Join →'}
+            </button>
+            <div className="gp-action-note" style={{ marginTop: 6 }}>Free · No commitment · Just express interest</div>
+          </>
+        )}
       </div>
 
-      {/* Desktop show/hide script */}
-      <style>{`
-        @media (min-width: 768px) {
-          .gp-dt-hero { display: block !important; }
-          .gp-dt-right { display: block !important; }
-          .gp-page { padding-bottom: 60px; }
-          .gp-hr { display: none !important; }
-          .gp-section { padding-top: 0 !important; margin-bottom: 20px; }
-        }
-      `}</style>
-
-      <style>{`@keyframes beeWiggle { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }`}</style>
-
-      {/* Chat overlay */}
+      {/* ── CHAT OVERLAY ── */}
       {chatOpen && hasChat && (
         <>
           <style>{`
@@ -807,12 +780,12 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                   {data?.members.length ?? 0} member{(data?.members.length ?? 0) !== 1 ? 's' : ''} · 🐝 Honeybee is here to help
                 </div>
               </div>
-              <span style={{ fontSize: 20, animation: 'beeWiggle 1.8s ease-in-out infinite' }}>🐝</span>
+              <span style={{ fontSize: 20, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</span>
             </div>
 
             {/* Messages */}
             <div className="chat-messages">
-              {chatMessages.map((msg, idx) => {
+              {chatMessages.map((msg) => {
                 const isOwn = !msg.is_bot && msg.sender_id === currentUser?.id
                 if (msg.is_bot) {
                   return (
@@ -879,7 +852,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         </>
       )}
 
-      {/* Join modal */}
+      {/* ── JOIN MODAL ── */}
       {joinModalOpen && !joined && (
         <div
           onClick={() => setJoinModalOpen(false)}
@@ -911,7 +884,6 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                       const assignedMember = members.find(m => m.room_id === room.id)
                       const available = room.is_available && !assignedMember
                       const isSelected = selectedRoomId === room.id
-                      const thumbUrl = room.images?.[0] ?? null
                       return (
                         <div
                           key={room.id}
@@ -1023,13 +995,12 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         </div>
       )}
 
-      {/* Lightbox */}
+      {/* ── LIGHTBOX ── */}
       {lightbox && (
         <div
           onClick={closeLightbox}
           style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.93)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          {/* Main image */}
           <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1038,32 +1009,26 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
               style={{ maxWidth: '90vw', maxHeight: '78vh', objectFit: 'contain', borderRadius: 10, userSelect: 'none', display: 'block' }}
               draggable={false}
             />
-
-            {/* Room name + counter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', opacity: 0.9 }}>{lightbox.roomName}</span>
               {lightbox.images.length > 1 && (
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>{lightbox.index + 1} / {lightbox.images.length}</span>
               )}
             </div>
-
-            {/* Prev / Next */}
             {lightbox.images.length > 1 && (
               <>
                 <button
                   onClick={e => { e.stopPropagation(); lightboxPrev() }}
-                  style={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif', backdropFilter: 'blur(4px)' }}
+                  style={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', backdropFilter: 'blur(4px)' }}
                   aria-label="Previous photo"
                 >‹</button>
                 <button
                   onClick={e => { e.stopPropagation(); lightboxNext() }}
-                  style={{ position: 'absolute', right: -60, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif', backdropFilter: 'blur(4px)' }}
+                  style={{ position: 'absolute', right: -60, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', backdropFilter: 'blur(4px)' }}
                   aria-label="Next photo"
                 >›</button>
               </>
             )}
-
-            {/* Dot indicators */}
             {lightbox.images.length > 1 && (
               <div style={{ display: 'flex', gap: 6 }}>
                 {lightbox.images.map((_, di) => (
@@ -1077,14 +1042,12 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
             )}
           </div>
 
-          {/* Close button */}
           <button
             onClick={closeLightbox}
-            style={{ position: 'fixed', top: 18, right: 18, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif', backdropFilter: 'blur(4px)' }}
+            style={{ position: 'fixed', top: 18, right: 18, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', backdropFilter: 'blur(4px)' }}
             aria-label="Close"
           >×</button>
 
-          {/* Mobile tap zones (hidden on desktop where we have arrow buttons) */}
           <style>{`@media (min-width: 768px) { .gp-lb-tap { display: none !important; } }`}</style>
           {lightbox.images.length > 1 && (
             <>
@@ -1107,17 +1070,14 @@ function MembersSection({ members, roomMap, acMain, onPhotoClick }: {
   const ac = { main: acMain }
   return (
     <div>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#9b9b9b', marginBottom: 14 }}>
-        Who&apos;s in the group
-      </div>
       {members.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '28px 20px', background: '#fff', border: '1px dashed #ddd9d1', borderRadius: 14 }}>
+        <div style={{ textAlign: 'center', padding: '28px 20px', background: '#faf9f6', border: '1px dashed #ddd9d1', borderRadius: 14 }}>
           <div style={{ fontSize: 26, marginBottom: 8 }}>👀</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>No one yet — be the first!</div>
           <div style={{ fontSize: 12, color: '#9b9b9b' }}>Your name will show up here after you join.</div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {members.map((m, i) => {
             const initials = ((m.first_name?.[0] || '') + (m.last_name?.[0] || '')).toUpperCase() || `${i + 1}`
             const pal = avatarColors(i)
@@ -1130,40 +1090,41 @@ function MembersSection({ members, roomMap, acMain, onPhotoClick }: {
             ].filter(Boolean) as string[]
             const roomPhotos = assignedRoom?.images ?? []
             return (
-              <div key={m.id} style={{ background: '#fff', border: '1px solid #ede9e0', borderRadius: 14, padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: pal.bg, color: pal.fg, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div key={m.id} className="gp-member-card">
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                  {/* Large avatar */}
+                  <div
+                    className="gp-member-avatar"
+                    style={{ background: pal.bg, color: pal.fg }}
+                  >
                     {initials}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{m.first_name ?? 'Member'} {m.last_name ?? ''}</div>
-                      {m.has_prescreen && (
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.09)', border: '1px solid rgba(16,185,129,0.22)', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                          ✓ Screened
-                        </span>
-                      )}
+                      <div className="gp-member-name">{m.first_name ?? 'Member'} {m.last_name ?? ''}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: m.has_prescreen ? '#10b981' : '#9b9b9b', background: m.has_prescreen ? 'rgba(16,185,129,0.09)' : '#f5f4f0', border: `1px solid ${m.has_prescreen ? 'rgba(16,185,129,0.22)' : '#ede9e0'}`, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {m.has_prescreen ? '✓ Screened' : 'New'}
+                      </span>
                     </div>
                     {assignedRoom && (
-                      <div style={{ fontSize: 11, color: ac.main, fontWeight: 600, marginTop: 2 }}>
-                        {assignedRoom.name}{assignedRoom.price ? ` · $${assignedRoom.price}/mo` : ''}
+                      <div style={{ fontSize: 12, color: ac.main, fontWeight: 600, marginTop: 3 }}>
+                        🛏 {assignedRoom.name}{assignedRoom.price ? ` · $${assignedRoom.price}/mo` : ''}
                       </div>
                     )}
                   </div>
                 </div>
                 {m.about && (
-                  <div style={{ fontSize: 13, color: '#4b5563', lineHeight: 1.6, margin: '10px 0 0', paddingLeft: 12, borderLeft: '2px solid #ede9e0' }}>
+                  <div className="gp-member-about">
                     {m.about}
                   </div>
                 )}
                 {tags.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                     {tags.map(t => (
-                      <span key={t} style={{ fontSize: 11, color: '#6b6b6b', background: '#f5f4f0', border: '1px solid #ede9e0', padding: '3px 9px', borderRadius: 20 }}>{t}</span>
+                      <span key={t} className="gp-tag">{t}</span>
                     ))}
                   </div>
                 )}
-                {/* Room photo strip — shown when member is assigned a room that has photos */}
                 {assignedRoom && roomPhotos.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
