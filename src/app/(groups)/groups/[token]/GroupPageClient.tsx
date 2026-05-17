@@ -94,6 +94,7 @@ function avatarColors(i: number) {
 export default function PublicGroupPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params)
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [data, setData] = useState<GroupData | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -183,6 +184,8 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
     setSending(false)
   }
 
+  useEffect(() => { setMounted(true) }, [])
+
   useEffect(() => {
     fetch(`/api/groups/share/${token}`)
       .then(r => r.ok ? r.json() : null)
@@ -252,10 +255,10 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
     setJoining(false)
   }
 
-  if (loading) return (
+  if (!mounted || loading) return (
     <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 14, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</div>
+        <div style={{ fontSize: 40, marginBottom: 14, display: 'inline-block' }}>🐝</div>
         <div style={{ fontSize: 14, color: '#9b9b9b' }}>Loading group…</div>
       </div>
     </div>
@@ -738,7 +741,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                     </div>
                     <div style={{ fontSize: 12, color: '#9b9b9b', marginBottom: 16 }}>{persuasiveLine(group.gender_preference, members.length)}</div>
                     <button
-                      onClick={openJoinModal}
+                      onClick={() => openJoinModal()}
                       className="gp-primary-action"
                       style={{ background: ac.gradient, color: '#fff', marginBottom: 8 }}
                     >
@@ -800,7 +803,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         ) : (
           <>
             <button
-              onClick={openJoinModal}
+              onClick={() => openJoinModal()}
               className="gp-primary-action"
               style={{ background: ac.gradient, color: '#fff' }}
             >
