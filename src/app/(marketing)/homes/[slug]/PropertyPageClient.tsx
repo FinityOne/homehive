@@ -1,5 +1,6 @@
 'use client'
 
+import '@/styles/brand-tokens.css'
 import { useState, use, useEffect, useRef, useCallback } from 'react'
 import { usePostHog } from 'posthog-js/react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -204,10 +205,10 @@ export default function PropertyPageClient({
     return (
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px 24px' }}>
         <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
-        <div style={{ height: '28px', width: '30%', borderRadius: '6px', marginBottom: '20px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+        <div style={{ height: '28px', width: '30%', borderRadius: '6px', marginBottom: '20px', background: 'linear-gradient(90deg,var(--hh-bg-alt) 25%,var(--hh-bg) 50%,var(--hh-bg-alt) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '28px' }}>
-          <div style={{ height: '500px', borderRadius: '16px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
-          <div style={{ height: '460px', borderRadius: '16px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+          <div style={{ height: '500px', borderRadius: '16px', background: 'linear-gradient(90deg,var(--hh-bg-alt) 25%,var(--hh-bg) 50%,var(--hh-bg-alt) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+          <div style={{ height: '460px', borderRadius: '16px', background: 'linear-gradient(90deg,var(--hh-bg-alt) 25%,var(--hh-bg) 50%,var(--hh-bg-alt) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
         </div>
       </div>
     )
@@ -289,7 +290,7 @@ export default function PropertyPageClient({
     contacted:      { label: 'We Reached Out',    desc: 'Check your email or phone — a team member has already been in contact.',                  color: '#c9973a', bg: '#fefce8' },
     engaged:        { label: 'In Conversation',   desc: 'You\'re in active conversation with us. Keep an eye on your messages.',                   color: '#7c3aed', bg: '#f5f3ff' },
     qualified:      { label: 'Pre-Qualified',     desc: 'You\'ve been pre-qualified! A team member will schedule your tour soon.',                 color: '#166534', bg: '#f0fdf4' },
-    tour_scheduled: { label: 'Tour Scheduled',    desc: 'Your tour is booked — check your email for confirmation details.',                        color: '#8C1D40', bg: '#fdf2f5' },
+    tour_scheduled: { label: 'Tour Scheduled',    desc: 'Your tour is booked — check your email for confirmation details.',                        color: 'var(--hh-primary)', bg: '#fdf2f5' },
     closed:         { label: 'Closed',            desc: 'This inquiry has been closed.',                                                           color: '#6b7280', bg: '#f3f4f6' },
   }
 
@@ -297,19 +298,19 @@ export default function PropertyPageClient({
   const FormContent = () => {
     // Offer banner (shown above form if offer exists)
     const OfferBanner = home.offer_amount ? (
-      <div style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2410 100%)', border: '1px solid #d4a843', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,198,39,0.18) 0%,transparent 70%)', pointerEvents: 'none' }} />
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255,198,39,0.15)', border: '1px solid rgba(255,198,39,0.4)', borderRadius: '20px', padding: '3px 10px', marginBottom: '8px' }}>
-          <span style={{ fontSize: '9px', color: '#FFC627', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase' }}>🎁 Limited offer</span>
+      <div style={{ background: 'linear-gradient(135deg, #1c2420 0%, var(--hh-hive-800) 100%)', border: '1px solid rgba(217,161,74,0.5)', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(217,161,74,0.2) 0%,transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(217,161,74,0.15)', border: '1px solid rgba(217,161,74,0.4)', borderRadius: '20px', padding: '3px 10px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '9px', color: 'var(--hh-accent)', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase' }}>🎁 Limited offer</span>
         </div>
-        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#FFC627', lineHeight: 1.2, marginBottom: '4px' }}>
+        <div style={{ fontFamily: "var(--hh-font-display)", fontSize: '20px', color: 'var(--hh-accent)', lineHeight: 1.2, marginBottom: '4px' }}>
           ${home.offer_amount.toLocaleString()} lease credit
         </div>
         <div style={{ fontSize: '12px', color: '#c5c1b8', lineHeight: 1.5, marginBottom: home.offer_deadline ? '8px' : '0' }}>
           {home.offer_description || 'Cash credit applied when you sign your lease.'}
         </div>
         {home.offer_deadline && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#FFC627', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--hh-accent)', fontWeight: 600 }}>
             <span>⏰</span>
             <span>Sign by {new Date(home.offer_deadline + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} to claim</span>
           </div>
@@ -329,19 +330,19 @@ export default function PropertyPageClient({
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
               <span style={{ fontSize: '12px', fontWeight: 700, color: cfg.color, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{cfg.label}</span>
             </div>
-            <p style={{ fontSize: '13px', color: '#3a3a3a', lineHeight: 1.6 }}>{cfg.desc}</p>
+            <p style={{ fontSize: '13px', color: 'var(--hh-text-2)', lineHeight: 1.6 }}>{cfg.desc}</p>
           </div>
           {needsPrescreen && (
             <a
               href={`/pre-screen/${existingLead.id}`}
-              style={{ display: 'block', width: '100%', padding: '14px', background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: '9px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.1px', textAlign: 'center', textDecoration: 'none', boxShadow: '0 4px 18px rgba(255,198,39,0.45)', animation: 'goldPulse 2.8s ease-in-out infinite' }}
+              style={{ display: 'block', width: '100%', padding: '14px', background: 'var(--hh-accent)', color: 'var(--hh-ink-900)', border: 'none', borderRadius: '9px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "var(--hh-font-ui)", letterSpacing: '0.1px', textAlign: 'center', textDecoration: 'none', boxShadow: '0 4px 18px rgba(217,161,74,0.45)', animation: 'goldPulse 2.8s ease-in-out infinite' }}
             >
               Complete your pre-screen →
             </a>
           )}
           {!needsPrescreen && (
-            <div style={{ textAlign: 'center', fontSize: '12px', color: '#9b9b9b', marginTop: '4px' }}>
-              Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', fontWeight: 600 }}>Contact us</a>
+            <div style={{ textAlign: 'center', fontSize: '12px', color: 'var(--hh-text-muted)', marginTop: '4px' }}>
+              Questions? <a href="mailto:hello@homehive.live" style={{ color: 'var(--hh-primary)', fontWeight: 600 }}>Contact us</a>
             </div>
           )}
         </>
@@ -367,22 +368,22 @@ export default function PropertyPageClient({
           </div>
 
           {/* Pre-screen pitch */}
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '18px', color: '#1a1a1a', lineHeight: 1.3, marginBottom: '8px' }}>
+          <div style={{ fontFamily: "var(--hh-font-display)", fontSize: '18px', color: 'var(--hh-text)', lineHeight: 1.3, marginBottom: '8px' }}>
             Let's get to know you better.
           </div>
-          <p style={{ fontSize: '13px', color: '#4a4a4a', lineHeight: 1.65, marginBottom: '14px' }}>
+          <p style={{ fontSize: '13px', color: 'var(--hh-text-2)', lineHeight: 1.65, marginBottom: '14px' }}>
             Your inquiry is in — now take 2 minutes to complete your pre-screen. Tenants who do are reviewed <strong>first</strong> and move to the top of the list.
           </p>
 
           {/* What's in it */}
-          <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
+          <div style={{ background: 'var(--hh-bg)', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
             {[
               'A little about you (30 sec)',
               'Your move-in plan & group size',
               'Budget & lifestyle fit',
             ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12px', color: '#3a3a3a', marginBottom: i < 2 ? '7px' : 0 }}>
-                <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, color: '#1a1a1a', flexShrink: 0 }}>✓</div>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12px', color: 'var(--hh-text-2)', marginBottom: i < 2 ? '7px' : 0 }}>
+                <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: 'var(--hh-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, color: 'var(--hh-text)', flexShrink: 0 }}>✓</div>
                 {item}
               </div>
             ))}
@@ -392,7 +393,7 @@ export default function PropertyPageClient({
           {submittedLeadId && (
             <a
               href={`/pre-screen/${submittedLeadId}`}
-              style={{ display: 'block', padding: '14px', background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', fontSize: '15px', fontWeight: 800, textDecoration: 'none', textAlign: 'center', boxShadow: '0 4px 18px rgba(255,198,39,0.45)', marginBottom: '10px' }}
+              style={{ display: 'block', padding: '14px', background: 'var(--hh-accent)', color: 'var(--hh-ink-900)', borderRadius: '9px', fontSize: '15px', fontWeight: 800, textDecoration: 'none', textAlign: 'center', boxShadow: '0 4px 18px rgba(217,161,74,0.45)', marginBottom: '10px' }}
             >
               Complete my pre-screen →
             </a>
@@ -415,15 +416,15 @@ export default function PropertyPageClient({
       {/* Price header */}
       <div style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '2px' }}>
-          <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: '30px', color: '#1a1a1a', letterSpacing: '-0.5px' }}>
+          <span style={{ fontFamily: "var(--hh-font-display)", fontSize: '30px', color: 'var(--hh-text)', letterSpacing: '-0.5px' }}>
             {home.rental_mode === 'by_room' ? `from $${home.price.toLocaleString()}` : `$${home.price.toLocaleString()}`}
           </span>
-          <span style={{ fontSize: '13px', color: '#9b9b9b' }}>
+          <span style={{ fontSize: '13px', color: 'var(--hh-text-muted)' }}>
             {home.rental_mode === 'by_room' ? '/mo per room' : '/mo'}
           </span>
         </div>
         {!home.utilities_included && (
-          <div style={{ fontSize: '12px', color: '#6b6b6b' }}>Est. all-in: <strong style={{ color: '#1a1a1a' }}>${home.price + 65}–${home.price + 140}/mo</strong> <span style={{ color: '#c5c1b8' }}>incl. utilities</span></div>
+          <div style={{ fontSize: '12px', color: 'var(--hh-text-muted)' }}>Est. all-in: <strong style={{ color: 'var(--hh-text)' }}>${home.price + 65}–${home.price + 140}/mo</strong> <span style={{ color: '#c5c1b8' }}>incl. utilities</span></div>
         )}
         {home.utilities_included && (
           <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 500 }}>✓ Utilities included</div>
@@ -454,19 +455,19 @@ export default function PropertyPageClient({
         /* ── Logged-in: compact pre-filled form ── */
         <div style={{ marginBottom: '14px' }}>
           {/* Identity row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f5f4f0', border: '1px solid #e8e5de', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--hh-bg-alt)', border: '1px solid #e8e5de', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
             {loggedInUser.avatarUrl ? (
               <img src={loggedInUser.avatarUrl} alt={loggedInUser.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
             ) : (
-              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#8C1D40', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--hh-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>
                 {(loggedInUser.name || loggedInUser.email)[0].toUpperCase()}
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--hh-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {loggedInUser.name || 'You'}
               </div>
-              <div style={{ fontSize: '11px', color: '#9b9b9b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: '11px', color: 'var(--hh-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {loggedInUser.email}
               </div>
             </div>
@@ -485,8 +486,8 @@ export default function PropertyPageClient({
             )}
             {/* Move-in date — required */}
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: '#6b6b6b', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                When do you want to move in? <span style={{ color: '#8C1D40' }}>*</span>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--hh-text-muted)', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                When do you want to move in? <span style={{ color: 'var(--hh-primary)' }}>*</span>
               </div>
               <input
                 name="move_in_date"
@@ -494,9 +495,9 @@ export default function PropertyPageClient({
                 value={formData.move_in_date}
                 onChange={handleChange}
                 min={new Date().toISOString().split('T')[0]}
-                style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
-                onFocus={e => e.target.style.borderColor = '#8C1D40'}
-                onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : '#e8e5de'}
+                style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+                onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
+                onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}
               />
             </div>
           </div>
@@ -510,9 +511,9 @@ export default function PropertyPageClient({
             value={formData.first_name}
             onChange={handleChange}
             autoFocus={!isPersonalized}
-            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.first_name ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-            onFocus={e => e.target.style.borderColor = '#8C1D40'}
-            onBlur={e => e.target.style.borderColor = formData.first_name ? '#1a1a1a' : '#e8e5de'}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.first_name ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
+            onBlur={e => e.target.style.borderColor = formData.first_name ? '#1a1a1a' : 'var(--hh-border-faint)'}
           />
           <input
             name="email"
@@ -520,9 +521,9 @@ export default function PropertyPageClient({
             placeholder="Email address *"
             value={formData.email}
             onChange={handleChange}
-            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.email ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
-            onFocus={e => e.target.style.borderColor = '#8C1D40'}
-            onBlur={e => e.target.style.borderColor = formData.email ? '#1a1a1a' : '#e8e5de'}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.email ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
+            onBlur={e => e.target.style.borderColor = formData.email ? '#1a1a1a' : 'var(--hh-border-faint)'}
           />
           <PhoneInput
             value={formData.phone}
@@ -538,9 +539,9 @@ export default function PropertyPageClient({
               value={formData.move_in_date}
               onChange={handleChange}
               min={new Date().toISOString().split('T')[0]}
-              style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : '#e8e5de'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "'DM Sans', sans-serif", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
-              onFocus={e => e.target.style.borderColor = '#8C1D40'}
-              onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : '#e8e5de'}
+              style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+              onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
+              onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}
             />
             {!formData.move_in_date && (
               <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '4px', paddingLeft: '2px' }}>When do you want to move in? *</div>
@@ -555,18 +556,18 @@ export default function PropertyPageClient({
         disabled={submitting}
         style={{
           width: '100%', padding: '15px', border: 'none', borderRadius: '9px',
-          background: '#FFC627',
-          color: '#1a1a1a', fontSize: '15px', fontWeight: 800,
+          background: 'var(--hh-accent)',
+          color: 'var(--hh-ink-900)', fontSize: '15px', fontWeight: 800,
           cursor: submitting ? 'wait' : 'pointer',
-          fontFamily: "'DM Sans', sans-serif",
+          fontFamily: "var(--hh-font-ui)",
           transition: 'transform 0.1s, box-shadow 0.2s, opacity 0.2s',
           letterSpacing: '0.1px',
           opacity: canSubmit ? 1 : 0.72,
-          boxShadow: canSubmit ? '0 4px 20px rgba(255,198,39,0.45)' : 'none',
+          boxShadow: canSubmit ? '0 4px 20px rgba(217,161,74,0.45)' : 'none',
           animation: canSubmit && !submitting ? 'goldPulse 2.8s ease-in-out infinite' : 'none',
         }}
-        onMouseEnter={e => { if (!submitting) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 28px rgba(255,198,39,0.55)' } }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = canSubmit ? '0 4px 20px rgba(255,198,39,0.45)' : 'none' }}
+        onMouseEnter={e => { if (!submitting) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 28px rgba(217,161,74,0.55)' } }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = canSubmit ? '0 4px 20px rgba(217,161,74,0.45)' : 'none' }}
         onMouseDown={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(1px)' }}
         onMouseUp={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
       >
@@ -576,8 +577,8 @@ export default function PropertyPageClient({
       {/* Trust row */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginTop: '10px', flexWrap: 'wrap' }}>
         {['No spam', 'No commitment', 'Tours available'].map(t => (
-          <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#9b9b9b' }}>
-            <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#d4a843' }} />
+          <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--hh-text-muted)' }}>
+            <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--hh-accent)' }} />
             {t}
           </div>
         ))}
@@ -589,119 +590,121 @@ export default function PropertyPageClient({
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Geist:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; color: #1a1a1a; }
+        body { font-family: var(--hh-font-ui); background: var(--hh-bg); color: var(--hh-text); }
 
         .prop-page    { max-width: 1200px; margin: 0 auto; padding: 28px 24px 120px; }
-        .breadcrumb   { font-size: 12px; color: #9b9b9b; margin-bottom: 16px; }
-        .breadcrumb a { color: #9b9b9b; text-decoration: none; }
-        .breadcrumb a:hover { color: #1a1a1a; }
+        .breadcrumb   { font-size: 12px; color: var(--hh-text-muted); margin-bottom: 16px; }
+        .breadcrumb a { color: var(--hh-text-muted); text-decoration: none; }
+        .breadcrumb a:hover { color: var(--hh-text); }
 
         /* ── SPLIT LAYOUT ───────────────────────────────── */
-        .prop-split   { display: grid; grid-template-columns: 1fr 360px; gap: 32px; align-items: start; margin-top: 24px; }
+        .prop-split   { display: grid; grid-template-columns: 1fr 380px; gap: 36px; align-items: start; margin-top: 28px; }
         .prop-left    { min-width: 0; }
         .prop-right   { position: sticky; top: 88px; }
 
         /* ── GALLERY ────────────────────────────────────── */
-        .gallery-hero { position: relative; border-radius: 16px; overflow: hidden; height: 440px; cursor: pointer; background: #e8e4db; margin-bottom: 8px; }
-        .gallery-hero img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
-        .gallery-hero:hover img { transform: scale(1.015); }
-        .gallery-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.35)); pointer-events: none; }
-        .gallery-count { position: absolute; bottom: 14px; right: 14px; background: rgba(0,0,0,0.65); color: #fff; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 20px; backdrop-filter: blur(4px); cursor: pointer; border: 1px solid rgba(255,255,255,0.2); transition: background 0.15s; }
-        .gallery-count:hover { background: rgba(0,0,0,0.85); }
+        .gallery-hero { position: relative; border-radius: 20px; overflow: hidden; height: 520px; cursor: pointer; background: var(--hh-bg-alt); margin-bottom: 10px; }
+        .gallery-hero img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .gallery-hero:hover img { transform: scale(1.02); }
+        .gallery-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 55%, rgba(22,24,16,0.42)); pointer-events: none; }
+        .gallery-count { position: absolute; bottom: 16px; right: 16px; background: rgba(22,24,16,0.7); color: #fff; font-family: var(--hh-font-ui); font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 100px; backdrop-filter: blur(8px); cursor: pointer; border: 1px solid rgba(255,255,255,0.15); transition: background 0.15s; letter-spacing: 0.01em; }
+        .gallery-count:hover { background: rgba(22,24,16,0.9); }
 
-        .gallery-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; }
+        .gallery-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; margin-top: 0; }
         .gallery-strip::-webkit-scrollbar { height: 3px; }
-        .gallery-strip::-webkit-scrollbar-thumb { background: #d4c9b0; border-radius: 10px; }
-        .gallery-thumb { flex-shrink: 0; width: 90px; height: 66px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, opacity 0.15s; scroll-snap-align: start; opacity: 0.7; }
-        .gallery-thumb.active { border-color: #8C1D40; opacity: 1; }
-        .gallery-thumb:hover { opacity: 1; }
+        .gallery-strip::-webkit-scrollbar-thumb { background: var(--hh-border); border-radius: 10px; }
+        .gallery-thumb { flex-shrink: 0; width: 96px; height: 70px; border-radius: 10px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, opacity 0.15s; scroll-snap-align: start; opacity: 0.6; }
+        .gallery-thumb.active { border-color: var(--hh-primary); opacity: 1; }
+        .gallery-thumb:hover { opacity: 0.9; }
         .gallery-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
         /* ── CONTENT SECTIONS ───────────────────────────── */
-        .section      { background: #fff; border-radius: 14px; padding: 24px; margin-top: 16px; border: 1px solid #e8e5de; }
-        .section-label{ font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #d4a843; margin-bottom: 14px; }
+        .section      { background: #fff; border-radius: 18px; padding: 28px; margin-top: 16px; border: 1px solid var(--hh-border-faint); }
+        .section-label{ font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-accent); margin-bottom: 16px; }
 
-        .stats-row    { display: flex; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
-        .stat-item    { flex: 1; padding: 14px 10px; text-align: center; border-right: 1px solid #e8e5de; }
+        .stats-row    { display: flex; border: 1px solid var(--hh-border-faint); border-radius: 14px; overflow: hidden; margin-bottom: 20px; }
+        .stat-item    { flex: 1; padding: 18px 10px; text-align: center; border-right: 1px solid var(--hh-border-faint); }
         .stat-item:last-child { border-right: none; }
-        .stat-num     { font-family: 'DM Serif Display', serif; font-size: 22px; color: #1a1a1a; }
-        .stat-lbl     { font-size: 11px; color: #9b9b9b; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+        .stat-num     { font-family: var(--hh-font-display); font-size: 28px; font-weight: 400; color: var(--hh-text); letter-spacing: -0.03em; line-height: 1; }
+        .stat-lbl     { font-size: 10px; color: var(--hh-text-muted); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
 
         .tags-wrap     { display: flex; flex-wrap: wrap; gap: 8px; }
-        .tag-pill      { display: flex; align-items: center; gap: 6px; padding: 7px 13px; background: #faf9f6; border: 1px solid #e8e5de; border-radius: 20px; font-size: 13px; color: #3a3a3a; }
+        .tag-pill      { display: flex; align-items: center; gap: 6px; padding: 7px 14px; background: var(--hh-bg-alt); border: 1px solid var(--hh-border-faint); border-radius: 100px; font-size: 13px; color: var(--hh-text-2); transition: border-color 0.15s; }
+        .tag-pill:hover { border-color: var(--hh-border); }
 
         .pain-list    { display: flex; flex-direction: column; gap: 10px; }
-        .pain-item    { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: #faf9f6; border-radius: 8px; border: 1px solid #e8e5de; }
-        .pain-dot     { width: 7px; height: 7px; border-radius: 50%; background: #d4a843; flex-shrink: 0; margin-top: 7px; }
-        .pain-text    { font-size: 14px; color: #3a3a3a; line-height: 1.65; }
+        .pain-item    { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; background: var(--hh-bg-alt); border-radius: 12px; border: 1px solid var(--hh-border-faint); }
+        .pain-dot     { width: 7px; height: 7px; border-radius: 50%; background: var(--hh-accent); flex-shrink: 0; margin-top: 8px; }
+        .pain-text    { font-size: 14px; color: var(--hh-text-2); line-height: 1.7; }
 
-        .pricing-row  { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0ede6; font-size: 14px; }
+        .pricing-row  { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--hh-border-faint); font-size: 14px; }
         .pricing-row:last-of-type { border-bottom: none; }
-        .pricing-label{ color: #6b6b6b; }
-        .pricing-val  { font-weight: 500; }
+        .pricing-label{ color: var(--hh-text-muted); }
+        .pricing-val  { font-weight: 500; color: var(--hh-text); }
         .pricing-val.green { color: #16a34a; }
-        .pricing-total{ display: flex; justify-content: space-between; padding-top: 13px; margin-top: 6px; border-top: 2px solid #1a1a1a; font-size: 16px; font-weight: 600; }
+        .pricing-total{ display: flex; justify-content: space-between; padding-top: 14px; margin-top: 6px; border-top: 1.5px solid var(--hh-text); font-size: 16px; font-weight: 600; }
 
-        .map-wrap     { border-radius: 10px; overflow: hidden; border: 1px solid #e8e5de; margin-bottom: 12px; }
+        .map-wrap     { border-radius: 14px; overflow: hidden; border: 1px solid var(--hh-border-faint); margin-bottom: 14px; }
         .nearby-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .nearby-item  { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #faf9f6; border-radius: 8px; border: 1px solid #e8e5de; }
-        .nearby-place { font-size: 13px; color: #3a3a3a; }
-        .nearby-time  { font-size: 12px; color: #d4a843; font-weight: 500; }
+        .nearby-item  { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; background: var(--hh-bg-alt); border-radius: 10px; border: 1px solid var(--hh-border-faint); }
+        .nearby-place { font-size: 13px; color: var(--hh-text-2); }
+        .nearby-time  { font-size: 12px; color: var(--hh-accent); font-weight: 600; }
 
-        .rec-grid    { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-        .rec-card    { border: 1px solid #e8e5de; border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: box-shadow 0.15s, border-color 0.15s; background: #fff; }
-        .rec-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.10); border-color: #c5c1b8; }
-        .rec-img     { width: 100%; height: 140px; object-fit: cover; background: #e8e4db; display: block; }
-        .rec-body    { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
-        .rec-name    { font-size: 14px; font-weight: 700; color: #1a1a1a; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rec-addr    { font-size: 11px; color: #9b9b9b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rec-price   { font-family: 'DM Serif Display', serif; font-size: 18px; color: #1a1a1a; margin-top: 4px; }
-        .rec-meta    { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
-        .rec-pill    { font-size: 10px; font-weight: 600; color: #6b6b6b; background: #f5f4f0; border-radius: 20px; padding: 2px 8px; }
-        .rec-cta     { font-size: 12px; font-weight: 700; color: #8C1D40; margin-top: auto; padding-top: 8px; }
+        .rec-grid    { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+        .rec-card    { border: 1px solid var(--hh-border-faint); border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: box-shadow 0.2s, transform 0.2s; background: #fff; }
+        .rec-card:hover { box-shadow: 0 12px 40px rgba(34,40,16,0.11); transform: translateY(-3px); }
+        .rec-img     { width: 100%; height: 148px; object-fit: cover; background: var(--hh-bg-alt); display: block; transition: transform 0.4s; }
+        .rec-card:hover .rec-img { transform: scale(1.04); }
+        .rec-body    { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        .rec-name    { font-family: var(--hh-font-display); font-size: 15px; font-weight: 400; color: var(--hh-text); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
+        .rec-addr    { font-size: 11px; color: var(--hh-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rec-price   { font-family: var(--hh-font-display); font-size: 20px; font-weight: 400; color: var(--hh-text); margin-top: 6px; letter-spacing: -0.02em; }
+        .rec-meta    { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+        .rec-pill    { font-size: 10px; font-weight: 500; color: var(--hh-text-muted); background: var(--hh-bg-alt); border-radius: 100px; padding: 2px 9px; border: 1px solid var(--hh-border-faint); }
+        .rec-cta     { font-size: 12px; font-weight: 600; color: var(--hh-primary); margin-top: auto; padding-top: 10px; }
 
         /* ── FORM CARD (right column) ───────────────────── */
-        .form-card    { background: #fff; border-radius: 16px; padding: 22px; border: 1px solid #e8e5de; box-shadow: 0 4px 24px rgba(0,0,0,0.06); }
+        .form-card    { background: #fff; border-radius: 20px; padding: 24px; border: 1px solid var(--hh-border-faint); box-shadow: 0 4px 32px rgba(34,40,16,0.09), 0 1px 4px rgba(34,40,16,0.05); }
 
         /* ── MOBILE STICKY BAR ──────────────────────────── */
         .mobile-sticky-bar {
           display: none;
           position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-          background: #fff; border-top: 1px solid #e8e5de;
+          background: #fff; border-top: 1px solid var(--hh-border-faint);
           padding: 12px 20px 20px;
-          box-shadow: 0 -8px 32px rgba(0,0,0,0.1);
+          box-shadow: 0 -8px 32px rgba(34,40,16,0.1);
         }
         .mobile-bar-inner { display: flex; align-items: center; gap: 12px; }
         .mobile-bar-price { flex-shrink: 0; }
-        .mobile-bar-cta { flex: 1; padding: 14px; background: #FFC627; color: #1a1a1a; border: none; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif; letter-spacing: 0.1px; box-shadow: 0 4px 16px rgba(255,198,39,0.4); }
+        .mobile-bar-cta { flex: 1; padding: 14px; background: var(--hh-accent); color: var(--hh-ink-900); border: none; border-radius: 100px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--hh-font-ui); letter-spacing: -0.01em; box-shadow: 0 4px 16px rgba(217,161,74,0.4); }
 
         /* ── MOBILE FORM DRAWER ─────────────────────────── */
-        .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; backdrop-filter: blur(2px); }
+        .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(34,40,16,0.5); z-index: 200; backdrop-filter: blur(4px); }
         .drawer-backdrop.open { display: block; }
-        .drawer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 201; background: #fff; border-radius: 20px 20px 0 0; padding: 24px 20px 40px; max-height: 90vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); }
+        .drawer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 201; background: #fff; border-radius: 24px 24px 0 0; padding: 24px 20px 40px; max-height: 90vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); }
         .drawer.open { transform: translateY(0); }
-        .drawer-handle { width: 36px; height: 4px; background: #e8e4db; border-radius: 10px; margin: 0 auto 20px; }
+        .drawer-handle { width: 36px; height: 4px; background: var(--hh-border); border-radius: 10px; margin: 0 auto 20px; }
 
         /* ── ANIMATIONS ─────────────────────────────────── */
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.5} }
-        @keyframes goldPulse { 0%,100%{box-shadow:0 4px 20px rgba(255,198,39,0.45)} 50%{box-shadow:0 4px 32px rgba(255,198,39,0.75)} }
+        @keyframes goldPulse { 0%,100%{box-shadow:0 4px 20px rgba(217,161,74,0.45)} 50%{box-shadow:0 4px 32px rgba(217,161,74,0.75)} }
 
         /* ── RESPONSIVE ─────────────────────────────────── */
-        @media (max-width: 860px) {
+        @media (max-width: 900px) {
           .prop-split { grid-template-columns: 1fr; }
           .prop-right { display: none; }
           .mobile-sticky-bar { display: block; }
-          .gallery-hero { height: 300px; }
+          .gallery-hero { height: 320px; }
           .nearby-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 500px) {
           .prop-page { padding: 16px 16px 100px; }
-          .gallery-hero { height: 240px; border-radius: 12px; }
+          .gallery-hero { height: 260px; border-radius: 14px; }
           .stats-row { flex-wrap: wrap; }
-          .stat-item { min-width: 50%; border-bottom: 1px solid #e8e5de; }
+          .stat-item { min-width: 50%; border-bottom: 1px solid var(--hh-border-faint); }
         }
       `}</style>
 
@@ -709,20 +712,20 @@ export default function PropertyPageClient({
 
         {/* PERSONALIZED BANNER */}
         {isPersonalized && (
-          <div style={{ background: 'linear-gradient(135deg,#1a1a1a 0%,#2d2410 100%)', borderRadius: '14px', padding: '24px 28px', marginBottom: '24px', border: '1px solid #d4a843', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(212,168,67,0.15) 0%,transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(212,168,67,0.15)', border: '1px solid rgba(212,168,67,0.4)', borderRadius: '20px', padding: '4px 12px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '10px', color: '#d4a843', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>✦ Picked for you</span>
+          <div style={{ background: 'linear-gradient(135deg,#1c2420 0%,#243530 100%)', borderRadius: '14px', padding: '24px 28px', marginBottom: '24px', border: '1px solid rgba(217,161,74,0.4)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(217,161,74,0.15) 0%,transparent 70%)', pointerEvents: 'none' }} />
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(217,161,74,0.15)', border: '1px solid rgba(217,161,74,0.4)', borderRadius: '20px', padding: '4px 12px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--hh-accent)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>✦ Picked for you</span>
             </div>
-            <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '24px', color: '#fff', lineHeight: 1.2, marginBottom: '8px' }}>
-              {guestName}, this one's yours.<br /><span style={{ color: '#d4a843' }}>{customMsg || 'Spots fill up fast — we saved it for you.'}</span>
+            <div style={{ fontFamily: 'var(--hh-font-display)', fontSize: '24px', color: '#fff', lineHeight: 1.2, marginBottom: '8px' }}>
+              {guestName}, this one's yours.<br /><span style={{ color: 'var(--hh-accent)' }}>{customMsg || 'Spots fill up fast — we saved it for you.'}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid rgba(212,168,67,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid rgba(217,161,74,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#d4a843', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 600, color: '#1a1a1a', flexShrink: 0 }}>{fromName[0].toUpperCase()}</div>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--hh-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 600, color: 'var(--hh-text)', flexShrink: 0 }}>{fromName[0].toUpperCase()}</div>
                 <div>
                   <div style={{ fontSize: '13px', color: '#fff', fontWeight: 500 }}>{fromName} from HomeHive</div>
-                  <div style={{ fontSize: '11px', color: '#9b9b9b' }}>Sent this listing just for you</div>
+                  <div style={{ fontSize: '11px', color: 'var(--hh-text-muted)' }}>Sent this listing just for you</div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(220,252,231,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '20px', padding: '5px 12px' }}>
@@ -737,7 +740,7 @@ export default function PropertyPageClient({
         <a
           href="/homes"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#b0a898', textDecoration: 'none', marginBottom: '10px', transition: 'color 0.15s' }}
-          onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#6b6b6b'}
+          onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = 'var(--hh-text-muted)'}
           onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#b0a898'}
         >
           <span style={{ fontSize: '15px', lineHeight: 1 }}>←</span> All homes
@@ -750,9 +753,9 @@ export default function PropertyPageClient({
 
         {/* TITLE ROW */}
         <div ref={titleRef}>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 'clamp(26px,4vw,38px)', color: '#1a1a1a', lineHeight: 1.15, marginBottom: '8px' }}>{home.name}</h1>
+          <h1 style={{ fontFamily: "var(--hh-font-display)", fontSize: 'clamp(26px,4vw,38px)', color: 'var(--hh-text)', lineHeight: 1.15, marginBottom: '8px' }}>{home.name}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '14px', color: '#6b6b6b' }}>📍 {home.address}</span>
+            <span style={{ fontSize: '14px', color: 'var(--hh-text-muted)' }}>📍 {home.address}</span>
             <span style={{ fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', background: listingTypeCfg.bg, color: listingTypeCfg.color, border: `1px solid ${listingTypeCfg.border}`, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: listingTypeCfg.color, display: 'inline-block', flexShrink: 0 }} />
               {listingTypeCfg.label}
@@ -762,18 +765,18 @@ export default function PropertyPageClient({
               onMouseEnter={() => setBadgeHover(true)}
               onMouseLeave={() => setBadgeHover(false)}
             >
-              <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 11px', borderRadius: '20px', background: '#8C1D40', color: '#fff', border: '1px solid #7a1835', cursor: 'default', letterSpacing: '0.2px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 11px', borderRadius: '20px', background: 'var(--hh-primary)', color: '#fff', border: '1px solid rgba(47,74,72,0.5)', cursor: 'default', letterSpacing: '0.2px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                 ✓ HomeHive Verified
               </span>
               {badgeHover && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', boxShadow: '0 8px 28px rgba(0,0,0,0.12)', zIndex: 50, minWidth: '220px', pointerEvents: 'none' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>What this means</div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--hh-primary)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>What this means</div>
                   {[
                     'Zero-tolerance scam policy',
                     'Every listing manually reviewed',
                     'Landlord identity verified',
                   ].map(item => (
-                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: '#3a3a3a', marginBottom: '5px' }}>
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: 'var(--hh-text-2)', marginBottom: '5px' }}>
                       <span style={{ color: '#16a34a', fontWeight: 700, flexShrink: 0 }}>✓</span>
                       {item}
                     </div>
@@ -849,7 +852,7 @@ export default function PropertyPageClient({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Available From</span>
-                    <span style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                    <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--hh-text)', fontFamily: "var(--hh-font-display)" }}>
                       {new Date(home.available_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </span>
                   </div>
@@ -868,7 +871,7 @@ export default function PropertyPageClient({
                   {home.sublease_start_date && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <span style={{ fontSize: '10px', fontWeight: 700, color: listingTypeCfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Available From</span>
-                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                      <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--hh-text)', fontFamily: "var(--hh-font-display)" }}>
                         {new Date(home.sublease_start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
@@ -881,7 +884,7 @@ export default function PropertyPageClient({
                       <span style={{ fontSize: '10px', fontWeight: 700, color: listingTypeCfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         {home.listing_type === 'lease_transfer' ? 'Lease Ends' : 'Sublease Ends'}
                       </span>
-                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                      <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--hh-text)', fontFamily: "var(--hh-font-display)" }}>
                         {new Date(home.sublease_end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
@@ -894,7 +897,7 @@ export default function PropertyPageClient({
             {home.description && (
               <div className="section">
                 <div className="section-label">About this home</div>
-                <p style={{ fontSize: '14px', color: '#3a3a3a', lineHeight: 1.75 }}>{home.description}</p>
+                <p style={{ fontSize: '14px', color: 'var(--hh-text-2)', lineHeight: 1.75 }}>{home.description}</p>
               </div>
             )}
 
@@ -921,7 +924,7 @@ export default function PropertyPageClient({
                   {home.rooms.filter(r => r.images.length > 0).map(room => {
                     const imgs = room.images
                     return (
-                      <div key={room.id} style={{ border: '1px solid #e8e5de', borderRadius: 12, overflow: 'hidden', background: '#faf9f6' }}>
+                      <div key={room.id} style={{ border: '1px solid #e8e5de', borderRadius: 12, overflow: 'hidden', background: 'var(--hh-bg)' }}>
                         {/* Airbnb-style grid: 1 photo = full; 2 = split; 3+ = hero + 2 side */}
                         {imgs.length === 1 && (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -956,7 +959,7 @@ export default function PropertyPageClient({
                                   onClick={() => openRoomLightbox(imgs, 2, room.name)}
                                   style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.52)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                                 >
-                                  <span style={{ color: '#fff', fontWeight: 700, fontSize: 15, fontFamily: 'DM Sans,sans-serif' }}>+{imgs.length - 3} more</span>
+                                  <span style={{ color: '#fff', fontWeight: 700, fontSize: 15, fontFamily: 'var(--hh-font-ui)' }}>+{imgs.length - 3} more</span>
                                 </div>
                               )}
                             </div>
@@ -965,21 +968,21 @@ export default function PropertyPageClient({
                         {/* Room info bar */}
                         <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{room.name}</div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--hh-text)' }}>{room.name}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: room.is_available ? '#16a34a' : '#9b9b9b', display: 'inline-block', flexShrink: 0 }} />
-                              <span style={{ fontSize: 12, color: room.is_available ? '#16a34a' : '#9b9b9b', fontWeight: 600 }}>{room.is_available ? 'Available' : 'Filled'}</span>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: room.is_available ? '#16a34a' : 'var(--hh-text-muted)', display: 'inline-block', flexShrink: 0 }} />
+                              <span style={{ fontSize: 12, color: room.is_available ? '#16a34a' : 'var(--hh-text-muted)', fontWeight: 600 }}>{room.is_available ? 'Available' : 'Filled'}</span>
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', fontFamily: 'DM Serif Display,serif' }}>${room.price.toLocaleString()}</div>
-                              <div style={{ fontSize: 11, color: '#9b9b9b' }}>/month</div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--hh-text)', fontFamily: 'var(--hh-font-display)' }}>${room.price.toLocaleString()}</div>
+                              <div style={{ fontSize: 11, color: 'var(--hh-text-muted)' }}>/month</div>
                             </div>
                             {imgs.length > 1 && (
                               <button
                                 onClick={() => openRoomLightbox(imgs, 0, room.name)}
-                                style={{ fontSize: 12, fontWeight: 600, color: '#8C1D40', background: 'rgba(140,29,64,0.06)', border: '1px solid rgba(140,29,64,0.2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap' }}
+                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--hh-primary)', background: 'rgba(47,74,72,0.06)', border: '1px solid rgba(47,74,72,0.2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'var(--hh-font-ui)', whiteSpace: 'nowrap' }}
                               >
                                 🖼 {imgs.length} photos
                               </button>
@@ -1001,13 +1004,13 @@ export default function PropertyPageClient({
                 /* ── By-room: show each room with price ── */
                 <>
                   <div style={{ marginBottom: '12px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Room / Unit Pricing</div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--hh-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Room / Unit Pricing</div>
                     {home.rooms.map(room => (
                       <div className="pricing-row" key={room.id}>
                         <span className="pricing-label" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: room.is_available ? '#16a34a' : '#9b9b9b', display: 'inline-block', flexShrink: 0 }} />
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: room.is_available ? '#16a34a' : 'var(--hh-text-muted)', display: 'inline-block', flexShrink: 0 }} />
                           {room.name}
-                          {!room.is_available && <span style={{ fontSize: '11px', color: '#9b9b9b', fontStyle: 'italic' }}>(filled)</span>}
+                          {!room.is_available && <span style={{ fontSize: '11px', color: 'var(--hh-text-muted)', fontStyle: 'italic' }}>(filled)</span>}
                         </span>
                         <span className={`pricing-val${room.is_available ? ' green' : ''}`}>
                           ${room.price.toLocaleString()}/mo
@@ -1016,7 +1019,7 @@ export default function PropertyPageClient({
                     ))}
                     <div className="pricing-row" style={{ borderTop: '2px solid #1a1a1a', paddingTop: '10px', fontWeight: 600, fontSize: '15px' }}>
                       <span>Total potential rent</span>
-                      <span style={{ color: '#1a1a1a' }}>
+                      <span style={{ color: 'var(--hh-text)' }}>
                         ${home.rooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo
                       </span>
                     </div>
@@ -1077,7 +1080,7 @@ export default function PropertyPageClient({
                 </>
               )}
 
-              <p style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '10px', lineHeight: 1.5 }}>The price you see is the price you pay. No hidden charges at signing. Deposit fully refunded at move-out.</p>
+              <p style={{ fontSize: '12px', color: 'var(--hh-text-muted)', marginTop: '10px', lineHeight: 1.5 }}>The price you see is the price you pay. No hidden charges at signing. Deposit fully refunded at move-out.</p>
             </div>
 
             {/* LOCATION */}
@@ -1116,13 +1119,13 @@ export default function PropertyPageClient({
                         )}
                         <div className="rec-body">
                           {p.is_featured && (
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#d4a843', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>⭐ Featured</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--hh-accent)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>⭐ Featured</div>
                           )}
                           <div className="rec-name">{p.name}</div>
                           <div className="rec-addr">📍 {p.address}</div>
                           <div className="rec-price">
                             {p.rental_mode === 'by_room' ? `from $${p.price.toLocaleString()}` : `$${p.price.toLocaleString()}`}
-                            <span style={{ fontSize: 12, fontFamily: "'DM Sans', sans-serif", color: '#9b9b9b', fontWeight: 400 }}>
+                            <span style={{ fontSize: 12, fontFamily: "var(--hh-font-ui)", color: 'var(--hh-text-muted)', fontWeight: 400 }}>
                               {p.rental_mode === 'by_room' ? '/mo per room' : '/mo'}
                             </span>
                           </div>
@@ -1140,9 +1143,9 @@ export default function PropertyPageClient({
                   })}
                 </div>
                 <div style={{ marginTop: 14, textAlign: 'center' }}>
-                  <a href="/homes" style={{ fontSize: 13, color: '#9b9b9b', textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
+                  <a href="/homes" style={{ fontSize: 13, color: 'var(--hh-text-muted)', textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
                     onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#1a1a1a'}
-                    onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#9b9b9b'}
+                    onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = 'var(--hh-text-muted)'}
                   >
                     Browse all homes →
                   </a>
@@ -1161,13 +1164,13 @@ export default function PropertyPageClient({
                 {landlordProfile.avatar_url ? (
                   <img src={landlordProfile.avatar_url} alt={landlordProfile.first_name ?? ''} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid #e8e5de' }} />
                 ) : (
-                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#8C1D40', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--hh-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                     {(landlordProfile.first_name ?? '?')[0].toUpperCase()}
                   </div>
                 )}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>Posted by {landlordProfile.first_name}</div>
-                  <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>HomeHive verified member</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--hh-text)' }}>Posted by {landlordProfile.first_name}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--hh-text-muted)', marginTop: '1px' }}>HomeHive verified member</div>
                 </div>
               </div>
             )}
@@ -1177,18 +1180,18 @@ export default function PropertyPageClient({
             </div>
 
             {/* HomeHive Promise */}
-            <div style={{ background: '#1a1a1a', borderRadius: '14px', padding: '18px 20px', marginTop: '12px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#d4a843', marginBottom: '8px' }}>The HomeHive Promise</div>
-              <p style={{ fontSize: '13px', color: '#c5c1b8', lineHeight: 1.65 }}>We match you with homes and housemates that fit your life — your schedule, your major, your vibe. No surprises, no runaround.</p>
-              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #2a2a2a', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <div style={{ background: 'var(--hh-hive-800)', borderRadius: '14px', padding: '18px 20px', marginTop: '12px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--hh-accent)', marginBottom: '8px' }}>The HomeHive Promise</div>
+              <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.65 }}>We match you with homes and housemates that fit your life — your schedule, your major, your vibe. No surprises, no runaround.</p>
+              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <span style={{ fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>🔍</span>
-                <p style={{ fontSize: '12px', color: '#a09890', lineHeight: 1.6 }}>Every listing is manually reviewed — we verify ownership and check for red flags before it goes live. No ghost listings, no scams.</p>
+                <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)', lineHeight: 1.6 }}>Every listing is manually reviewed — we verify ownership and check for red flags before it goes live. No ghost listings, no scams.</p>
               </div>
-              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#d4a843', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>🏠</div>
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'var(--hh-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>🏠</div>
                 <div>
                   <div style={{ fontSize: '12px', color: '#fff', fontWeight: 500 }}>150+ Students Placed</div>
-                  <div style={{ fontSize: '11px', color: '#6b6b6b' }}>Near ASU since 2022</div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>Near ASU since 2022</div>
                 </div>
               </div>
             </div>
@@ -1204,10 +1207,10 @@ export default function PropertyPageClient({
         ) : (
           <div className="mobile-bar-inner">
             <div className="mobile-bar-price">
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', lineHeight: 1 }}>
+              <div style={{ fontFamily: "var(--hh-font-display)", fontSize: '22px', color: 'var(--hh-text)', lineHeight: 1 }}>
                 {home.rental_mode === 'by_room' ? `from $${home.price.toLocaleString()}` : `$${home.price.toLocaleString()}`}
               </div>
-              <div style={{ fontSize: '11px', color: '#9b9b9b' }}>
+              <div style={{ fontSize: '11px', color: 'var(--hh-text-muted)' }}>
                 {home.rental_mode === 'by_room' ? '/mo per room' : '/mo'}
               </div>
             </div>
@@ -1222,8 +1225,8 @@ export default function PropertyPageClient({
       <div className={`drawer-backdrop${mobileFormOpen ? ' open' : ''}`} onClick={() => setMobileFormOpen(false)} />
       <div className={`drawer${mobileFormOpen ? ' open' : ''}`}>
         <div className="drawer-handle" />
-        <div style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a', marginBottom: '4px' }}>{home.name}</div>
-        <div style={{ fontSize: '12px', color: '#9b9b9b', marginBottom: '20px' }}>📍 {home.address}</div>
+        <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--hh-text)', marginBottom: '4px' }}>{home.name}</div>
+        <div style={{ fontSize: '12px', color: 'var(--hh-text-muted)', marginBottom: '20px' }}>📍 {home.address}</div>
         {FormContent()}
       </div>
 
@@ -1231,7 +1234,7 @@ export default function PropertyPageClient({
       {roomLightbox && (
         <div
           onClick={closeRoomLightbox}
-          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.93)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.93)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--hh-font-ui)' }}
         >
           <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1249,8 +1252,8 @@ export default function PropertyPageClient({
             </div>
             {roomLightbox.images.length > 1 && (
               <>
-                <button onClick={e => { e.stopPropagation(); roomLbPrev() }} style={{ position: 'absolute', left: -60, top: '40%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: '#fff', fontFamily: 'DM Sans,sans-serif' }}>‹</button>
-                <button onClick={e => { e.stopPropagation(); roomLbNext() }} style={{ position: 'absolute', right: -60, top: '40%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: '#fff', fontFamily: 'DM Sans,sans-serif' }}>›</button>
+                <button onClick={e => { e.stopPropagation(); roomLbPrev() }} style={{ position: 'absolute', left: -60, top: '40%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: '#fff', fontFamily: 'var(--hh-font-ui)' }}>‹</button>
+                <button onClick={e => { e.stopPropagation(); roomLbNext() }} style={{ position: 'absolute', right: -60, top: '40%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: '#fff', fontFamily: 'var(--hh-font-ui)' }}>›</button>
               </>
             )}
             {roomLightbox.images.length > 1 && (
@@ -1276,7 +1279,7 @@ export default function PropertyPageClient({
               </div>
             )}
           </div>
-          <button onClick={closeRoomLightbox} style={{ position: 'fixed', top: 18, right: 18, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'DM Sans,sans-serif' }}>×</button>
+          <button onClick={closeRoomLightbox} style={{ position: 'fixed', top: 18, right: 18, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#fff', fontFamily: 'var(--hh-font-ui)' }}>×</button>
           {/* Mobile tap zones */}
           {roomLightbox.images.length > 1 && (
             <style>{`@media (max-width: 767px) { .rlb-arrow { display: none !important; } }`}</style>

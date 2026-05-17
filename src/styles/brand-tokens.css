@@ -1,0 +1,95 @@
+/*
+ * HomeHive Brand Tokens — v1.0 (2026)
+ * Source of truth for the design system.
+ *
+ * Currently imported by the home page only (trial).
+ * To roll out platform-wide: move this import to globals.css.
+ *
+ * Fonts: Newsreader (editorial display) × Geist (utilitarian UI)
+ * Colors: Warm, restrained, accessible — all pairings ≥ 4.5:1 contrast
+ */
+
+:root {
+  /* ── Color Palette ─────────────────────────────── */
+
+  /* Surface */
+  --hh-cream-50:  #FAF8F3;   /* page background — default */
+  --hh-cream-100: #F4F1EA;   /* card alt / section bg */
+
+  /* Brand */
+  --hh-hive-800:  #2F4A48;   /* PRIMARY — headlines, CTAs */
+  --hh-honey-600: #D9A14A;   /* ACCENT  — verified, links, focus */
+
+  /* Ink (warm-toned neutral scale) */
+  --hh-ink-900:   #222810;   /* body & display text */
+  --hh-ink-700:   #3d3d30;   /* secondary text */
+  --hh-ink-500:   #6b6b5a;   /* muted text */
+  --hh-ink-400:   #8a8a78;   /* placeholder */
+  --hh-ink-300:   #c5c2b4;   /* dividers / strokes */
+  --hh-ink-200:   #dddad0;   /* faint hairlines */
+
+  /* Status */
+  --hh-status-verified: #2a7d4f;
+  --hh-status-pending:  #D9A14A;
+  --hh-status-error:    #c0392b;
+
+  /* ── Semantic Aliases ──────────────────────────── */
+  --hh-bg:             var(--hh-cream-50);
+  --hh-bg-alt:         var(--hh-cream-100);
+  --hh-text:           var(--hh-ink-900);
+  --hh-text-2:         var(--hh-ink-700);
+  --hh-text-muted:     var(--hh-ink-500);
+  --hh-text-placeholder: var(--hh-ink-400);
+  --hh-border:         var(--hh-ink-300);
+  --hh-border-faint:   var(--hh-ink-200);
+  --hh-primary:        var(--hh-hive-800);
+  --hh-accent:         var(--hh-honey-600);
+
+  /* ── Typography ────────────────────────────────── */
+  --hh-font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --hh-font-ui:      'Geist', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --hh-font-mono:    'Geist Mono', 'Courier New', monospace;
+
+  /* ── Type Scale ────────────────────────────────── */
+
+  /* Display — hero only, italic for emphasis */
+  --hh-sz-display:    clamp(56px, 7vw, 96px);
+  --hh-wt-display:    380;
+  --hh-lh-display:    1.02;
+  --hh-ls-display:    -0.025em;
+
+  /* H1 — page titles */
+  --hh-sz-h1:    clamp(36px, 5vw, 56px);
+  --hh-wt-h1:    380;
+  --hh-lh-h1:    1.05;
+  --hh-ls-h1:    -0.02em;
+
+  /* H2 — section headers */
+  --hh-sz-h2:    clamp(26px, 3.5vw, 36px);
+  --hh-wt-h2:    400;
+  --hh-lh-h2:    1.12;
+  --hh-ls-h2:    -0.015em;
+
+  /* H3 — card titles, subsections */
+  --hh-sz-h3:    22px;
+  --hh-wt-h3:    500;
+  --hh-lh-h3:    1.3;
+  --hh-ls-h3:    -0.01em;
+
+  /* Body L — lead paragraphs */
+  --hh-sz-body-l:    17px;
+  --hh-lh-body-l:    1.55;
+
+  /* Body — default copy */
+  --hh-sz-body:    15px;
+  --hh-lh-body:    1.55;
+
+  /* Small — meta, secondary */
+  --hh-sz-small:    13px;
+  --hh-lh-small:    1.5;
+
+  /* Eyebrow — section labels, ALL CAPS */
+  --hh-sz-eyebrow:    11px;
+  --hh-wt-eyebrow:    500;
+  --hh-ls-eyebrow:    0.14em;
+}

@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import '@/styles/brand-tokens.css'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
@@ -66,80 +67,80 @@ export default async function ForLandlordsPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
       />
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Geist:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #faf9f6; color: #1a1a1a; }
+        body { font-family: var(--hh-font-ui); background: var(--hh-bg); color: var(--hh-text); }
 
         .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
         .section { padding: 72px 0; }
-        .section + .section { border-top: 1px solid #e8e4db; }
+        .section + .section { border-top: 1px solid var(--hh-border-faint); }
 
         /* HERO */
         .hero { padding: 80px 0 72px; text-align: center; }
         .hero-label { display: inline-flex; align-items: center; gap: 7px; background: #f0fdf4; color: #166534; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 24px; border: 1px solid #bbf7d0; }
-        .hero-h1 { font-family: 'Fraunces', serif; font-size: 54px; font-weight: 300; line-height: 1.08; letter-spacing: -1.5px; color: #1a1a1a; margin-bottom: 20px; max-width: 720px; margin-left: auto; margin-right: auto; }
-        .hero-h1 em { font-style: italic; color: #8C1D40; }
-        .hero-sub { font-size: 17px; color: #6b6b6b; line-height: 1.7; max-width: 520px; margin: 0 auto 36px; }
+        .hero-h1 { font-family: var(--hh-font-display); font-size: 54px; font-weight: 300; line-height: 1.08; letter-spacing: -1.5px; color: var(--hh-text); margin-bottom: 20px; max-width: 720px; margin-left: auto; margin-right: auto; }
+        .hero-h1 em { font-style: italic; color: var(--hh-primary); }
+        .hero-sub { font-size: 17px; color: var(--hh-text-muted); line-height: 1.7; max-width: 520px; margin: 0 auto 36px; }
         .hero-cta-row { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
-        .btn-primary { display: inline-block; background: #8C1D40; color: #fff; padding: 14px 32px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: background 0.2s; }
-        .btn-primary:hover { background: #7a1835; }
-        .btn-ghost { display: inline-block; color: #6b6b6b; padding: 14px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; transition: color 0.15s; }
-        .btn-ghost:hover { color: #1a1a1a; }
+        .btn-primary { display: inline-block; background: var(--hh-primary); color: #fff; padding: 14px 32px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; font-family: var(--hh-font-ui); transition: background 0.2s; }
+        .btn-primary:hover { opacity: 0.88; }
+        .btn-ghost { display: inline-block; color: var(--hh-text-muted); padding: 14px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; transition: color 0.15s; }
+        .btn-ghost:hover { color: var(--hh-text); }
 
         /* PAIN POINTS */
         .pain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-        .pain-card { background: #fff; border: 1px solid #e8e4db; border-radius: 14px; padding: 24px; }
-        .pain-platform { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #9b9b9b; margin-bottom: 8px; }
-        .pain-problem { font-size: 14px; color: #1a1a1a; line-height: 1.6; }
-        .pain-strike { text-decoration: line-through; color: #9b9b9b; }
-        .pain-vs { text-align: center; font-size: 13px; font-weight: 600; color: #8C1D40; margin: 28px 0 20px; }
-        .hive-card { background: #8C1D40; border-radius: 14px; padding: 24px 28px; color: #fff; }
-        .hive-card-title { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 300; margin-bottom: 12px; letter-spacing: -0.3px; }
+        .pain-card { background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 14px; padding: 24px; }
+        .pain-platform { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--hh-text-muted); margin-bottom: 8px; }
+        .pain-problem { font-size: 14px; color: var(--hh-text); line-height: 1.6; }
+        .pain-strike { text-decoration: line-through; color: var(--hh-text-muted); }
+        .pain-vs { text-align: center; font-size: 13px; font-weight: 600; color: var(--hh-primary); margin: 28px 0 20px; }
+        .hive-card { background: var(--hh-primary); border-radius: 14px; padding: 24px 28px; color: #fff; }
+        .hive-card-title { font-family: var(--hh-font-display); font-size: 20px; font-weight: 300; margin-bottom: 12px; letter-spacing: -0.3px; }
         .hive-points { display: flex; flex-direction: column; gap: 8px; }
         .hive-pt { font-size: 14px; display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
-        .hive-check { color: #FFC627; flex-shrink: 0; font-weight: 700; margin-top: 1px; }
+        .hive-check { color: var(--hh-accent); flex-shrink: 0; font-weight: 700; margin-top: 1px; }
 
         /* HOW IT WORKS */
-        .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #9b9b9b; margin-bottom: 10px; }
-        .section-h2 { font-family: 'Fraunces', serif; font-size: 38px; font-weight: 300; letter-spacing: -0.8px; color: #1a1a1a; margin-bottom: 10px; }
-        .section-sub { font-size: 15px; color: #6b6b6b; line-height: 1.7; margin-bottom: 40px; max-width: 520px; }
+        .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--hh-text-muted); margin-bottom: 10px; }
+        .section-h2 { font-family: var(--hh-font-display); font-size: 38px; font-weight: 300; letter-spacing: -0.8px; color: var(--hh-text); margin-bottom: 10px; }
+        .section-sub { font-size: 15px; color: var(--hh-text-muted); line-height: 1.7; margin-bottom: 40px; max-width: 520px; }
         .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-        .step-card { background: #fff; border: 1px solid #e8e4db; border-radius: 14px; padding: 24px; position: relative; }
-        .step-num { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 300; color: #e8e4db; letter-spacing: -1px; line-height: 1; margin-bottom: 12px; }
-        .step-title { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px; }
-        .step-desc { font-size: 13px; color: #6b6b6b; line-height: 1.6; }
+        .step-card { background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 14px; padding: 24px; position: relative; }
+        .step-num { font-family: var(--hh-font-display); font-size: 40px; font-weight: 300; color: var(--hh-border-faint); letter-spacing: -1px; line-height: 1; margin-bottom: 12px; }
+        .step-title { font-size: 15px; font-weight: 600; color: var(--hh-text); margin-bottom: 6px; }
+        .step-desc { font-size: 13px; color: var(--hh-text-muted); line-height: 1.6; }
 
         /* LISTING TYPES */
         .type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-        .type-card { background: #fff; border: 1px solid #e8e4db; border-radius: 14px; padding: 24px; }
+        .type-card { background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 14px; padding: 24px; }
         .type-icon { font-size: 28px; margin-bottom: 12px; }
-        .type-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
-        .type-desc { font-size: 13px; color: #6b6b6b; line-height: 1.6; margin-bottom: 12px; }
-        .type-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: #fdf2f5; color: #8C1D40; border: 1px solid #f5c6d0; }
+        .type-title { font-size: 15px; font-weight: 700; color: var(--hh-text); margin-bottom: 6px; }
+        .type-desc { font-size: 13px; color: var(--hh-text-muted); line-height: 1.6; margin-bottom: 12px; }
+        .type-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: rgba(47,74,72,0.08); color: var(--hh-primary); border: 1px solid rgba(47,74,72,0.15); }
 
         /* PRICING */
-        .pricing-card { background: #fff; border: 2px solid #8C1D40; border-radius: 20px; padding: 40px; max-width: 560px; margin: 0 auto; text-align: center; }
-        .pricing-badge { display: inline-block; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
-        .pricing-price { font-family: 'Fraunces', serif; font-size: 64px; font-weight: 300; color: #1a1a1a; letter-spacing: -3px; line-height: 1; margin-bottom: 4px; }
-        .pricing-price-sub { font-size: 14px; color: #9b9b9b; margin-bottom: 24px; }
+        .pricing-card { background: #fff; border: 2px solid var(--hh-primary); border-radius: 20px; padding: 40px; max-width: 560px; margin: 0 auto; text-align: center; }
+        .pricing-badge { display: inline-block; background: var(--hh-primary); color: var(--hh-accent); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
+        .pricing-price { font-family: var(--hh-font-display); font-size: 64px; font-weight: 300; color: var(--hh-text); letter-spacing: -3px; line-height: 1; margin-bottom: 4px; }
+        .pricing-price-sub { font-size: 14px; color: var(--hh-text-muted); margin-bottom: 24px; }
         .pricing-features { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; text-align: left; }
-        .pricing-feat { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #1a1a1a; }
+        .pricing-feat { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--hh-text); }
         .feat-check { width: 20px; height: 20px; border-radius: 50%; background: #f0fdf4; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #166534; flex-shrink: 0; }
-        .counter-wrap { background: #faf9f6; border: 1px solid #e8e4db; border-radius: 12px; padding: 16px 20px; margin-bottom: 28px; }
-        .counter-label { font-size: 12px; color: #9b9b9b; margin-bottom: 8px; }
-        .counter-bar-track { height: 8px; background: #e8e4db; border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
-        .counter-bar-fill { height: 100%; background: #8C1D40; border-radius: 10px; transition: width 1s ease; }
+        .counter-wrap { background: var(--hh-bg); border: 1px solid var(--hh-border-faint); border-radius: 12px; padding: 16px 20px; margin-bottom: 28px; }
+        .counter-label { font-size: 12px; color: var(--hh-text-muted); margin-bottom: 8px; }
+        .counter-bar-track { height: 8px; background: var(--hh-border-faint); border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
+        .counter-bar-fill { height: 100%; background: var(--hh-primary); border-radius: 10px; transition: width 1s ease; }
         .counter-nums { display: flex; justify-content: space-between; font-size: 12px; }
-        .counter-taken { font-weight: 600; color: #8C1D40; }
-        .counter-left { color: #9b9b9b; }
-        .pricing-future { font-size: 12px; color: '#9b9b9b'; }
+        .counter-taken { font-weight: 600; color: var(--hh-primary); }
+        .counter-left { color: var(--hh-text-muted); }
+        .pricing-future { font-size: 12px; color: var(--hh-text-muted); }
 
         /* BOTTOM CTA */
-        .bottom-cta { background: #1a1a1a; border-radius: 20px; padding: 56px 40px; text-align: center; margin: 0 0 80px; }
-        .bottom-cta-h2 { font-family: 'Fraunces', serif; font-size: 38px; font-weight: 300; color: #fff; letter-spacing: -0.8px; margin-bottom: 12px; }
-        .bottom-cta-h2 em { font-style: italic; color: #FFC627; }
+        .bottom-cta { background: var(--hh-hive-800); border-radius: 20px; padding: 56px 40px; text-align: center; margin: 0 0 80px; }
+        .bottom-cta-h2 { font-family: var(--hh-font-display); font-size: 38px; font-weight: 300; color: #fff; letter-spacing: -0.8px; margin-bottom: 12px; }
+        .bottom-cta-h2 em { font-style: italic; color: var(--hh-accent); }
         .bottom-cta-sub { font-size: 15px; color: rgba(255,255,255,0.6); margin-bottom: 32px; }
-        .btn-gold { display: inline-block; background: #FFC627; color: #1a1a1a; padding: 14px 32px; border-radius: 8px; font-size: 15px; font-weight: 700; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: background 0.2s; }
+        .btn-gold { display: inline-block; background: var(--hh-accent); color: var(--hh-ink-900); padding: 14px 32px; border-radius: 8px; font-size: 15px; font-weight: 700; text-decoration: none; font-family: var(--hh-font-ui); transition: background 0.2s; }
         .btn-gold:hover { background: #f0b820; }
 
         @media (max-width: 768px) {
@@ -299,7 +300,7 @@ export default async function ForLandlordsPage() {
             <a href="/signup?role=landlord" className="btn-primary" style={{ display: 'block', textAlign: 'center' }}>
               Claim your free spot →
             </a>
-            <div style={{ marginTop: '12px', fontSize: '12px', color: '#9b9b9b' }}>
+            <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--hh-text-muted)' }}>
               After 100 listings: plans starting at $29/mo. Early landlords never pay.
             </div>
           </div>

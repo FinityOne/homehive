@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef } from 'react'
+import '@/styles/brand-tokens.css'
+import { useState, useMemo, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { getProperties, Property } from '@/lib/properties'
 import { usePostHog } from 'posthog-js/react'
 
@@ -19,15 +21,28 @@ const DEFAULT_FILTERS: Filters = {
   search: '',
 }
 
+function useInitialFilters(): Filters {
+  const sp = useSearchParams()
+  return {
+    maxPrice: sp.get('price_max') ? Number(sp.get('price_max')) : DEFAULT_FILTERS.maxPrice,
+    minBeds:  sp.get('beds')      ? Number(sp.get('beds'))      : DEFAULT_FILTERS.minBeds,
+    maxDistance: DEFAULT_FILTERS.maxDistance,
+    search: sp.get('q') || DEFAULT_FILTERS.search,
+  }
+}
+
 // ─── LANDMARKS ───────────────────────────────────────────────────────────────
+// Brand hex values (used in injected map HTML where CSS vars don't apply)
+const BRAND = { primary: '#2F4A48', accent: '#D9A14A', bg: '#FAF8F3', bgAlt: '#F4F1EA', text: '#222810', textMuted: '#6b6b5a', border: '#dddad0' }
+
 const LANDMARKS = [
-  { coords: [33.4242, -111.9281] as [number, number], label: '⚡ ASU', color: '#8C1D40', textColor: '#FFC627', border: '#FFC627', description: 'Arizona State University' },
-  { coords: [33.3955, -111.9459] as [number, number], label: '⛰ A Mountain', color: '#fff', textColor: '#1a1a1a', border: '#e8e4db', description: 'Hayden Butte / A Mountain' },
-  { coords: [33.4265, -111.9403] as [number, number], label: '🌯 Chipotle', color: '#fff', textColor: '#7B341E', border: '#e8e4db', description: 'Chipotle — Mill Ave' },
-  { coords: [33.4152, -111.9090] as [number, number], label: '🌯 Chipotle', color: '#fff', textColor: '#7B341E', border: '#e8e4db', description: 'Chipotle — Rural Rd' },
-  { coords: [33.4268, -111.9397] as [number, number], label: '🚉 Light Rail', color: '#fff', textColor: '#1a73e8', border: '#e8e4db', description: 'Mill Ave / 3rd St Station' },
-  { coords: [33.4177, -111.9090] as [number, number], label: '🚉 Light Rail', color: '#fff', textColor: '#1a73e8', border: '#e8e4db', description: 'University Dr / Rural Rd Station' },
-  { coords: [33.4338, -111.9399] as [number, number], label: '🏪 Trader Joe\'s', color: '#fff', textColor: '#c41e3a', border: '#e8e4db', description: 'Trader Joe\'s — Tempe' },
+  { coords: [33.4242, -111.9281] as [number, number], label: '⚡ ASU', color: BRAND.primary, textColor: BRAND.accent, border: BRAND.accent, description: 'Arizona State University' },
+  { coords: [33.3955, -111.9459] as [number, number], label: '⛰ A Mountain', color: '#fff', textColor: BRAND.text, border: BRAND.border, description: 'Hayden Butte / A Mountain' },
+  { coords: [33.4265, -111.9403] as [number, number], label: '🌯 Chipotle', color: '#fff', textColor: '#7B341E', border: BRAND.border, description: 'Chipotle — Mill Ave' },
+  { coords: [33.4152, -111.9090] as [number, number], label: '🌯 Chipotle', color: '#fff', textColor: '#7B341E', border: BRAND.border, description: 'Chipotle — Rural Rd' },
+  { coords: [33.4268, -111.9397] as [number, number], label: '🚉 Light Rail', color: '#fff', textColor: '#1a73e8', border: BRAND.border, description: 'Mill Ave / 3rd St Station' },
+  { coords: [33.4177, -111.9090] as [number, number], label: '🚉 Light Rail', color: '#fff', textColor: '#1a73e8', border: BRAND.border, description: 'University Dr / Rural Rd Station' },
+  { coords: [33.4338, -111.9399] as [number, number], label: '🏪 Trader Joe\'s', color: '#fff', textColor: '#c41e3a', border: BRAND.border, description: 'Trader Joe\'s — Tempe' },
 ]
 
 // ─── LEAFLET MAP ─────────────────────────────────────────────────────────────
@@ -37,26 +52,27 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
   const markersRef = useRef<any[]>([])
 
   function makePinHtml(slug: string, price: number, active = false) {
-    const bg = active ? '#8C1D40' : '#1a1a1a'
-    const scale = active ? 'scale(1.12)' : 'scale(1)'
-    const shadow = active ? '0 4px 16px rgba(140,29,64,0.45)' : '0 2px 8px rgba(0,0,0,0.22)'
+    const bg     = active ? BRAND.primary : '#1c2420'
+    const scale  = active ? 'scale(1.14)' : 'scale(1)'
+    const shadow = active ? `0 4px 18px rgba(47,74,72,0.5)` : '0 2px 8px rgba(0,0,0,0.2)'
+    const accent = active ? BRAND.accent : 'rgba(255,255,255,0.75)'
     return `
       <div class="map-pin" data-id="${slug}" style="
         background:${bg};color:#fff;
         font-size:12px;font-weight:700;
-        padding:6px 11px;border-radius:8px;
+        padding:6px 12px;border-radius:100px;
         white-space:nowrap;cursor:pointer;
-        border:2px solid rgba(255,255,255,0.9);
+        border:1.5px solid ${accent};
         box-shadow:${shadow};
-        font-family:'DM Sans',sans-serif;
+        font-family:system-ui,-apple-system,sans-serif;
         transform:${scale};
-        transition:all 0.15s ease;
+        transition:all 0.18s ease;
         letter-spacing:-0.2px;
         position:relative;
       ">
-        $${price.toLocaleString()}<span style="font-weight:400;opacity:0.75;font-size:10px;">/mo</span>
+        $${price.toLocaleString()}<span style="font-weight:400;opacity:0.7;font-size:10px;">/mo</span>
         <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
-          width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;
+          width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
           border-top:7px solid ${bg};"></div>
       </div>`
   }
@@ -132,17 +148,17 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
       const marker = L.marker([home.lat, home.lng] as [number, number], { icon })
         .addTo(map)
         .bindPopup(`
-          <div style="font-family:'DM Sans',sans-serif;min-width:200px;padding:4px 0;">
-            ${home.images?.[0] ? `<img src="${home.images[0]}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:10px;" />` : ''}
-            <div style="font-weight:700;font-size:14px;color:#1a1a1a;margin-bottom:3px;">${home.name}</div>
-            <div style="font-size:11px;color:#9b9b9b;margin-bottom:8px;">📍 ${home.address}</div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-              <span style="font-size:16px;font-weight:700;color:#8C1D40;">$${home.price.toLocaleString()}<span style="font-size:11px;font-weight:400;color:#9b9b9b;">/mo</span></span>
-              <span style="font-size:11px;background:#fdf2f5;color:#8C1D40;padding:2px 8px;border-radius:20px;font-weight:600;">${home.available} rooms open</span>
+          <div style="font-family:system-ui,-apple-system,sans-serif;min-width:210px;padding:4px 0;">
+            ${home.images?.[0] ? `<img src="${home.images[0]}" style="width:100%;height:118px;object-fit:cover;border-radius:8px;margin-bottom:11px;display:block;" />` : ''}
+            <div style="font-size:14px;font-weight:600;color:${BRAND.text};margin-bottom:3px;line-height:1.3;">${home.name}</div>
+            <div style="font-size:11px;color:${BRAND.textMuted};margin-bottom:9px;">📍 ${home.address}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;">
+              <span style="font-size:18px;font-weight:700;color:${BRAND.primary};letter-spacing:-0.3px;">$${home.price.toLocaleString()}<span style="font-size:11px;font-weight:400;color:${BRAND.textMuted};">/mo</span></span>
+              <span style="font-size:11px;background:rgba(47,74,72,0.08);color:${BRAND.primary};padding:3px 9px;border-radius:20px;font-weight:600;">${home.available} open</span>
             </div>
-            <a href="/homes/${home.slug}" style="display:block;background:#8C1D40;color:#fff;padding:9px 12px;border-radius:7px;text-decoration:none;text-align:center;font-size:13px;font-weight:700;letter-spacing:0.1px;">View home →</a>
+            <a href="/homes/${home.slug}" style="display:block;background:${BRAND.primary};color:#fff;padding:10px 12px;border-radius:100px;text-decoration:none;text-align:center;font-size:13px;font-weight:600;letter-spacing:-0.1px;">View home →</a>
           </div>
-        `, { maxWidth: 240, className: 'home-popup' })
+        `, { maxWidth: 248, className: 'home-popup' })
       markersRef.current.push(marker)
     })
   }
@@ -178,14 +194,15 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
     <>
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <style>{`
-        .leaflet-popup-content-wrapper { border-radius: 12px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.14) !important; border: 1px solid #e8e4db; padding: 0 !important; overflow: hidden; }
-        .leaflet-popup-content { margin: 12px 14px !important; }
+        .leaflet-popup-content-wrapper { border-radius: 14px !important; box-shadow: 0 12px 40px rgba(34,40,16,0.14) !important; border: 1px solid var(--hh-border-faint, #dddad0) !important; padding: 0 !important; overflow: hidden; background: var(--hh-bg, #FAF8F3) !important; }
+        .leaflet-popup-content { margin: 13px 15px !important; }
         .leaflet-popup-tip-container { display: none; }
-        .lm-tooltip { background: #1a1a1a; color: #fff; border: none; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 12px; padding: 4px 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .lm-tooltip { background: #1c2420; color: #fff; border: none; border-radius: 6px; font-family: system-ui,-apple-system,sans-serif; font-size: 12px; padding: 4px 9px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .lm-tooltip::before { display: none; }
-        .leaflet-control-zoom { border: 1px solid #e8e4db !important; border-radius: 8px !important; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important; }
-        .leaflet-control-zoom a { color: #1a1a1a !important; font-size: 16px !important; }
-        .leaflet-control-attribution { font-size: 9px !important; background: rgba(255,255,255,0.7) !important; backdrop-filter: blur(4px); border-radius: 6px !important; padding: 2px 6px !important; }
+        .leaflet-control-zoom { border: 1px solid var(--hh-border-faint, #dddad0) !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 10px rgba(34,40,16,0.08) !important; }
+        .leaflet-control-zoom a { color: var(--hh-text, #222810) !important; font-size: 16px !important; background: var(--hh-bg, #FAF8F3) !important; }
+        .leaflet-control-zoom a:hover { background: var(--hh-bg-alt, #F4F1EA) !important; }
+        .leaflet-control-attribution { font-size: 9px !important; background: rgba(250,248,243,0.85) !important; backdrop-filter: blur(6px); border-radius: 8px !important; padding: 3px 8px !important; color: var(--hh-text-muted, #6b6b5a) !important; }
       `}</style>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
     </>
@@ -194,8 +211,8 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
 
 // ─── LISTING TYPE CONFIG ─────────────────────────────────────────────────────
 const TYPE_CONFIG = {
-  standard_rental: { label: 'For Rent',       bg: 'rgba(220,252,231,0.95)', color: '#166534', border: 'rgba(187,247,208,0.9)' },
-  sublease:        { label: 'Sublease',        bg: 'rgba(253,242,245,0.95)', color: '#8C1D40', border: 'rgba(245,198,208,0.9)' },
+  standard_rental: { label: 'For Rent',       bg: 'rgba(250,248,243,0.95)', color: '#2F4A48', border: 'rgba(47,74,72,0.25)' },
+  sublease:        { label: 'Sublease',        bg: 'rgba(217,161,74,0.12)',  color: '#9a6a1e', border: 'rgba(217,161,74,0.4)' },
   lease_transfer:  { label: 'Lease Transfer',  bg: 'rgba(239,246,255,0.95)', color: '#1d4ed8', border: 'rgba(191,219,254,0.9)' },
 } as const
 
@@ -271,11 +288,12 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
 }
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
-export default function HomesPageClient() {
+function HomesPageInner() {
   const ph = usePostHog()
+  const initialFilters = useInitialFilters()
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
+  const [filters, setFilters] = useState<Filters>(initialFilters)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'price' | 'score' | 'distance'>('price')
   const [mapVisible, setMapVisible] = useState(true)
@@ -308,86 +326,129 @@ export default function HomesPageClient() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Geist:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #faf9f6; }
+        body { font-family: var(--hh-font-ui); background: var(--hh-bg); }
 
         /* ── LAYOUT ── */
         .homes-page { display: flex; flex-direction: column; height: calc(100vh - 94px); overflow: hidden; }
-        .homes-toolbar { background: #fff; border-bottom: 1px solid #e8e4db; padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; z-index: 10; }
+        .homes-toolbar {
+          background: var(--hh-bg);
+          border-bottom: 1px solid var(--hh-border-faint);
+          padding: 10px 20px;
+          display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          flex-shrink: 0; z-index: 10;
+        }
 
         /* ── SEARCH ── */
-        .search-box { display: flex; align-items: center; gap: 8px; background: #faf9f6; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 12px; height: 36px; min-width: 200px; flex: 1; max-width: 280px; }
-        .search-box input { border: none; background: none; outline: none; font-size: 13px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; width: 100%; }
-        .search-box input::placeholder { color: #c5c1b8; }
+        .search-box {
+          display: flex; align-items: center; gap: 8px;
+          background: #fff; border: 1.5px solid var(--hh-border-faint);
+          border-radius: 100px; padding: 0 14px; height: 38px;
+          min-width: 200px; flex: 1; max-width: 280px;
+          transition: border-color 0.15s;
+        }
+        .search-box:focus-within { border-color: var(--hh-primary); }
+        .search-box input { border: none; background: none; outline: none; font-size: 13px; color: var(--hh-text); font-family: var(--hh-font-ui); width: 100%; }
+        .search-box input::placeholder { color: var(--hh-text-placeholder); }
 
         /* ── FILTER PILLS ── */
         .filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .filter-pill { display: flex; align-items: center; gap: 6px; background: #faf9f6; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 12px; height: 36px; font-size: 13px; color: #1a1a1a; cursor: pointer; white-space: nowrap; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s; }
-        .filter-pill:hover { border-color: #8C1D40; }
-        .filter-pill.active { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; }
-        .filter-pill select { border: none; background: none; outline: none; font-size: 13px; color: inherit; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-        .filter-pill label { font-size: 11px; color: #9b9b9b; font-weight: 500; }
-        .filter-pill input[type=range] { width: 90px; accent-color: #8C1D40; cursor: pointer; }
+        .filter-pill {
+          display: flex; align-items: center; gap: 6px;
+          background: #fff; border: 1.5px solid var(--hh-border-faint);
+          border-radius: 100px; padding: 0 14px; height: 38px;
+          font-size: 13px; color: var(--hh-text);
+          cursor: pointer; white-space: nowrap;
+          font-family: var(--hh-font-ui); transition: border-color 0.15s, background 0.15s;
+        }
+        .filter-pill:hover { border-color: var(--hh-primary); }
+        .filter-pill.active { border-color: var(--hh-primary); background: rgba(47,74,72,0.06); color: var(--hh-primary); }
+        .filter-pill select { border: none; background: none; outline: none; font-size: 13px; color: inherit; font-family: var(--hh-font-ui); cursor: pointer; }
+        .filter-pill label { font-size: 11px; color: var(--hh-text-muted); font-weight: 500; }
+        .filter-pill input[type=range] { width: 86px; accent-color: var(--hh-primary); cursor: pointer; }
 
         .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-        .sort-select { border: 1.5px solid #e8e4db; border-radius: 8px; padding: 0 10px; height: 36px; font-size: 13px; color: #1a1a1a; font-family: 'DM Sans', sans-serif; background: #fff; outline: none; cursor: pointer; }
-        .map-toggle { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 0 14px; height: 36px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
-        .map-toggle:hover { background: #333; }
-        .result-count { font-size: 13px; color: #9b9b9b; white-space: nowrap; }
+        .sort-select {
+          border: 1.5px solid var(--hh-border-faint); border-radius: 100px;
+          padding: 0 14px; height: 38px; font-size: 13px;
+          color: var(--hh-text); font-family: var(--hh-font-ui);
+          background: #fff; outline: none; cursor: pointer;
+          transition: border-color 0.15s;
+        }
+        .sort-select:focus { border-color: var(--hh-primary); }
+        .map-toggle {
+          background: var(--hh-primary); color: #fff; border: none;
+          border-radius: 100px; padding: 0 16px; height: 38px;
+          font-size: 13px; font-weight: 500; cursor: pointer;
+          font-family: var(--hh-font-ui); white-space: nowrap;
+          display: flex; align-items: center; gap: 6px;
+          transition: opacity 0.15s;
+          letter-spacing: -0.01em;
+        }
+        .map-toggle:hover { opacity: 0.85; }
+        .result-count { font-size: 13px; color: var(--hh-text-muted); white-space: nowrap; }
 
         /* ── BODY ── */
         .homes-body { display: flex; flex: 1; overflow: hidden; }
 
         /* ── LIST ── */
-        .homes-list { width: 50%; flex-shrink: 0; overflow-y: auto; padding: 20px 20px 40px; background: #faf9f6; }
+        .homes-list { width: 50%; flex-shrink: 0; overflow-y: auto; padding: 20px 20px 40px; background: var(--hh-bg); }
         .homes-list.full { width: 100%; }
 
         /* ── SECTION HEADING ── */
         .section-heading { display: flex; align-items: center; gap: 10px; margin: 28px 0 14px; }
         .section-heading:first-child { margin-top: 0; }
-        .section-label { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; color: #1a1a1a; font-style: italic; letter-spacing: -0.3px; }
-        .section-count { font-size: 12px; font-weight: 600; color: #9b9b9b; background: #f0ede6; padding: 2px 9px; border-radius: 20px; }
+        .section-label {
+          font-family: var(--hh-font-display); font-size: 20px; font-weight: 380;
+          color: var(--hh-text); font-style: italic; letter-spacing: -0.02em;
+        }
+        .section-count {
+          font-size: 11px; font-weight: 600; color: var(--hh-text-muted);
+          background: var(--hh-bg-alt); padding: 2px 10px; border-radius: 100px;
+          border: 1px solid var(--hh-border-faint);
+        }
 
         /* ── GRID ── */
-        .homes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .homes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .homes-list.full .homes-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 
         /* ── CARD ── */
         .hc2-card {
           display: block; text-decoration: none; color: inherit;
-          background: #fff; border-radius: 16px; overflow: hidden;
-          cursor: pointer;
-          transition: transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+          background: #fff; border-radius: 18px; overflow: hidden;
+          cursor: pointer; border: 1px solid var(--hh-border-faint);
+          transition: transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s, border-color 0.22s;
+          box-shadow: 0 1px 3px rgba(34,40,16,0.05);
         }
         .hc2-card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 20px 48px rgba(0,0,0,0.13), 0 6px 16px rgba(0,0,0,0.07);
+          transform: translateY(-4px);
+          box-shadow: 0 16px 44px rgba(34,40,16,0.12), 0 4px 12px rgba(34,40,16,0.06);
+          border-color: var(--hh-border);
         }
 
         /* ── FEATURED CARD ── */
         .hc2-featured { grid-column: span 2; }
-        .hc2-img-wrap--featured { height: 280px !important; }
+        .hc2-img-wrap--featured { height: 290px !important; }
 
         /* ── IMAGE ── */
-        .hc2-img-wrap { position: relative; height: 220px; overflow: hidden; background: #f0ede6; }
+        .hc2-img-wrap { position: relative; height: 200px; overflow: hidden; background: var(--hh-bg-alt); }
         .hc2-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
-        .hc2-card:hover .hc2-img { transform: scale(1.07); }
-        .hc2-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg,#e8e4db 0%,#f5f2ec 50%,#e8e4db 100%); }
+        .hc2-card:hover .hc2-img { transform: scale(1.06); }
+        .hc2-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg, var(--hh-bg-alt) 0%, var(--hh-bg) 50%, var(--hh-bg-alt) 100%); }
 
-        /* Gradient overlay bottom of image — makes price readable */
-        .hc2-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.38) 0%, transparent 55%); pointer-events: none; }
+        /* Gradient overlay */
+        .hc2-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgba(22,28,20,0.42) 0%, transparent 52%); pointer-events: none; }
 
         /* ── OVERLAYS ── */
-        .hc2-type-badge { position: absolute; top: 11px; left: 11px; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 20px; backdrop-filter: blur(8px); letter-spacing: 0.3px; text-transform: uppercase; }
-        .hc2-price { position: absolute; bottom: 11px; left: 13px; color: #fff; font-family: 'Fraunces', serif; font-size: 20px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; text-shadow: 0 1px 4px rgba(0,0,0,0.25); }
-        .hc2-price span { font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 400; opacity: 0.85; }
+        .hc2-type-badge { position: absolute; top: 10px; left: 10px; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 100px; backdrop-filter: blur(8px); letter-spacing: 0.3px; text-transform: uppercase; }
+        .hc2-price { position: absolute; bottom: 11px; left: 13px; color: #fff; font-family: var(--hh-font-display); font-size: 20px; font-weight: 380; letter-spacing: -0.3px; line-height: 1.2; text-shadow: 0 1px 6px rgba(0,0,0,0.3); }
+        .hc2-price span { font-family: var(--hh-font-ui); font-size: 11px; font-weight: 400; opacity: 0.82; }
         .hc2-arrow {
           position: absolute; bottom: 11px; right: 13px;
           width: 30px; height: 30px; border-radius: 50%;
-          background: rgba(255,255,255,0.18); backdrop-filter: blur(6px);
-          border: 1px solid rgba(255,255,255,0.35);
+          background: rgba(255,255,255,0.2); backdrop-filter: blur(6px);
+          border: 1px solid rgba(255,255,255,0.38);
           color: #fff; font-size: 14px; font-weight: 600;
           display: flex; align-items: center; justify-content: center;
           opacity: 0; transform: scale(0.8);
@@ -395,22 +456,32 @@ export default function HomesPageClient() {
         }
         .hc2-card:hover .hc2-arrow { opacity: 1; transform: scale(1); }
 
-        /* ── BODY ── */
-        .hc2-body { padding: 13px 14px 15px; }
-        .hc2-name { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 300; color: #1a1a1a; margin-bottom: 6px; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* ── CARD BODY ── */
+        .hc2-body { padding: 13px 15px 15px; }
+        .hc2-name {
+          font-family: var(--hh-font-display); font-size: 15px; font-weight: 400;
+          color: var(--hh-text); margin-bottom: 7px; letter-spacing: -0.01em;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .hc2-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .hc2-bed-pill { font-size: 12px; font-weight: 500; color: #4a4a4a; background: #f4f1eb; padding: 3px 9px; border-radius: 20px; }
-        .hc2-date-pill { font-size: 11px; font-weight: 600; color: #8C1D40; background: #fdf2f5; border: 1px solid #f5c6d0; padding: 3px 9px; border-radius: 20px; }
-        .hc2-avail-pill { font-size: 11px; font-weight: 600; color: #059669; background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.25); padding: 3px 9px; border-radius: 20px; }
+        .hc2-bed-pill { font-size: 11px; font-weight: 500; color: var(--hh-text-2); background: var(--hh-bg-alt); padding: 3px 9px; border-radius: 100px; border: 1px solid var(--hh-border-faint); }
+        .hc2-date-pill { font-size: 11px; font-weight: 600; color: var(--hh-primary); background: rgba(47,74,72,0.07); border: 1px solid rgba(47,74,72,0.18); padding: 3px 9px; border-radius: 100px; }
+        .hc2-avail-pill { font-size: 11px; font-weight: 600; color: #059669; background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.22); padding: 3px 9px; border-radius: 100px; }
 
         /* ── MAP ── */
-        .homes-map { width: 50%; flex-shrink: 0; position: sticky; top: 0; height: 100%; background: #e8e4db; }
+        .homes-map { width: 50%; flex-shrink: 0; position: sticky; top: 0; height: 100%; background: var(--hh-bg-alt); }
 
-        /* ── EMPTY ── */
+        /* ── EMPTY STATE ── */
         .empty-state { text-align: center; padding: 60px 20px; }
-        .empty-title { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 300; color: #1a1a1a; margin-bottom: 8px; }
-        .empty-sub { font-size: 14px; color: #9b9b9b; margin-bottom: 16px; }
-        .reset-btn { background: #8C1D40; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .empty-title { font-family: var(--hh-font-display); font-size: 26px; font-weight: 380; color: var(--hh-text); margin-bottom: 10px; font-style: italic; }
+        .empty-sub { font-size: 14px; color: var(--hh-text-muted); margin-bottom: 18px; line-height: 1.6; }
+        .reset-btn {
+          background: var(--hh-primary); color: #fff; border: none;
+          padding: 11px 24px; border-radius: 100px; font-size: 13px;
+          font-weight: 600; cursor: pointer; font-family: var(--hh-font-ui);
+          letter-spacing: -0.01em; transition: opacity 0.15s;
+        }
+        .reset-btn:hover { opacity: 0.85; }
 
         @keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
 
@@ -419,10 +490,10 @@ export default function HomesPageClient() {
           .homes-page { height: auto; overflow: visible; }
           .homes-body { flex-direction: column; }
           .homes-list, .homes-list.full { width: 100%; padding: 16px 12px 40px; }
-          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr; gap: 14px; }
+          .homes-grid, .homes-list.full .homes-grid { grid-template-columns: 1fr; gap: 12px; }
           .hc2-featured { grid-column: span 1; }
-          .hc2-img-wrap { height: 240px; }
-          .hc2-img-wrap--featured { height: 240px !important; }
+          .hc2-img-wrap { height: 230px; }
+          .hc2-img-wrap--featured { height: 230px !important; }
           .homes-map { width: 100%; height: 300px; position: relative; }
           .search-box { max-width: 100%; }
           .toolbar-right { margin-left: 0; width: 100%; justify-content: space-between; }
@@ -437,7 +508,7 @@ export default function HomesPageClient() {
 
           {/* Search */}
           <div className="search-box">
-            <span style={{ color: '#9b9b9b', fontSize: '14px' }}>🔍</span>
+            <span style={{ color: 'var(--hh-text-muted)', fontSize: '14px' }}>🔍</span>
             <input
               placeholder="Search by name or address..."
               value={filters.search}
@@ -504,7 +575,7 @@ export default function HomesPageClient() {
             <button
               className={`filter-pill ${filters.maxPrice < 2000 || filters.minBeds > 1 || filters.maxDistance < 5 ? 'active' : ''}`}
               onClick={() => { setFilters(DEFAULT_FILTERS); ph?.capture('homes_filter_reset') }}
-              style={{ cursor: 'pointer', border: '1.5px solid #e8e4db' }}
+              style={{ cursor: 'pointer', border: '1.5px solid var(--hh-border-faint)' }}
             >
               Reset
             </button>
@@ -539,11 +610,11 @@ export default function HomesPageClient() {
             {loading ? (
               <div className="homes-grid">
                 {[0, 1, 2, 3, 5, 6].map(i => (
-                  <div key={i} style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                    <div style={{ height: '220px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
-                    <div style={{ padding: '13px 14px 15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ height: '15px', width: '65%', background: '#f0ede6', borderRadius: '4px' }} />
-                      <div style={{ height: '22px', width: '40%', background: '#f4f1eb', borderRadius: '20px' }} />
+                  <div key={i} style={{ background: '#fff', borderRadius: '18px', overflow: 'hidden', border: '1px solid var(--hh-border-faint)' }}>
+                    <div style={{ height: '200px', background: 'linear-gradient(90deg,var(--hh-bg-alt) 25%,var(--hh-bg) 50%,var(--hh-bg-alt) 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+                    <div style={{ padding: '13px 15px 15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ height: '15px', width: '65%', background: 'var(--hh-bg-alt)', borderRadius: '4px' }} />
+                      <div style={{ height: '22px', width: '40%', background: 'var(--hh-bg-alt)', borderRadius: '100px' }} />
                     </div>
                   </div>
                 ))}
@@ -624,5 +695,13 @@ export default function HomesPageClient() {
         </div>
       </div>
     </>
+  )
+}
+
+export default function HomesPageClient() {
+  return (
+    <Suspense fallback={null}>
+      <HomesPageInner />
+    </Suspense>
   )
 }

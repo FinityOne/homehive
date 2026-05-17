@@ -1,5 +1,6 @@
 'use client'
 
+import '@/styles/brand-tokens.css'
 import { useState } from 'react'
 
 const SECTIONS = [
@@ -16,18 +17,18 @@ const SECTIONS = [
   {
     heading: 'List Your Place',
     links: [
-      { label: 'List your place',        href: '/for-landlords'           },
-      { label: 'How listing works',      href: '/how-it-works#landlords'  },
+      { label: 'List your place',       href: '/for-landlords'          },
+      { label: 'How listing works',     href: '/how-it-works#landlords' },
     ],
   },
   {
     heading: 'Company',
     links: [
-      { label: 'Contact us',             href: '/contact'                  },
-      { label: 'hello@homehive.live',    href: 'mailto:hello@homehive.live'},
-      { label: '+1 (949) 867-0499',      href: 'tel:+19498670499'         },
-      { label: 'Sign in',                href: '/login'                   },
-      { label: 'Sitemap',                href: '/sitemap-page'            },
+      { label: 'Contact us',            href: '/contact'                  },
+      { label: 'hello@homehive.live',   href: 'mailto:hello@homehive.live'},
+      { label: '+1 (949) 867-0499',     href: 'tel:+19498670499'          },
+      { label: 'Sign in',               href: '/login'                    },
+      { label: 'Sitemap',               href: '/sitemap-page'             },
     ],
   },
 ]
@@ -38,111 +39,312 @@ export default function Footer() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Geist:wght@300;400;500;600;700&display=swap');
 
-        .footer { background:#111; color:#9b9b9b; font-family:'DM Sans',sans-serif; margin-top:80px; }
+        /* ── PRE-FOOTER CTA STRIP ─────────────────────────────── */
+        .f-prefooter {
+          background: var(--hh-cream-100);
+          border-top: 1px solid var(--hh-border-faint);
+          padding: 56px 32px;
+        }
+        .f-prefooter-inner {
+          max-width: 1200px;
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 32px;
+          flex-wrap: wrap;
+        }
+        .f-prefooter-eyebrow {
+          font-family: var(--hh-font-ui);
+          font-size: var(--hh-sz-eyebrow);
+          font-weight: var(--hh-wt-eyebrow);
+          letter-spacing: var(--hh-ls-eyebrow);
+          text-transform: uppercase;
+          color: var(--hh-accent);
+          margin-bottom: 10px;
+        }
+        .f-prefooter-headline {
+          font-family: var(--hh-font-display);
+          font-size: clamp(26px, 3.5vw, 40px);
+          font-weight: 380;
+          color: var(--hh-text);
+          line-height: 1.12;
+          letter-spacing: -0.02em;
+        }
+        .f-prefooter-headline em {
+          font-style: italic;
+          color: var(--hh-primary);
+        }
+        .f-prefooter-sub {
+          font-family: var(--hh-font-ui);
+          font-size: 14px;
+          color: var(--hh-text-muted);
+          margin-top: 10px;
+          line-height: 1.6;
+          max-width: 380px;
+        }
+        .f-prefooter-actions {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-shrink: 0;
+          flex-wrap: wrap;
+        }
+        .f-prefooter-ghost {
+          font-family: var(--hh-font-ui);
+          font-size: 14px;
+          color: var(--hh-text-muted);
+          text-decoration: none;
+          transition: color 0.15s;
+          white-space: nowrap;
+        }
+        .f-prefooter-ghost:hover { color: var(--hh-text); }
+        .f-prefooter-btn {
+          font-family: var(--hh-font-ui);
+          font-size: 14px;
+          font-weight: 600;
+          color: #fff;
+          background: var(--hh-primary);
+          padding: 13px 28px;
+          border-radius: 100px;
+          text-decoration: none;
+          white-space: nowrap;
+          letter-spacing: -0.01em;
+          transition: opacity 0.15s, transform 0.1s;
+        }
+        .f-prefooter-btn:hover { opacity: 0.88; transform: translateY(-1px); }
 
-        /* Top CTA bar */
-        .f-top { background:#8C1D40; border-bottom:3px solid #FFC627; padding:20px 32px; }
-        .f-top-inner { max-width:1200px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-        .f-top-eyebrow { font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:rgba(255,255,255,.55); margin-bottom:3px; }
-        .f-top-headline { font-size:18px; font-weight:500; color:#fff; letter-spacing:-.2px; }
-        .f-top-headline em { font-family:'Fraunces',serif; font-style:italic; color:#FFC627; }
-        .f-top-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-        .f-top-ghost { font-size:13px; color:rgba(255,255,255,.8); text-decoration:none; transition:color .2s; white-space:nowrap; }
-        .f-top-ghost:hover { color:#FFC627; }
-        .f-top-btn { background:#FFC627; color:#8C1D40; font-size:13px; font-weight:700; padding:10px 22px; border-radius:7px; text-decoration:none; white-space:nowrap; font-family:'DM Sans',sans-serif; transition:background .15s; }
-        .f-top-btn:hover { background:#e6b320; }
+        /* ── FOOTER BODY ──────────────────────────────────────── */
+        .footer {
+          background: #1c2824;
+          color: rgba(255,255,255,0.55);
+          font-family: var(--hh-font-ui);
+          border-top: 1px solid rgba(255,255,255,0.06);
+        }
 
-        /* Body grid */
-        .f-body { max-width:1200px; margin:0 auto; padding:52px 32px 40px; display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:48px; }
+        .f-body {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 60px 32px 48px;
+          display: grid;
+          grid-template-columns: 2fr 1fr 1fr 1fr;
+          gap: 56px;
+        }
 
         /* Brand column */
-        .f-logo { text-decoration:none; display:inline-block; margin-bottom:12px; }
-        .f-logo img { height:30px; width:auto; display:block; }
-        .f-tagline { font-size:13px; line-height:1.75; color:#6b6b6b; max-width:240px; margin-bottom:24px; }
+        .f-logo {
+          text-decoration: none;
+          display: inline-block;
+          margin-bottom: 16px;
+        }
+        .f-logo img { height: 28px; width: auto; display: block; }
+        .f-tagline {
+          font-size: 13px;
+          line-height: 1.75;
+          color: rgba(255,255,255,0.45);
+          max-width: 230px;
+          margin-bottom: 24px;
+        }
 
-        .f-asu-badge { display:inline-flex; align-items:center; gap:7px; background:rgba(140,29,64,.15); border:1px solid rgba(140,29,64,.3); border-radius:20px; padding:5px 12px; }
-        .f-asu-dot { width:6px; height:6px; border-radius:50%; background:#FFC627; }
-        .f-asu-text { font-size:11px; color:rgba(255,255,255,.45); font-weight:500; }
+        /* ASU badge — brand-aligned */
+        .f-asu-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          background: rgba(217,161,74,0.1);
+          border: 1px solid rgba(217,161,74,0.25);
+          border-radius: 100px;
+          padding: 6px 14px;
+        }
+        .f-asu-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--hh-accent);
+          flex-shrink: 0;
+          box-shadow: 0 0 6px rgba(217,161,74,0.6);
+        }
+        .f-asu-text {
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--hh-accent);
+          letter-spacing: 0.02em;
+        }
+
+        /* Social links */
+        .f-socials {
+          display: flex;
+          gap: 10px;
+          margin-top: 20px;
+        }
+        .f-social-btn {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
+          background: rgba(255,255,255,0.07);
+          border: 1px solid rgba(255,255,255,0.1);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          text-decoration: none;
+          transition: background 0.15s, border-color 0.15s;
+          color: rgba(255,255,255,0.6);
+        }
+        .f-social-btn:hover {
+          background: rgba(217,161,74,0.15);
+          border-color: rgba(217,161,74,0.35);
+          color: var(--hh-accent);
+        }
 
         /* Link columns */
-        .f-col-heading { font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#FFC627; margin-bottom:16px; }
-        .f-link { display:flex; align-items:center; gap:6px; font-size:13px; color:#6b6b6b; text-decoration:none; margin-bottom:11px; transition:color .15s; line-height:1.4; }
-        .f-link:hover { color:#fff; }
-        .f-link:last-child { margin-bottom:0; }
+        .f-col-heading {
+          font-size: var(--hh-sz-eyebrow);
+          font-weight: var(--hh-wt-eyebrow);
+          letter-spacing: var(--hh-ls-eyebrow);
+          text-transform: uppercase;
+          color: var(--hh-accent);
+          margin-bottom: 18px;
+        }
+        .f-link {
+          display: block;
+          font-size: 13px;
+          color: rgba(255,255,255,0.45);
+          text-decoration: none;
+          margin-bottom: 12px;
+          transition: color 0.15s;
+          line-height: 1.4;
+        }
+        .f-link:hover { color: rgba(255,255,255,0.9); }
+        .f-link:last-child { margin-bottom: 0; }
 
-        /* Bottom bar */
-        .f-bottom { border-top:1px solid #1e1e1e; padding:20px 32px; }
-        .f-bottom-inner { max-width:1200px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
-        .f-copy { font-size:12px; color:#3a3a3a; }
-        .f-made { font-size:12px; color:#3a3a3a; display:flex; align-items:center; gap:4px; }
-        .f-heart { color:#8C1D40; }
+        /* ── BOTTOM BAR ───────────────────────────────────────── */
+        .f-bottom {
+          border-top: 1px solid rgba(255,255,255,0.06);
+          padding: 20px 32px 24px;
+        }
+        .f-bottom-inner {
+          max-width: 1200px;
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .f-copy {
+          font-size: 12px;
+          color: rgba(255,255,255,0.25);
+          letter-spacing: 0.01em;
+        }
+        .f-legal {
+          display: flex;
+          gap: 20px;
+        }
+        .f-legal a {
+          font-size: 12px;
+          color: rgba(255,255,255,0.25);
+          text-decoration: none;
+          transition: color 0.15s;
+        }
+        .f-legal a:hover { color: rgba(255,255,255,0.55); }
 
-        /* Mobile: hide desktop cols, show accordions */
-        .mob-accordions { display:none; }
+        /* ── MOBILE: accordion ────────────────────────────────── */
+        .mob-accordions { display: none; }
 
-        @media (max-width:860px) {
-          .f-top { padding:16px 20px; }
-          .f-top-inner { flex-direction:column; align-items:flex-start; gap:12px; }
-          .f-top-headline { font-size:16px; }
-          .f-top-ghost { display:none; }
-          .f-top-actions { width:100%; }
-          .f-top-btn { flex:1; text-align:center; padding:13px; font-size:14px; display:block; }
+        @media (max-width: 860px) {
+          .f-prefooter { padding: 40px 20px; }
+          .f-prefooter-inner { flex-direction: column; align-items: flex-start; gap: 24px; }
+          .f-prefooter-sub { max-width: 100%; }
+          .f-prefooter-actions { width: 100%; flex-direction: column; }
+          .f-prefooter-btn { text-align: center; width: 100%; padding: 15px; }
+          .f-prefooter-ghost { display: none; }
 
-          .f-body { grid-template-columns:1fr; gap:0; padding:28px 20px 0; }
-          .f-brand { padding-bottom:24px; border-bottom:1px solid #1e1e1e; }
-          .f-tagline { max-width:100%; }
-          .f-col-desktop { display:none; }
+          .f-body { grid-template-columns: 1fr; gap: 0; padding: 32px 20px 0; }
+          .f-brand { padding-bottom: 28px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+          .f-tagline { max-width: 100%; }
+          .f-col-desktop { display: none; }
 
-          .mob-accordions { display:block; }
-          .f-acc { border-bottom:1px solid #1e1e1e; }
-          .f-acc-btn { width:100%; background:none; border:none; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; font-size:15px; font-weight:500; color:#9b9b9b; cursor:pointer; font-family:'DM Sans',sans-serif; text-align:left; }
-          .f-acc-btn:hover { color:#fff; }
-          .f-acc-arrow { font-size:14px; transition:transform .25s; display:inline-block; }
-          .f-acc-arrow.open { transform:rotate(180deg); color:#FFC627; }
-          .f-acc-body { overflow:hidden; max-height:0; transition:max-height .3s ease; }
-          .f-acc-body.open { max-height:400px; }
-          .f-acc-inner { padding:4px 20px 16px; display:flex; flex-direction:column; }
-          .f-mob-link { display:flex; align-items:center; gap:7px; font-size:14px; color:#6b6b6b; text-decoration:none; padding:11px 0; border-bottom:1px solid #1a1a1a; }
-          .f-mob-link:last-child { border-bottom:none; }
-          .f-mob-link:hover { color:#fff; }
+          .mob-accordions { display: block; }
+          .f-acc { border-bottom: 1px solid rgba(255,255,255,0.07); }
+          .f-acc-btn {
+            width: 100%; background: none; border: none;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 0; font-size: 14px; font-weight: 500;
+            color: rgba(255,255,255,0.55); cursor: pointer;
+            font-family: var(--hh-font-ui); text-align: left;
+          }
+          .f-acc-btn:hover { color: rgba(255,255,255,0.9); }
+          .f-acc-arrow { font-size: 13px; transition: transform 0.25s; display: inline-block; opacity: 0.5; }
+          .f-acc-arrow.open { transform: rotate(180deg); opacity: 1; color: var(--hh-accent); }
+          .f-acc-body { overflow: hidden; max-height: 0; transition: max-height 0.3s ease; }
+          .f-acc-body.open { max-height: 400px; }
+          .f-acc-inner { padding: 4px 0 16px; display: flex; flex-direction: column; }
+          .f-mob-link {
+            font-size: 14px; color: rgba(255,255,255,0.4); text-decoration: none;
+            padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+          }
+          .f-mob-link:last-child { border-bottom: none; }
+          .f-mob-link:hover { color: rgba(255,255,255,0.85); }
 
-          .f-bottom { padding:16px 20px 28px; }
-          .f-bottom-inner { flex-direction:column; align-items:center; gap:8px; text-align:center; }
+          .mob-accordions { padding: 0 20px; }
+          .f-bottom { padding: 18px 20px 32px; }
+          .f-bottom-inner { flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+          .f-legal { gap: 16px; }
         }
       `}</style>
 
-      <footer className="footer">
-
-        {/* ── Top CTA ── */}
-        <div className="f-top">
-          <div className="f-top-inner">
-            <div>
-              <div className="f-top-eyebrow">Still looking?</div>
-              <div className="f-top-headline">Your home near ASU is <em>right here.</em></div>
+      {/* ── PRE-FOOTER CTA ─────────────────────────────────────── */}
+      <div className="f-prefooter">
+        <div className="f-prefooter-inner">
+          <div>
+            <div className="f-prefooter-eyebrow">Ready to move?</div>
+            <div className="f-prefooter-headline">
+              Your home near ASU<br />is <em>waiting for you.</em>
             </div>
-            <div className="f-top-actions">
-              <a href="/for-landlords" className="f-top-ghost">List your place →</a>
-              <a href="/homes" className="f-top-btn">View available homes</a>
-            </div>
+            <p className="f-prefooter-sub">
+              Verified listings, zero broker fees, no surprises at signing.
+            </p>
+          </div>
+          <div className="f-prefooter-actions">
+            <a href="/for-landlords" className="f-prefooter-ghost">List your place →</a>
+            <a href="/homes" className="f-prefooter-btn">View available homes</a>
           </div>
         </div>
+      </div>
+
+      <footer className="footer">
 
         {/* ── Desktop body ── */}
         <div className="f-body">
+
+          {/* Brand column */}
           <div className="f-brand">
             <a href="/" className="f-logo">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/hh-logo-white.png" alt="HomeHive" />
             </a>
-            <p className="f-tagline">The off-campus housing platform built for ASU students. Verified homes, transparent pricing, zero broker fees.</p>
+            <p className="f-tagline">
+              The off-campus housing platform built for ASU students. Verified homes, transparent pricing, zero broker fees.
+            </p>
+
+            {/* ASU badge */}
             <div className="f-asu-badge">
               <span className="f-asu-dot" />
-              <span className="f-asu-text">⚡ ASU Off-Campus Housing · Tempe, AZ</span>
+              <span className="f-asu-text">ASU Off-Campus · Tempe, AZ</span>
+            </div>
+
+            {/* Social links */}
+            <div className="f-socials">
+              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="f-social-btn" aria-label="Instagram">📷</a>
+              <a href="https://tiktok.com" target="_blank" rel="noopener noreferrer" className="f-social-btn" aria-label="TikTok">🎵</a>
+              <a href="mailto:hello@homehive.live" className="f-social-btn" aria-label="Email">✉️</a>
             </div>
           </div>
 
+          {/* Link columns */}
           {SECTIONS.map(section => (
             <div key={section.heading} className="f-col-desktop">
               <div className="f-col-heading">{section.heading}</div>
@@ -151,6 +353,7 @@ export default function Footer() {
               ))}
             </div>
           ))}
+
         </div>
 
         {/* ── Mobile accordions ── */}
@@ -179,7 +382,11 @@ export default function Footer() {
         <div className="f-bottom">
           <div className="f-bottom-inner">
             <div className="f-copy">© 2026 HomeHive · Tempe, AZ · Built for Sun Devils</div>
-            <div className="f-made">Made with <span className="f-heart">♥</span> in Tempe</div>
+            <div className="f-legal">
+              <a href="/privacy">Privacy</a>
+              <a href="/terms">Terms</a>
+              <a href="/sitemap-page">Sitemap</a>
+            </div>
           </div>
         </div>
 
