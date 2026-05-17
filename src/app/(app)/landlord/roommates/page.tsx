@@ -119,6 +119,15 @@ export default function RoommatesPage() {
   const [savingGroup, setSavingGroup] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatLoading, setChatLoading] = useState(false)
+  // Email preview modal
+  const [emailPreview, setEmailPreview] = useState<{ leadId: string; recipientName: string; recipientEmail: string; roomName: string; html: string; subject: string } | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState<string | null>(null)
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null)
+  const [sentEmails, setSentEmails] = useState<Set<string>>(new Set())
+  // Activity log
+  const [activityLogOpen, setActivityLogOpen] = useState(false)
+  const [emailLogs, setEmailLogs] = useState<{ id: string; email_type: string; recipient_email: string; recipient_name: string | null; room_name: string | null; sent_at: string }[]>([])
+  const [logsLoading, setLogsLoading] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -174,6 +183,55 @@ export default function RoommatesPage() {
       }
     }
     setGroupDetailLoading(false)
+  }
+
+  const openEmailPreview = async (groupId: string, leadId: string, recipientName: string, recipientEmail: string, roomName: string) => {
+    setLoadingPreview(leadId)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/roommate-groups/${groupId}/room-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ lead_id: leadId, preview: true }),
+    })
+    if (res.ok) {
+      const { html, subject } = await res.json()
+      setEmailPreview({ leadId, recipientName, recipientEmail, roomName, html, subject })
+    } else {
+      showToast('Could not load preview')
+    }
+    setLoadingPreview(null)
+  }
+
+  const sendRoomEmail = async () => {
+    if (!emailPreview || !selectedGroup) return
+    setSendingEmail(emailPreview.leadId)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/roommate-groups/${selectedGroup.group.id}/room-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ lead_id: emailPreview.leadId }),
+    })
+    if (res.ok) {
+      setSentEmails(prev => new Set([...prev, emailPreview.leadId]))
+      setEmailPreview(null)
+      showToast(`Room confirmation email sent to ${emailPreview.recipientName || emailPreview.recipientEmail}!`)
+    } else {
+      showToast('Failed to send email')
+    }
+    setSendingEmail(null)
+  }
+
+  const loadActivityLog = async (groupId: string) => {
+    setLogsLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/roommate-groups/${groupId}/email-logs`, {
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    })
+    if (res.ok) {
+      const { logs } = await res.json()
+      setEmailLogs(logs)
+    }
+    setLogsLoading(false)
   }
 
   const handleAssignRoom = async (groupId: string, leadId: string, roomId: string | null) => {
@@ -438,6 +496,12 @@ export default function RoommatesPage() {
                         ✏️ Edit Group
                       </button>
                       <button
+                        onClick={() => { setActivityLogOpen(true); loadActivityLog(selectedGroup.group.id) }}
+                        style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        📋 Email Activity
+                      </button>
+                      <button
                         onClick={() => setDeleteGroupId(selectedGroup.group.id)}
                         style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
                       >
@@ -554,6 +618,35 @@ export default function RoommatesPage() {
                                 ))}
                               </select>
                             )}
+
+                            {/* Room confirmation email button */}
+                            {member.room_id && (() => {
+                              const roomLabel = propertyRooms.find(r => r.id === member.room_id)?.name
+                              const alreadySent = sentEmails.has(lead.id)
+                              const isLoading = loadingPreview === lead.id
+                              return roomLabel ? (
+                                <button
+                                  disabled={isLoading}
+                                  onClick={() => openEmailPreview(
+                                    selectedGroup.group.id,
+                                    lead.id,
+                                    [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Member',
+                                    lead.email,
+                                    roomLabel,
+                                  )}
+                                  style={{
+                                    fontSize: 11, fontWeight: 600,
+                                    color: alreadySent ? '#10b981' : '#8C1D40',
+                                    background: alreadySent ? 'rgba(16,185,129,0.06)' : 'rgba(140,29,64,0.06)',
+                                    border: `1px solid ${alreadySent ? 'rgba(16,185,129,0.25)' : 'rgba(140,29,64,0.2)'}`,
+                                    borderRadius: 7, padding: '6px 12px', cursor: isLoading ? 'default' : 'pointer',
+                                    fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', flexShrink: 0,
+                                  }}
+                                >
+                                  {isLoading ? '…' : alreadySent ? '✓ Email Sent' : '📧 Send Room Email'}
+                                </button>
+                              ) : null
+                            })()}
 
                             {/* Actions */}
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -925,6 +1018,126 @@ export default function RoommatesPage() {
               >
                 {deletingGroup ? 'Deleting…' : 'Delete Group'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EMAIL PREVIEW MODAL ── */}
+      {emailPreview && (
+        <div
+          onClick={() => setEmailPreview(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(3px)' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+          >
+            {/* Modal header */}
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #e8e5de', display: 'flex', alignItems: 'flex-start', gap: 14, flexShrink: 0 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 3 }}>Room Confirmation Email Preview</div>
+                <div style={{ fontSize: 12, color: '#9b9b9b' }}>
+                  To: <strong style={{ color: '#1a1a1a' }}>{emailPreview.recipientName}</strong> &lt;{emailPreview.recipientEmail}&gt;
+                </div>
+                <div style={{ fontSize: 12, color: '#9b9b9b', marginTop: 2 }}>
+                  Room: <strong style={{ color: '#8C1D40' }}>🛏 {emailPreview.roomName}</strong>
+                </div>
+                <div style={{ fontSize: 11, color: '#b0a898', marginTop: 3, fontStyle: 'italic' }}>
+                  Subject: {emailPreview.subject}
+                </div>
+              </div>
+              <button onClick={() => setEmailPreview(null)} style={{ background: '#f5f4f0', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16, color: '#6b6b6b', flexShrink: 0 }}>✕</button>
+            </div>
+
+            {/* Email preview iframe */}
+            <div style={{ flex: 1, overflowY: 'auto', background: '#f5f4f0', padding: 16 }}>
+              <div
+                style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
+                dangerouslySetInnerHTML={{ __html: emailPreview.html }}
+              />
+            </div>
+
+            {/* Modal footer */}
+            <div style={{ padding: '14px 22px', borderTop: '1px solid #e8e5de', display: 'flex', gap: 10, flexShrink: 0, background: '#faf9f6' }}>
+              <div style={{ flex: 1, fontSize: 12, color: '#9b9b9b', display: 'flex', alignItems: 'center' }}>
+                This email will be sent to {emailPreview.recipientEmail}
+              </div>
+              <button onClick={() => setEmailPreview(null)} className="btn-ghost" style={{ fontSize: 13 }}>Cancel</button>
+              <button
+                disabled={!!sendingEmail}
+                onClick={sendRoomEmail}
+                style={{ background: '#8C1D40', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 13, fontWeight: 700, cursor: sendingEmail ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: sendingEmail ? 0.6 : 1 }}
+              >
+                {sendingEmail ? 'Sending…' : '📧 Send Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ACTIVITY LOG MODAL ── */}
+      {activityLogOpen && selectedGroup && (
+        <div
+          onClick={() => setActivityLogOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #e8e5de', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+              <span style={{ fontSize: 18 }}>📋</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>Email Activity Log</div>
+                <div style={{ fontSize: 12, color: '#9b9b9b' }}>{selectedGroup.group.emoji} {selectedGroup.group.name}</div>
+              </div>
+              <button onClick={() => setActivityLogOpen(false)} style={{ background: '#f5f4f0', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16, color: '#6b6b6b' }}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px' }}>
+              {logsLoading ? (
+                <div style={{ textAlign: 'center', padding: '32px 0', color: '#9b9b9b', fontSize: 13 }}>Loading…</div>
+              ) : emailLogs.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <div style={{ fontSize: 28, marginBottom: 10 }}>📭</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>No emails sent yet</div>
+                  <div style={{ fontSize: 12, color: '#9b9b9b' }}>Room confirmation emails you send will appear here.</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {emailLogs.map(log => {
+                    const sentDate = new Date(log.sent_at)
+                    const dateStr = sentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    const timeStr = sentDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                    return (
+                      <div key={log.id} style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(140,29,64,0.08)', border: '1px solid rgba(140,29,64,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>📧</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 2 }}>
+                            Room Confirmation → {log.recipient_name || log.recipient_email}
+                          </div>
+                          {log.room_name && (
+                            <div style={{ fontSize: 11, color: '#8C1D40', fontWeight: 600, marginBottom: 2 }}>🛏 {log.room_name}</div>
+                          )}
+                          <div style={{ fontSize: 11, color: '#9b9b9b' }}>{log.recipient_email}</div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#10b981' }}>✓ Sent</div>
+                          <div style={{ fontSize: 10, color: '#b0a898', marginTop: 2 }}>{dateStr}</div>
+                          <div style={{ fontSize: 10, color: '#b0a898' }}>{timeStr}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '12px 22px', borderTop: '1px solid #e8e5de', flexShrink: 0, background: '#faf9f6' }}>
+              <div style={{ fontSize: 11, color: '#9b9b9b', textAlign: 'center' }}>
+                {emailLogs.length > 0 ? `${emailLogs.length} email${emailLogs.length !== 1 ? 's' : ''} sent for this group` : 'Audit log for all room confirmation emails sent from this group'}
+              </div>
             </div>
           </div>
         </div>
