@@ -404,7 +404,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
       <nav className="gp-nav">
         <a href="/" className="gp-nav-logo">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hh-logo.png" alt="HomeHive" />
+          <img src="/hh-logo-white.png" alt="HomeHive" />
         </a>
         <div className="gp-nav-right">
           <a href="/homes" className="gp-nav-homes">Browse homes →</a>

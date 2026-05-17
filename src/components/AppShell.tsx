@@ -599,7 +599,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {/* Logo */}
           <a href="/" className="tb-logo">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/hh-logo.png" alt="HomeHive" />
+            <img src="/hh-logo-white.png" alt="HomeHive" />
           </a>
 
           {/* Portal badge */}
