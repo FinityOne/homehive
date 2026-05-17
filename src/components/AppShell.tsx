@@ -323,11 +323,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         /* Logo */
         .tb-logo {
-          font-family: 'DM Sans', sans-serif; font-size: 17px; font-weight: 600;
-          color: var(--logo-color); text-decoration: none; letter-spacing: -0.3px;
-          flex-shrink: 0;
+          text-decoration: none; flex-shrink: 0; display: inline-flex; align-items: center;
         }
-        .tb-logo em { font-family: 'Fraunces', serif; font-style: italic; color: var(--logo-em); }
+        .tb-logo img { height: 26px; width: auto; display: block; }
 
         /* Portal badge next to logo */
         .tb-portal-badge {
@@ -599,7 +597,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Logo */}
-          <a href="/" className="tb-logo">Home<em>Hive</em></a>
+          <a href="/" className="tb-logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/hh-logo.png" alt="HomeHive" />
+          </a>
 
           {/* Portal badge */}
           {currentPortal !== 'tenant' && (

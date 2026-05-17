@@ -101,8 +101,8 @@ export default function Nav() {
         .asu-rlink:hover { color:#FFC627; }
         .nav { background:#fff; border-bottom:1px solid #e8e4db; padding:0 32px; height:58px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:200; font-family:'DM Sans',sans-serif; transition:box-shadow .2s; }
         .nav.scrolled { box-shadow:0 2px 20px rgba(0,0,0,.07); }
-        .nav-logo { font-family:'DM Sans',sans-serif; font-size:19px; font-weight:600; color:#1a1a1a; text-decoration:none; letter-spacing:-.3px; }
-        .nav-logo em { font-family:'Fraunces',serif; font-style:italic; color:#FFC627; }
+        .nav-logo { text-decoration:none; display:inline-flex; align-items:center; }
+        .nav-logo img { height:28px; width:auto; display:block; }
         .nav-center { display:flex; align-items:center; gap:4px; }
         .nav-link { font-size:13px; color:#6b6b6b; text-decoration:none; padding:6px 12px; border-radius:6px; transition:color .15s,background .15s; white-space:nowrap; display:flex; align-items:center; gap:6px; }
         .nav-link:hover { color:#1a1a1a; background:#f5f4f0; }
@@ -192,7 +192,10 @@ export default function Nav() {
 
       {/* PRIMARY NAV */}
       <nav className={`nav${scrolled ? ' scrolled' : ''}`}>
-        <a href="/" className="nav-logo">Home<em>Hive</em></a>
+        <a href="/" className="nav-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/hh-logo.png" alt="HomeHive" />
+        </a>
 
         <div className="nav-center">
           <a href="/homes" className="nav-link">Homes <span className="nav-live-dot" title="New listings available" /></a>

@@ -202,13 +202,8 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           align-items: center;
           justify-content: center;
         }
-        .bt-logo {
-          font-size: 20px;
-          font-weight: 800;
-          color: #fff;
-          letter-spacing: -0.3px;
-        }
-        .bt-logo span { color: #FFC627; font-style: italic; }
+        .bt-logo { display: inline-flex; align-items: center; }
+        .bt-logo img { height: 24px; width: auto; display: block; }
 
         /* Hero strip */
         .bt-hero {
@@ -436,7 +431,10 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
       <div className="bt-page">
         {/* Nav */}
         <nav className="bt-nav">
-          <div className="bt-logo">Home<span>Hive</span></div>
+          <div className="bt-logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/hh-logo.png" alt="HomeHive" />
+          </div>
         </nav>
 
         <div className="bt-hero">

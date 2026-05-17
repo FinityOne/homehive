@@ -11,6 +11,11 @@ const DEFAULT_OG_IMAGE = 'https://images.unsplash.com/photo-1562516155-e0c1ee440
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  icons: {
+    icon: [{ url: '/hh-icon.png', type: 'image/png' }],
+    apple: '/hh-icon.png',
+    shortcut: '/hh-icon.png',
+  },
   title: {
     default: 'HomeHive — #1 Off-Campus Housing for ASU Students in Tempe',
     template: '%s | HomeHive',
@@ -83,7 +88,7 @@ const organizationJsonLd = {
   '@type': 'Organization',
   name: 'HomeHive',
   url: SITE_URL,
-  logo: `${SITE_URL}/logo.png`,
+  logo: `${SITE_URL}/hh-icon.png`,
   description: 'The #1 off-campus housing platform for Arizona State University students in Tempe, AZ. Verified apartments, subleases, and lease transfers.',
   sameAs: [],
   contactPoint: {

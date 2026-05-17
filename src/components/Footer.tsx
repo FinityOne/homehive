@@ -58,8 +58,8 @@ export default function Footer() {
         .f-body { max-width:1200px; margin:0 auto; padding:52px 32px 40px; display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:48px; }
 
         /* Brand column */
-        .f-logo { font-family:'DM Sans',sans-serif; font-size:22px; font-weight:600; color:#fff; text-decoration:none; letter-spacing:-.3px; display:inline-block; margin-bottom:12px; }
-        .f-logo em { font-family:'Fraunces',serif; font-style:italic; color:#FFC627; }
+        .f-logo { text-decoration:none; display:inline-block; margin-bottom:12px; }
+        .f-logo img { height:30px; width:auto; display:block; }
         .f-tagline { font-size:13px; line-height:1.75; color:#6b6b6b; max-width:240px; margin-bottom:24px; }
 
         .f-asu-badge { display:inline-flex; align-items:center; gap:7px; background:rgba(140,29,64,.15); border:1px solid rgba(140,29,64,.3); border-radius:20px; padding:5px 12px; }
@@ -132,7 +132,10 @@ export default function Footer() {
         {/* ── Desktop body ── */}
         <div className="f-body">
           <div className="f-brand">
-            <a href="/" className="f-logo">Home<em>Hive</em></a>
+            <a href="/" className="f-logo">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/hh-logo.png" alt="HomeHive" />
+            </a>
             <p className="f-tagline">The off-campus housing platform built for ASU students. Verified homes, transparent pricing, zero broker fees.</p>
             <div className="f-asu-badge">
               <span className="f-asu-dot" />

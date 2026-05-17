@@ -268,8 +268,8 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
         .ref-page { min-height: 100vh; background: #f5f4f0; font-family: 'DM Sans', sans-serif; padding: 28px 16px 72px; }
         .ref-wrap { max-width: 560px; margin: 0 auto; }
 
-        .hive-logo { font-size: 20px; font-weight: 800; color: #1a1a1a; letter-spacing: -0.5px; margin-bottom: 24px; }
-        .hive-logo span { color: #FFC627; font-style: italic; }
+        .hive-logo { display: inline-flex; align-items: center; margin-bottom: 24px; }
+        .hive-logo img { height: 26px; width: auto; display: block; }
 
         .context-card { background: #1a1a1a; border-radius: 16px; padding: 22px 22px 18px; margin-bottom: 12px; }
         .context-eyebrow { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 8px; }
@@ -316,7 +316,10 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
         <div className="ref-wrap">
 
           {/* Logo */}
-          <div className="hive-logo">Home<span>Hive</span></div>
+          <div className="hive-logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/hh-logo.png" alt="HomeHive" />
+          </div>
 
           {/* Context header */}
           <div className="context-card">

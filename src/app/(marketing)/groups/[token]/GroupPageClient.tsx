@@ -289,7 +289,8 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
 
         /* ── NAV ── */
         .gp-nav { background: rgba(15,23,42,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.06); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; }
-        .gp-logo { font-size: 16px; font-weight: 700; color: #FFC627; text-decoration: none; letter-spacing: -0.4px; }
+        .gp-logo { text-decoration: none; display: inline-flex; align-items: center; }
+        .gp-logo img { height: 24px; width: auto; display: block; }
         .gp-nav-link { font-size: 12px; color: rgba(255,255,255,0.5); text-decoration: none; font-weight: 500; transition: color 0.15s; }
         .gp-nav-link:hover { color: rgba(255,255,255,0.9); }
 
@@ -392,7 +393,10 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
 
       {/* ── NAV ── */}
       <div className="gp-nav">
-        <a href="/" className="gp-logo">HomeHive 🐝</a>
+        <a href="/" className="gp-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/hh-logo.png" alt="HomeHive" />
+        </a>
         <a href="/homes" className="gp-nav-link">Browse all homes →</a>
       </div>
 

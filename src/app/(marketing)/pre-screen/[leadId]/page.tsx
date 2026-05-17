@@ -352,8 +352,8 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         .ps-prop-header img { width: 100%; height: 100%; object-fit: cover; }
         .ps-prop-header-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(26,26,26,0.3) 0%, rgba(26,26,26,0.75) 100%); }
         .ps-prop-header-content { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 20px; }
-        .ps-prop-logo { position: absolute; top: 14px; left: 20px; font-size: 16px; font-weight: 700; color: #fff; letter-spacing: -0.2px; }
-        .ps-prop-logo span { color: #FFC627; font-style: italic; }
+        .ps-prop-logo { position: absolute; top: 14px; left: 20px; display: inline-flex; align-items: center; }
+        .ps-prop-logo img { height: 22px; width: auto; display: block; }
 
         .ps-progress { background: #fff; padding: 14px 20px; border-bottom: 1px solid #f0ede6; display: flex; align-items: center; gap: 14px; }
         .ps-steps { display: flex; align-items: center; gap: 6px; }
@@ -427,7 +427,10 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         <div className="ps-prop-header">
           {heroImage && <img src={heroImage} alt={propName} />}
           <div className="ps-prop-header-overlay" />
-          <div className="ps-prop-logo">Home<span>Hive</span></div>
+          <div className="ps-prop-logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/hh-logo.png" alt="HomeHive" />
+          </div>
           <div className="ps-prop-header-content">
             <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#FFC627', marginBottom: '4px' }}>Rental Application</div>
             <div style={{ fontSize: '17px', fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>{propName}</div>
