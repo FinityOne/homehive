@@ -1,384 +1,422 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 
-type Mode = 'solo' | 'group' | null
+type FormData = {
+  first_name: string
+  last_name: string
+  email: string
+  phone: string
+  grad_semester: string
+  major: string
+  housing_type: string
+  move_in_month: string
+  budget: string
+  roommates_wanted: string
+  sleep_schedule: string
+  cleanliness: string
+  guests_frequency: string
+  noise_preference: string
+  pets: string
+  smoking: string
+  gender_preference: string
+  about_me: string
+}
+
+const INITIAL: FormData = {
+  first_name: '', last_name: '', email: '', phone: '',
+  grad_semester: '', major: '',
+  housing_type: '', move_in_month: '', budget: '', roommates_wanted: '',
+  sleep_schedule: '', cleanliness: '', guests_frequency: '', noise_preference: '',
+  pets: '', smoking: '', gender_preference: '', about_me: '',
+}
+
+function Pill({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '9px 18px',
+        borderRadius: 100,
+        border: `1.5px solid ${selected ? 'var(--hh-ink-900, #1a1a1a)' : 'var(--hh-border, #e8e5de)'}`,
+        background: selected ? 'var(--hh-ink-900, #1a1a1a)' : 'transparent',
+        color: selected ? '#fff' : 'var(--hh-ink-600, #6b6b6b)',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: 'pointer',
+        fontFamily: 'var(--hh-font-ui, Geist, sans-serif)',
+        transition: 'all 0.15s',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+function PillGroup({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {options.map(o => (
+        <Pill key={o} label={o} selected={value === o} onClick={() => onChange(o)} />
+      ))}
+    </div>
+  )
+}
+
+const GRAD_OPTIONS = [
+  'Spring 2026', 'Fall 2026', 'Spring 2027', 'Fall 2027',
+  'Spring 2028', 'Fall 2028', 'Grad student', 'PhD candidate', 'Exchange student',
+]
+const HOUSING_OPTIONS = ['Room in shared house', 'Full apartment', 'Either works']
+const MOVEIN_OPTIONS = ['Aug 2025', 'Jan 2026', 'Aug 2026', 'Flexible']
+const BUDGET_OPTIONS = ['Under $650', '$650–$850', '$850–$1,100', '$1,100+']
+const ROOMMATES_OPTIONS = ['0 (solo)', '1', '2', '3+']
+const SLEEP_OPTIONS = ['Before midnight', 'Night owl (1am+)', 'Varies']
+const CLEAN_OPTIONS = ['Spotless', 'Tidy', 'Relaxed', 'Chaotic is fine']
+const GUESTS_OPTIONS = ['Often social', 'Sometimes', 'Rarely', 'Never']
+const NOISE_OPTIONS = ['Library quiet', 'Background noise ok', 'Lively is fine']
+const PETS_OPTIONS = ['I have a pet', 'Love pets', 'No pets please']
+const SMOKING_OPTIONS = ['Yes', 'Outside only', 'No please']
+const GENDER_OPTIONS = ['No preference', 'Women only', 'Men only']
+
+function step1Valid(f: FormData) {
+  return f.first_name.trim() && f.last_name.trim() && f.email.trim() && f.grad_semester
+}
+function step2Valid(f: FormData) {
+  return f.housing_type && f.move_in_month && f.budget && f.roommates_wanted
+}
+function step3Valid(f: FormData) {
+  return f.sleep_schedule && f.cleanliness && f.guests_frequency && f.noise_preference
+}
+function step4Valid(f: FormData) {
+  return f.pets && f.smoking && f.gender_preference
+}
+
+const STEP_VALID = [step1Valid, step2Valid, step3Valid, step4Valid]
 
 export default function RoommatesPage() {
-  const [mode, setMode] = useState<Mode>(null)
-  const [submitted, setSubmitted] = useState(false)
+  const [step, setStep] = useState(1)
+  const [form, setForm] = useState<FormData>(INITIAL)
   const [loading, setLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    first_name: '', last_name: '', email: '', phone: '',
-    unit_type: '', move_in_date: '', budget: '', lifestyle: '',
-    group_size: '', group_name: '', notes: '',
-  })
-  const perks: { icon: string; title: string; body: string }[] = mode === 'solo' ? [
-    { icon: '🔍', title: 'We find your matches', body: 'Tell us your vibe and schedule — we pair you with people who actually fit.' },
-    { icon: '👋', title: 'Meet before you sign', body: "We introduce you to potential roommates before anyone commits to anything." },
-    { icon: '🏠', title: 'Solo options too', body: 'Need a studio or 1-bed? We have options for people who want their own space.' },
-  ] : [
-    { icon: '🏡', title: 'Homes built for groups', body: 'Our 3 and 4-bedroom homes are perfect for groups who want to live together.' },
-    { icon: '📋', title: 'One easy process', body: 'Register your group once. We handle matching you to the right home.' },
-    { icon: '🔒', title: 'Group feature coming soon', body: 'A dedicated group dashboard where your crew can browse and apply together is on the way.' },
-  ]
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value })
+  const set = (field: keyof FormData, value: string) =>
+    setForm(f => ({ ...f, [field]: value }))
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '12px 14px',
+    border: '1.5px solid var(--hh-border, #e8e5de)',
+    borderRadius: 10,
+    fontSize: 15,
+    fontFamily: 'var(--hh-font-ui, Geist, sans-serif)',
+    color: 'var(--hh-ink-900, #1a1a1a)',
+    background: '#fff',
+    outline: 'none',
+    boxSizing: 'border-box',
+  }
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--hh-ink-500, #9b9b9b)',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  }
+
+  const qStyle: React.CSSProperties = {
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--hh-ink-900, #1a1a1a)',
+    marginBottom: 10,
   }
 
   const handleSubmit = async () => {
     setLoading(true)
+    setError(null)
     try {
-      await supabase.from('leads').insert([{
-        first_name: formData.first_name,
-        last_name: formData.last_name,
-        email: formData.email,
-        phone: formData.phone,
-        move_in_date: formData.move_in_date,
-        budget: formData.budget,
-        roommate_preference: mode === 'group' ? `Group of ${formData.group_size}` : 'Looking for roommates',
-        lifestyle: formData.lifestyle,
-        notes: `Unit type: ${formData.unit_type}. ${formData.group_name ? `Group: ${formData.group_name}.` : ''} ${formData.notes}`.trim(),
-        status: 'new',
-      }])
-      setSubmitted(true)
-    } catch (e) {
-      console.error(e)
+      const roommatesWanted = form.roommates_wanted === '0 (solo)' ? '0' : form.roommates_wanted
+      const res = await fetch('/api/roommate-profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          roommates_wanted: roommatesWanted,
+          budget: form.budget,
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json()
+        setError(d.error || 'Something went wrong. Please try again.')
+      } else {
+        setSubmitted(true)
+      }
+    } catch {
+      setError('Network error. Please try again.')
     }
     setLoading(false)
   }
 
+  const canContinue = STEP_VALID[step - 1]?.(form)
+
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;1,300;1,400&family=Geist:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; }
-
-        .page { max-width: 860px; margin: 0 auto; padding: 48px 24px 100px; }
-
-        /* HERO */
-        .hero { text-align: center; margin-bottom: 56px; }
-        .hero-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #d4a843; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        .hero-eyebrow::before, .hero-eyebrow::after { content: ''; width: 40px; height: 1px; background: #d4a843; opacity: 0.5; }
-        .hero-title { font-family: 'DM Serif Display', serif; font-size: 48px; color: #1a1a1a; line-height: 1.1; margin-bottom: 18px; letter-spacing: -0.5px; }
-        .hero-title em { font-style: italic; color: #d4a843; }
-        .hero-sub { font-size: 16px; color: #6b6b6b; line-height: 1.7; max-width: 500px; margin: 0 auto; }
-
-        /* MODE SELECTOR */
-        .mode-section { margin-bottom: 48px; }
-        .mode-label { font-size: 13px; color: #9b9b9b; text-align: center; margin-bottom: 20px; font-weight: 500; }
-        .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .mode-card {
-          background: #fff; border: 2px solid #e8e5de; border-radius: 16px;
-          padding: 28px 24px; cursor: pointer; transition: all 0.2s; text-align: left;
-        }
-        .mode-card:hover { border-color: #d4a843; background: #fefdf9; }
-        .mode-card.selected { border-color: #1a1a1a; background: #fff; }
-        .mode-card-icon { font-size: 32px; margin-bottom: 14px; }
-        .mode-card-title { font-family: 'DM Serif Display', serif; font-size: 20px; color: #1a1a1a; margin-bottom: 8px; }
-        .mode-card-sub { font-size: 13px; color: #6b6b6b; line-height: 1.6; margin-bottom: 14px; }
-        .mode-card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-        .mode-card-tag { font-size: 11px; background: #f9f8f5; border: 1px solid #e8e5de; color: #6b6b6b; padding: 3px 9px; border-radius: 20px; }
-        .mode-card.selected .mode-card-tag { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
-        .mode-select-indicator { display: flex; align-items: center; gap: 6px; margin-top: 16px; font-size: 12px; color: #9b9b9b; font-weight: 500; }
-        .mode-card.selected .mode-select-indicator { color: #1a1a1a; }
-        .indicator-circle { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #e8e5de; display: flex; align-items: center; justify-content: center; font-size: 9px; transition: all 0.2s; }
-        .mode-card.selected .indicator-circle { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
-
-        /* GROUP COMING SOON BANNER */
-        .coming-soon-banner { background: linear-gradient(135deg, #1a1a1a, #2d2410); border: 1px solid #d4a843; border-radius: 12px; padding: 20px 24px; margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-        .coming-soon-left { display: flex; align-items: center; gap: 12px; }
-        .coming-soon-icon { width: 38px; height: 38px; border-radius: 50%; background: rgba(212,168,67,0.2); border: 1px solid rgba(212,168,67,0.4); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
-        .coming-soon-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 2px; }
-        .coming-soon-sub { font-size: 12px; color: #9b9b9b; }
-        .coming-soon-badge { background: rgba(212,168,67,0.15); border: 1px solid rgba(212,168,67,0.4); color: #d4a843; font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 20px; letter-spacing: 0.5px; white-space: nowrap; }
-
-        /* WHAT YOU GET */
-        .perks-section { margin-bottom: 40px; }
-        .perks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-        .perk-card { background: #fff; border: 1px solid #e8e5de; border-radius: 10px; padding: 18px; text-align: center; }
-        .perk-icon { font-size: 22px; margin-bottom: 8px; }
-        .perk-title { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }
-        .perk-body { font-size: 12px; color: #6b6b6b; line-height: 1.55; }
-
-        /* FORM */
-        .form-card { background: #fff; border: 1px solid #e8e5de; border-radius: 16px; padding: 36px; }
-        .form-title { font-family: 'DM Serif Display', serif; font-size: 26px; color: #1a1a1a; margin-bottom: 6px; }
-        .form-sub { font-size: 14px; color: #6b6b6b; margin-bottom: 28px; line-height: 1.6; }
-        .form-section-label { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #d4a843; margin-bottom: 14px; margin-top: 24px; padding-bottom: 8px; border-bottom: 1px solid #f0ede6; }
-        .form-section-label:first-of-type { margin-top: 0; }
-        .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-        .form-field { margin-bottom: 14px; }
-        .form-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #9b9b9b; margin-bottom: 5px; }
-        .form-input { width: 100%; padding: 11px 14px; border: 1.5px solid #e8e5de; border-radius: 8px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #1a1a1a; background: #fff; outline: none; transition: border-color 0.15s; box-sizing: border-box; }
-        .form-input:focus { border-color: #d4a843; }
-        .form-input::placeholder { color: #c5c1b8; }
-        .submit-btn { width: 100%; padding: 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 8px; transition: background 0.2s; }
-        .submit-btn:hover { background: #333; }
-        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .form-trust { display: flex; justify-content: center; gap: 20px; margin-top: 14px; flex-wrap: wrap; }
-        .form-trust-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #9b9b9b; }
-        .trust-dot { width: 5px; height: 5px; border-radius: 50%; background: #d4a843; }
-
-        /* SUCCESS */
-        .success-state { text-align: center; padding: 56px 24px; }
-        .success-icon { width: 72px; height: 72px; border-radius: 50%; background: #dcfce7; border: 2px solid #bbf7d0; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 20px; }
-        .success-title { font-family: 'DM Serif Display', serif; font-size: 32px; color: #1a1a1a; margin-bottom: 10px; }
-        .success-sub { font-size: 15px; color: #6b6b6b; line-height: 1.7; max-width: 400px; margin: 0 auto 24px; }
-        .success-back { display: inline-block; background: #1a1a1a; color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; }
-
-        @media (max-width: 640px) {
-          .hero-title { font-size: 34px; }
-          .mode-grid { grid-template-columns: 1fr; }
-          .perks-grid { grid-template-columns: 1fr; }
-          .form-grid-2 { grid-template-columns: 1fr; }
+        body { background: var(--hh-bg, #FAF8F3); }
+        .rmp-page { max-width: 640px; margin: 0 auto; padding: 48px 24px 96px; }
+        .rmp-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--hh-accent, #D9A14A); margin-bottom: 10px; }
+        .rmp-headline { font-family: 'Newsreader', Georgia, serif; font-size: 32px; font-weight: 400; color: var(--hh-ink-900, #1a1a1a); line-height: 1.2; margin-bottom: 32px; }
+        .rmp-progress { width: 100%; height: 3px; background: var(--hh-border, #e8e5de); border-radius: 3px; margin-bottom: 40px; }
+        .rmp-progress-fill { height: 3px; border-radius: 3px; background: var(--hh-accent, #D9A14A); transition: width 0.35s ease; }
+        .rmp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+        .rmp-field { margin-bottom: 20px; }
+        .rmp-q { margin-bottom: 20px; }
+        .rmp-continue { width: 100%; padding: 13px 32px; background: var(--hh-ink-900, #1a1a1a); color: #fff; border: none; border-radius: 100px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: 'Geist', sans-serif; transition: opacity 0.15s; margin-top: 8px; }
+        .rmp-continue:disabled { opacity: 0.35; cursor: not-allowed; }
+        .rmp-trust { font-size: 12px; color: var(--hh-ink-400, #b0a898); text-align: center; margin-top: 12px; }
+        .rmp-back { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--hh-ink-500, #9b9b9b); font-family: 'Geist', sans-serif; padding: 0; margin-bottom: 28px; display: flex; align-items: center; gap: 5px; }
+        .rmp-back:hover { color: var(--hh-ink-900, #1a1a1a); }
+        .rmp-step-label { font-size: 12px; color: var(--hh-ink-400, #b0a898); margin-bottom: 16px; font-weight: 500; }
+        .rmp-textarea { width: 100%; padding: 12px 14px; border: 1.5px solid var(--hh-border, #e8e5de); border-radius: 10px; font-size: 15px; font-family: 'Geist', sans-serif; color: var(--hh-ink-900, #1a1a1a); resize: none; outline: none; height: 110px; background: #fff; }
+        .rmp-char-count { font-size: 11px; color: var(--hh-ink-400, #b0a898); text-align: right; margin-top: 4px; }
+        .rmp-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #dc2626; margin-bottom: 16px; }
+        @media (max-width: 520px) {
+          .rmp-grid-2 { grid-template-columns: 1fr; }
+          .rmp-headline { font-size: 26px; }
         }
       `}</style>
 
-      <div style={{ fontFamily: "'DM Sans', sans-serif", background: '#f5f4f0', minHeight: '100vh' }}>
-        <div className="page">
+      <div style={{ background: 'var(--hh-bg, #FAF8F3)', minHeight: '100vh', fontFamily: "'Geist', sans-serif" }}>
+        {/* Top progress bar */}
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, height: 3, background: 'var(--hh-border, #e8e5de)' }}>
+          <div style={{ height: 3, background: 'var(--hh-accent, #D9A14A)', width: submitted ? '100%' : `${(step / 4) * 100}%`, transition: 'width 0.35s ease' }} />
+        </div>
 
-          {/* HERO */}
-          <div className="hero">
-            <div className="hero-eyebrow">Roommate matching</div>
-            <h1 className="hero-title">
-              Find people you'll<br />actually <em>want</em> to live with.
-            </h1>
-            <p className="hero-sub">
-              Whether you're flying solo and need roommates, or you've already got a crew and just need the right home — we've got you.
-            </p>
-          </div>
-
-          {/* MODE SELECTOR */}
-          <div className="mode-section">
-            <p className="mode-label">First, tell us your situation →</p>
-            <div className="mode-grid">
-              <div className={`mode-card ${mode === 'solo' ? 'selected' : ''}`} onClick={() => setMode('solo')}>
-                <div className="mode-card-icon">🙋</div>
-                <div className="mode-card-title">I'm looking on my own</div>
-                <p className="mode-card-sub">
-                  You're searching solo — maybe looking for a single room, a studio, or a 1-bed. Or you need a home and want us to help find compatible roommates to fill it with you.
-                </p>
-                <div className="mode-card-tags">
-                  <span className="mode-card-tag">Single room</span>
-                  <span className="mode-card-tag">Studio</span>
-                  <span className="mode-card-tag">1-bedroom</span>
-                  <span className="mode-card-tag">Need roommates</span>
-                </div>
-                <div className="mode-select-indicator">
-                  <div className="indicator-circle">{mode === 'solo' ? '✓' : ''}</div>
-                  {mode === 'solo' ? 'Selected' : 'Select this'}
-                </div>
+        <div className="rmp-page">
+          {submitted ? (
+            /* ── Confirmation ── */
+            <div style={{ textAlign: 'center', paddingTop: 40 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(217,161,74,0.12)', border: '2px solid rgba(217,161,74,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: 28 }}>
+                ✓
               </div>
-
-              <div className={`mode-card ${mode === 'group' ? 'selected' : ''}`} onClick={() => setMode('group')}>
-                <div className="mode-card-icon">👥</div>
-                <div className="mode-card-title">I have a group</div>
-                <p className="mode-card-sub">
-                  You already have 2, 3, or 4 people lined up and just need the right home to fit your crew. We'll match your group to a home with the right number of rooms and layout.
-                </p>
-                <div className="mode-card-tags">
-                  <span className="mode-card-tag">2–4 people</span>
-                  <span className="mode-card-tag">Group search</span>
-                  <span className="mode-card-tag">Full home</span>
-                  <span className="mode-card-tag">You pick your crew</span>
-                </div>
-                <div className="mode-select-indicator">
-                  <div className="indicator-circle">{mode === 'group' ? '✓' : ''}</div>
-                  {mode === 'group' ? 'Selected' : 'Select this'}
-                </div>
-              </div>
+              <div className="rmp-eyebrow">You're in</div>
+              <h1 style={{ fontFamily: 'Newsreader, Georgia, serif', fontSize: 34, fontWeight: 400, color: 'var(--hh-ink-900, #1a1a1a)', lineHeight: 1.2, marginBottom: 16 }}>
+                Profile submitted.
+              </h1>
+              <p style={{ fontSize: 16, color: 'var(--hh-ink-500, #9b9b9b)', lineHeight: 1.7, maxWidth: 440, margin: '0 auto 32px' }}>
+                We've got your details, {form.first_name}. We'll reach out within 24 hours to discuss options and potential matches.
+              </p>
+              <a
+                href="/homes"
+                style={{ display: 'inline-block', background: 'var(--hh-ink-900, #1a1a1a)', color: '#fff', padding: '13px 32px', borderRadius: 100, fontSize: 14, fontWeight: 600, textDecoration: 'none', fontFamily: 'Geist, sans-serif' }}
+              >
+                Browse available homes →
+              </a>
             </div>
-          </div>
-
-          {mode && (
+          ) : (
             <>
-              {/* PERKS */}
-              <div className="perks-section">
-                <div className="perks-grid">
-                  {perks.map(p => (
-                    <div className="perks-grid">
-                      {perks.map(p => (
-                        <div className="perk-card" key={p.title}>
-                          <div className="perk-icon">{p.icon}</div>
-                          <div className="perk-title">{p.title}</div>
-                          <p className="perk-body">{p.body}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* GROUP COMING SOON BANNER */}
-              {mode === 'group' && (
-                <div className="coming-soon-banner">
-                  <div className="coming-soon-left">
-                    <div className="coming-soon-icon">🚀</div>
-                    <div>
-                      <div className="coming-soon-title">Group search feature is coming soon</div>
-                      <div className="coming-soon-sub">Register your group below and we'll reach out personally to match you to the right home — plus give you early access when it launches.</div>
-                    </div>
-                  </div>
-                  <div className="coming-soon-badge">Early access</div>
-                </div>
+              {/* Step label */}
+              {step > 1 && (
+                <button className="rmp-back" onClick={() => setStep(s => s - 1)}>
+                  ← Back
+                </button>
               )}
+              <div className="rmp-step-label">Step {step} of 4</div>
 
-              {/* FORM */}
-              <div className="form-card">
-                {submitted ? (
-                  <div className="success-state">
-                    <div className="success-icon">✓</div>
-                    <div className="success-title">
-                      {mode === 'group' ? "Your group is registered!" : "You're on the list!"}
-                    </div>
-                    <p className="success-sub">
-                      {mode === 'group'
-                        ? "We'll reach out within 24 hours to match your group to the perfect home and get you early access to our group feature."
-                        : "We'll be in touch within a few hours to discuss your options, introduce you to potential roommates, and find the right fit."}
-                    </p>
-                    <a href="/" className="success-back">Browse available homes →</a>
-                  </div>
-                ) : (
-                  <>
-                    <div className="form-title">
-                      {mode === 'solo' ? 'Tell us about yourself' : 'Register your group'}
-                    </div>
-                    <p className="form-sub">
-                      {mode === 'solo'
-                        ? "Takes 2 minutes. No commitment — we'll reach out to discuss options and make introductions."
-                        : "Register your group and we'll personally match you to a home that fits. Your whole crew will thank you."}
-                    </p>
+              {/* Step 1 — About you */}
+              {step === 1 && (
+                <>
+                  <div className="rmp-eyebrow">About you</div>
+                  <h1 className="rmp-headline">Let's start with the basics.</h1>
 
-                    <div className="form-section-label">Your details</div>
-                    <div className="form-grid-2">
-                      <div>
-                        <label className="form-label">First name</label>
-                        <input className="form-input" name="first_name" placeholder="Jordan" value={formData.first_name} onChange={handleChange} />
-                      </div>
-                      <div>
-                        <label className="form-label">Last name</label>
-                        <input className="form-input" name="last_name" placeholder="Lee" value={formData.last_name} onChange={handleChange} />
-                      </div>
-                    </div>
-                    <div className="form-grid-2">
-                      <div>
-                        <label className="form-label">Email</label>
-                        <input className="form-input" name="email" type="email" placeholder="you@email.com" value={formData.email} onChange={handleChange} />
-                      </div>
-                      <div>
-                        <label className="form-label">Phone</label>
-                        <input className="form-input" name="phone" placeholder="(480) 000-0000" value={formData.phone} onChange={handleChange} />
-                      </div>
-                    </div>
-
-                    {mode === 'group' && (
-                      <>
-                        <div className="form-section-label">Your group</div>
-                        <div className="form-grid-2">
-                          <div>
-                            <label className="form-label">Group size</label>
-                            <select className="form-input" name="group_size" value={formData.group_size} onChange={handleChange}>
-                              <option value="">How many people?</option>
-                              <option>2 people</option>
-                              <option>3 people</option>
-                              <option>4 people</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="form-label">Group name (optional)</label>
-                            <input className="form-input" name="group_name" placeholder="e.g. The Engineering Crew" value={formData.group_name} onChange={handleChange} />
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {mode === 'solo' && (
-                      <>
-                        <div className="form-section-label">What you're looking for</div>
-                        <div className="form-field">
-                          <label className="form-label">Unit type preference</label>
-                          <select className="form-input" name="unit_type" value={formData.unit_type} onChange={handleChange}>
-                            <option value="">What works for you?</option>
-                            <option>Single room in a shared home (most affordable)</option>
-                            <option>Studio apartment (own space)</option>
-                            <option>1-bedroom apartment</option>
-                            <option>Open to anything in my budget</option>
-                          </select>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="form-section-label">Move-in & budget</div>
-                    <div className="form-grid-2">
-                      <div>
-                        <label className="form-label">Expected move-in</label>
-                        <select className="form-input" name="move_in_date" value={formData.move_in_date} onChange={handleChange}>
-                          <option value="">Select semester</option>
-                          <option>August 2025</option>
-                          <option>January 2026</option>
-                          <option>Flexible</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="form-label">Monthly budget per person</label>
-                        <select className="form-input" name="budget" value={formData.budget} onChange={handleChange}>
-                          <option value="">Select range</option>
-                          <option>Under $700</option>
-                          <option>$700 – $850</option>
-                          <option>$850 – $1,100</option>
-                          <option>$1,100+</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="form-section-label">Living style</div>
-                    <div className="form-field">
-                      <label className="form-label">How would you describe your vibe?</label>
-                      <select className="form-input" name="lifestyle" value={formData.lifestyle} onChange={handleChange}>
-                        <option value="">Select your living style</option>
-                        <option>Early riser, quiet household</option>
-                        <option>Night owl, social energy</option>
-                        <option>Balanced — work hard, chill on weekends</option>
-                        <option>Grad student, mostly working from home</option>
-                      </select>
-                    </div>
-                    <div className="form-field">
-                      <label className="form-label">Anything else? (optional)</label>
-                      <textarea
-                        className="form-input"
-                        name="notes"
-                        placeholder={mode === 'group' ? "Tell us about your group — majors, schedules, any specific home requirements..." : "Pet, specific needs, questions, anything helpful..."}
-                        value={formData.notes}
-                        onChange={handleChange}
-                        style={{ height: '80px', resize: 'none' }}
+                  <div className="rmp-grid-2">
+                    <div>
+                      <label style={labelStyle}>First name *</label>
+                      <input
+                        style={inputStyle}
+                        placeholder="Jordan"
+                        value={form.first_name}
+                        onChange={e => set('first_name', e.target.value)}
                       />
                     </div>
+                    <div>
+                      <label style={labelStyle}>Last name *</label>
+                      <input
+                        style={inputStyle}
+                        placeholder="Lee"
+                        value={form.last_name}
+                        onChange={e => set('last_name', e.target.value)}
+                      />
+                    </div>
+                  </div>
 
-                    <button
-                      className="submit-btn"
-                      onClick={handleSubmit}
-                      disabled={loading || !formData.first_name || !formData.email}
-                    >
-                      {loading ? 'Submitting...' : mode === 'group' ? 'Register my group →' : 'Find my roommates →'}
-                    </button>
-                    <div className="form-trust">
-                      {['No commitment', 'We respond within hours', 'No spam'].map(t => (
-                        <div className="form-trust-item" key={t}>
-                          <span className="trust-dot" />
-                          <span>{t}</span>
-                        </div>
+                  <div className="rmp-grid-2">
+                    <div>
+                      <label style={labelStyle}>Email *</label>
+                      <input
+                        style={inputStyle}
+                        type="email"
+                        placeholder="you@asu.edu"
+                        value={form.email}
+                        onChange={e => set('email', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Phone (optional)</label>
+                      <input
+                        style={inputStyle}
+                        type="tel"
+                        placeholder="(480) 000-0000"
+                        value={form.phone}
+                        onChange={e => set('phone', e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rmp-field">
+                    <label style={labelStyle}>Graduation semester *</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {GRAD_OPTIONS.map(o => (
+                        <Pill key={o} label={o} selected={form.grad_semester === o} onClick={() => set('grad_semester', o)} />
                       ))}
                     </div>
-                  </>
-                )}
-              </div>
+                  </div>
+
+                  <div className="rmp-field">
+                    <label style={labelStyle}>Major (optional)</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="e.g. Computer Science"
+                      value={form.major}
+                      onChange={e => set('major', e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Step 2 — Your setup */}
+              {step === 2 && (
+                <>
+                  <div className="rmp-eyebrow">Your setup</div>
+                  <h1 className="rmp-headline">What are you looking for?</h1>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Housing type</p>
+                    <PillGroup options={HOUSING_OPTIONS} value={form.housing_type} onChange={v => set('housing_type', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Move-in</p>
+                    <PillGroup options={MOVEIN_OPTIONS} value={form.move_in_month} onChange={v => set('move_in_month', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Monthly budget per person</p>
+                    <PillGroup options={BUDGET_OPTIONS} value={form.budget} onChange={v => set('budget', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>How many roommates do you want?</p>
+                    <PillGroup options={ROOMMATES_OPTIONS} value={form.roommates_wanted} onChange={v => set('roommates_wanted', v)} />
+                  </div>
+                </>
+              )}
+
+              {/* Step 3 — Your vibe */}
+              {step === 3 && (
+                <>
+                  <div className="rmp-eyebrow">Your vibe</div>
+                  <h1 className="rmp-headline">What kind of home do you keep?</h1>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Sleep schedule</p>
+                    <PillGroup options={SLEEP_OPTIONS} value={form.sleep_schedule} onChange={v => set('sleep_schedule', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Cleanliness</p>
+                    <PillGroup options={CLEAN_OPTIONS} value={form.cleanliness} onChange={v => set('cleanliness', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Guests</p>
+                    <PillGroup options={GUESTS_OPTIONS} value={form.guests_frequency} onChange={v => set('guests_frequency', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Noise level</p>
+                    <PillGroup options={NOISE_OPTIONS} value={form.noise_preference} onChange={v => set('noise_preference', v)} />
+                  </div>
+                </>
+              )}
+
+              {/* Step 4 — A few more */}
+              {step === 4 && (
+                <>
+                  <div className="rmp-eyebrow">A few more</div>
+                  <h1 className="rmp-headline">Almost there — a few final things.</h1>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Pets</p>
+                    <PillGroup options={PETS_OPTIONS} value={form.pets} onChange={v => set('pets', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Smoking / vaping</p>
+                    <PillGroup options={SMOKING_OPTIONS} value={form.smoking} onChange={v => set('smoking', v)} />
+                  </div>
+
+                  <div className="rmp-q">
+                    <p style={qStyle}>Gender preference for housemates</p>
+                    <PillGroup options={GENDER_OPTIONS} value={form.gender_preference} onChange={v => set('gender_preference', v)} />
+                  </div>
+
+                  <div className="rmp-field">
+                    <p style={qStyle}>About me</p>
+                    <label style={{ ...labelStyle, marginBottom: 8 }}>What should your future roommates know?</label>
+                    <textarea
+                      className="rmp-textarea"
+                      placeholder="I'm a junior studying CS, usually in class until 3pm, keep things clean, love cooking on weekends..."
+                      maxLength={300}
+                      value={form.about_me}
+                      onChange={e => set('about_me', e.target.value)}
+                    />
+                    <div className="rmp-char-count">{form.about_me.length} / 300</div>
+                  </div>
+                </>
+              )}
+
+              {/* Error */}
+              {error && <div className="rmp-error">{error}</div>}
+
+              {/* Navigation */}
+              {step < 4 ? (
+                <button
+                  className="rmp-continue"
+                  disabled={!canContinue}
+                  onClick={() => setStep(s => s + 1)}
+                >
+                  Continue →
+                </button>
+              ) : (
+                <button
+                  className="rmp-continue"
+                  disabled={!canContinue || loading}
+                  onClick={handleSubmit}
+                >
+                  {loading ? 'Submitting…' : 'Submit profile →'}
+                </button>
+              )}
+              <p className="rmp-trust">No commitment · We respond within 24 hours · No spam</p>
             </>
           )}
-
         </div>
       </div>
     </>

@@ -12,6 +12,33 @@ const supabase = createBrowserClient(
 
 type Property = { slug: string; name: string; address: string }
 
+type RoommateProfile = {
+  id: string
+  created_at: string
+  first_name: string
+  last_name: string
+  email: string
+  phone: string | null
+  grad_semester: string
+  major: string | null
+  housing_type: string | null
+  move_in_month: string | null
+  budget_min: number | null
+  budget_max: number | null
+  roommates_wanted: number
+  sleep_schedule: string | null
+  cleanliness: string | null
+  noise_preference: string | null
+  guests_frequency: string | null
+  pets: string | null
+  smoking: string | null
+  work_from_home: string | null
+  gender_preference: string
+  about_me: string | null
+  status: string
+  admin_notes: string | null
+}
+
 type RoommateGroup = {
   id: string
   name: string
@@ -129,7 +156,26 @@ export default function RoommatesPage() {
   const [emailLogs, setEmailLogs] = useState<{ id: string; email_type: string; recipient_email: string; recipient_name: string | null; room_name: string | null; sent_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'groups' | 'profiles'>('groups')
+  const [profiles, setProfiles] = useState<RoommateProfile[]>([])
+  const [profilesLoading, setProfilesLoading] = useState(false)
+  const [expandedProfile, setExpandedProfile] = useState<string | null>(null)
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
+
+  const loadProfiles = async () => {
+    setProfilesLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/roommate-profiles', {
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    })
+    if (res.ok) {
+      const { profiles: data } = await res.json()
+      setProfiles(data || [])
+    }
+    setProfilesLoading(false)
+  }
 
   useEffect(() => { document.title = 'Roommates — Landlord | HomeHive' }, [])
 
@@ -380,6 +426,13 @@ export default function RoommatesPage() {
     if (userId) loadRoommateGroups()
   }, [userId, loadRoommateGroups])
 
+  useEffect(() => {
+    if (userId && activeTab === 'profiles' && profiles.length === 0) {
+      loadProfiles()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeTab])
+
   return (
     <>
       <style>{`
@@ -438,7 +491,160 @@ export default function RoommatesPage() {
           )}
         </div>
 
+        {/* ─── Tab toggle ─── */}
+        <div style={{ padding: '12px 28px 0', borderBottom: '1px solid #e8e5de', background: '#fff', display: 'flex', gap: 4 }}>
+          {([
+            { key: 'groups', label: 'Groups', count: roommateGroups.length },
+            { key: 'profiles', label: 'Profiles', count: profiles.length },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === tab.key ? '2px solid #8C1D40' : '2px solid transparent',
+                padding: '8px 14px 10px',
+                fontSize: 13,
+                fontWeight: 600,
+                color: activeTab === tab.key ? '#8C1D40' : '#9b9b9b',
+                cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                transition: 'color 0.15s',
+              }}
+            >
+              {tab.label}
+              {tab.count > 0 && (
+                <span style={{
+                  background: activeTab === tab.key ? 'rgba(140,29,64,0.1)' : '#f0ede6',
+                  color: activeTab === tab.key ? '#8C1D40' : '#9b9b9b',
+                  borderRadius: 100,
+                  padding: '1px 7px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         <div style={{ padding: '20px 24px', maxWidth: 1080, margin: '0 auto' }}>
+
+          {/* ─── Profiles tab ─── */}
+          {activeTab === 'profiles' && (
+            <div>
+              {profilesLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[1, 2, 3].map(i => (
+                    <div key={i} style={{ height: 56, borderRadius: 10, background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', animation: 'shimmer 1.4s infinite' }} />
+                  ))}
+                </div>
+              ) : profiles.length === 0 ? (
+                <div style={{ background: '#fff', border: '1.5px dashed #e8e5de', borderRadius: 16, padding: '60px 40px', textAlign: 'center', maxWidth: 480, margin: '0 auto' }}>
+                  <div style={{ fontSize: 40, marginBottom: 14 }}>📋</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>No profiles yet</div>
+                  <div style={{ fontSize: 13, color: '#9b9b9b', lineHeight: 1.7 }}>
+                    When students submit the roommate questionnaire at /roommates, their profiles appear here.
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ marginBottom: 14, fontSize: 12, color: '#9b9b9b', fontWeight: 500 }}>
+                    {profiles.length} profile{profiles.length !== 1 ? 's' : ''} submitted
+                  </div>
+                  {/* Table header */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1fr 1fr 1.5fr 1fr 0.8fr 0.8fr 0.8fr 1fr 0.8fr', gap: 8, padding: '8px 14px', background: '#f5f4f0', borderRadius: 8, marginBottom: 6, fontSize: 10, fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <span>Name</span>
+                    <span>Email</span>
+                    <span>Grad</span>
+                    <span>Major</span>
+                    <span>Housing</span>
+                    <span>Budget</span>
+                    <span>Roomies</span>
+                    <span>Sleep</span>
+                    <span>Clean</span>
+                    <span>Move-in</span>
+                    <span>Status</span>
+                  </div>
+                  {profiles.map(p => {
+                    const isExpanded = expandedProfile === p.id
+                    const budgetLabel = p.budget_min != null || p.budget_max != null
+                      ? p.budget_max == null ? `$${p.budget_min}+` : p.budget_min === 0 ? `Under $${p.budget_max}` : `$${p.budget_min}–$${p.budget_max}`
+                      : '—'
+                    const statusMeta: Record<string, { label: string; color: string; bg: string }> = {
+                      active:   { label: 'Active',   color: '#059669', bg: 'rgba(5,150,105,0.08)' },
+                      matched:  { label: 'Matched',  color: '#2563eb', bg: 'rgba(37,99,235,0.08)' },
+                      inactive: { label: 'Inactive', color: '#9b9b9b', bg: 'rgba(155,155,155,0.08)' },
+                    }
+                    const sm = statusMeta[p.status] || statusMeta['active']
+                    const submittedDate = new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    return (
+                      <div key={p.id} style={{ marginBottom: 6 }}>
+                        <div
+                          onClick={() => setExpandedProfile(isExpanded ? null : p.id)}
+                          style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1fr 1fr 1.5fr 1fr 0.8fr 0.8fr 0.8fr 1fr 0.8fr', gap: 8, padding: '12px 14px', background: '#fff', border: '1px solid #e8e5de', borderRadius: isExpanded ? '10px 10px 0 0' : 10, cursor: 'pointer', fontSize: 12, color: '#1a1a1a', alignItems: 'center', transition: 'border-color 0.15s' }}
+                          onMouseEnter={e => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.borderColor = '#c5c1b8' }}
+                          onMouseLeave={e => { if (!isExpanded) (e.currentTarget as HTMLDivElement).style.borderColor = '#e8e5de' }}
+                        >
+                          <span style={{ fontWeight: 700 }}>{p.first_name} {p.last_name}</span>
+                          <span style={{ color: '#6b9af0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</span>
+                          <span style={{ color: '#6b6b6b', fontSize: 11 }}>{p.grad_semester}</span>
+                          <span style={{ color: '#6b6b6b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.major || '—'}</span>
+                          <span style={{ color: '#6b6b6b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.housing_type || '—'}</span>
+                          <span style={{ color: '#6b6b6b' }}>{budgetLabel}</span>
+                          <span style={{ color: '#6b6b6b' }}>{p.roommates_wanted ?? '—'}</span>
+                          <span style={{ color: '#6b6b6b', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.sleep_schedule?.split(' ')[0] || '—'}</span>
+                          <span style={{ color: '#6b6b6b', fontSize: 11 }}>{p.cleanliness?.split(',')[0] || '—'}</span>
+                          <span style={{ color: '#6b6b6b', fontSize: 11 }}>{p.move_in_month || '—'}</span>
+                          <span>
+                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, color: sm.color, background: sm.bg }}>
+                              {sm.label}
+                            </span>
+                          </span>
+                        </div>
+                        {isExpanded && (
+                          <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '16px 18px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 14 }}>
+                              {[
+                                { label: 'Phone', value: p.phone || '—' },
+                                { label: 'Pets', value: p.pets || '—' },
+                                { label: 'Smoking', value: p.smoking || '—' },
+                                { label: 'Noise preference', value: p.noise_preference || '—' },
+                                { label: 'Guests', value: p.guests_frequency || '—' },
+                                { label: 'Work from home', value: p.work_from_home || '—' },
+                                { label: 'Gender pref.', value: p.gender_preference || '—' },
+                                { label: 'Submitted', value: submittedDate },
+                              ].map(item => (
+                                <div key={item.label}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>{item.label}</div>
+                                  <div style={{ fontSize: 13, color: '#1a1a1a' }}>{item.value}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {p.about_me && (
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 5 }}>About me</div>
+                                <div style={{ fontSize: 13, color: '#1a1a1a', lineHeight: 1.65, background: '#fff', border: '1px solid #e8e5de', borderRadius: 8, padding: '10px 13px' }}>{p.about_me}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── Groups tab ─── */}
+          {activeTab === 'groups' && (
+          <>
 
           {/* ─── Group detail view ─── */}
           {selectedGroup ? (
@@ -824,6 +1030,8 @@ export default function RoommatesPage() {
                 </div>
               )}
             </>
+          )}
+          </>
           )}
         </div>
       </div>
