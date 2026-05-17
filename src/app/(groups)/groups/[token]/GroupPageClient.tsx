@@ -253,10 +253,10 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 40, marginBottom: 14, animation: 'beeWiggle 1.8s ease-in-out infinite', display: 'inline-block' }}>🐝</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>Loading group…</div>
+        <div style={{ fontSize: 14, color: '#9b9b9b' }}>Loading group…</div>
       </div>
     </div>
   )
@@ -288,46 +288,37 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
 
         /* ── FOCUSED NAV ── */
-        .gp-nav { background: rgba(15,23,42,0.96); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(255,255,255,0.06); padding: 0 20px; height: 52px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; }
+        .gp-nav { background: rgba(255,255,255,0.97); backdrop-filter: blur(14px); border-bottom: 1px solid #e8e4db; padding: 0 20px; height: 54px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
         .gp-nav-logo { text-decoration: none; display: inline-flex; align-items: center; }
         .gp-nav-logo img { height: 22px; width: auto; display: block; }
         .gp-nav-right { display: flex; align-items: center; gap: 10px; }
-        .gp-nav-homes { font-size: 12px; color: rgba(255,255,255,0.55); text-decoration: none; font-weight: 500; padding: 5px 10px; border-radius: 6px; transition: color 0.15s, background 0.15s; }
-        .gp-nav-homes:hover { color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.07); }
+        .gp-nav-homes { font-size: 12px; color: #6b6b6b; text-decoration: none; font-weight: 500; padding: 5px 10px; border-radius: 6px; transition: color 0.15s, background 0.15s; }
+        .gp-nav-homes:hover { color: #1a1a1a; background: #f5f4f0; }
         .gp-nav-auth { font-size: 12px; font-weight: 600; padding: 6px 13px; border-radius: 7px; text-decoration: none; cursor: pointer; font-family: 'DM Sans',sans-serif; transition: opacity 0.15s; }
-        .gp-nav-signup { background: #FFC627; color: #1a1a1a; border: none; }
+        .gp-nav-signup { background: #8C1D40; color: #fff; border: none; }
         .gp-nav-signup:hover { opacity: 0.88; }
-        .gp-nav-login { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.14); }
-        .gp-nav-login:hover { background: rgba(255,255,255,0.14); }
+        .gp-nav-login { background: transparent; color: #4b5563; border: 1px solid #e8e4db; }
+        .gp-nav-login:hover { background: #f5f4f0; color: #1a1a1a; }
         .gp-nav-user { display: flex; align-items: center; gap: 7px; }
         .gp-nav-avatar { width: 28px; height: 28px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .gp-nav-email { font-size: 11px; color: rgba(255,255,255,0.55); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gp-nav-email { font-size: 11px; color: #6b6b6b; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        /* ── HERO ── */
-        .gp-hero-dark {
-          position: relative; overflow: hidden;
-          padding: 18px 24px 16px;
-          display: flex; flex-direction: column; justify-content: flex-end;
-        }
-        .gp-hero-bg {
-          position: absolute; inset: 0;
-          background-size: cover; background-position: center;
-          opacity: 0.1; z-index: 0;
-        }
-        .gp-hero-overlay { position: absolute; inset: 0; z-index: 1; }
-        .gp-hero-content { position: relative; z-index: 2; animation: fadeUp 0.5s ease both; }
-        .gp-private-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+        /* ── HERO CARD ── */
+        .gp-hero-wrap { padding: 20px 16px 0; }
+        .gp-hero-card { background: #fff; border: 1px solid #ede9e0; border-radius: 18px; box-shadow: 0 2px 16px rgba(0,0,0,0.06); overflow: hidden; animation: fadeUp 0.4s ease both; }
+        .gp-hero-accent { height: 4px; }
+        .gp-hero-inner { padding: 18px 20px 16px; }
+        .gp-private-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #b0a898; }
         .gp-gender-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid; }
-        .gp-hero-emoji { font-size: 28px; line-height: 1; }
-        .gp-hero-name { font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; letter-spacing: -0.4px; }
-        .gp-hero-tagline { font-size: 12px; color: rgba(255,255,255,0.5); }
-        .gp-hero-stats { display: flex; align-items: center; gap: 12px; }
-        .gp-stat-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block; margin-right: 5px; box-shadow: 0 0 6px #22c55e; }
-        .gp-stat-text { font-size: 12px; color: rgba(255,255,255,0.65); font-weight: 500; }
+        .gp-hero-emoji { font-size: 26px; line-height: 1; }
+        .gp-hero-name { font-size: 20px; font-weight: 700; color: #1a1a1a; line-height: 1.2; letter-spacing: -0.4px; }
+        .gp-hero-tagline { font-size: 12px; color: #9b9b9b; }
+        .gp-stat-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block; margin-right: 5px; box-shadow: 0 0 5px rgba(34,197,94,0.5); }
+        .gp-stat-text { font-size: 12px; color: #6b6b6b; font-weight: 500; }
         .gp-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .gp-hero-action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans',sans-serif; text-decoration: none; transition: background 0.15s, opacity 0.15s; }
-        .gp-hero-btn-ghost { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); border: 1px solid rgba(255,255,255,0.14); }
-        .gp-hero-btn-ghost:hover { background: rgba(255,255,255,0.14); }
+        .gp-hero-action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans',sans-serif; text-decoration: none; transition: background 0.15s, box-shadow 0.15s; }
+        .gp-hero-btn-outline { background: #fff; color: #4b5563; border: 1px solid #e8e4db; }
+        .gp-hero-btn-outline:hover { background: #f5f4f0; color: #1a1a1a; }
 
         /* ── ROOM PHOTO CLICK ── */
         .gp-room-thumb { position: relative; flex-shrink: 0; cursor: pointer; border-radius: 8px; overflow: hidden; }
@@ -385,14 +376,15 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
 
         /* ── DESKTOP ── */
         @media (min-width: 768px) {
-          .gp-hero-dark { padding: 20px 48px 18px; }
+          .gp-hero-wrap { padding: 28px 40px 0; }
+          .gp-hero-inner { padding: 22px 28px 20px; }
           .gp-hero-name { font-size: 22px; }
-          .gp-columns { padding: 32px 48px 60px; flex-direction: row; align-items: flex-start; gap: 28px; }
+          .gp-columns { padding: 24px 40px 60px; flex-direction: row; align-items: flex-start; gap: 28px; }
           .gp-col-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
-          .gp-col-right { width: 360px; flex-shrink: 0; position: sticky; top: 72px; display: flex; flex-direction: column; gap: 14px; }
+          .gp-col-right { width: 360px; flex-shrink: 0; position: sticky; top: 76px; display: flex; flex-direction: column; gap: 14px; }
           .gp-sticky-footer { display: none; }
           .gp-prop-img { height: 240px; }
-          .gp-hero-emoji { font-size: 32px; }
+          .gp-hero-emoji { font-size: 30px; }
         }
         @media (max-width: 767px) {
           .gp-col-right { display: none; }
@@ -404,7 +396,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
       <nav className="gp-nav">
         <a href="/" className="gp-nav-logo">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hh-logo-white.png" alt="HomeHive" />
+          <img src="/hh-logo.png" alt="HomeHive" />
         </a>
         <div className="gp-nav-right">
           <a href="/homes" className="gp-nav-homes">Browse homes →</a>
@@ -426,53 +418,46 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
 
       <div className="gp-page">
 
-        {/* ═══════════════ HERO ═══════════════ */}
-        <div className="gp-hero-dark" style={{ background: ac.hero }}>
-          {/* Background image */}
-          {property?.hero_image && (
-            <div
-              className="gp-hero-bg"
-              style={{ backgroundImage: `url(${property.hero_image})` }}
-            />
-          )}
-          <div className="gp-hero-overlay" style={{ background: ac.hero }} />
-          <div className="gp-hero-content">
-            {/* Row 1: identity */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-              <span className="gp-hero-emoji">{group.emoji}</span>
-              <span className="gp-hero-name">{group.name}</span>
-              <span
-                className="gp-gender-badge"
-                style={{ background: ac.light, borderColor: ac.border, color: ac.main }}
-              >
-                {genderLabel(group.gender_preference)}
-              </span>
-              <span className="gp-private-label">Private Group</span>
-            </div>
-            {/* Row 2: stats + tagline + actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-              <span className="gp-stat-text">
-                <span className="gp-stat-dot" />
-                {members.length} member{members.length !== 1 ? 's' : ''}{openRooms > 0 ? ` · ${openRooms} room${openRooms !== 1 ? 's' : ''} open` : ''}
-              </span>
-              <span className="gp-hero-tagline">{heroTagline(group.gender_preference, propertyName)}</span>
-              <div className="gp-hero-actions" style={{ marginLeft: 'auto' }}>
-                {property && (
-                  <a
-                    href={`/homes/${property.slug ?? group.property_slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="gp-hero-action-btn gp-hero-btn-ghost"
+        {/* ═══════════════ HERO CARD ═══════════════ */}
+        <div className="gp-hero-wrap">
+          <div className="gp-hero-card">
+            {/* Accent color bar */}
+            <div className="gp-hero-accent" style={{ background: ac.gradient }} />
+            <div className="gp-hero-inner">
+              {/* Row 1: identity */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                <span className="gp-hero-emoji">{group.emoji}</span>
+                <span className="gp-hero-name">{group.name}</span>
+                <span className="gp-gender-badge" style={{ background: ac.light, borderColor: ac.border, color: ac.main }}>
+                  {genderLabel(group.gender_preference)}
+                </span>
+                <span className="gp-private-label">Private Group</span>
+              </div>
+              {/* Row 2: stats + tagline + actions */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                <span className="gp-stat-text">
+                  <span className="gp-stat-dot" />
+                  {members.length} member{members.length !== 1 ? 's' : ''}{openRooms > 0 ? ` · ${openRooms} room${openRooms !== 1 ? 's' : ''} open` : ''}
+                </span>
+                <span className="gp-hero-tagline">{heroTagline(group.gender_preference, propertyName)}</span>
+                <div className="gp-hero-actions" style={{ marginLeft: 'auto' }}>
+                  {property && (
+                    <a
+                      href={`/homes/${property.slug ?? group.property_slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="gp-hero-action-btn gp-hero-btn-outline"
+                    >
+                      View Listing ↗
+                    </a>
+                  )}
+                  <button
+                    className="gp-hero-action-btn gp-hero-btn-outline"
+                    onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
                   >
-                    View Listing ↗
-                  </a>
-                )}
-                <button
-                  className="gp-hero-action-btn gp-hero-btn-ghost"
-                  onClick={() => { navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) }}
-                >
-                  🔗 {copiedShare ? 'Copied!' : 'Share'}
-                </button>
+                    🔗 {copiedShare ? 'Copied!' : 'Share'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
