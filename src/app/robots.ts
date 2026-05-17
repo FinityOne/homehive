@@ -18,6 +18,8 @@ export default function robots(): MetadataRoute.Robots {
           '/signup',
           '/pre-screen',
           '/claim',
+          '/book-tour',
+          '/reserve',
         ],
       },
     ],

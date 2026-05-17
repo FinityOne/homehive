@@ -1,8 +1,49 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+
 export const metadata = {
   title: 'List Your Place on HomeHive — Free for Landlords Near ASU',
   description: 'Stop fighting for attention on Zillow and Facebook. HomeHive connects landlords with pre-vetted ASU students. Free forever for the first 100 landlords.',
+  keywords: [
+    'list property near ASU',
+    'rent to ASU students',
+    'landlord housing platform Tempe',
+    'free property listing Arizona State',
+    'student rental Tempe AZ',
+    'list house near ASU free',
+  ],
+  openGraph: {
+    title: 'List Your Place on HomeHive — Free for Landlords Near ASU',
+    description: 'Stop fighting for attention on Zillow and Facebook. HomeHive connects landlords with pre-vetted ASU students. Free forever for the first 100 landlords.',
+    url: `${SITE_URL}/for-landlords`,
+    siteName: 'HomeHive',
+    type: 'website' as const,
+    images: [
+      {
+        url: `${SITE_URL}/og-default.png`,
+        width: 1200,
+        height: 630,
+        alt: 'HomeHive — List Your Place Near ASU',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image' as const,
+    title: 'List Your Place on HomeHive — Free for Landlords',
+    description: 'Connect with pre-vetted ASU students looking for housing. Free to list through 2026.',
+    images: [`${SITE_URL}/og-default.png`],
+  },
+  alternates: { canonical: `${SITE_URL}/for-landlords` },
+}
+
+const breadcrumbSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
+    { '@type': 'ListItem', position: 2, name: 'For Landlords', item: `${SITE_URL}/for-landlords` },
+  ],
 }
 
 async function getListingCount(): Promise<number> {
@@ -20,6 +61,10 @@ export default async function ForLandlordsPage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

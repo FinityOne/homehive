@@ -2,6 +2,35 @@ import { ARTICLES } from './articles'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
+const collectionSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: 'HomeHive Journal — ASU Off-Campus Housing Guides & Research',
+  description: 'Guides, research reports, and housing insights for Arizona State University students covering neighborhoods, leases, subleases, and life in Tempe.',
+  url: `${SITE_URL}/blog`,
+  publisher: {
+    '@type': 'Organization',
+    name: 'HomeHive',
+    url: SITE_URL,
+  },
+  hasPart: ARTICLES.map(a => ({
+    '@type': 'Article',
+    headline: a.title,
+    url: `${SITE_URL}/blog/${a.slug}`,
+    datePublished: a.dateIso,
+    author: { '@type': 'Person', name: a.author.name },
+  })),
+}
+
+const breadcrumbSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
+    { '@type': 'ListItem', position: 2, name: 'Blog', item: `${SITE_URL}/blog` },
+  ],
+}
+
 export const metadata = {
   title: 'HomeHive Journal — ASU Off-Campus Housing Guides & Research',
   description:
@@ -35,6 +64,14 @@ export default function BlogPage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
