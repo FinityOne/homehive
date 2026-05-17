@@ -659,7 +659,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
                         </div>
                       </div>
                       <button
-                        onClick={openJoinModal}
+                        onClick={() => openJoinModal()}
                         style={{ background: ac.gradient, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}
                       >
                         {currentUser ? 'Join →' : 'Sign In →'}
