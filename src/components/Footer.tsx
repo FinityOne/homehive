@@ -5,30 +5,40 @@ import { useState } from 'react'
 
 const SECTIONS = [
   {
-    heading: 'Find a Home',
+    heading: 'Students',
     links: [
-      { label: 'Browse listings',       href: '/homes'        },
-      { label: 'How it works',          href: '/how-it-works' },
-      { label: 'Pricing & fees',        href: '/pricing'      },
-      { label: 'Student housing guide', href: '/student-guide'},
-      { label: 'Blog & research',       href: '/blog'         },
+      { label: 'Browse homes',    href: '/homes'        },
+      { label: 'Find roommates',  href: '/roommates'    },
+      { label: 'Lease guides',    href: '/student-guide'},
+      { label: 'Trust & safety',  href: '/how-it-works' },
+      { label: 'Refer a friend',  href: '/refer'        },
     ],
   },
   {
-    heading: 'List Your Place',
+    heading: 'Hosts',
     links: [
-      { label: 'List your place',       href: '/for-landlords'          },
-      { label: 'How listing works',     href: '/how-it-works#landlords' },
+      { label: 'List a place',    href: '/for-landlords'          },
+      { label: 'Pricing',         href: '/pricing'                },
+      { label: 'Host handbook',   href: '/how-it-works#landlords' },
+      { label: 'Tax & lease docs',href: '/blog'                   },
     ],
   },
   {
     heading: 'Company',
     links: [
-      { label: 'Contact us',            href: '/contact'                  },
-      { label: 'hello@homehive.live',   href: 'mailto:hello@homehive.live'},
-      { label: '+1 (949) 867-0499',     href: 'tel:+19498670499'          },
-      { label: 'Sign in',               href: '/login'                    },
-      { label: 'Sitemap',               href: '/sitemap-page'             },
+      { label: 'About',   href: '/about'   },
+      { label: 'Careers', href: '/careers' },
+      { label: 'Press',   href: '/press'   },
+      { label: 'Contact', href: '/contact' },
+    ],
+  },
+  {
+    heading: 'Campuses',
+    links: [
+      { label: 'ASU Tempe',         href: '/homes'           },
+      { label: 'ASU West',          href: '/homes'           },
+      { label: 'ASU Downtown',      href: '/homes'           },
+      { label: 'Request a campus',  href: '/contact'         },
     ],
   },
 ]
@@ -41,192 +51,119 @@ export default function Footer() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Geist:wght@300;400;500;600;700&display=swap');
 
-        /* ── PRE-FOOTER CTA STRIP ─────────────────────────────── */
-        .f-prefooter {
-          background: var(--hh-cream-100);
-          border-top: 1px solid var(--hh-border-faint);
-          padding: 56px 32px;
-        }
-        .f-prefooter-inner {
-          max-width: 1200px;
-          margin: 0 auto;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 32px;
-          flex-wrap: wrap;
-        }
-        .f-prefooter-eyebrow {
-          font-family: var(--hh-font-ui);
-          font-size: var(--hh-sz-eyebrow);
-          font-weight: var(--hh-wt-eyebrow);
-          letter-spacing: var(--hh-ls-eyebrow);
-          text-transform: uppercase;
-          color: var(--hh-accent);
-          margin-bottom: 10px;
-        }
-        .f-prefooter-headline {
-          font-family: var(--hh-font-display);
-          font-size: clamp(26px, 3.5vw, 40px);
-          font-weight: 380;
-          color: var(--hh-text);
-          line-height: 1.12;
-          letter-spacing: -0.02em;
-        }
-        .f-prefooter-headline em {
-          font-style: italic;
-          color: var(--hh-primary);
-        }
-        .f-prefooter-sub {
-          font-family: var(--hh-font-ui);
-          font-size: 14px;
-          color: var(--hh-text-muted);
-          margin-top: 10px;
-          line-height: 1.6;
-          max-width: 380px;
-        }
-        .f-prefooter-actions {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          flex-shrink: 0;
-          flex-wrap: wrap;
-        }
-        .f-prefooter-ghost {
-          font-family: var(--hh-font-ui);
-          font-size: 14px;
-          color: var(--hh-text-muted);
-          text-decoration: none;
-          transition: color 0.15s;
-          white-space: nowrap;
-        }
-        .f-prefooter-ghost:hover { color: var(--hh-text); }
-        .f-prefooter-btn {
-          font-family: var(--hh-font-ui);
-          font-size: 14px;
-          font-weight: 600;
-          color: #fff;
-          background: var(--hh-primary);
-          padding: 13px 28px;
-          border-radius: 100px;
-          text-decoration: none;
-          white-space: nowrap;
-          letter-spacing: -0.01em;
-          transition: opacity 0.15s, transform 0.1s;
-        }
-        .f-prefooter-btn:hover { opacity: 0.88; transform: translateY(-1px); }
-
-        /* ── FOOTER BODY ──────────────────────────────────────── */
+        /* ── FOOTER ───────────────────────────────────────────── */
         .footer {
-          background: #1c2824;
-          color: rgba(255,255,255,0.55);
+          background: #141210;
+          color: rgba(255,255,255,0.5);
           font-family: var(--hh-font-ui);
-          border-top: 1px solid rgba(255,255,255,0.06);
         }
 
         .f-body {
-          max-width: 1200px;
+          max-width: 1280px;
           margin: 0 auto;
-          padding: 60px 32px 48px;
+          padding: 72px 48px 64px;
           display: grid;
-          grid-template-columns: 2fr 1fr 1fr 1fr;
-          gap: 56px;
+          grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr;
+          gap: 40px;
         }
 
-        /* Brand column */
-        .f-logo {
+        /* ── Brand column ─────────────────────────────────────── */
+        .f-brand-col { padding-right: 16px; }
+
+        .f-wordmark {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
           text-decoration: none;
-          display: inline-block;
-          margin-bottom: 16px;
+          margin-bottom: 20px;
         }
-        .f-logo img { height: 28px; width: auto; display: block; }
-        .f-tagline {
-          font-size: 13px;
-          line-height: 1.75;
-          color: rgba(255,255,255,0.45);
-          max-width: 230px;
-          margin-bottom: 24px;
+        .f-wordmark-text {
+          font-family: var(--hh-font-ui);
+          font-size: 20px;
+          font-weight: 500;
+          color: #fff;
+          letter-spacing: -0.3px;
+          line-height: 1;
+        }
+        .f-wordmark-text em {
+          font-family: var(--hh-font-display);
+          font-style: italic;
+          font-weight: 400;
+          font-size: 21px;
         }
 
-        /* ASU badge — brand-aligned */
-        .f-asu-badge {
+        .f-tagline {
+          font-size: 13.5px;
+          line-height: 1.7;
+          color: rgba(255,255,255,0.38);
+          max-width: 240px;
+          margin-bottom: 28px;
+          font-family: var(--hh-font-ui);
+        }
+
+        /* App buttons */
+        .f-app-btns {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          align-items: flex-start;
+        }
+        .f-app-btn {
           display: inline-flex;
           align-items: center;
           gap: 8px;
-          background: rgba(217,161,74,0.1);
-          border: 1px solid rgba(217,161,74,0.25);
-          border-radius: 100px;
-          padding: 6px 14px;
-        }
-        .f-asu-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: var(--hh-accent);
-          flex-shrink: 0;
-          box-shadow: 0 0 6px rgba(217,161,74,0.6);
-        }
-        .f-asu-text {
-          font-size: 11px;
+          font-family: var(--hh-font-ui);
+          font-size: 13px;
           font-weight: 500;
-          color: var(--hh-accent);
-          letter-spacing: 0.02em;
-        }
-
-        /* Social links */
-        .f-socials {
-          display: flex;
-          gap: 10px;
-          margin-top: 20px;
-        }
-        .f-social-btn {
-          width: 34px;
-          height: 34px;
-          border-radius: 8px;
-          background: rgba(255,255,255,0.07);
-          border: 1px solid rgba(255,255,255,0.1);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 14px;
+          color: rgba(255,255,255,0.75);
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 100px;
+          padding: 9px 18px;
           text-decoration: none;
-          transition: background 0.15s, border-color 0.15s;
-          color: rgba(255,255,255,0.6);
+          white-space: nowrap;
+          letter-spacing: -0.01em;
+          transition: background 0.15s, border-color 0.15s, color 0.15s;
+          cursor: default;
         }
-        .f-social-btn:hover {
-          background: rgba(217,161,74,0.15);
-          border-color: rgba(217,161,74,0.35);
-          color: var(--hh-accent);
+        .f-app-btn:hover {
+          background: rgba(255,255,255,0.08);
+          border-color: rgba(255,255,255,0.2);
+          color: rgba(255,255,255,0.9);
         }
 
-        /* Link columns */
+        /* ── Link columns ─────────────────────────────────────── */
         .f-col-heading {
-          font-size: var(--hh-sz-eyebrow);
-          font-weight: var(--hh-wt-eyebrow);
-          letter-spacing: var(--hh-ls-eyebrow);
+          font-family: var(--hh-font-ui);
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.1em;
           text-transform: uppercase;
-          color: var(--hh-accent);
-          margin-bottom: 18px;
+          color: #D9A14A;
+          margin-bottom: 20px;
         }
         .f-link {
           display: block;
-          font-size: 13px;
-          color: rgba(255,255,255,0.45);
+          font-family: var(--hh-font-ui);
+          font-size: 14px;
+          font-weight: 400;
+          color: rgba(255,255,255,0.55);
           text-decoration: none;
-          margin-bottom: 12px;
+          margin-bottom: 14px;
           transition: color 0.15s;
-          line-height: 1.4;
+          line-height: 1.3;
+          letter-spacing: -0.01em;
         }
         .f-link:hover { color: rgba(255,255,255,0.9); }
         .f-link:last-child { margin-bottom: 0; }
 
-        /* ── BOTTOM BAR ───────────────────────────────────────── */
+        /* ── Bottom bar ───────────────────────────────────────── */
         .f-bottom {
-          border-top: 1px solid rgba(255,255,255,0.06);
-          padding: 20px 32px 24px;
+          border-top: 1px solid rgba(255,255,255,0.07);
+          padding: 20px 48px 28px;
         }
         .f-bottom-inner {
-          max-width: 1200px;
+          max-width: 1280px;
           margin: 0 auto;
           display: flex;
           align-items: center;
@@ -235,85 +172,63 @@ export default function Footer() {
           gap: 12px;
         }
         .f-copy {
-          font-size: 12px;
-          color: rgba(255,255,255,0.25);
-          letter-spacing: 0.01em;
+          font-family: var(--hh-font-ui);
+          font-size: 12.5px;
+          color: rgba(255,255,255,0.22);
+          letter-spacing: 0.005em;
         }
         .f-legal {
           display: flex;
-          gap: 20px;
+          gap: 24px;
         }
         .f-legal a {
-          font-size: 12px;
-          color: rgba(255,255,255,0.25);
+          font-family: var(--hh-font-ui);
+          font-size: 12.5px;
+          color: rgba(255,255,255,0.22);
           text-decoration: none;
           transition: color 0.15s;
+          letter-spacing: 0.005em;
         }
         .f-legal a:hover { color: rgba(255,255,255,0.55); }
 
-        /* ── MOBILE: accordion ────────────────────────────────── */
-        .mob-accordions { display: none; }
+        /* ── Mobile: accordions ───────────────────────────────── */
+        .f-mob-accordions { display: none; }
 
-        @media (max-width: 860px) {
-          .f-prefooter { padding: 40px 20px; }
-          .f-prefooter-inner { flex-direction: column; align-items: flex-start; gap: 24px; }
-          .f-prefooter-sub { max-width: 100%; }
-          .f-prefooter-actions { width: 100%; flex-direction: column; }
-          .f-prefooter-btn { text-align: center; width: 100%; padding: 15px; }
-          .f-prefooter-ghost { display: none; }
-
-          .f-body { grid-template-columns: 1fr; gap: 0; padding: 32px 20px 0; }
-          .f-brand { padding-bottom: 28px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        @media (max-width: 900px) {
+          .f-body { grid-template-columns: 1fr; gap: 0; padding: 40px 24px 0; }
+          .f-brand-col { padding-right: 0; padding-bottom: 32px; border-bottom: 1px solid rgba(255,255,255,0.07); }
           .f-tagline { max-width: 100%; }
+          .f-app-btns { flex-direction: row; }
           .f-col-desktop { display: none; }
 
-          .mob-accordions { display: block; }
-          .f-acc { border-bottom: 1px solid rgba(255,255,255,0.07); }
-          .f-acc-btn {
+          .f-mob-accordions { display: block; padding: 0 24px; }
+          .f-mob-acc { border-bottom: 1px solid rgba(255,255,255,0.07); }
+          .f-mob-acc-btn {
             width: 100%; background: none; border: none;
             display: flex; align-items: center; justify-content: space-between;
-            padding: 16px 0; font-size: 14px; font-weight: 500;
-            color: rgba(255,255,255,0.55); cursor: pointer;
+            padding: 16px 0; font-size: 13px; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: #D9A14A; cursor: pointer;
             font-family: var(--hh-font-ui); text-align: left;
           }
-          .f-acc-btn:hover { color: rgba(255,255,255,0.9); }
-          .f-acc-arrow { font-size: 13px; transition: transform 0.25s; display: inline-block; opacity: 0.5; }
-          .f-acc-arrow.open { transform: rotate(180deg); opacity: 1; color: var(--hh-accent); }
-          .f-acc-body { overflow: hidden; max-height: 0; transition: max-height 0.3s ease; }
-          .f-acc-body.open { max-height: 400px; }
-          .f-acc-inner { padding: 4px 0 16px; display: flex; flex-direction: column; }
+          .f-mob-acc-arrow { font-size: 12px; transition: transform 0.25s; display: inline-block; opacity: 0.6; color: rgba(255,255,255,0.4); }
+          .f-mob-acc-arrow.open { transform: rotate(180deg); opacity: 1; }
+          .f-mob-acc-body { overflow: hidden; max-height: 0; transition: max-height 0.3s ease; }
+          .f-mob-acc-body.open { max-height: 400px; }
+          .f-mob-acc-inner { padding: 4px 0 16px; display: flex; flex-direction: column; }
           .f-mob-link {
-            font-size: 14px; color: rgba(255,255,255,0.4); text-decoration: none;
-            padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 14px; color: rgba(255,255,255,0.45); text-decoration: none;
+            padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-family: var(--hh-font-ui);
           }
           .f-mob-link:last-child { border-bottom: none; }
           .f-mob-link:hover { color: rgba(255,255,255,0.85); }
 
-          .mob-accordions { padding: 0 20px; }
-          .f-bottom { padding: 18px 20px 32px; }
+          .f-bottom { padding: 18px 24px 32px; }
           .f-bottom-inner { flex-direction: column; align-items: center; gap: 8px; text-align: center; }
-          .f-legal { gap: 16px; }
+          .f-legal { gap: 16px; flex-wrap: wrap; justify-content: center; }
         }
       `}</style>
-
-      {/* ── PRE-FOOTER CTA ─────────────────────────────────────── */}
-      <div className="f-prefooter">
-        <div className="f-prefooter-inner">
-          <div>
-            <div className="f-prefooter-eyebrow">Ready to move?</div>
-            <div className="f-prefooter-headline">
-              Your home near ASU<br />is <em>waiting for you.</em>
-            </div>
-            <p className="f-prefooter-sub">
-              Verified listings, zero broker fees, no surprises at signing.
-            </p>
-          </div>
-          <div className="f-prefooter-actions">
-            <a href="/for-landlords" className="f-prefooter-ghost">List your place →</a>
-            <a href="/homes" className="f-prefooter-btn">View available homes</a>
-          </div>
-        </div>
-      </div>
 
       <footer className="footer">
 
@@ -321,26 +236,28 @@ export default function Footer() {
         <div className="f-body">
 
           {/* Brand column */}
-          <div className="f-brand">
-            <a href="/" className="f-logo">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/hh-logo-white.png" alt="HomeHive" />
+          <div className="f-brand-col">
+            <a href="/" className="f-wordmark">
+              {/* Hex icon */}
+              <svg width="28" height="32" viewBox="0 0 28 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 1L27 8.5V23.5L14 31L1 23.5V8.5L14 1Z" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5"/>
+                <path d="M14 1L27 8.5V23.5L14 31L1 23.5V8.5L14 1Z" fill="rgba(217,161,74,0.08)"/>
+                <circle cx="14" cy="16" r="3.5" fill="#D9A14A" opacity="0.9"/>
+                <circle cx="9" cy="11.5" r="2" fill="rgba(217,161,74,0.45)"/>
+                <circle cx="19" cy="11.5" r="2" fill="rgba(217,161,74,0.45)"/>
+                <circle cx="9" cy="20.5" r="2" fill="rgba(217,161,74,0.45)"/>
+                <circle cx="19" cy="20.5" r="2" fill="rgba(217,161,74,0.45)"/>
+              </svg>
+              <span className="f-wordmark-text">Home<em>Hive</em></span>
             </a>
+
             <p className="f-tagline">
-              The off-campus housing platform built for ASU students. Verified homes, transparent pricing, zero broker fees.
+              The verified housing platform for college students. Built first in Tempe. Rolling out across every U.S. campus.
             </p>
 
-            {/* ASU badge */}
-            <div className="f-asu-badge">
-              <span className="f-asu-dot" />
-              <span className="f-asu-text">ASU Off-Campus · Tempe, AZ</span>
-            </div>
-
-            {/* Social links */}
-            <div className="f-socials">
-              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="f-social-btn" aria-label="Instagram">📷</a>
-              <a href="https://tiktok.com" target="_blank" rel="noopener noreferrer" className="f-social-btn" aria-label="TikTok">🎵</a>
-              <a href="mailto:hello@homehive.live" className="f-social-btn" aria-label="Email">✉️</a>
+            <div className="f-app-btns">
+              <span className="f-app-btn">iOS app — soon</span>
+              <span className="f-app-btn">Android — soon</span>
             </div>
           </div>
 
@@ -349,7 +266,7 @@ export default function Footer() {
             <div key={section.heading} className="f-col-desktop">
               <div className="f-col-heading">{section.heading}</div>
               {section.links.map(link => (
-                <a key={link.href} href={link.href} className="f-link">{link.label}</a>
+                <a key={link.label} href={link.href} className="f-link">{link.label}</a>
               ))}
             </div>
           ))}
@@ -357,20 +274,20 @@ export default function Footer() {
         </div>
 
         {/* ── Mobile accordions ── */}
-        <div className="mob-accordions">
+        <div className="f-mob-accordions">
           {SECTIONS.map(section => (
-            <div key={section.heading} className="f-acc">
+            <div key={section.heading} className="f-mob-acc">
               <button
-                className="f-acc-btn"
+                className="f-mob-acc-btn"
                 onClick={() => setOpenSection(prev => prev === section.heading ? null : section.heading)}
               >
                 {section.heading}
-                <span className={`f-acc-arrow${openSection === section.heading ? ' open' : ''}`}>↓</span>
+                <span className={`f-mob-acc-arrow${openSection === section.heading ? ' open' : ''}`}>↓</span>
               </button>
-              <div className={`f-acc-body${openSection === section.heading ? ' open' : ''}`}>
-                <div className="f-acc-inner">
+              <div className={`f-mob-acc-body${openSection === section.heading ? ' open' : ''}`}>
+                <div className="f-mob-acc-inner">
                   {section.links.map(link => (
-                    <a key={link.href} href={link.href} className="f-mob-link">{link.label}</a>
+                    <a key={link.label} href={link.href} className="f-mob-link">{link.label}</a>
                   ))}
                 </div>
               </div>
@@ -381,11 +298,12 @@ export default function Footer() {
         {/* ── Bottom bar ── */}
         <div className="f-bottom">
           <div className="f-bottom-inner">
-            <div className="f-copy">© 2026 HomeHive · Tempe, AZ · Built for Sun Devils</div>
+            <div className="f-copy">© 2026 HomeHive Inc. · Built for students.</div>
             <div className="f-legal">
               <a href="/privacy">Privacy</a>
               <a href="/terms">Terms</a>
-              <a href="/sitemap-page">Sitemap</a>
+              <a href="/accessibility">Accessibility</a>
+              <a href="/cookie-preferences">Cookie preferences</a>
             </div>
           </div>
         </div>
