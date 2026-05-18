@@ -150,6 +150,38 @@ export default function PropertyPageClient({
       available_rooms: home.available,
       is_personalized: isPersonalized,
     })
+
+    // Meta Pixel — ViewContent
+    if (typeof window !== 'undefined' && (window as any).fbq) {
+      ;(window as any).fbq('track', 'ViewContent', {
+        content_name: home.name,
+        content_ids: [slug],
+        content_type: 'product',
+        value: home.price,
+        currency: 'USD',
+      })
+    }
+
+    // Property page view attribution tracking
+    const utm_source   = localStorage.getItem('utm_source')   || undefined
+    const utm_medium   = localStorage.getItem('utm_medium')   || undefined
+    const utm_campaign = localStorage.getItem('utm_campaign') || undefined
+    const utm_content  = localStorage.getItem('utm_content')  || undefined
+    const landing_page = localStorage.getItem('utm_landing_page') || window.location.pathname
+    const referrer     = localStorage.getItem('utm_referrer') || document.referrer || undefined
+    const device_type  = /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
+
+    // Generate or reuse session ID (persists for the browser session)
+    if (!sessionStorage.getItem('hh_session_id')) {
+      sessionStorage.setItem('hh_session_id', crypto.randomUUID())
+    }
+    const session_id = sessionStorage.getItem('hh_session_id')!
+
+    fetch('/api/page-views', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ property_slug: slug, session_id, utm_source, utm_medium, utm_campaign, utm_content, landing_page, referrer, device_type }),
+    }).catch(() => {})
   }, [home]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -259,10 +291,22 @@ export default function PropertyPageClient({
     if (!canSubmit) return
     setSubmitting(true)
     try {
+      // Pull attribution from localStorage (set by UtmCapture on any marketing page)
+      const attribution = {
+        utm_source:   localStorage.getItem('utm_source')        || undefined,
+        utm_medium:   localStorage.getItem('utm_medium')        || undefined,
+        utm_campaign: localStorage.getItem('utm_campaign')      || undefined,
+        utm_content:  localStorage.getItem('utm_content')       || undefined,
+        landing_page: localStorage.getItem('utm_landing_page')  || window.location.pathname,
+        referrer:     localStorage.getItem('utm_referrer')      || document.referrer || undefined,
+        device_type:  /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
+        browser:      navigator.userAgent.split(' ').pop() || undefined,
+      }
+
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, property: slug }),
+        body: JSON.stringify({ ...formData, property: slug, ...attribution }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -271,11 +315,23 @@ export default function PropertyPageClient({
           property_name: home?.name,
           move_in_date: formData.move_in_date,
           is_personalized: isPersonalized,
+          utm_source: attribution.utm_source,
+          utm_campaign: attribution.utm_campaign,
         })
+
+        // Meta Pixel — Lead conversion event
+        if (typeof window !== 'undefined' && (window as any).fbq) {
+          ;(window as any).fbq('track', 'Lead', {
+            content_name: home?.name,
+            content_ids: [slug],
+            value: home?.price,
+            currency: 'USD',
+          })
+        }
+
         setSubmittedLeadId(data.leadId ?? null)
         setSubmitted(true)
         setMobileFormOpen(false)
-        // If logged in, redirect to pre-screen after a brief moment
         if (loggedInUser && data.leadId) {
           setTimeout(() => { window.location.href = `/pre-screen/${data.leadId}` }, 1800)
         }

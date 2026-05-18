@@ -19,14 +19,28 @@ const resend = new Resend(process.env.RESEND_API_KEY!)
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const { first_name, email, phone, move_in_date, property } = body
+  const {
+    first_name, email, phone, move_in_date, property,
+    utm_source, utm_medium, utm_campaign, utm_content,
+    landing_page, referrer, device_type, browser,
+  } = body
 
-  console.log('Incoming lead:', JSON.stringify({ first_name, email, phone, move_in_date, property }, null, 2))
+  console.log('Incoming lead:', JSON.stringify({ first_name, email, phone, move_in_date, property, utm_source, utm_campaign }, null, 2))
 
   // 1. Save to Supabase
   const { data, error } = await supabase
     .from('leads')
-    .insert([{ first_name, email, phone, move_in_date, property, status: 'new' }])
+    .insert([{
+      first_name, email, phone, move_in_date, property, status: 'new',
+      utm_source:   utm_source   || null,
+      utm_medium:   utm_medium   || null,
+      utm_campaign: utm_campaign || null,
+      utm_content:  utm_content  || null,
+      landing_page: landing_page || null,
+      referrer:     referrer     || null,
+      device_type:  device_type  || null,
+      browser:      browser      || null,
+    }])
     .select()
 
   if (error || !data || data.length === 0) {
