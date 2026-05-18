@@ -12,6 +12,11 @@ const DEFAULT_OG_IMAGE = 'https://images.unsplash.com/photo-1562516155-e0c1ee440
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  verification: {
+    other: {
+      'facebook-domain-verification': '7xp9ywf5qg271z0wfjjmiha96ug8mb',
+    },
+  },
   title: {
     default: 'HomeHive — #1 Off-Campus Housing for ASU Students in Tempe',
     template: '%s | HomeHive',
