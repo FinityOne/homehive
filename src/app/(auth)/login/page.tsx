@@ -17,6 +17,7 @@ function LoginForm() {
   const registered = searchParams.get('registered')
   const next = searchParams.get('next')
   const prefillEmail = searchParams.get('email') || ''
+  const oauthError = searchParams.get('error')
   const [email, setEmail]       = useState(prefillEmail)
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
@@ -36,7 +37,16 @@ function LoginForm() {
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError || !data.user) {
-      setError('Incorrect email or password. Try again.')
+      const msg = authError?.message?.toLowerCase() || ''
+      let errorText = 'Incorrect email or password. Try again.'
+      if (msg.includes('email not confirmed')) {
+        errorText = 'Please verify your email before signing in. Check your inbox.'
+      } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
+        errorText = 'Too many attempts. Please wait a few minutes and try again.'
+      } else if (msg.includes('network') || msg.includes('fetch')) {
+        errorText = 'Network error. Please check your connection and try again.'
+      }
+      setError(errorText)
       ph?.capture('login_failed', { error: authError?.message || 'invalid_credentials' })
       setLoading(false)
       return
@@ -221,6 +231,13 @@ function LoginForm() {
               Account created — you&apos;re all set. Sign in below.
             </div>
           )}
+          {oauthError && !error && (
+            <div style={{ background: '#fdf2f5', border: '1px solid #f5c6d0', borderRadius: '10px', padding: '11px 14px', fontSize: '13px', color: '#8C1D40', marginBottom: '18px', lineHeight: 1.4 }}>
+              {oauthError === 'oauth_failed'
+                ? 'Google sign-in failed. Please try again or use email below.'
+                : 'Something went wrong. Please try signing in again.'}
+            </div>
+          )}
           {error && (
             <div style={{ background: '#fdf2f5', border: '1px solid #f5c6d0', borderRadius: '10px', padding: '11px 14px', fontSize: '13px', color: '#8C1D40', marginBottom: '18px', lineHeight: 1.4 }}>
               {error}
@@ -303,7 +320,7 @@ function LoginForm() {
           {/* Sign up CTA */}
           <div style={{ textAlign: 'center', fontSize: '13px', color: '#9b9b9b' }}>
             New to HomeHive?{' '}
-            <a href={`/signup${next ? `?next=${encodeURIComponent(next)}&role=landlord` : ''}`} style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
+            <a href={`/signup${next ? `?next=${encodeURIComponent(next)}` : ''}`} style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
               Create a free account →
             </a>
           </div>

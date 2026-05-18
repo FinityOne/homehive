@@ -187,10 +187,15 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
 
     setLoading(true)
 
+    const callbackParams = new URLSearchParams({ role: role === 'landlord' ? 'landlord' : 'tenant' })
+    if (next) callbackParams.set('next', next)
+    const emailRedirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`
+
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: {
+        emailRedirectTo,
         data: {
           full_name: form.name,
           role: role === 'landlord' ? 'landlord' : 'tenant',
