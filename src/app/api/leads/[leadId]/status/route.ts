@@ -15,13 +15,17 @@ export async function PATCH(
 
   const status: Lead['status'] = body.status
   const closedReason: Lead['closed_reason'] | undefined = body.closed_reason
+  const closedNotes: string | undefined = body.closed_notes
 
   if (!status) {
     return Response.json({ error: 'status is required' }, { status: 400 })
   }
 
   const updatePayload: Record<string, unknown> = { status }
-  if (status === 'closed' && closedReason) updatePayload.closed_reason = closedReason
+  if (status === 'closed' && closedReason) {
+    updatePayload.closed_reason = closedReason
+    updatePayload.closed_notes = closedNotes ?? null
+  }
 
   // Fetch lead to check for group membership
   const { data: lead } = await supabaseAdmin

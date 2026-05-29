@@ -15,9 +15,10 @@ const LEAD_STATUS_CONFIG: Record<Lead['status'], { label: string; color: string;
   contacted:      { label: 'Contacted',      color: '#c9973a', bg: '#fefce8', border: '#fde68a' },
   follow_up:      { label: 'Follow Up',      color: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
   engaged:        { label: 'Engaged',        color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
-  cold:           { label: 'Cold',           color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
   qualified:      { label: 'Qualified',      color: '#166534', bg: '#f0fdf4', border: '#bbf7d0' },
-  tour_scheduled: { label: 'Tour Scheduled', color: '#0e7490', bg: '#ecfeff', border: '#a5f3fc' },
+  matching:       { label: 'Matching',       color: '#8b5cf6', bg: '#faf5ff', border: '#ddd6fe' },
+  cold:           { label: 'Cold',           color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  tour_scheduled: { label: 'Qualified',      color: '#166534', bg: '#f0fdf4', border: '#bbf7d0' },
   closed:         { label: 'Closed',         color: '#fff',    bg: '#8C1D40', border: '#8C1D40' },
 }
 const LEAD_STATUSES = Object.keys(LEAD_STATUS_CONFIG) as Lead['status'][]
@@ -59,6 +60,13 @@ function LeadPanel({ lead, onClose, onUpdate }: {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+
+  const copyField = (text: string, field: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedField(field)
+    setTimeout(() => setCopiedField(null), 2000)
+  }
 
   const save = async () => {
     setSaving(true)
@@ -135,18 +143,34 @@ function LeadPanel({ lead, onClose, onUpdate }: {
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: '14px' }}>Lead details</div>
           {[
-            { label: 'Email',     value: lead.email,               link: `mailto:${lead.email}` },
-            { label: 'Phone',     value: lead.phone || '—',        link: lead.phone ? `tel:${lead.phone}` : undefined },
-            { label: 'Property',  value: lead.property || '—',     link: undefined },
-            { label: 'Move-in',   value: lead.move_in_date || '—', link: undefined },
-            { label: 'Submitted', value: lead.created_at ? new Date(lead.created_at).toLocaleString() : '—', link: undefined },
+            { label: 'Email',     value: lead.email,               link: `mailto:${lead.email}`,       copyValue: lead.email,       copyKey: 'email' },
+            { label: 'Phone',     value: lead.phone || '—',        link: lead.phone ? `tel:${lead.phone}` : undefined, copyValue: lead.phone || null, copyKey: 'phone' },
+            { label: 'Property',  value: lead.property || '—',     link: undefined,                    copyValue: null,             copyKey: '' },
+            { label: 'Move-in',   value: lead.move_in_date || '—', link: undefined,                    copyValue: null,             copyKey: '' },
+            { label: 'Submitted', value: lead.created_at ? new Date(lead.created_at).toLocaleString() : '—', link: undefined, copyValue: null, copyKey: '' },
           ].map(row => (
-            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f4f0', gap: '12px' }}>
+            <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #f5f4f0', gap: '8px' }}>
               <span style={{ fontSize: '12px', color: '#9b9b9b', flexShrink: 0 }}>{row.label}</span>
-              {row.link
-                ? <a href={row.link} style={{ fontSize: '13px', color: '#8C1D40', fontWeight: 500, textDecoration: 'none', textAlign: 'right', wordBreak: 'break-all' }}>{row.value}</a>
-                : <span style={{ fontSize: '13px', color: '#1a1a1a', textAlign: 'right', wordBreak: 'break-word' }}>{row.value}</span>
-              }
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+                {row.link
+                  ? <a href={row.link} style={{ fontSize: '13px', color: '#8C1D40', fontWeight: 500, textDecoration: 'none', wordBreak: 'break-all' }}>{row.value}</a>
+                  : <span style={{ fontSize: '13px', color: '#1a1a1a', wordBreak: 'break-word' }}>{row.value}</span>
+                }
+                {row.copyValue && (
+                  <button
+                    onClick={() => copyField(row.copyValue!, row.copyKey)}
+                    title={`Copy ${row.label.toLowerCase()}`}
+                    style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: 'none', cursor: 'pointer', color: copiedField === row.copyKey ? '#10b981' : '#c5c1b8', transition: 'all 0.12s' }}
+                    onMouseOver={e => { if (copiedField !== row.copyKey) (e.currentTarget as HTMLButtonElement).style.color = '#8C1D40'; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(140,29,64,0.08)' }}
+                    onMouseOut={e => { if (copiedField !== row.copyKey) (e.currentTarget as HTMLButtonElement).style.color = '#c5c1b8'; (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+                  >
+                    {copiedField === row.copyKey
+                      ? <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      : <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    }
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

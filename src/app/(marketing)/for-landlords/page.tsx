@@ -22,7 +22,7 @@ export const metadata = {
     type: 'website' as const,
     images: [
       {
-        url: `${SITE_URL}/og-default.png`,
+        url: `${SITE_URL}/opengraph-image`,
         width: 1200,
         height: 630,
         alt: 'HomeHive — List Your Place Near ASU',
@@ -33,7 +33,7 @@ export const metadata = {
     card: 'summary_large_image' as const,
     title: 'List Your Place on HomeHive — Free for Landlords',
     description: 'Connect with pre-vetted ASU students looking for housing. Free to list through 2026.',
-    images: [`${SITE_URL}/og-default.png`],
+    images: [`${SITE_URL}/opengraph-image`],
   },
   alternates: { canonical: `${SITE_URL}/for-landlords` },
 }

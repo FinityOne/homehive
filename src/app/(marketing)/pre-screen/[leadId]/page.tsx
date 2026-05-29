@@ -79,6 +79,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
     monthly_budget: '',
     lease_length: '',
     lifestyle: '',
+    pets: '' as '' | 'none' | 'dog' | 'cat' | 'other',
     notes: '',
   })
 
@@ -90,7 +91,20 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         .then(data => {
           if (data.error) { setNotFound(true); return }
           setLeadInfo(data)
-          if (data.move_in_date) setForm(f => ({ ...f, move_in_date: data.move_in_date }))
+          if (data.move_in_date) {
+            // lead.move_in_date may be an ISO date (e.g. "2026-07-01") from the inquiry form
+            // convert to the human-readable option string used in the select, or leave blank
+            const d = new Date(data.move_in_date + 'T12:00:00')
+            if (!isNaN(d.getTime())) {
+              const humanDate = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+              const options = getMoveInOptions()
+              if (options.includes(humanDate)) {
+                setForm(f => ({ ...f, move_in_date: humanDate }))
+              }
+            } else if (getMoveInOptions().includes(data.move_in_date)) {
+              setForm(f => ({ ...f, move_in_date: data.move_in_date }))
+            }
+          }
           ph?.capture('prescreen_started', {
             lead_id: leadId,
             property: data.property,
@@ -141,6 +155,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
           monthly_budget: form.monthly_budget ? parseInt(form.monthly_budget) : null,
           lease_length: form.lease_length,
           lifestyle: form.lifestyle,
+          pets: form.pets || null,
           notes: form.notes,
         }),
       })
@@ -724,12 +739,38 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
               </div>
             </div>
 
+            {/* Pets */}
+            <div style={{ marginBottom: '20px' }}>
+              <label className="ps-label">Do you have any pets?</label>
+              <div className="pill-group">
+                {[
+                  { value: 'none', label: '🚫 No pets' },
+                  { value: 'dog', label: '🐕 Dog' },
+                  { value: 'cat', label: '🐈 Cat' },
+                  { value: 'other', label: '🐾 Other' },
+                ].map(opt => (
+                  <div
+                    key={opt.value}
+                    className={`pill${form.pets === opt.value ? ' active' : ''}`}
+                    onClick={() => set('pets', opt.value)}
+                  >{opt.label}</div>
+                ))}
+              </div>
+              {form.pets && form.pets !== 'none' && (
+                <div style={{ marginTop: '10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: '#78350f', lineHeight: 1.6 }}>
+                  🐾 <strong>Heads up:</strong> We love animals! A pet rent fee applies to all pets, including those with ESA documentation. This is standard practice to cover any additional wear — we appreciate your understanding.
+                </div>
+              )}
+            </div>
+
+            <div className="ps-divider" />
+
             {/* Notes — optional */}
             <div style={{ marginBottom: '28px' }}>
               <label className="ps-label">Anything else you&apos;d like us to know? <span style={{ fontWeight: 400, color: '#9b9b9b' }}>(optional)</span></label>
               <textarea
                 className="ps-input ps-textarea"
-                placeholder="Pets, parking needs, specific questions about the unit, special circumstances..."
+                placeholder="Parking needs, specific questions about the unit, special circumstances..."
                 value={form.notes}
                 onChange={e => set('notes', e.target.value)}
               />

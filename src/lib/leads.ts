@@ -42,8 +42,12 @@ export type Lead = {
   last_name: string | null
   phone: string | null
   move_in_date: string | null
-  status: 'new' | 'contacted' | 'follow_up' | 'engaged' | 'cold' | 'qualified' | 'tour_scheduled' | 'closed'
+  // Pipeline: new → contacted → follow_up → engaged → qualified → matching → cold → closed
+  // 'tour_scheduled' kept for backward compat with existing records; treated as qualified+toured visually
+  status: 'new' | 'contacted' | 'follow_up' | 'engaged' | 'qualified' | 'matching' | 'cold' | 'tour_scheduled' | 'closed'
+  toured: boolean | null // true once lead has done a physical/virtual tour (replaces tour_scheduled status)
   closed_reason: 'leased' | 'found_another_place' | 'unresponsive' | 'budget_mismatch' | 'not_qualified' | 'other' | null
+  closed_notes: string | null
   property: string | null // stores property slug
   lead_group_id: string | null
 }
@@ -59,6 +63,7 @@ export type PrescreenData = {
   monthly_budget: number
   lease_length: string
   lifestyle: string
+  pets: string | null
   notes: string
   // derived from occupation for backward compat
   is_student: boolean
@@ -133,11 +138,13 @@ export async function getAllLeads(): Promise<Lead[]> {
 export async function updateLeadStatus(
   leadId: string,
   status: Lead['status'],
-  closedReason?: Lead['closed_reason']
+  closedReason?: Lead['closed_reason'],
+  closedNotes?: string
 ): Promise<{ error: any }> {
   const updatePayload: Record<string, any> = { status }
   if (status === 'closed' && closedReason) {
     updatePayload.closed_reason = closedReason
+    updatePayload.closed_notes = closedNotes ?? null
   }
 
   const { error } = await supabase

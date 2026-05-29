@@ -76,6 +76,10 @@ export default function PropertyPageClient({
   const titleRef = useRef<HTMLDivElement>(null)
   const formStartedRef = useRef(false)
   const [roomLightbox, setRoomLightbox] = useState<{ images: string[]; index: number; roomName: string } | null>(null)
+  const [comments, setComments] = useState<{ id: string; author_name: string; avatar_url: string | null; content: string; created_at: string }[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [submittingComment, setSubmittingComment] = useState(false)
+  const [commentError, setCommentError] = useState<string | null>(null)
 
   const openRoomLightbox = useCallback((images: string[], index: number, roomName: string) => {
     setRoomLightbox({ images, index, roomName })
@@ -138,6 +142,31 @@ export default function PropertyPageClient({
         setRecommended(mapped)
       })
   }, [home]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetch(`/api/comments?property=${slug}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setComments(data))
+      .catch(() => {})
+  }, [slug])
+
+  const submitComment = async () => {
+    if (!commentText.trim()) return
+    setSubmittingComment(true)
+    setCommentError(null)
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_slug: slug, content: commentText.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setCommentError(data.error || 'Failed to post comment'); return }
+      setComments(prev => [data, ...prev])
+      setCommentText('')
+    } catch { setCommentError('Failed to post comment') }
+    finally { setSubmittingComment(false) }
+  }
 
   useEffect(() => {
     if (!home) return
@@ -374,8 +403,8 @@ export default function PropertyPageClient({
       </div>
     ) : null
 
-    // Existing lead — show status
-    if (existingLead) {
+    // Existing lead — show status (skip if closed so they can re-inquire)
+    if (existingLead && existingLead.status !== 'closed') {
       const cfg = LEAD_STATUS_LABEL[existingLead.status] ?? LEAD_STATUS_LABEL['new']
       const needsPrescreen = existingLead.status === 'new' || existingLead.status === 'contacted'
       return (
@@ -1209,6 +1238,88 @@ export default function PropertyPageClient({
               </div>
             )}
 
+          {/* ── COMMENTS ── */}
+          <div style={{ borderTop: '1px solid var(--hh-border-faint)', paddingTop: '28px', marginTop: '12px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--hh-text)', margin: '0 0 20px', fontFamily: 'var(--hh-font-ui)' }}>
+              {comments.length > 0 ? `${comments.length} Question${comments.length !== 1 ? 's' : ''} & Comment${comments.length !== 1 ? 's' : ''}` : 'Questions & Comments'}
+            </h3>
+
+            {/* Composer */}
+            {loggedInUser ? (
+              <div style={{ display: 'flex', gap: 12, marginBottom: 28 }}>
+                {loggedInUser.avatarUrl ? (
+                  <img src={loggedInUser.avatarUrl} alt={loggedInUser.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid var(--hh-border-faint)' }} />
+                ) : (
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {loggedInUser.name?.[0]?.toUpperCase() || '?'}
+                  </div>
+                )}
+                <div style={{ flex: 1 }}>
+                  <textarea
+                    value={commentText}
+                    onChange={e => setCommentText(e.target.value)}
+                    placeholder="Ask a question or share your experience…"
+                    maxLength={1000}
+                    rows={1}
+                    style={{ width: '100%', border: 'none', borderBottom: '1.5px solid var(--hh-border-faint)', borderRadius: 0, padding: '6px 0', fontSize: 14, fontFamily: 'var(--hh-font-ui, system-ui)', resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.6, color: 'var(--hh-text)', background: 'transparent', minHeight: 34 }}
+                    onFocus={e => { e.target.style.borderBottomColor = '#8C1D40'; e.target.rows = 3 }}
+                    onBlur={e => { if (!commentText.trim()) { e.target.style.borderBottomColor = 'var(--hh-border-faint)'; e.target.rows = 1 } }}
+                  />
+                  {(commentText.trim() || submittingComment) && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                      {commentError && <span style={{ fontSize: 12, color: '#dc2626', marginRight: 'auto' }}>{commentError}</span>}
+                      <button onClick={() => setCommentText('')} style={{ background: 'none', color: '#6b6b6b', border: 'none', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Cancel
+                      </button>
+                      <button onClick={submitComment} disabled={submittingComment || !commentText.trim()}
+                        style={{ background: submittingComment || !commentText.trim() ? '#e0e0e0' : '#8C1D40', color: submittingComment || !commentText.trim() ? '#909090' : '#fff', border: 'none', borderRadius: 20, padding: '6px 16px', fontSize: 12, fontWeight: 700, cursor: submittingComment || !commentText.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'background 0.15s' }}>
+                        {submittingComment ? 'Posting…' : 'Post'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '12px 16px', background: 'var(--hh-bg-alt)', borderRadius: 10, border: '1px solid var(--hh-border-faint)' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+                <div style={{ fontSize: 13, color: 'var(--hh-text-muted)' }}>
+                  <a href="/login" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>Sign in</a> to ask a question or leave a comment
+                </div>
+              </div>
+            )}
+
+            {/* Comments list */}
+            {comments.length === 0 ? (
+              <div style={{ padding: '24px 0', color: 'var(--hh-text-muted)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <span style={{ fontSize: 20 }}>💬</span>
+                No comments yet — be the first to ask a question.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                {comments.map(c => (
+                  <div key={c.id} style={{ display: 'flex', gap: 12, padding: '16px 0', borderBottom: '1px solid var(--hh-border-faint)' }}>
+                    {c.avatar_url ? (
+                      <img src={c.avatar_url} alt={c.author_name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid var(--hh-border-faint)' }} />
+                    ) : (
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {c.author_name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--hh-text)' }}>{c.author_name}</span>
+                        <span style={{ fontSize: 11, color: 'var(--hh-text-muted)' }}>
+                          {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 14, color: 'var(--hh-text)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{c.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           </div>{/* /prop-left */}
 
           {/* RIGHT — sticky form card */}
@@ -1255,6 +1366,7 @@ export default function PropertyPageClient({
 
         </div>{/* /prop-split */}
       </div>{/* /prop-page */}
+
 
       {/* ── MOBILE STICKY BAR ─────────────────────────── */}
       <div className="mobile-sticky-bar" style={{ transform: showStickyBar || mobileFormOpen ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)' }}>

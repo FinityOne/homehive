@@ -11,16 +11,17 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'cold', 'qualified', 'tour_scheduled', 'closed']
+const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'tour_scheduled', 'closed']
 
 const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: string; border: string; desc: string; icon: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: '#eff6ff',   border: '#bfdbfe', desc: 'Just submitted — needs outreach',          icon: '📩' },
   contacted:      { label: 'Contacted',     color: '#f97316', bg: '#fff7ed',   border: '#fed7aa', desc: 'You\'ve reached out, awaiting response',    icon: '📞' },
   follow_up:      { label: 'Follow Up',     color: '#c2410c', bg: '#fff7ed',   border: '#fed7aa', desc: 'Needs a follow-up touch',                  icon: '🔄' },
   engaged:        { label: 'Engaged',       color: '#d97706', bg: '#fffbeb',   border: '#fde68a', desc: 'In active conversation',                    icon: '💬' },
-  cold:           { label: 'Cold',          color: '#64748b', bg: '#f8fafc',   border: '#e2e8f0', desc: 'No response — may need reactivation',       icon: '❄️' },
   qualified:      { label: 'Qualified',     color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
-  tour_scheduled: { label: 'Tour Scheduled',color: '#8b5cf6', bg: '#f5f3ff',   border: '#ddd6fe', desc: 'Tour booked — prepare the property',         icon: '📅' },
+  matching:       { label: 'Matching',      color: '#8b5cf6', bg: '#f5f3ff',   border: '#ddd6fe', desc: 'Pairing with roommates',                    icon: '🤝' },
+  cold:           { label: 'Cold',          color: '#64748b', bg: '#f8fafc',   border: '#e2e8f0', desc: 'No response — may need reactivation',       icon: '❄️' },
+  tour_scheduled: { label: 'Qualified',     color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
   closed:         { label: 'Closed',        color: '#6b7280', bg: '#f9fafb',   border: '#e5e7eb', desc: 'Lead closed out',                           icon: '🏁' },
 }
 
@@ -30,7 +31,7 @@ type Prescreen = {
   birthdate: string | null; gender: string | null
   move_in_date: string | null; group_size: number | null
   about: string | null; monthly_budget: number | null
-  lease_length: string | null; lifestyle: string | null; notes: string | null
+  lease_length: string | null; lifestyle: string | null; pets: string | null; notes: string | null
 }
 
 type EmailLog = {
@@ -108,6 +109,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
   const [statusModal, setStatusModal] = useState(false)
   const [closedReason, setClosedReason] = useState<Lead['closed_reason']>(null)
+  const [closeNotes, setCloseNotes] = useState('')
   const [pendingStatus, setPendingStatus] = useState<Lead['status'] | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
@@ -267,7 +269,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     setTimeout(() => setToast(null), 3500)
   }
 
-  useEffect(() => { document.title = 'Lead Details — Landlord | HomeHive' }, [])
+  useEffect(() => {
+    if (lead) {
+      const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Lead'
+      document.title = `${name} — HomeHive`
+    }
+  }, [lead])
 
   useEffect(() => {
     const load = async () => {
@@ -380,7 +387,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     }
     return body
       .replace(/\{\{first_name\}\}/g, lead?.first_name || 'there')
-      .replace(/\{\{your_name\}\}/g, landlordName || 'Your Landlord')
+      .replace(/\{\{your_name\}\}/g, landlordName || '')
       .replace(/\{\{property_name\}\}/g, property?.name || lead?.property || 'the property')
       .replace(/\{\{listing_link\}\}/g, lead?.property ? `${siteUrl}/homes/${lead.property}` : siteUrl)
       .replace(/\{\{tour_date\}\}/g, tourDateStr || 'recently')
@@ -389,17 +396,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const handleStatusUpdate = async (status: Lead['status'], cr?: Lead['closed_reason']) => {
     if (!lead) return
     setUpdatingStatus(true)
+    const notes = closeNotes.trim() || undefined
     try {
       const res = await fetch(`/api/leads/${leadId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, closed_reason: cr }),
+        body: JSON.stringify({ status, closed_reason: cr, closed_notes: notes }),
       })
       if (res.ok) {
-        setLead(prev => prev ? { ...prev, status, closed_reason: cr || prev.closed_reason } : prev)
+        setLead(prev => prev ? { ...prev, status, closed_reason: cr || prev.closed_reason, closed_notes: notes ?? prev.closed_notes } : prev)
         setStatusModal(false)
         setPendingStatus(null)
         setClosedReason(null)
+        setCloseNotes('')
         showToast(`Status updated to ${STATUS_META[status].label}`)
       }
     } catch { showToast('Failed to update status', 'error') }
@@ -772,6 +781,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       chips.push({ label: '⚠ No pre-screen yet', color: '#fb923c', bg: 'rgba(251,146,60,0.15)' })
       lines.push(`Pre-screen not yet submitted — send a reminder to qualify this lead faster.`)
     }
+    if (lead.toured || lead.status === 'tour_scheduled') {
+      chips.push({ label: '✓ Toured', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' })
+    }
     if (tourData) {
       chips.push({ label: '📅 Tour booked', color: '#c084fc', bg: 'rgba(192,132,252,0.15)' })
       lines.push(`Tour on ${new Date(tourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} — prepare the property and send a reminder the day before.`)
@@ -821,10 +833,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       else score -= 5
     }
     if (prescreen.move_in_date) {
-      const months = (new Date(prescreen.move_in_date).getTime() - Date.now()) / (30 * 86400000)
-      if (months >= 0 && months <= 2) score += 15
-      else if (months >= 0 && months <= 5) score += 10
-      else score += 3
+      const parsed = new Date(prescreen.move_in_date)
+      if (!isNaN(parsed.getTime())) {
+        const months = (parsed.getTime() - Date.now()) / (30 * 86400000)
+        if (months >= 0 && months <= 2) score += 15
+        else if (months >= 0 && months <= 5) score += 10
+        else score += 3
+      } else {
+        score += 5
+      }
     }
     if (prescreen.lease_length?.includes('12')) score += 7
     if (prescreen.group_size === 1) score += 5
@@ -895,9 +912,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         .ld2-contact-item { display: flex; align-items: center; gap: 5px; margin-right: 16px; }
         .ld2-contact-item a { color: #6b6b6b; text-decoration: none; }
         .ld2-contact-item a:hover { color: #1a1a1a; }
-        .ld2-copy-icon { background: none; border: none; cursor: pointer; color: #b0a898; font-size: 12px; padding: 1px 3px; border-radius: 3px; line-height: 1; }
-        .ld2-copy-icon:hover { color: #8C1D40; background: rgba(140,29,64,0.06); }
-        .ld2-copy-icon.ok { color: #10b981; }
+        .ld2-copy-icon { background: none; border: none; cursor: pointer; color: #b0a898; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; padding: 0; transition: all 0.12s; flex-shrink: 0; }
+        .ld2-copy-icon:hover { color: #8C1D40; background: rgba(140,29,64,0.08); }
+        .ld2-copy-icon.ok { color: #10b981; background: rgba(16,185,129,0.08); }
         .ld2-listing { border-left: 1px solid #f0ede6; padding-left: 24px; min-width: 220px; flex-shrink: 0; }
         .ld2-listing-label { font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
         .ld2-listing-name { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 3px; line-height: 1.3; }
@@ -1144,24 +1161,49 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                 <span className={`ld2-badge ${heat.icon === '🔥' ? 'ld2-badge-heat-hot' : heat.icon === '🌡' ? 'ld2-badge-heat-warm' : heat.icon === '·' && heat.label.includes('Cool') ? 'ld2-badge-heat-cool' : 'ld2-badge-heat-cold'}`}>
                   {heat.icon} {heat.label.split(' — ')[0]}
                 </span>
+                {(lead.toured || lead.status === 'tour_scheduled') && (
+                  <span className="ld2-badge" style={{ background: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.3)', color: '#7c3aed' }}>
+                    ✓ Toured
+                  </span>
+                )}
               </div>
               <div className="ld2-contacts">
                 <div className="ld2-contact-item">
                   <span style={{ fontSize: '13px' }}>✉</span>
                   <a href={`mailto:${lead.email}`}>{lead.email}</a>
-                  <button className={`ld2-copy-icon${contactCopied === 'email' ? ' ok' : ''}`} title="Copy email"
-                    onClick={() => { navigator.clipboard.writeText(lead.email); setContactCopied('email'); setTimeout(() => setContactCopied(null), 2000) }}>
-                    {contactCopied === 'email' ? '✓' : '⎘'}
-                  </button>
+                  <span style={{ position: 'relative', display: 'inline-flex' }}>
+                    {contactCopied === 'email' && (
+                      <span style={{ position: 'absolute', bottom: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1a1a', color: '#fff', fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 20 }}>
+                        Copied!
+                      </span>
+                    )}
+                    <button className={`ld2-copy-icon${contactCopied === 'email' ? ' ok' : ''}`} title="Copy email"
+                      onClick={() => { navigator.clipboard.writeText(lead.email); setContactCopied('email'); setTimeout(() => setContactCopied(null), 2000) }}>
+                      {contactCopied === 'email'
+                        ? <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        : <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      }
+                    </button>
+                  </span>
                 </div>
                 {lead.phone && (
                   <div className="ld2-contact-item">
                     <span style={{ fontSize: '13px' }}>☏</span>
                     <a href={`tel:${lead.phone}`}>+1 {formatPhoneDisplay(lead.phone)}</a>
-                    <button className={`ld2-copy-icon${contactCopied === 'phone' ? ' ok' : ''}`} title="Copy phone"
-                      onClick={() => { navigator.clipboard.writeText(`+1${lead.phone}`); setContactCopied('phone'); setTimeout(() => setContactCopied(null), 2000) }}>
-                      {contactCopied === 'phone' ? '✓' : '⎘'}
-                    </button>
+                    <span style={{ position: 'relative', display: 'inline-flex' }}>
+                      {contactCopied === 'phone' && (
+                        <span style={{ position: 'absolute', bottom: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)', background: '#1a1a1a', color: '#fff', fontSize: '10px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 20 }}>
+                          Copied!
+                        </span>
+                      )}
+                      <button className={`ld2-copy-icon${contactCopied === 'phone' ? ' ok' : ''}`} title="Copy phone"
+                        onClick={() => { navigator.clipboard.writeText(`+1${lead.phone}`); setContactCopied('phone'); setTimeout(() => setContactCopied(null), 2000) }}>
+                        {contactCopied === 'phone'
+                          ? <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                          : <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                        }
+                      </button>
+                    </span>
                   </div>
                 )}
                 <div className="ld2-contact-item" style={{ color: '#9b9b9b' }}>
@@ -1263,6 +1305,38 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
               )
             })}
           </div>
+
+          {/* ── CLOSED SUMMARY ── */}
+          {lead.status === 'closed' && (
+            <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderLeft: '4px solid #6b7280', borderRadius: '10px', padding: '14px 18px', marginBottom: '14px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '22px', lineHeight: 1 }}>
+                {lead.closed_reason === 'leased' ? '🏠' : lead.closed_reason === 'found_another_place' ? '🔑' : lead.closed_reason === 'unresponsive' ? '👻' : lead.closed_reason === 'budget_mismatch' ? '💸' : lead.closed_reason === 'not_qualified' ? '🚫' : '📝'}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '2px' }}>
+                  {({
+                    leased: 'Leased Here',
+                    found_another_place: 'Found Another Place',
+                    unresponsive: 'Went Dark / Unresponsive',
+                    budget_mismatch: 'Budget Mismatch',
+                    not_qualified: "Didn't Qualify",
+                    other: 'Other',
+                  } as Record<string, string>)[lead.closed_reason ?? ''] ?? 'Closed'}
+                </div>
+                {lead.closed_notes ? (
+                  <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.5, marginTop: '4px' }}>{lead.closed_notes}</div>
+                ) : (
+                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>No notes added.</div>
+                )}
+              </div>
+              <button
+                onClick={() => { setPendingStatus('closed'); setClosedReason(lead.closed_reason); setCloseNotes(lead.closed_notes || ''); setStatusModal(true) }}
+                style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                Edit
+              </button>
+            </div>
+          )}
 
           {/* ── AI NEXT BEST ACTION ── */}
           <div className="ld2-ai">
@@ -1411,7 +1485,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                         </div>
                         <div className="ld2-field">
                           <div className="ld2-field-label">Move-in</div>
-                          <div className="ld2-field-val">{prescreen.move_in_date ? new Date(prescreen.move_in_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div>
+                          <div className="ld2-field-val">{prescreen.move_in_date || '—'}</div>
                         </div>
                         <div className="ld2-field">
                           <div className="ld2-field-label">Group</div>
@@ -1429,10 +1503,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                           <div className="ld2-field-label">Lifestyle</div>
                           <div className="ld2-field-val" style={{ textTransform: 'capitalize' }}>{prescreen.lifestyle || '—'}</div>
                         </div>
+                        <div className="ld2-field">
+                          <div className="ld2-field-label">Pets</div>
+                          <div className="ld2-field-val" style={{ textTransform: 'capitalize' }}>{prescreen.pets && prescreen.pets !== 'none' ? `🐾 ${prescreen.pets}` : 'None'}</div>
+                        </div>
                       </div>
                       {prescreen.notes && (
                         <div className="ld2-pet-tag">
-                          <span>🐾</span>
+                          <span>📝</span>
                           <span>{prescreen.notes}</span>
                         </div>
                       )}
@@ -1441,9 +1519,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                     <div className="ld2-no-prescreen">
                       <div style={{ fontSize: '28px', marginBottom: '8px' }}>📋</div>
                       <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Pre-screen not submitted yet</div>
-                      <button className="ld2-ns-btn" style={{ marginTop: '10px' }} onClick={sendReminder} disabled={reminding}>
-                        {reminding ? '…' : '📧 Send reminder'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '10px' }}>
+                        <button className="ld2-ns-btn" onClick={sendReminder} disabled={reminding}>
+                          {reminding ? '…' : '📧 Send reminder'}
+                        </button>
+                        <button className="ld2-ns-btn" onClick={() => { navigator.clipboard.writeText(prescreenUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) }}>
+                          {copied ? '✓ Copied!' : '🔗 Copy link'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1608,8 +1691,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                     <button className="ld2-qr-chip" onClick={() => copyQuickReply('Tour')}>
                       🔔 Tour reminder
                     </button>
-                    <button className="ld2-qr-chip" onClick={() => copyQuickReply('Follow-Up')}>
-                      📋 Request pre-screen
+                    <button className="ld2-qr-chip" onClick={() => { navigator.clipboard.writeText(prescreenUrl); showToast('Pre-screen link copied!') }}>
+                      📋 Copy pre-screen link
                     </button>
                     <button className="ld2-qr-chip" onClick={() => { setReserveModal(true) }}>
                       👋 Send offer
@@ -2415,14 +2498,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
       {/* ── STATUS CHANGE MODAL ── */}
       {statusModal && (
-        <div className="status-modal-overlay" onClick={() => { setStatusModal(false); setPendingStatus(null); setClosedReason(null) }}>
+        <div className="status-modal-overlay" onClick={() => { setStatusModal(false); setPendingStatus(null); setClosedReason(null); setCloseNotes('') }}>
           <div className="status-modal" onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
                 <div style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a' }}>Change Status</div>
                 <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '2px' }}>Current: {meta.label}</div>
               </div>
-              <button style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#9b9b9b' }} onClick={() => { setStatusModal(false); setPendingStatus(null); setClosedReason(null) }}>✕</button>
+              <button style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#9b9b9b' }} onClick={() => { setStatusModal(false); setPendingStatus(null); setClosedReason(null); setCloseNotes('') }}>✕</button>
             </div>
 
             {STATUS_ORDER.filter(s => s !== 'closed').map(s => {
@@ -2484,11 +2567,25 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                     </button>
                   ))}
                 </div>
+                <div style={{ marginTop: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
+                    Notes <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                  </label>
+                  <textarea
+                    placeholder="Any context about why this lead closed — visible only to you."
+                    value={closeNotes}
+                    onChange={e => setCloseNotes(e.target.value)}
+                    rows={3}
+                    style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #e8e5de', borderRadius: '8px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none', resize: 'vertical', boxSizing: 'border-box', color: '#1a1a1a', background: '#fff', lineHeight: 1.5 }}
+                    onFocus={e => { e.currentTarget.style.borderColor = '#8C1D40' }}
+                    onBlur={e => { e.currentTarget.style.borderColor = '#e8e5de' }}
+                  />
+                </div>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => { setStatusModal(false); setPendingStatus(null); setClosedReason(null) }}>Cancel</button>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => { setStatusModal(false); setPendingStatus(null); setClosedReason(null); setCloseNotes('') }}>Cancel</button>
               <button
                 className="btn-gold"
                 style={{ flex: 2 }}

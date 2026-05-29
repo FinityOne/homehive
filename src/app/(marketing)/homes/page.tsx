@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import HomesPageClient from './HomesPageClient'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-const DEFAULT_OG = 'https://images.unsplash.com/photo-1562516155-e0c1ee44059b?w=1200&q=80'
+const DEFAULT_OG = `${SITE_URL}/opengraph-image`
 
 export const metadata: Metadata = {
   title: 'Off-Campus Housing Near ASU — Apartments, Subleases & Lease Transfers in Tempe | HomeHive',

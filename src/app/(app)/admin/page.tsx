@@ -28,9 +28,10 @@ const LEAD_STATUS_CONFIG: Record<Lead['status'], { label: string; color: string 
   contacted:      { label: 'Contacted',      color: '#c9973a' },
   follow_up:      { label: 'Follow Up',      color: '#c2410c' },
   engaged:        { label: 'Engaged',        color: '#7c3aed' },
-  cold:           { label: 'Cold',           color: '#64748b' },
   qualified:      { label: 'Qualified',      color: '#166534' },
-  tour_scheduled: { label: 'Tour Scheduled', color: '#0e7490' },
+  matching:       { label: 'Matching',       color: '#8b5cf6' },
+  cold:           { label: 'Cold',           color: '#64748b' },
+  tour_scheduled: { label: 'Qualified',      color: '#166534' },
   closed:         { label: 'Closed',         color: '#8C1D40' },
 }
 

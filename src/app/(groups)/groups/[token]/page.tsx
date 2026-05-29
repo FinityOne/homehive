@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import GroupPageClient from './GroupPageClient'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-const DEFAULT_OG = `${SITE_URL}/og-default.jpg`
+const DEFAULT_OG = `${SITE_URL}/opengraph-image`
 
 type Props = { params: Promise<{ token: string }> }
 

@@ -307,12 +307,24 @@ function LoginForm() {
             </div>
           </div>
 
+          {/* Forgot password */}
+          <div style={{ textAlign: 'right', marginTop: '8px' }}>
+            <a
+              href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+              style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}
+              onMouseOver={e => (e.currentTarget.style.color = '#8C1D40')}
+              onMouseOut={e => (e.currentTarget.style.color = '#9b9b9b')}
+            >
+              Forgot password?
+            </a>
+          </div>
+
           {/* Submit */}
           <button
             className="login-btn"
             onClick={handleLogin}
             disabled={loading}
-            style={{ marginTop: '22px', marginBottom: '20px' }}
+            style={{ marginTop: '16px', marginBottom: '20px' }}
           >
             {loading ? <><span className="spinner" />Signing in…</> : 'Sign in'}
           </button>

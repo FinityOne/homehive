@@ -4,11 +4,7 @@ import './globals.css'
 import PostHogProvider from '@/components/PostHogProvider'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-
-// Aerial of Tempe / ASU campus area (Unsplash, free to use).
-// For best performance, host your own version at /public/og-default.jpg
-// and replace this with `${SITE_URL}/og-default.jpg`.
-const DEFAULT_OG_IMAGE = 'https://images.unsplash.com/photo-1562516155-e0c1ee44059b?w=1200&q=80'
+const DEFAULT_OG_IMAGE = `${SITE_URL}/opengraph-image`
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

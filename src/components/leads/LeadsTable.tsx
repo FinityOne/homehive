@@ -1,19 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { Lead } from '@/lib/leads'
 
+const CopyIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+)
+
+const CheckIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+)
+
 const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  new:            { label: 'New',         color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
-  contacted:      { label: 'Contacted',   color: '#f97316', bg: 'rgba(249,115,22,0.08)',  border: 'rgba(249,115,22,0.25)' },
-  engaged:        { label: 'Engaged',     color: '#eab308', bg: 'rgba(234,179,8,0.08)',   border: 'rgba(234,179,8,0.3)' },
-  qualified:      { label: 'Qualified',   color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.25)' },
-  tour_scheduled: { label: 'Tour Sched.', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)' },
-  closed:         { label: 'Closed',      color: '#6b7280', bg: 'rgba(107,114,128,0.08)',border: 'rgba(107,114,128,0.25)' },
+  new:            { label: 'New',        color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
+  contacted:      { label: 'Contacted',  color: '#f97316', bg: 'rgba(249,115,22,0.08)',   border: 'rgba(249,115,22,0.25)' },
+  follow_up:      { label: 'Follow Up',  color: '#c2410c', bg: 'rgba(194,65,12,0.08)',    border: 'rgba(194,65,12,0.25)' },
+  engaged:        { label: 'Engaged',    color: '#eab308', bg: 'rgba(234,179,8,0.08)',    border: 'rgba(234,179,8,0.3)'  },
+  qualified:      { label: 'Qualified',  color: '#10b981', bg: 'rgba(16,185,129,0.08)',   border: 'rgba(16,185,129,0.25)'},
+  matching:       { label: 'Matching',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   border: 'rgba(139,92,246,0.25)'},
+  cold:           { label: 'Cold',       color: '#64748b', bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.25)'},
+  tour_scheduled: { label: 'Qualified',  color: '#10b981', bg: 'rgba(16,185,129,0.08)',   border: 'rgba(16,185,129,0.25)'},
+  closed:         { label: 'Closed',     color: '#6b7280', bg: 'rgba(107,114,128,0.08)',  border: 'rgba(107,114,128,0.25)'},
 }
 
 function getHeat(createdAt: string | null) {
@@ -68,6 +84,14 @@ export default function LeadsTable({ leads, hasPlan, initialUnlockedIds }: Leads
   )
   const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
+  const copyToClipboard = useCallback((text: string, key: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(text)
+    setCopiedKey(key)
+    setTimeout(() => setCopiedKey(null), 2000)
+  }, [])
 
   const freeLeadId = computeFreeLeadId(leads)
   const isVisible  = (l: Lead) => l.id === freeLeadId || unlockedIds.has(l.id)
@@ -105,23 +129,29 @@ export default function LeadsTable({ leads, hasPlan, initialUnlockedIds }: Leads
       <style>{`
         @keyframes lt-toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
         .lt-table { width: 100%; border-collapse: collapse; }
-        .lt-table thead th { background: #faf9f6; padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.6px; border-bottom: 1px solid #e8e5de; white-space: nowrap; font-family: 'DM Sans', sans-serif; }
-        .lt-table thead th:first-child { width: 44px; padding-left: 14px; }
-        .lt-table thead th:last-child  { text-align: right; padding-right: 14px; }
-        .lt-table tbody tr { border-bottom: 1px solid #f5f4f0; transition: background 0.1s; }
-        .lt-table tbody tr:last-child  { border-bottom: none; }
-        .lt-table td { padding: 9px 12px; vertical-align: middle; font-family: 'DM Sans', sans-serif; }
-        .lt-table td:first-child { padding-left: 14px; }
-        .lt-table td:last-child  { padding-right: 14px; }
+        .lt-table thead th { background: #f8f7f4; padding: 8px 14px; text-align: left; font-size: 10px; font-weight: 700; color: #a8a49c; text-transform: uppercase; letter-spacing: 0.7px; border-bottom: 1px solid #ece9e2; white-space: nowrap; font-family: 'DM Sans', sans-serif; }
+        .lt-table thead th.th-avatar { width: 48px; padding-left: 16px; }
+        .lt-table thead th.th-actions { text-align: right; padding-right: 16px; }
+        .lt-table tbody tr { border-bottom: 1px solid #f2f0ec; transition: background 0.12s; }
+        .lt-table tbody tr:last-child { border-bottom: none; }
+        .lt-table td { padding: 10px 14px; vertical-align: middle; font-family: 'DM Sans', sans-serif; }
+        .lt-table td:first-child { padding-left: 16px; }
+        .lt-table td:last-child  { padding-right: 16px; }
         .lt-tr-link { cursor: pointer; }
         .lt-tr-link:hover { background: #faf9f6; }
         .lt-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap; }
-        .lt-unlock-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid #FFC627; font-size: 11px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; background: rgba(255,198,39,0.08); color: #b07a00; white-space: nowrap; transition: all 0.15s; }
+        .lt-unlock-btn { padding: 5px 12px; border-radius: 6px; border: 1.5px solid #FFC627; font-size: 11px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; background: rgba(255,198,39,0.08); color: #b07a00; white-space: nowrap; transition: all 0.15s; }
         .lt-unlock-btn:hover { background: rgba(255,198,39,0.18); }
-        .lt-view-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid #e8e5de; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #3a3a3a; white-space: nowrap; transition: all 0.15s; }
-        .lt-view-btn:hover { border-color: #8C1D40; color: #8C1D40; }
+        .lt-view-btn { padding: 6px 14px; border-radius: 6px; border: 1.5px solid #e8e5de; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #3a3a3a; white-space: nowrap; transition: all 0.15s; }
+        .lt-view-btn:hover { border-color: #8C1D40; color: #8C1D40; background: rgba(140,29,64,0.03); }
         .lt-blur-line { background: #e0ddd7; border-radius: 3px; }
         .lt-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 9999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: lt-toastIn 0.2s ease; font-family: 'DM Sans', sans-serif; }
+        .lt-contact-cell { display: flex; flex-direction: column; gap: 1px; }
+        .lt-contact-row { display: flex; align-items: center; gap: 0; min-width: 180px; max-width: 220px; }
+        .lt-contact-text { font-size: 11px; color: #9b9b9b; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lt-copy-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; border-radius: 5px; border: none; background: none; cursor: pointer; color: #c5c1b8; padding: 0; flex-shrink: 0; transition: all 0.12s; }
+        .lt-copy-btn:hover { background: rgba(140,29,64,0.08); color: #8C1D40; }
+        .lt-copy-btn.ok { color: #10b981; }
       `}</style>
 
       {toast && <div className="lt-toast">✓ {toast}</div>}
@@ -137,12 +167,12 @@ export default function LeadsTable({ leads, hasPlan, initialUnlockedIds }: Leads
       <table className="lt-table">
         <thead>
           <tr>
-            <th />
+            <th className="th-avatar" />
             <th>Lead</th>
             <th>Status</th>
             <th>Move-in</th>
             <th>Age</th>
-            <th>Actions</th>
+            <th className="th-actions">Actions</th>
           </tr>
         </thead>
 
@@ -152,7 +182,7 @@ export default function LeadsTable({ leads, hasPlan, initialUnlockedIds }: Leads
             {visibleLeads.map(lead => {
               const heat  = getHeat(lead.created_at)
               const meta  = STATUS_META[lead.status] ?? STATUS_META.new
-              const preScreened = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
+              const preScreened = ['qualified', 'matching', 'tour_scheduled', 'closed'].includes(lead.status)
               return (
                 <tr
                   key={lead.id}
@@ -165,19 +195,50 @@ export default function LeadsTable({ leads, hasPlan, initialUnlockedIds }: Leads
                     </div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a1a', lineHeight: 1.3 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a1a', lineHeight: 1.3, marginBottom: 3 }}>
                       {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-                      {heat.icon && <span style={{ marginLeft: 4, fontSize: 12 }} title={heat.label}>{heat.icon}</span>}
+                      {heat.icon && <span style={{ marginLeft: 5, fontSize: 12 }} title={heat.label}>{heat.icon}</span>}
                     </div>
-                    <div style={{ fontSize: 11, color: '#9b9b9b', marginTop: 1 }}>{lead.email}</div>
-                    {lead.phone && <div style={{ fontSize: 10, color: '#b0a898', marginTop: 1 }}>{lead.phone}</div>}
+                    <div className="lt-contact-cell">
+                      <div className="lt-contact-row">
+                        <span className="lt-contact-text">{lead.email}</span>
+                        <button
+                          className={`lt-copy-btn${copiedKey === `${lead.id}-email` ? ' ok' : ''}`}
+                          title="Copy email"
+                          onClick={e => copyToClipboard(lead.email, `${lead.id}-email`, e)}
+                        >
+                          {copiedKey === `${lead.id}-email` ? <CheckIcon /> : <CopyIcon />}
+                        </button>
+                      </div>
+                      <div className="lt-contact-row">
+                        <span className="lt-contact-text" style={{ color: lead.phone ? '#b0a898' : '#dbd7d0' }}>
+                          {lead.phone || 'No phone'}
+                        </span>
+                        {lead.phone && (
+                          <button
+                            className={`lt-copy-btn${copiedKey === `${lead.id}-phone` ? ' ok' : ''}`}
+                            title="Copy phone"
+                            onClick={e => copyToClipboard(lead.phone!, `${lead.id}-phone`, e)}
+                          >
+                            {copiedKey === `${lead.id}-phone` ? <CheckIcon /> : <CopyIcon />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <span className="lt-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
                       {meta.label}
                     </span>
-                    <div style={{ marginTop: 3, fontSize: 10, color: preScreened ? '#10b981' : '#c5c1b8', fontWeight: preScreened ? 600 : 400 }}>
-                      {preScreened ? '✓ Pre-screened' : 'Needs pre-screen'}
+                    <div style={{ marginTop: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 10, color: preScreened ? '#10b981' : '#c5c1b8', fontWeight: preScreened ? 600 : 400 }}>
+                        {preScreened ? '✓ Pre-screened' : 'Needs pre-screen'}
+                      </span>
+                      {(lead.toured || lead.status === 'tour_scheduled') && (
+                        <span style={{ fontSize: 10, color: '#8b5cf6', fontWeight: 600 }}>
+                          ✓ Toured
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td style={{ fontSize: 12, color: '#64748b' }}>

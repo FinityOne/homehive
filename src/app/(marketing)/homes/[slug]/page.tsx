@@ -3,7 +3,7 @@ import { getPropertyBySlug } from '@/lib/properties'
 import PropertyPageClient from './PropertyPageClient'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
-const DEFAULT_OG = `${SITE_URL}/og-default.jpg`
+const DEFAULT_OG = `${SITE_URL}/opengraph-image`
 
 type Props = {
   params: Promise<{ slug: string }>

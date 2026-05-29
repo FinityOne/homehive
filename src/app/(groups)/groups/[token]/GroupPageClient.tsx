@@ -359,7 +359,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
         .gp-member-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
         .gp-member-avatar { width: 48px; height: 48px; border-radius: 50%; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .gp-member-name { font-size: 16px; font-weight: 700; color: #1a1a1a; line-height: 1.2; }
-        .gp-member-about { font-size: 13px; color: #4b5563; line-height: 1.6; margin-top: 10px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .gp-member-about { font-size: 13px; color: #4b5563; line-height: 1.65; margin-top: 10px; }
         .gp-tag { font-size: 11px; color: #6b6b6b; background: #f5f4f0; border: 1px solid #ede9e0; padding: 3px 9px; border-radius: 20px; }
 
         /* ── ROOM ROWS ── */

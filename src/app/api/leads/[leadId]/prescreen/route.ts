@@ -24,14 +24,6 @@ export async function GET(
     return Response.json({ error: 'Lead not found' }, { status: 404 })
   }
 
-  // Mark as engaged when they open the pre-screen link
-  if (['new', 'contacted', 'follow_up', 'cold'].includes(lead.status)) {
-    await supabase
-      .from('leads')
-      .update({ status: 'engaged' })
-      .eq('id', leadId)
-  }
-
   // Fetch property details (no is_active filter — property may be deactivated later)
   let property_name = lead.property
   let property_address = ''
@@ -84,7 +76,7 @@ export async function POST(
   const {
     occupation, is_student, university, birthdate, gender,
     move_in_date, group_size, about,
-    monthly_budget, lease_length, lifestyle, notes,
+    monthly_budget, lease_length, lifestyle, pets, notes,
   } = body
 
   // 1. Upsert pre-screen data into pre_screens table
@@ -104,6 +96,7 @@ export async function POST(
         monthly_budget: monthly_budget ? parseInt(String(monthly_budget)) : null,
         lease_length: lease_length || null,
         lifestyle: lifestyle || null,
+        pets: pets || null,
         notes: notes || null,
       }],
       { onConflict: 'lead_id' }
@@ -174,6 +167,7 @@ export async function POST(
         monthlyBudget: monthly_budget || null,
         leaseLength: lease_length || '—',
         lifestyle: lifestyle || '—',
+        pets: pets || null,
         gender: gender || '—',
         notes: notes || null,
         leadId,
@@ -204,7 +198,7 @@ function buildLandlordPrescreenEmail(d: {
   propertyName: string; propertyAddress: string; propertyHeroImage: string
   moveInDate: string; occupation: string | null; isStudent: boolean; university: string | null
   groupSize: number; about: string; monthlyBudget: number | null
-  leaseLength: string; lifestyle: string; gender: string; notes: string | null
+  leaseLength: string; lifestyle: string; pets: string | null; gender: string; notes: string | null
   leadId: string
 }) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
@@ -272,6 +266,7 @@ function buildLandlordPrescreenEmail(d: {
       <table style="width:100%;font-size:14px;border-collapse:collapse;">
         <tr><td style="padding:4px 0;color:#6b6b6b;width:120px;">Budget</td><td style="padding:4px 0;font-weight:600;color:#8C1D40;">${d.monthlyBudget ? `$${d.monthlyBudget.toLocaleString()}/mo` : '—'}</td></tr>
         <tr><td style="padding:4px 0;color:#6b6b6b;">Lifestyle</td><td style="padding:4px 0;">${d.lifestyle}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b6b6b;">Pets</td><td style="padding:4px 0;">${d.pets ? d.pets.charAt(0).toUpperCase() + d.pets.slice(1) : 'None'}</td></tr>
       </table>
     </div>
 

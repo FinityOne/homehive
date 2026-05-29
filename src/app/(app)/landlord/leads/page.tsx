@@ -16,16 +16,17 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'cold', 'qualified', 'tour_scheduled', 'closed']
+const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'tour_scheduled', 'closed']
 
 const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
   contacted:      { label: 'Contacted',     color: '#f97316', bg: 'rgba(249,115,22,0.08)',   border: 'rgba(249,115,22,0.25)' },
   follow_up:      { label: 'Follow Up',     color: '#c2410c', bg: 'rgba(194,65,12,0.08)',    border: 'rgba(194,65,12,0.25)' },
   engaged:        { label: 'Engaged',       color: '#eab308', bg: 'rgba(234,179,8,0.08)',    border: 'rgba(234,179,8,0.3)' },
-  cold:           { label: 'Cold',          color: '#64748b', bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.25)' },
   qualified:      { label: 'Qualified',     color: '#10b981', bg: 'rgba(16,185,129,0.08)',   border: 'rgba(16,185,129,0.25)' },
-  tour_scheduled: { label: 'Tour Sched.',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   border: 'rgba(139,92,246,0.25)' },
+  matching:       { label: 'Matching',      color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',   border: 'rgba(139,92,246,0.25)' },
+  cold:           { label: 'Cold',          color: '#64748b', bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.25)' },
+  tour_scheduled: { label: 'Qualified',     color: '#10b981', bg: 'rgba(16,185,129,0.08)',   border: 'rgba(16,185,129,0.25)' },
   closed:         { label: 'Closed',        color: '#6b7280', bg: 'rgba(107,114,128,0.08)',  border: 'rgba(107,114,128,0.25)' },
 }
 
@@ -135,7 +136,7 @@ export default function LandlordLeadsPage() {
   const [bulkSending, setBulkSending] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
 
-  useEffect(() => { document.title = 'Leads — Landlord | HomeHive' }, [])
+  useEffect(() => { document.title = 'Leads — HomeHive' }, [])
 
   useEffect(() => {
     try {
@@ -206,32 +207,15 @@ export default function LandlordLeadsPage() {
 
     const leadIds = leadsData.map(l => l.id)
 
-    // Round 3: sync statuses + fetch recent contacts in parallel (both use service-role via API routes)
-    const [syncRes, contactsRes] = await Promise.all([
-      fetch('/api/leads/sync-email-statuses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadIds }),
-      }),
-      fetch('/api/leads/recent-contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadIds }),
-      }),
-    ])
+    // Fetch recent contacts (service-role API, bypasses RLS on email_logs)
+    const contactsRes = await fetch('/api/leads/recent-contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds }),
+    })
 
-    // If sync advanced any statuses, re-fetch leads so we have accurate data
-    let finalLeads = leadsData
-    if (syncRes.ok) {
-      const { updated } = await syncRes.json()
-      if (updated > 0) {
-        finalLeads = await getLeadsForSlugs(slugs)
-        finalLeads.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-      }
-    }
-
-    setLeads(finalLeads)
-    setFreeLeadIds(computeFreeLeadIds(finalLeads))
+    setLeads(leadsData)
+    setFreeLeadIds(computeFreeLeadIds(leadsData))
 
     // Build last-contacted map from service-role API (bypasses RLS on email_logs)
     const lastContactMap: Record<string, string> = contactsRes.ok ? await contactsRes.json() : {}
@@ -239,7 +223,7 @@ export default function LandlordLeadsPage() {
 
     const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
     if (hasPlan) {
-      setUnlockedIds(new Set(finalLeads.map(l => l.id)))
+      setUnlockedIds(new Set(leadsData.map(l => l.id)))
     } else {
       setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
     }
@@ -629,8 +613,8 @@ export default function LandlordLeadsPage() {
     return 'normal'
   }
 
-  // ── Lead card renderer ────────────────────────────────────────────────────
-  const renderLeadCard = (lead: Lead, hasBorder: boolean, showPropName: boolean) => {
+  // ── Lead row renderer (proper table row) ─────────────────────────────────
+  const renderLeadRow = (lead: Lead, showPropName: boolean) => {
     const heat = getHeat(lead.created_at)
     const meta = STATUS_META[lead.status]
     const hasPrescreen = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
@@ -639,76 +623,57 @@ export default function LandlordLeadsPage() {
     const phone = formatPhoneDisplay(lead.phone)
     const urg = urgencyOf(lead)
     const accentColor = urg === 'urgent' ? '#ef4444' : urg === 'hot' ? '#10b981' : urg === 'warm' ? '#f97316' : meta.color
+    const CopyIcon = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
     return (
-      <div
+      <tr
         key={lead.id}
-        className="ll-lead-card"
-        style={{ borderLeft: `3px solid ${accentColor}`, borderBottom: hasBorder ? '1px solid #f0ede6' : 'none' }}
+        className="ll-row-link"
+        style={{ borderLeft: `3px solid ${accentColor}` }}
         onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
       >
         {/* Avatar */}
-        <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, letterSpacing: 0.5 }}>
-          {initials(lead.first_name, lead.last_name)}
-        </div>
+        <td>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: 0.5 }}>
+            {initials(lead.first_name, lead.last_name)}
+          </div>
+        </td>
 
-        {/* Identity */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 3 }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a', letterSpacing: '-0.1px' }}>
-              {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
-            </span>
+        {/* Lead name + contact */}
+        <td>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
             {heat.icon && <span title={heat.label} style={{ fontSize: 12 }}>{heat.icon}</span>}
             {(groupCountById[lead.id] || 1) > 1 && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 10, padding: '1px 6px' }}>
-                ×{groupCountById[lead.id]}
-              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 10, padding: '1px 6px' }}>×{groupCountById[lead.id]}</span>
             )}
             {urg === 'urgent' && (
               <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', background: '#fef2f2', borderRadius: 10, padding: '1px 6px' }}>needs action</span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: '#6b7280' }}>
-              <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span>
+          <div className="ll-contact-col">
+            <div className="ll-contact-row">
+              <span className="ll-contact-txt" style={{ color: '#6b7280' }}>{lead.email}</span>
               <button className={`ll-copy-btn${copiedKey === `${lead.id}:email` ? ' copied' : ''}`} onClick={e => handleCopy(e, `${lead.id}:email`, lead.email)} title="Copy email">
-                {copiedKey === `${lead.id}:email`
-                  ? <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>✓</span>
-                  : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9b9b9b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+                {copiedKey === `${lead.id}:email` ? <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>✓</span> : <CopyIcon />}
               </button>
             </div>
-            {phone && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12 }}>
-                <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} style={{ color: '#6b9af0', textDecoration: 'none' }}>+1 {phone}</a>
-                <button className={`ll-copy-btn${copiedKey === `${lead.id}:phone` ? ' copied' : ''}`} onClick={e => handleCopy(e, `${lead.id}:phone`, phone)} title="Copy phone">
-                  {copiedKey === `${lead.id}:phone`
-                    ? <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>✓</span>
-                    : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b9af0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
-                </button>
-              </div>
-            )}
-            {lead.move_in_date && (
-              <span style={{ fontSize: 11, color: '#b0a898' }}>📅 {lead.move_in_date}</span>
-            )}
+            <div className="ll-contact-row">
+              {phone ? (
+                <>
+                  <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} className="ll-contact-txt" style={{ color: '#6b9af0', textDecoration: 'none' }}>+1 {phone}</a>
+                  <button className={`ll-copy-btn${copiedKey === `${lead.id}:phone` ? ' copied' : ''}`} onClick={e => handleCopy(e, `${lead.id}:phone`, phone)} title="Copy phone">
+                    {copiedKey === `${lead.id}:phone` ? <span style={{ fontSize: 10, color: '#10b981', fontWeight: 700 }}>✓</span> : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6b9af0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+                  </button>
+                </>
+              ) : (
+                <span className="ll-contact-txt" style={{ color: '#d1d5db' }}>No phone</span>
+              )}
+            </div>
           </div>
-        </div>
-
-        {/* Property tag — only in flat all-properties view */}
-        {showPropName && (
-          <div style={{ flexShrink: 0, width: 136, overflow: 'hidden' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{prop?.name || '—'}</div>
-            {prop?.address && <div style={{ fontSize: 10, color: '#9b9b9b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{prop.address}</div>}
-          </div>
-        )}
-
-        {/* Age */}
-        <div style={{ flexShrink: 0, minWidth: 50, textAlign: 'right' }}>
-          <span style={{ fontSize: 11, color: urg === 'urgent' ? '#ef4444' : '#b0a898', fontWeight: urg === 'urgent' ? 600 : 400 }}>
-            {timeAgo(lead.created_at)}
-          </span>
-        </div>
+        </td>
 
         {/* Status */}
-        <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <td onClick={e => e.stopPropagation()}>
           <select
             className="ll-status-select"
             value={lead.status}
@@ -718,87 +683,120 @@ export default function LandlordLeadsPage() {
           >
             {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
           </select>
-          <div style={{ fontSize: 10, marginTop: 3, textAlign: 'center', color: hasPrescreen ? '#10b981' : '#d1d5db', fontWeight: hasPrescreen ? 600 : 400 }}>
-            {hasPrescreen ? '✓ Pre-screened' : 'Needs pre-screen'}
+          <div className="ll-prescreen-tag" style={{ color: hasPrescreen ? '#10b981' : '#c5c1b8' }}>
+            {hasPrescreen ? '✓ Pre-screened' : '· Needs pre-screen'}
           </div>
-        </div>
+        </td>
+
+        {/* Property — only when multiple props */}
+        {showPropName && (
+          <td>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{prop?.name || '—'}</div>
+            {prop?.address && <div style={{ fontSize: 10, color: '#9b9b9b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140, marginTop: 1 }}>{prop.address}</div>}
+          </td>
+        )}
+
+        {/* Move-in */}
+        <td style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
+          {lead.move_in_date || '—'}
+        </td>
+
+        {/* Age */}
+        <td style={{ fontSize: 11, whiteSpace: 'nowrap', color: urg === 'urgent' ? '#ef4444' : '#b0a898', fontWeight: urg === 'urgent' ? 600 : 400 }}>
+          {timeAgo(lead.created_at)}
+        </td>
 
         {/* Actions */}
-        <div style={{ flexShrink: 0, display: 'flex', gap: 5 }} onClick={e => e.stopPropagation()}>
-          {needsRemind && (
-            <button className="ll-action-btn" style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
-              disabled={remindingId === lead.id} onClick={e => sendReminder(lead, e)}>
-              {remindingId === lead.id ? '…' : '📧'}
+        <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+            {needsRemind && (
+              <button className="ll-action-btn" style={{ color: '#8C1D40', borderColor: '#f4c9d5', background: '#fdf2f5' }}
+                disabled={remindingId === lead.id} onClick={e => sendReminder(lead, e)}>
+                {remindingId === lead.id ? '…' : '📧'}
+              </button>
+            )}
+            <button className="ll-action-btn" style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
+              onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}>
+              View →
             </button>
-          )}
-          <button className="ll-action-btn" style={{ color: '#3a3a3a', borderColor: '#e8e5de', background: '#fff' }}
-            onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}>
-            View →
-          </button>
-        </div>
-      </div>
+          </div>
+        </td>
+      </tr>
     )
   }
 
-  const renderLockedSection = (lockedLeads: Lead[]) => (
-    <>
-      <div style={{
-        background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)',
-        padding: '12px 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
-        borderTop: '2px solid #e8e5de',
-      }}>
-        <div>
-          <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginBottom: 3 }}>🔒 {lockedLeads.length} lead{lockedLeads.length !== 1 ? 's' : ''} locked</div>
-          <div style={{ color: '#9b9b9b', fontSize: 11, lineHeight: 1.6 }}>
-            Unlock to see name, email & phone ·{' '}
-            <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> 1 listing ·{' '}
-            <span style={{ color: '#FFC627', fontWeight: 600 }}>$49.99/mo</span> unlimited ·{' '}
-            <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
-          </div>
-        </div>
-        <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
-          style={{ background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}>
-          Unlock Leads →
-        </button>
-      </div>
-      {lockedLeads.slice(0, 3).map(lead => {
-        const meta = STATUS_META[lead.status]
-        const prop = properties.find(p => p.slug === lead.property)
-        return (
-          <div key={lead.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid #f0ede6', background: '#fafaf8', borderLeft: '3px solid #e0ddd7' }}>
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#d4d0c8', flexShrink: 0, filter: 'blur(3px)' }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
-                <div className="blur-line" style={{ width: 90, height: 12, marginBottom: 4 }} />
-                <div className="blur-line" style={{ width: 140, height: 10 }} />
+  const renderLockedRows = (lockedLeads: Lead[], showPropName: boolean) => {
+    const colCount = showPropName ? 8 : 7
+    return (
+      <>
+        <tr>
+          <td colSpan={colCount} style={{ padding: 0 }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)',
+              padding: '12px 18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+              borderTop: '2px solid #e8e5de',
+            }}>
+              <div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginBottom: 3, fontFamily: "'DM Sans', sans-serif" }}>🔒 {lockedLeads.length} lead{lockedLeads.length !== 1 ? 's' : ''} locked</div>
+                <div style={{ color: '#9b9b9b', fontSize: 11, lineHeight: 1.6, fontFamily: "'DM Sans', sans-serif" }}>
+                  Unlock to see name, email & phone ·{' '}
+                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> 1 listing ·{' '}
+                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$49.99/mo</span> unlimited ·{' '}
+                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
+                </div>
               </div>
+              <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
+                style={{ background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}>
+                Unlock Leads →
+              </button>
             </div>
-            <div style={{ flexShrink: 0, width: 136 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{prop?.name || '—'}</div>
-              {lead.move_in_date && <div style={{ fontSize: 10, color: '#b0a898', marginTop: 1 }}>📅 {lead.move_in_date}</div>}
-            </div>
-            <div style={{ flexShrink: 0, minWidth: 50, textAlign: 'right' }}>
-              <span style={{ fontSize: 11, color: '#b0a898' }}>{timeAgo(lead.created_at)}</span>
-            </div>
-            <div style={{ flexShrink: 0 }}>
-              <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>{meta.label}</span>
-            </div>
-            <div style={{ flexShrink: 0, width: 56 }} />
-          </div>
-        )
-      })}
-      {lockedLeads.length > 3 && (
-        <div style={{ padding: '9px 16px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
-          <span style={{ fontSize: 12, color: '#9b9b9b' }}>+{lockedLeads.length - 3} more — </span>
-          <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
-            style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}>
-            unlock all →
-          </button>
-        </div>
-      )}
-    </>
-  )
+          </td>
+        </tr>
+        {lockedLeads.slice(0, 3).map(lead => {
+          const meta = STATUS_META[lead.status]
+          return (
+            <tr key={lead.id} style={{ background: '#fafaf8', borderLeft: '3px solid #e0ddd7', cursor: 'pointer' }} onClick={() => setUnlockModalLeadId(lead.id)}>
+              <td>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#d4d0c8', filter: 'blur(3px)' }} />
+              </td>
+              <td>
+                <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
+                  <div className="blur-line" style={{ width: 90, height: 12, marginBottom: 4 }} />
+                  <div className="blur-line" style={{ width: 140, height: 10 }} />
+                </div>
+              </td>
+              <td>
+                <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>{meta.label}</span>
+              </td>
+              {showPropName && <td />}
+              <td style={{ fontSize: 12, color: '#b0a898' }}>{lead.move_in_date || '—'}</td>
+              <td style={{ fontSize: 11, color: '#b0a898', whiteSpace: 'nowrap' }}>{timeAgo(lead.created_at)}</td>
+              <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                <button
+                  style={{ padding: '5px 10px', borderRadius: 6, border: '1.5px solid #FFC627', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", background: 'rgba(255,198,39,0.08)', color: '#b07a00', whiteSpace: 'nowrap' }}
+                  onClick={() => setUnlockModalLeadId(lead.id)}
+                >
+                  🔒 Unlock
+                </button>
+              </td>
+            </tr>
+          )
+        })}
+        {lockedLeads.length > 3 && (
+          <tr>
+            <td colSpan={colCount} style={{ padding: '9px 16px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
+              <span style={{ fontSize: 12, color: '#9b9b9b', fontFamily: "'DM Sans', sans-serif" }}>+{lockedLeads.length - 3} more — </span>
+              <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
+                style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}>
+                unlock all →
+              </button>
+            </td>
+          </tr>
+        )}
+      </>
+    )
+  }
 
   if (!loading && properties.length === 0) {
     return (
@@ -857,16 +855,30 @@ export default function LandlordLeadsPage() {
         .ll-view-btn.active { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
         .ll-view-btn:not(.active) { background: transparent; color: #9b9b9b; }
 
-        /* ── CARD LIST ─────────────────────────────── */
+        /* ── TABLE LIST ─────────────────────────────── */
         .ll-group { margin: 12px 24px 0; }
         .ll-group-hdr { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: #1a1a1a; border-radius: 10px 10px 0 0; cursor: pointer; user-select: none; transition: background 0.15s; }
         .ll-group-hdr.collapsed { border-radius: 10px; }
         .ll-group-hdr:hover { background: #272727; }
         .ll-group-body { background: #fff; border: 1px solid #e8e5de; border-top: none; border-radius: 0 0 10px 10px; overflow: hidden; }
-        .ll-lead-card { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid #f0ede6; cursor: pointer; transition: background 0.1s; }
-        .ll-lead-card:last-child { border-bottom: none; }
-        .ll-lead-card:hover { background: #faf9f6; }
         .ll-flat { margin: 12px 24px 0; background: #fff; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; }
+
+        /* Table */
+        .ll-tbl { width: 100%; border-collapse: collapse; }
+        .ll-tbl thead th { background: #f8f7f4; padding: 7px 14px; text-align: left; font-size: 10px; font-weight: 700; color: #a8a49c; text-transform: uppercase; letter-spacing: 0.7px; border-bottom: 1px solid #ece9e2; white-space: nowrap; font-family: 'DM Sans', sans-serif; }
+        .ll-tbl thead th:first-child { width: 48px; padding-left: 16px; }
+        .ll-tbl thead th.th-r { text-align: right; padding-right: 16px; }
+        .ll-tbl tbody tr { border-bottom: 1px solid #f2f0ec; transition: background 0.1s; }
+        .ll-tbl tbody tr:last-child { border-bottom: none; }
+        .ll-tbl td { padding: 10px 14px; vertical-align: middle; font-family: 'DM Sans', sans-serif; }
+        .ll-tbl td:first-child { padding-left: 16px; }
+        .ll-tbl td:last-child { padding-right: 16px; }
+        .ll-row-link { cursor: pointer; }
+        .ll-row-link:hover { background: #faf9f6; }
+
+        .ll-contact-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .ll-contact-row { display: flex; align-items: center; min-width: 0; max-width: 230px; }
+        .ll-contact-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 
         .ll-pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px 0; }
         .ll-page-btn { padding: 5px 12px; border: 1.5px solid #e8e5de; border-radius: 6px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #4a4a4a; transition: all 0.15s; }
@@ -874,7 +886,7 @@ export default function LandlordLeadsPage() {
         .ll-page-btn:not(:disabled):hover { border-color: #8C1D40; color: #8C1D40; }
 
         /* Copy button */
-        .ll-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 1px 3px; border-radius: 3px; opacity: 0; transition: opacity 0.12s, background 0.12s; vertical-align: middle; margin-left: 3px; }
+        .ll-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px; opacity: 0; transition: opacity 0.12s, background 0.12s; vertical-align: middle; flex-shrink: 0; }
         .ll-copy-btn:hover { background: #e8e5de; opacity: 1 !important; }
         .ll-copy-btn.copied { opacity: 1 !important; }
         tr:hover .ll-copy-btn { opacity: 0.45; }
@@ -882,8 +894,9 @@ export default function LandlordLeadsPage() {
         .ll-action-btn { padding: 5px 10px; border-radius: 6px; border: 1.5px solid; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
 
         /* Inline status select styled as a badge */
-        .ll-status-select { padding: 3px 22px 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; cursor: pointer; font-family: 'DM Sans', sans-serif; outline: none; transition: opacity 0.15s; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; }
+        .ll-status-select { width: 100%; padding: 6px 28px 6px 10px; border-radius: 7px; font-size: 12px; font-weight: 600; border: 1.5px solid; cursor: pointer; font-family: 'DM Sans', sans-serif; outline: none; transition: opacity 0.15s; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
         .ll-status-select:disabled { opacity: 0.55; cursor: not-allowed; }
+        .ll-prescreen-tag { font-size: 10px; margin-top: 4px; font-weight: 600; }
 
         .ll-pipeline { padding: 16px 28px; display: flex; gap: 12px; overflow-x: auto; }
         .ll-pcol { flex-shrink: 0; width: 210px; background: #fff; border-radius: 12px; border-top: 3px solid; overflow: hidden; }
@@ -949,38 +962,17 @@ export default function LandlordLeadsPage() {
           </div>
         </div>
 
-        {/* Tab nav */}
-        <div style={{ background: '#fff', borderBottom: '1px solid #e8e5de', padding: '0 28px', display: 'flex', gap: 0 }}>
-          {([
-            { id: 'overview', label: 'Overview' },
-            { id: 'insights', label: `Insights${urgentCount > 0 ? ` (${urgentCount})` : ''}` },
-            { id: 'leads', label: `Leads (${leads.length})` },
-          ] as const).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '12px 18px',
-                fontSize: 13,
-                fontWeight: activeTab === tab.id ? 700 : 400,
-                color: activeTab === tab.id ? '#8C1D40' : (tab.id === 'insights' && urgentCount > 0 ? '#dc2626' : '#6b6b6b'),
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === tab.id ? '2px solid #8C1D40' : '2px solid transparent',
-                cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                marginBottom: -1,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Sub-nav */}
+        <div style={{ background: '#fff', borderBottom: '1px solid #e8e5de', padding: '0 24px', display: 'flex', alignItems: 'center', gap: 0 }}>
+          <a href="/landlord/leads" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 700, color: '#8C1D40', textDecoration: 'none', borderBottom: '2px solid #8C1D40', whiteSpace: 'nowrap' }}>Overview</a>
+          <a href="/landlord/leads/insights" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 500, color: urgentCount > 0 ? '#dc2626' : '#6b6b6b', textDecoration: 'none', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' }}>
+            Insights{urgentCount > 0 ? ` (${urgentCount})` : ''}
+          </a>
+          <a href="/landlord/leads/list" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 500, color: '#6b6b6b', textDecoration: 'none', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' }}>All Leads</a>
         </div>
 
-        {/* ── OVERVIEW TAB ── */}
-        {activeTab === 'overview' && (
-          <div style={{ padding: '20px 24px', maxWidth: 960, margin: '0 auto' }}>
+        {/* ── OVERVIEW ── */}
+        <div style={{ padding: '20px 24px', maxWidth: 960, margin: '0 auto' }}>
 
             {leads.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
@@ -992,9 +984,9 @@ export default function LandlordLeadsPage() {
               <>
                 {/* ── Urgent action banner ── */}
                 {needsActionCount > 0 && (
-                  <div
-                    onClick={() => setActiveTab('insights')}
-                    style={{ background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                  <a
+                    href="/landlord/leads/insights"
+                    style={{ background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textDecoration: 'none' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 18 }}>🚨</span>
@@ -1004,7 +996,7 @@ export default function LandlordLeadsPage() {
                       </div>
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', whiteSpace: 'nowrap' }}>Go to Insights →</span>
-                  </div>
+                  </a>
                 )}
 
                 {/* ── KPI row ── */}
@@ -1093,7 +1085,7 @@ export default function LandlordLeadsPage() {
                       return (
                         <div
                           key={s}
-                          onClick={() => { setActiveTab('leads'); setStatusFilter(s) }}
+                          onClick={() => { window.location.href = '/landlord/leads/list' }}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
                         >
                           <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors[s], flexShrink: 0 }} />
@@ -1137,7 +1129,7 @@ export default function LandlordLeadsPage() {
                                 {pa.conversionRate}% conversion
                               </span>
                               <button
-                                onClick={() => { setActiveTab('leads'); setPropertyFilter(pa.slug) }}
+                                onClick={() => { window.location.href = '/landlord/leads/list' }}
                                 style={{ fontSize: 11, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
                               >
                                 View all →
@@ -1164,7 +1156,7 @@ export default function LandlordLeadsPage() {
                                 return (
                                   <span
                                     key={s}
-                                    onClick={() => { setActiveTab('leads'); setPropertyFilter(pa.slug); setStatusFilter(s) }}
+                                    onClick={() => { window.location.href = '/landlord/leads/list' }}
                                     style={{ fontSize: 11, fontWeight: 600, color: funnelColors[s] || '#64748b', background: (funnelColors[s] || '#e2e8f0') + '18', border: `1px solid ${funnelColors[s] || '#e2e8f0'}40`, borderRadius: 20, padding: '2px 9px', cursor: 'pointer' }}
                                   >
                                     {count} {STATUS_META[s].label}
@@ -1226,524 +1218,6 @@ export default function LandlordLeadsPage() {
               </>
             )}
           </div>
-        )}
-
-        {/* ── INSIGHTS TAB ── */}
-        {activeTab === 'insights' && (
-          <div style={{ padding: '16px 20px' }}>
-            {visibleSuggestions.length === 0 ? (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 14, padding: '32px', textAlign: 'center' }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>🎉</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#166534', marginBottom: 6 }}>You&apos;re all caught up!</div>
-                <div style={{ fontSize: 13, color: '#16a34a' }}>No follow-ups needed right now. Check back as new leads come in.</div>
-              </div>
-            ) : (
-              <>
-                {/* ── Bulk action bar ── */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-                  {urgentCount > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, color: '#dc2626' }}>
-                      🚨 {urgentCount} urgent
-                    </div>
-                  )}
-                  <button
-                    disabled={bulkSending}
-                    onClick={() => {
-                      const urgentSugs = visibleSuggestions.filter(s => s.priority === 'urgent' && s.cta === 'remind')
-                      bulkSendReminders(urgentSugs)
-                    }}
-                    style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: urgentCount > 0 ? '#dc2626' : '#94a3b8', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: urgentCount > 0 && !bulkSending ? 'pointer' : 'default', fontFamily: "'DM Sans', sans-serif", opacity: bulkSending ? 0.6 : 1 }}
-                  >
-                    {bulkProgress ? `Sending ${bulkProgress.done + 1}/${bulkProgress.total}…` : `📧 Send All Urgent (${urgentCount})`}
-                  </button>
-                  {selectedInsightIds.size > 0 && (
-                    <button
-                      disabled={bulkSending}
-                      onClick={() => {
-                        const selected = visibleSuggestions.filter(s => selectedInsightIds.has(s.id))
-                        bulkSendReminders(selected)
-                      }}
-                      style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#8C1D40', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                    >
-                      📧 Send Selected ({selectedInsightIds.size})
-                    </button>
-                  )}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b', cursor: 'pointer', marginLeft: 'auto' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedInsightIds.size === visibleSuggestions.filter(s => s.cta === 'remind').length && visibleSuggestions.length > 0}
-                      onChange={e => {
-                        if (e.target.checked) setSelectedInsightIds(new Set(visibleSuggestions.filter(s => s.cta === 'remind').map(s => s.id)))
-                        else setSelectedInsightIds(new Set())
-                      }}
-                    />
-                    Select all
-                  </label>
-                </div>
-
-                {/* ── Compact table ── */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', marginBottom: 28 }}>
-                  {/* Table header */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '32px 22px 1fr 90px 110px 50px 160px', gap: 0, padding: '8px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px', alignItems: 'center' }}>
-                    <div />
-                    <div />
-                    <div>Lead</div>
-                    <div>Status</div>
-                    <div>Property</div>
-                    <div>Days</div>
-                    <div style={{ textAlign: 'right' }}>Actions</div>
-                  </div>
-                  {visibleSuggestions.map((s, idx) => {
-                    const accentColors = { urgent: '#dc2626', medium: '#d97706', low: '#16a34a' }
-                    const propMeta = STATUS_META[s.lead.status]
-                    const isSelected = selectedInsightIds.has(s.id)
-                    const isSending = remindingId === s.lead.id || bulkSending
-                    return (
-                      <div
-                        key={s.id}
-                        style={{
-                          display: 'grid', gridTemplateColumns: '32px 22px 1fr 90px 110px 50px 160px', gap: 0,
-                          padding: '9px 14px', alignItems: 'center',
-                          borderBottom: idx < visibleSuggestions.length - 1 ? '1px solid #f1f5f9' : 'none',
-                          background: isSelected ? '#fdf5f7' : '#fff',
-                          borderLeft: `3px solid ${accentColors[s.priority]}`,
-                          transition: 'background 0.1s',
-                        }}
-                      >
-                        {/* Checkbox */}
-                        <div>
-                          {s.cta === 'remind' && (
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={e => setSelectedInsightIds(prev => {
-                                const next = new Set(prev)
-                                if (e.target.checked) next.add(s.id); else next.delete(s.id)
-                                return next
-                              })}
-                              style={{ cursor: 'pointer' }}
-                            />
-                          )}
-                        </div>
-                        {/* Priority dot */}
-                        <div style={{ fontSize: 13 }}>
-                          {s.priority === 'urgent' ? '🔴' : s.priority === 'medium' ? '🟡' : '🟢'}
-                        </div>
-                        {/* Lead name + headline */}
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {s.lead.first_name} {s.lead.last_name}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {s.headline}
-                          </div>
-                        </div>
-                        {/* Status badge */}
-                        <div>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: propMeta.color, background: propMeta.bg, border: `1px solid ${propMeta.border}`, borderRadius: 20, padding: '2px 7px', whiteSpace: 'nowrap' }}>
-                            {propMeta.label}
-                          </span>
-                        </div>
-                        {/* Property */}
-                        <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.propName}</div>
-                        {/* Days stale */}
-                        <div style={{ fontSize: 12, fontWeight: 700, color: accentColors[s.priority] }}>
-                          {staleDays(s.lead)}d
-                        </div>
-                        {/* Actions */}
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                          {s.cta === 'remind' && (
-                            <>
-                              <button
-                                title="Preview email"
-                                style={{ fontSize: 11, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                                onClick={() => { const { subject, html } = buildPreviewEmail(s.lead, s.propName); setEmailPreview({ lead: s.lead, subject, html }) }}
-                              >
-                                👁
-                              </button>
-                              <button
-                                disabled={isSending}
-                                style={{ fontSize: 11, fontWeight: 700, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 6, padding: '4px 8px', cursor: isSending ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: isSending ? 0.5 : 1 }}
-                                onClick={async (e) => { e.stopPropagation(); await sendInsightReminder(s.lead, e) }}
-                              >
-                                {remindingId === s.lead.id ? '…' : '📧'}
-                              </button>
-                            </>
-                          )}
-                          <button
-                            style={{ fontSize: 11, color: '#0f172a', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                            onClick={() => window.open(`/landlord/leads/${s.lead.id}`, '_blank')}
-                          >
-                            →
-                          </button>
-                          <button
-                            title="Mark as done"
-                            style={{ fontSize: 11, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                            onClick={() => { dismissSuggestion(s.id); showToast('Marked as done') }}
-                          >
-                            ✓
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Follow-up templates */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
-                  <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
-                      Message Templates — copy & personalize
-                    </div>
-                  </div>
-                  <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      {
-                        label: 'Pre-screen nudge (1-3 days)',
-                        subject: 'Still interested in [Property]?',
-                        body: 'Hey [Name], just wanted to follow up on your inquiry about [Property]. Completing your 2-min pre-screen moves you to the top of our list — most students who fill it out hear back within 24 hours. Here\'s your link: [pre-screen link]',
-                      },
-                      {
-                        label: 'Re-engagement (7+ days stale)',
-                        subject: 'Is [Property] still on your radar?',
-                        body: 'Hi [Name], we haven\'t heard back and wanted to check in. [Property] still has availability for your move-in window. If you\'re still interested, a quick reply is all it takes to get the process moving. No pressure either way!',
-                      },
-                      {
-                        label: 'Tour invite (qualified lead)',
-                        subject: 'Ready to see [Property] in person?',
-                        body: 'Hi [Name]! Your pre-screen looks great — you\'re exactly who we\'re looking for. I\'d love to show you [Property] in person. Are you available [Day/Time Option 1] or [Day/Time Option 2]? Let me know what works!',
-                      },
-                      {
-                        label: 'Final breakup (21+ days no response)',
-                        subject: 'Closing your inquiry for [Property]',
-                        body: 'Hi [Name], I\'ve tried reaching out a few times about [Property] with no response. I\'m going to go ahead and close this inquiry to keep my list clean. If you\'re still interested, just reply to this email and we\'ll pick back up right away. No hard feelings!',
-                      },
-                    ].map((tmpl, i) => (
-                      <div key={i} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{tmpl.label}</div>
-                        <div style={{ fontSize: 12, color: '#374151', marginBottom: 4 }}><strong>Subject:</strong> {tmpl.subject}</div>
-                        <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.6, marginBottom: 10 }}>{tmpl.body}</div>
-                        <button
-                          onClick={() => { navigator.clipboard.writeText(`Subject: ${tmpl.subject}\n\n${tmpl.body}`); showToast('Template copied!') }}
-                          style={{ fontSize: 11, fontWeight: 600, color: '#8C1D40', background: 'none', border: '1px solid #f4c9d5', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                        >
-                          Copy template
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── LEADS TAB ── */}
-        {activeTab === 'leads' && (
-          <>
-            {/* Stats bar */}
-            <div className="ll-stats">
-              {STATUS_ORDER.map(s => (
-                <div key={s} className="ll-stat" style={{ cursor: 'pointer' }} onClick={() => setStatusFilter(s === statusFilter ? 'all' : s)}>
-                  <div className="ll-stat-dot" style={{ background: STATUS_META[s].color }} />
-                  <div className="ll-stat-num" style={{ color: STATUS_META[s].color }}>{counts[s]}</div>
-                  <div className="ll-stat-label">{STATUS_META[s].label}</div>
-                </div>
-              ))}
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                <div className="ll-stat-dot" style={{ background: '#FFC627' }} />
-                <div className="ll-stat-num" style={{ color: '#c9973a' }}>{needsPrescreen}</div>
-                <div className="ll-stat-label">Need pre-screen</div>
-              </div>
-            </div>
-
-            {/* Filters */}
-            <div className="ll-filters">
-              <input
-                className="ll-search"
-                placeholder="Search name, email, property…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              {statusFilter !== 'all' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: STATUS_META[statusFilter].bg, border: `1.5px solid ${STATUS_META[statusFilter].border}`, borderRadius: 20, padding: '4px 10px' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: STATUS_META[statusFilter].color }}>{STATUS_META[statusFilter].label}</span>
-                  <button onClick={() => setStatusFilter('all')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: STATUS_META[statusFilter].color, lineHeight: 1, padding: 0, display: 'flex' }}>×</button>
-                </div>
-              )}
-              {properties.length > 1 && (
-                <select className="ll-select" value={propertyFilter} onChange={e => setPropertyFilter(e.target.value)}>
-                  <option value="all">All Properties</option>
-                  {properties.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                </select>
-              )}
-              <div style={{ marginLeft: 'auto' }}>
-                <div className="ll-view-toggle">
-                  <button className={`ll-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => { setViewMode('list'); ph?.capture('leads_view_mode_changed', { view_mode: 'list' }) }}>≡ List</button>
-                  <button className={`ll-view-btn${viewMode === 'pipeline' ? ' active' : ''}`} onClick={() => { setViewMode('pipeline'); ph?.capture('leads_view_mode_changed', { view_mode: 'pipeline' }) }}>⊞ Pipeline</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Empty state */}
-            {filteredLeads.length === 0 && (
-              <div className="ll-empty">
-                <div className="ll-empty-card">
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>📋</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#1a1a1a', marginBottom: '8px' }}>
-                    {search || statusFilter !== 'all' || propertyFilter !== 'all' ? 'No matching leads' : 'No leads yet'}
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '20px', lineHeight: 1.6 }}>
-                    {search || statusFilter !== 'all' ? 'Try adjusting your filters.' : 'Add a lead manually or wait for tenants to submit interest forms.'}
-                  </div>
-                  <button className="btn-primary" onClick={() => setShowAddModal(true)}>+ Add First Lead</button>
-                </div>
-              </div>
-            )}
-
-            {/* ── LIST VIEW ── */}
-            {viewMode === 'list' && filteredLeads.length > 0 && (
-              <>
-                {propertyFilter === 'all' && properties.length > 1 ? (
-                  // ── GROUPED BY PROPERTY ──
-                  <div style={{ paddingBottom: 20 }}>
-                    {properties.map(prop => {
-                      const propVisible = visibleFiltered.filter(l => l.property === prop.slug)
-                      const propLocked = lockedFiltered.filter(l => l.property === prop.slug)
-                      if (propVisible.length === 0 && propLocked.length === 0) return null
-                      const urgencyRank = (l: Lead) => {
-                        const u = urgencyOf(l)
-                        return u === 'urgent' ? 0 : u === 'hot' ? 1 : u === 'warm' ? 2 : 3
-                      }
-                      const sorted = [...propVisible].sort((a, b) => urgencyRank(a) - urgencyRank(b))
-                      const urgentCnt = propVisible.filter(l => urgencyOf(l) === 'urgent').length
-                      const hotCnt = propVisible.filter(l => urgencyOf(l) === 'hot').length
-                      const newCnt = propVisible.filter(l => l.status === 'new').length
-                      const isCollapsed = collapsedProps.has(prop.slug)
-                      return (
-                        <div key={prop.slug} className="ll-group">
-                          <div
-                            className={`ll-group-hdr${isCollapsed ? ' collapsed' : ''}`}
-                            onClick={() => setCollapsedProps(prev => {
-                              const next = new Set(prev)
-                              if (next.has(prop.slug)) next.delete(prop.slug)
-                              else next.add(prop.slug)
-                              return next
-                            })}
-                          >
-                            <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prop.name}</span>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                              {urgentCnt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.15)', borderRadius: 10, padding: '2px 8px' }}>{urgentCnt} urgent</span>}
-                              {hotCnt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.15)', borderRadius: 10, padding: '2px 8px' }}>{hotCnt} hot</span>}
-                              {newCnt > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: '#93c5fd', background: 'rgba(59,130,246,0.15)', borderRadius: 10, padding: '2px 8px' }}>{newCnt} new</span>}
-                              {propLocked.length > 0 && <span style={{ fontSize: 11, color: '#9b9b9b' }}>🔒 {propLocked.length}</span>}
-                              <span style={{ color: '#9b9b9b', fontSize: 16, lineHeight: 1, display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>⌄</span>
-                            </div>
-                          </div>
-                          {!isCollapsed && (
-                            <div className="ll-group-body">
-                              {sorted.map((lead, i) => renderLeadCard(lead, i < sorted.length - 1 || propLocked.length > 0, false))}
-                              {propLocked.length > 0 && renderLockedSection(propLocked)}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  // ── FLAT LIST (single property or filtered to one) ──
-                  <>
-                    <div className="ll-flat">
-                      {pagedVisible.map((lead, i) => renderLeadCard(lead, i < pagedVisible.length - 1 || lockedFiltered.length > 0, properties.length > 1))}
-                      {lockedFiltered.length > 0 && renderLockedSection(lockedFiltered)}
-                    </div>
-                    {totalPages > 1 && (
-                      <div className="ll-pagination">
-                        <span style={{ fontSize: 12, color: '#9b9b9b' }}>
-                          {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, visibleFiltered.length)} of {visibleFiltered.length} leads
-                        </span>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <button className="ll-page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
-                          <span style={{ fontSize: 12, color: '#6b6b6b', fontWeight: 600, minWidth: 80, textAlign: 'center' }}>
-                            Page {page} of {totalPages}
-                          </span>
-                          <button className="ll-page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-
-            {/* ── PIPELINE VIEW ── */}
-            {viewMode === 'pipeline' && filteredLeads.length > 0 && (
-              <div className="ll-pipeline">
-                {STATUS_ORDER.map(status => {
-                  const meta = STATUS_META[status]
-                  const colLeads = leadsByStatus[status] || []
-                  return (
-                    <div key={status} className="ll-pcol" style={{ borderTopColor: meta.color }}>
-                      <div className="ll-pcol-header">
-                        <span className="ll-pcol-label" style={{ color: meta.color }}>{meta.label}</span>
-                        <span className="ll-pcol-count" style={{ background: meta.color }}>{colLeads.length}</span>
-                      </div>
-                      {colLeads.length === 0 && (
-                        <div style={{ padding: '16px 12px', textAlign: 'center', fontSize: '12px', color: '#c5c1b8' }}>No leads</div>
-                      )}
-                      {colLeads.map(lead => {
-                        const visible = isLeadVisible(lead)
-                        const heat = getHeat(lead.created_at)
-                        const prop = properties.find(p => p.slug === lead.property)
-
-                        if (!visible) {
-                          return (
-                            <div key={lead.id} className="ll-pcard locked">
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#d4d0c8', flexShrink: 0, filter: 'blur(3px)' }} />
-                                <div style={{ filter: 'blur(4px)', userSelect: 'none', flex: 1 }}>
-                                  <div className="blur-line" style={{ width: '70px', height: '11px', marginBottom: '4px' }} />
-                                  <div className="blur-line" style={{ width: '90px', height: '10px' }} />
-                                </div>
-                              </div>
-                              {prop && <div style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 500 }}>{prop.name}</div>}
-                            </div>
-                          )
-                        }
-
-                        return (
-                          <div
-                            key={lead.id}
-                            className="ll-pcard"
-                            onClick={() => window.open(`/landlord/leads/${lead.id}`, '_blank')}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                {initials(lead.first_name, lead.last_name)}
-                              </div>
-                              <div>
-                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                                  {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name[0]}.` : ''}
-                                  {heat.icon && <span>{heat.icon}</span>}
-                                  {(groupCountById[lead.id] || 1) > 1 && (
-                                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '1px 6px' }}>
-                                      ×{groupCountById[lead.id]}
-                                    </span>
-                                  )}
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#9b9b9b' }}>{lead.email}</div>
-                                {lead.phone && <div style={{ fontSize: '10px', color: '#6b9af0' }}>🇺🇸 {formatPhoneDisplay(lead.phone)}</div>}
-                              </div>
-                            </div>
-                            {prop && (
-                              <div style={{ marginBottom: '4px' }}>
-                                <div style={{ fontSize: '11px', color: '#4a4a4a', fontWeight: 600 }}>{prop.name}</div>
-                                {prop.address && <div style={{ fontSize: '10px', color: '#9b9b9b' }}>{prop.address}</div>}
-                              </div>
-                            )}
-                            <div style={{ fontSize: '10px', color: '#b0a898' }}>{timeAgo(lead.created_at)}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-      </div>
-
-      {/* ── EMAIL PREVIEW MODAL ── */}
-      {emailPreview && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(2px)' }}
-          onClick={() => setEmailPreview(null)}
-        >
-          <div
-            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal header */}
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexShrink: 0 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 3 }}>Email Preview</div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                  To: <strong style={{ color: '#0f172a' }}>{emailPreview.lead.email}</strong>
-                </div>
-                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                  Subject: <strong style={{ color: '#0f172a' }}>{emailPreview.subject}</strong>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <button
-                  style={{ fontSize: 13, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                  disabled={remindingId === emailPreview.lead.id}
-                  onClick={async (e) => {
-                    const lead = emailPreview.lead
-                    setEmailPreview(null)
-                    await sendReminder(lead, e)
-                  }}
-                >
-                  {remindingId === emailPreview.lead.id ? 'Sending…' : '📧 Send now'}
-                </button>
-                <button
-                  style={{ fontSize: 13, color: '#64748b', background: 'none', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                  onClick={() => setEmailPreview(null)}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-            {/* Rendered email */}
-            <div style={{ flex: 1, overflow: 'auto', background: '#f5f4f0' }}>
-              <iframe
-                srcDoc={emailPreview.html}
-                style={{ width: '100%', border: 'none', display: 'block' }}
-                height={560}
-                title="Email preview"
-                sandbox="allow-same-origin"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── CLOSE REASON MODAL ── */}
-      {closeModal && (
-        <div className="modal-overlay" onClick={() => setCloseModal(null)}>
-          <div className="modal-card" style={{ maxWidth: '420px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-title">Close this lead</div>
-            <div className="modal-sub">Why is this lead closing?</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-              {([
-                { value: 'leased',              icon: '🏠', label: 'Leased Here' },
-                { value: 'found_another_place', icon: '🔑', label: 'Found Another Place' },
-                { value: 'unresponsive',        icon: '👻', label: 'Went Dark / Unresponsive' },
-                { value: 'budget_mismatch',     icon: '💸', label: 'Budget Mismatch' },
-                { value: 'not_qualified',       icon: '🚫', label: "Didn't Qualify" },
-                { value: 'other',               icon: '📝', label: 'Other' },
-              ] as { value: Lead['closed_reason']; icon: string; label: string }[]).map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleCloseWithReason(opt.value)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', border: '1.5px solid #e8e5de', borderRadius: '9px', background: '#fff', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textAlign: 'left', transition: 'all 0.15s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#8C1D40'; (e.currentTarget as HTMLButtonElement).style.background = '#fdf2f5' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#e8e5de'; (e.currentTarget as HTMLButtonElement).style.background = '#fff' }}
-                >
-                  <span style={{ fontSize: '18px' }}>{opt.icon}</span>
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#1a1a1a', lineHeight: 1.3 }}>{opt.label}</span>
-                </button>
-              ))}
-            </div>
-            <button style={{ width: '100%', background: 'none', border: 'none', color: '#9b9b9b', fontSize: '12px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setCloseModal(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── ADD LEAD MODAL ── */}
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
@@ -1821,6 +1295,7 @@ export default function LandlordLeadsPage() {
           onClose={() => setUnlockModalLeadId(null)}
         />
       )}
+      </div>
     </>
   )
 }
