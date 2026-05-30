@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 
@@ -66,7 +67,7 @@ export async function GET(
     }
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
 
   return Response.json({
     id: res.id,

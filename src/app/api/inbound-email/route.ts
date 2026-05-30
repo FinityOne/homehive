@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { notifyLandlord } from '@/lib/notifyLandlord'
@@ -145,7 +146,7 @@ export async function POST(req: Request) {
   }
 
   // 5. Send pre-screen email to lead
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
 
   try {

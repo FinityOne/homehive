@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
 
   // 2. Fetch property details for emails
@@ -209,7 +210,7 @@ export async function POST(req: Request) {
       <tr><td style="padding:7px 0;color:#6b6b6b;">Received</td><td style="padding:7px 0;">${now} MST</td></tr>
     </table>
     <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
-      <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/admin/leads" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 18px;border-radius:8px;">View all leads →</a>
+      <a href="${getSiteUrl()}/admin/leads" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 18px;border-radius:8px;">View all leads →</a>
       <a href="${prescreenUrl}" style="display:inline-block;background:#fff;color:#1a1a1a;border:1.5px solid #e8e4db;text-decoration:none;font-size:13px;font-weight:500;padding:10px 18px;border-radius:8px;">Pre-screen link ↗</a>
     </div>
   </div>

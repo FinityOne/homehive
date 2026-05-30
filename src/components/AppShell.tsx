@@ -56,7 +56,9 @@ const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
   ],
   admin: [
     { href: '/admin',                    label: 'Overview',         icon: '⊞', exact: true },
-    { href: '/admin/users',              label: 'Users',            icon: '◎' },
+    { href: '/admin/users/tenants',       label: 'Tenants',          icon: '◎' },
+    { href: '/admin/users/landlords',     label: 'Landlords',        icon: '🏠' },
+    { href: '/admin/users/admins',        label: 'Admin Team',       icon: '⚙' },
     { href: '/admin/properties',         label: 'Properties',       icon: '▣' },
     { href: '/admin/leads',              label: 'Leads',            icon: '◉' },
     { href: '/admin/payments',           label: 'Payments',         icon: '💳' },
@@ -164,6 +166,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [notifOpen, setNotifOpen] = useState(false)
   const [pendingUpgradeCount, setPendingUpgradeCount] = useState(0)
   const [overduePaymentsCount, setOverduePaymentsCount] = useState(0)
+  const [newUserCounts, setNewUserCounts] = useState<Record<string, number>>({ tenant: 0, landlord: 0, admin: 0 })
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -185,6 +188,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           .then((data: Array<{ status: string }>) => {
             setPendingUpgradeCount(data.filter(r => r.status === 'pending').length)
           })
+          .catch(() => {})
+        fetch('/api/admin/users/new-counts')
+          .then(r => r.json())
+          .then((data: Record<string, number>) => setNewUserCounts(data))
           .catch(() => {})
       }
       // Fetch overdue payment count for landlord badge
@@ -707,6 +714,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   {item.href === '/admin/upgrade-requests' && pendingUpgradeCount > 0 && (
                     <span style={{ marginLeft: 'auto', background: '#f59e0b', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
                       {pendingUpgradeCount}
+                    </span>
+                  )}
+                  {item.href === '/admin/users/tenants' && newUserCounts['tenant'] > 0 && (
+                    <span style={{ marginLeft: 'auto', background: '#0f766e', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
+                      +{newUserCounts['tenant']}
+                    </span>
+                  )}
+                  {item.href === '/admin/users/landlords' && newUserCounts['landlord'] > 0 && (
+                    <span style={{ marginLeft: 'auto', background: '#6b21a8', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
+                      +{newUserCounts['landlord']}
+                    </span>
+                  )}
+                  {item.href === '/admin/users/admins' && newUserCounts['admin'] > 0 && (
+                    <span style={{ marginLeft: 'auto', background: '#1e3a8a', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
+                      +{newUserCounts['admin']}
                     </span>
                   )}
                   {item.href === '/landlord/payments' && overduePaymentsCount > 0 && (

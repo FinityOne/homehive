@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -586,7 +587,7 @@ export default function LandlordLeadsPage() {
   // ── Email preview builder (mirrors send-reminder route, no images needed for preview) ──
   function buildPreviewEmail(lead: Lead, propName: string): { subject: string; html: string } {
     const prescreenDone = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const siteUrl = getSiteUrl()
     const prescreenUrl = `${siteUrl}/pre-screen/${lead.id}`
     const firstName = lead.first_name || 'there'
 

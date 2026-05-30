@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { NextRequest } from 'next/server'
@@ -7,7 +8,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 const resend = new Resend(process.env.RESEND_API_KEY!)
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+const SITE_URL = getSiteUrl()
 
 export async function POST(req: NextRequest) {
   const { email } = await req.json().catch(() => ({}))

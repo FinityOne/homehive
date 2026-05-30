@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -416,7 +417,7 @@ Thank you,
       ? `${lead.first_name} ${lead.last_name}`
       : lead?.first_name || 'our applicant'
     const greeting = ref.name ? `Hi ${ref.name}` : 'Hi'
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const baseUrl = getSiteUrl()
     const formUrl = `${baseUrl}/ref/${ref.public_token}`
 
     if (type === 'employer') {

@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -50,7 +51,7 @@ export async function POST(
     landlordEmail = user?.email || ''
   } catch (_) {}
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const listingUrl = `${siteUrl}/landlord/listings/${property.slug}`
 
   if (landlordEmail) {

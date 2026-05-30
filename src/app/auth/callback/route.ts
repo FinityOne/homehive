@@ -15,7 +15,8 @@ export async function GET(request: Request) {
   const next  = requestUrl.searchParams.get('next')
   const error = requestUrl.searchParams.get('error')
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || requestUrl.origin
+  const configured = process.env.NEXT_PUBLIC_SITE_URL
+  const siteUrl = (configured && !configured.includes('localhost')) ? configured : 'https://homehive.live'
 
   if (error) {
     return NextResponse.redirect(`${siteUrl}/login?error=${encodeURIComponent(error)}`)

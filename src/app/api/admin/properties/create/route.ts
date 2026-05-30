@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -119,7 +120,7 @@ export async function POST(req: Request) {
       .insert(body.images.map((url, i) => ({ property_id: propertyId, url, position: i })))
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
 
   // Notify assigned landlord if owner was set
   if (body.owner_id) {

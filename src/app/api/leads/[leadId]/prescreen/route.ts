@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getLeadById } from '@/lib/leads'
@@ -201,7 +202,7 @@ function buildLandlordPrescreenEmail(d: {
   leaseLength: string; lifestyle: string; pets: string | null; gender: string; notes: string | null
   leadId: string
 }) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
 
   return `<!DOCTYPE html>
 <html>

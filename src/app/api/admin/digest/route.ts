@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -92,7 +93,7 @@ export async function GET(req: Request) {
       const v = n ?? 0
       return v > 0 ? `<span style="color:#16a34a;font-weight:700;">+${v}</span>` : `<span style="color:#9b9b9b;">—</span>`
     }
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const siteUrl = getSiteUrl()
 
     // ── Build email ───────────────────────────────────────────────────────────
     const html = `<!DOCTYPE html>

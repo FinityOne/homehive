@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -73,7 +74,7 @@ export async function POST(
   // Notify admin of the claim
   const adminEmail = process.env.ADMIN_EMAIL
   if (adminEmail) {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const siteUrl = getSiteUrl()
     const now = new Date().toLocaleString('en-US', {
       timeZone: 'America/Phoenix', month: 'short', day: 'numeric',
       year: 'numeric', hour: 'numeric', minute: '2-digit',

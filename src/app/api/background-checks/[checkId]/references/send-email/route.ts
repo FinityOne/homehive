@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
@@ -191,7 +192,7 @@ export async function POST(
     ? `Employment Verification Request — ${leadName}`
     : `Rental Reference Request — ${leadName}`
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const baseUrl = getSiteUrl()
   const formUrl = `${baseUrl}/ref/${ref.public_token}`
 
   const html = isEmployer

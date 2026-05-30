@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -32,7 +33,7 @@ export default function AutomationsPage() {
   const [copied, setCopied]       = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'setup'>('overview')
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/api/inbound-email`
+  const webhookUrl = `${getSiteUrl()}/api/inbound-email`
 
   useEffect(() => { document.title = 'Automations — Landlord | HomeHive' }, [])
 

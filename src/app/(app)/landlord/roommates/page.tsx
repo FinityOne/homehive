@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -80,7 +81,7 @@ type ChatMessage = {
   content: string; is_bot: boolean; created_at: string
 }
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+const SITE_URL = getSiteUrl()
 
 const GENDER_PREF_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   any:        { label: 'Open to All', color: '#059669', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)' },

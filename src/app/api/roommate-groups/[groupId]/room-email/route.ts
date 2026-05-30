@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
@@ -223,7 +224,7 @@ export async function POST(
     }
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const tenantName = lead.first_name || 'there'
   const groupUrl = `${siteUrl}/groups/${group.share_token}`
   const shareUrl = groupUrl

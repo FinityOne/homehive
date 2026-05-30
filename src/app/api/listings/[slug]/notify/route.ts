@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -20,7 +21,7 @@ export async function POST(
     propertyId: string
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const reviewUrl = `${siteUrl}/admin/properties/review/${propertyId}`
 
   // Fetch landlord email

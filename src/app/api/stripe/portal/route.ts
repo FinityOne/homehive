@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'No billing account found' }, { status: 404 })
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
 
   const session = await stripe.billingPortal.sessions.create({
     customer: plan.stripe_customer_id,

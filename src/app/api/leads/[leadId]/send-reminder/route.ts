@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -47,7 +48,7 @@ export async function POST(
     .maybeSingle()
   const prescreenDone = !!existingPrescreen
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
 
   const propertyImageBlock = propertyHeroImage ? `

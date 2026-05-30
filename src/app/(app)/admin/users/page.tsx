@@ -147,14 +147,16 @@ function EditForm({ user, onSave, onCancel }: { user: UserRow; onSave: (updated:
   )
 }
 
-export default function AdminUsersPage() {
+export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }) {
   const router = useRouter()
   const [users, setUsers] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState(initialRole)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 25
 
   const fetchData = useCallback(async () => {
     const [apiRes, leadsRes, propsData] = await Promise.all([
@@ -230,6 +232,9 @@ export default function AdminUsersPage() {
     )
   })
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   const avgScore = filtered.length ? Math.round(filtered.reduce((s, u) => s + u.score, 0) / filtered.length) : 0
 
   return (
@@ -260,19 +265,49 @@ export default function AdminUsersPage() {
       `}</style>
 
       <div className="u-body">
-        <div style={{ marginBottom: '20px' }}>
-          <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: '28px', fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.5px', marginBottom: '4px' }}>Users</h1>
-          <p style={{ fontSize: '13px', color: '#9b9b9b' }}>Sorted by engagement score · click a row to view full profile</p>
+        {/* Tab navigation */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e8e4db', marginBottom: '20px' }}>
+          {([
+            { href: '/admin/users/tenants',   label: 'Tenants',    role: 'tenant'   },
+            { href: '/admin/users/landlords', label: 'Landlords',  role: 'landlord' },
+            { href: '/admin/users/admins',    label: 'Admin Team', role: 'admin'    },
+          ] as { href: string; label: string; role: string }[]).map(t => (
+            <a
+              key={t.role}
+              href={t.href}
+              style={{
+                padding: '12px 20px',
+                fontSize: '13px',
+                fontWeight: roleFilter === t.role ? 700 : 500,
+                color: roleFilter === t.role ? '#8C1D40' : '#6b6b6b',
+                textDecoration: 'none',
+                borderBottom: `2px solid ${roleFilter === t.role ? '#8C1D40' : 'transparent'}`,
+                marginBottom: '-1px',
+                whiteSpace: 'nowrap',
+                transition: 'color 0.12s',
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {t.label}
+              {!loading && (
+                <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: roleFilter === t.role ? '#8C1D40' : '#94a3b8' }}>
+                  {users.filter(u => u.role === t.role).length}
+                </span>
+              )}
+            </a>
+          ))}
         </div>
 
         {/* Summary stats */}
         {!loading && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '18px' }}>
             {[
-              { val: users.length, lbl: 'Total users' },
-              { val: users.filter(u => u.role === 'landlord').length, lbl: 'Landlords' },
-              { val: users.filter(u => u.plan?.status === 'active').length, lbl: 'Paid plans' },
-              { val: users.filter(u => u.score >= 45).length, lbl: 'Active users' },
+              { val: filtered.length, lbl: `Total ${roleFilter === 'admin' ? 'admins' : roleFilter === 'landlord' ? 'landlords' : 'tenants'}` },
+              ...(roleFilter === 'landlord' ? [
+                { val: users.filter(u => u.role === 'landlord' && (u.plan?.status === 'active')).length, lbl: 'Paid plans' },
+                { val: users.filter(u => u.role === 'landlord' && u.activePropertyCount > 0).length, lbl: 'Active listings' },
+              ] : []),
+              { val: users.filter(u => u.role === roleFilter && u.score >= 45).length, lbl: 'Active users' },
               { val: avgScore, lbl: 'Avg. score' },
             ].map(({ val, lbl }) => (
               <div key={lbl} className="u-stat">
@@ -286,13 +321,8 @@ export default function AdminUsersPage() {
         <div className="u-toolbar">
           <div className="u-search">
             <span style={{ color: '#9b9b9b', fontSize: '14px', flexShrink: 0 }}>⌕</span>
-            <input placeholder="Search name, email, company…" value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder="Search name, email, company…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
           </div>
-          {['all', 'landlord', 'tenant', 'admin'].map(r => (
-            <button key={r} className={`u-filter-btn${roleFilter === r ? ' active' : ''}`} onClick={() => setRoleFilter(r)}>
-              {r === 'all' ? 'All' : r}
-            </button>
-          ))}
           <span style={{ fontSize: '13px', color: '#9b9b9b', marginLeft: 'auto' }}>{filtered.length} user{filtered.length !== 1 ? 's' : ''}</span>
         </div>
 
@@ -318,7 +348,7 @@ export default function AdminUsersPage() {
                 <tr><td colSpan={9} style={{ padding: '60px 20px', textAlign: 'center', color: '#9b9b9b', fontSize: '14px' }}>
                   {search ? 'No users match your search' : 'No users found'}
                 </td></tr>
-              ) : filtered.map(u => {
+              ) : paged.map(u => {
                 const pm = planMeta(u.plan)
                 const rm = ROLE_CFG[u.role] ?? { color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' }
                 return (
@@ -391,7 +421,32 @@ export default function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#fff', border: '1px solid #e8e4db', borderTop: 'none', borderRadius: '0 0 12px 12px', fontFamily: 'DM Sans, sans-serif' }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} users
+            </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                disabled={page === 1}
+                onClick={() => setPage(p => p - 1)}
+                style={{ padding: '5px 12px', border: '1.5px solid #e8e4db', borderRadius: 6, background: '#fff', fontSize: 12, fontWeight: 600, cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.4 : 1, color: '#4a4a4a' }}
+              >← Prev</button>
+              <span style={{ fontSize: 12, color: '#6b6b6b', fontWeight: 600 }}>Page {page} of {totalPages}</span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                style={{ padding: '5px 12px', border: '1.5px solid #e8e4db', borderRadius: 6, background: '#fff', fontSize: 12, fontWeight: 600, cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.4 : 1, color: '#4a4a4a' }}
+              >Next →</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
+}
+
+export default function AdminUsersPageDefault() {
+  return <AdminUsersPage initialRole="tenant" />
 }

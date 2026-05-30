@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
@@ -145,7 +146,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     return Response.json({ error: 'Failed to create reservation' }, { status: 500 })
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const acceptUrl = `${siteUrl}/reserve/${reservation.accept_token}`
 
   if (!send_email) {

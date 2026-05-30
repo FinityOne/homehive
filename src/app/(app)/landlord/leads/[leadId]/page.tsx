@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -374,7 +375,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
   // Substitute template variables with lead-specific data
   const fillTemplate = (body: string): string => {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const siteUrl = getSiteUrl()
     let tourDateStr = ''
     if (tourData?.scheduled_date) {
       const tour = new Date(tourData.scheduled_date)
@@ -745,7 +746,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
   const hasPrescreen = !!prescreen
   const needsRemind = ['new', 'contacted', 'engaged'].includes(lead.status)
   const initials = ((lead.first_name?.[0] || '') + (lead.last_name?.[0] || '')).toUpperCase() || '?'
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const prescreenUrl = `${siteUrl}/pre-screen/${leadId}`
   const isActiveResExp = activeReservation
     ? (activeReservation.status === 'expired' || (activeReservation.expires_at ? new Date(activeReservation.expires_at) < new Date() : false))

@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useEffect, useRef, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -407,7 +408,7 @@ export default function AdminNewPropertyPage() {
   // SUCCESS SCREEN
   // ─────────────────────────────────────────────────────────────────────────────
   if (result) {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const siteUrl = getSiteUrl()
     const listingUrl = `${siteUrl}/homes/${result.slug}`
     const dmText = result.claimUrl
       ? `Hey! I saw your listing for ${result.name} and added it to HomeHive — a student housing platform near ASU.\n\nI've set up the listing here so students can find it:\n${listingUrl}\n\nYou can claim it for free with this private link, which gives you full control to manage it, update photos, and receive direct leads from students:\n${result.claimUrl}\n\nJust click the link, create a free account, and it's yours. Let me know if you have any questions!`

@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { Resend } from 'resend'
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
 
   // Notify admin
   const adminEmail = process.env.ADMIN_EMAIL
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
 
   if (adminEmail) {
     try {

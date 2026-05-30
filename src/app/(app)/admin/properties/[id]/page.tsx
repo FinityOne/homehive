@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { use, useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -112,7 +113,7 @@ export default function AdminPropertyDetailPage({ params }: { params: Promise<{ 
 
   if (!property) return null
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const claimUrl = property.claim_token ? `${siteUrl}/claim/${property.claim_token}` : null
   const cfg = STATUS_CFG[adminStatus] ?? STATUS_CFG.active
 

@@ -51,11 +51,23 @@ export default function PhoneInput({
   style,
 }: PhoneInputProps) {
   const [focused, setFocused] = useState(false)
-  const displayVal = formatDisplay(toDigits(value))
+  // While typing: show raw digits only (no formatting) to avoid cursor jumps.
+  // On blur: show the pretty-formatted version.
+  const digits = toDigits(value)
+  const inputVal = focused ? digits : formatDisplay(digits)
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 10)
     onChange(raw ? `+1${raw}` : '')
+  }
+
+  function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
+    setFocused(true)
+    // Move cursor to end after switching to raw-digit display
+    const len = toDigits(value).length
+    requestAnimationFrame(() => {
+      e.target.setSelectionRange(len, len)
+    })
   }
 
   return (
@@ -92,10 +104,10 @@ export default function PhoneInput({
       <input
         type="tel"
         required={required}
-        placeholder={placeholder}
-        value={displayVal}
+        placeholder={focused ? '##########' : placeholder}
+        value={inputVal}
         onChange={handleChange}
-        onFocus={() => setFocused(true)}
+        onFocus={handleFocus}
         onBlur={() => setFocused(false)}
         style={{
           flex: 1,

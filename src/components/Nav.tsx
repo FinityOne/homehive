@@ -601,18 +601,18 @@ export default function Nav() {
                     })()}
                   </div>
 
-                  <a href="/dashboard" className="dropdown-item">
+                  <a href="/dashboard" className="dropdown-item" target="_blank" rel="noopener noreferrer">
                     <span className="di-icon" style={{ background: 'var(--hh-bg-alt)' }}>🏠</span>
                     My Dashboard
                   </a>
                   {(user.role === 'landlord' || user.role === 'admin') && (
-                    <a href="/landlord/dashboard" className="dropdown-item">
+                    <a href="/landlord/dashboard" className="dropdown-item" target="_blank" rel="noopener noreferrer">
                       <span className="di-icon" style={{ background: 'rgba(47,74,72,0.08)' }}>⊞</span>
                       Host Portal
                     </a>
                   )}
                   {user.role === 'admin' && (
-                    <a href="/admin" className="dropdown-item">
+                    <a href="/admin" className="dropdown-item" target="_blank" rel="noopener noreferrer">
                       <span className="di-icon" style={{ background: '#f3f0ff' }}>◈</span>
                       Admin Portal
                     </a>
@@ -715,12 +715,12 @@ export default function Nav() {
                 })()}
               </div>
 
-              <a href="/dashboard"  className="mob-portal-link" onClick={() => setMobileOpen(false)}>🏠 My Dashboard →</a>
+              <a href="/dashboard" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>🏠 My Dashboard →</a>
               {(user.role === 'landlord' || user.role === 'admin') && (
-                <a href="/landlord/dashboard" className="mob-portal-link" onClick={() => setMobileOpen(false)}>⊞ Host Portal →</a>
+                <a href="/landlord/dashboard" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>⊞ Host Portal →</a>
               )}
               {user.role === 'admin' && (
-                <a href="/admin" className="mob-portal-link" onClick={() => setMobileOpen(false)}>◈ Admin Portal →</a>
+                <a href="/admin" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>◈ Admin Portal →</a>
               )}
               <a href="/profile" className="mob-portal-link" onClick={() => setMobileOpen(false)}>👤 My Profile →</a>
               <button className="mob-signout" onClick={handleSignOut}>Sign out</button>

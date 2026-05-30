@@ -1,4 +1,5 @@
 'use client'
+import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
@@ -225,7 +226,7 @@ export default function InsightsPage() {
 
   function buildPreviewEmail(lead: Lead, propName: string): { subject: string; html: string } {
     const prescreenDone = ['qualified', 'tour_scheduled', 'closed'].includes(lead.status)
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+    const siteUrl = getSiteUrl()
     const prescreenUrl = `${siteUrl}/pre-screen/${lead.id}`
     const firstName = lead.first_name || 'there'
     const header = `<div style="background:#1a1a1a;border-radius:14px 14px 0 0;padding:20px 28px;"><div style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-0.3px;">Home<span style="color:#FFC627;font-style:italic;">Hive</span></div><div style="font-size:12px;color:#9b9b9b;margin-top:4px;">Student Housing Near ASU</div></div>`

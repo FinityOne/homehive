@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
 
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       </tr>
     </table>
     <div style="margin-top:24px;">
-      <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'}/admin/users" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 20px;border-radius:8px;">View in admin →</a>
+      <a href="${getSiteUrl()}/admin/users" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 20px;border-radius:8px;">View in admin →</a>
     </div>
   </div>
 </div>

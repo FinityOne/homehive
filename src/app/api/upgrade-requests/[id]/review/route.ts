@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
@@ -48,7 +49,7 @@ export async function POST(
   }
 
   // Send email to the user
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
+  const siteUrl = getSiteUrl()
   const firstName = (request.full_name || '').trim().split(' ')[0] || 'there'
 
   try {
