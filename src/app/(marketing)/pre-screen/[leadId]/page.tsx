@@ -216,7 +216,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
             You&apos;re all set{leadInfo?.first_name ? `, ${leadInfo.first_name}` : ''}!
           </h2>
           <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
-            We already have your application on file. The landlord is reviewing your profile and will be in touch soon.
+            We already have your free pre-screen on file. The team is reviewing your profile and will be in touch soon.
           </p>
           <div style={{ background: '#f0fdf8', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '16px 20px', textAlign: 'left' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
@@ -244,7 +244,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 24px', boxShadow: '0 4px 20px rgba(255,198,39,0.4)' }}>🎉</div>
           <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '28px', fontWeight: 400, color: '#1a1a1a' }}>You&apos;re in the running!</h2>
           <p style={{ margin: '0 0 20px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
-            {leadInfo?.first_name ? `Nice work, ${leadInfo.first_name}.` : 'Nice work!'} Your application is complete and you&apos;ve moved to the top of the list.
+            {leadInfo?.first_name ? `Nice work, ${leadInfo.first_name}!` : 'Nice work!'} Your free pre-screen is done — you&apos;ve moved to the top of the list.
           </p>
           <div style={{ background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: '10px', padding: '16px 20px', marginBottom: '24px', textAlign: 'left' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
@@ -309,10 +309,10 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
           <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '16px', padding: '32px 28px', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
             <div style={{ width: '52px', height: '52px', borderRadius: '12px', background: '#fdf2f5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', marginBottom: '20px' }}>🔒</div>
             <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '22px', color: '#1a1a1a', lineHeight: 1.25, marginBottom: '10px' }}>
-              One quick step before your application
+              One quick step before your free pre-screen
             </div>
             <p style={{ fontSize: '14px', color: '#4a4a4a', lineHeight: 1.7, marginBottom: '6px' }}>
-              {firstName ? `Hey ${firstName} — we` : 'We'}&apos;re excited you&apos;re interested. A free account keeps HomeHive verified and lets you track your application status.
+              {firstName ? `Hey ${firstName} — we` : 'We'}&apos;re excited you&apos;re interested! A free account keeps HomeHive verified and lets you track your pre-screen status.
             </p>
             <p style={{ fontSize: '13px', color: '#6b6b6b', lineHeight: 1.65, marginBottom: '24px' }}>
               Takes under a minute. You&apos;ll land right back here to finish up.
@@ -322,7 +322,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
               {[
                 ['✓', 'Keeps listings verified and scam-free'],
                 ['✓', 'Your info is never shared without permission'],
-                ['✓', 'Access your application status anytime'],
+                ['✓', 'Track your pre-screen status anytime'],
               ].map(([icon, text]) => (
                 <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a' }}>
                   <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>{icon}</span>
@@ -447,7 +447,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
             <img src="/hh-logo.png" alt="HomeHive" />
           </div>
           <div className="ps-prop-header-content">
-            <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#FFC627', marginBottom: '4px' }}>Rental Application</div>
+            <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#FFC627', marginBottom: '4px' }}>Free Pre-Screen</div>
             <div style={{ fontSize: '17px', fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>{propName}</div>
             {propAddress && <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginTop: '3px' }}>📍 {propAddress}</div>}
           </div>
@@ -488,7 +488,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
               {firstName ? `Hey ${firstName}! 👋` : 'Tell us about yourself'}
             </h1>
             <p style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '24px', lineHeight: 1.5 }}>
-              A quick intro so the landlord knows who&apos;s applying. Takes about a minute.
+              This free pre-screen helps us learn a little about you and match you with the right home — and roommates if it&apos;s that kind of place. Takes about a minute.
             </p>
 
             {/* Occupation */}
@@ -781,13 +781,13 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
               disabled={!step3Valid || submitting}
               onClick={handleSubmit}
             >
-              {submitting ? 'Submitting…' : 'Submit My Application →'}
+              {submitting ? 'Submitting…' : 'Complete Free Pre-Screen →'}
             </button>
 
             <button className="ps-btn-back" onClick={() => setStep(2)}>← Back</button>
 
             <p style={{ textAlign: 'center', fontSize: '11px', color: '#b0a898', marginTop: '14px', lineHeight: 1.5 }}>
-              🔒 Your info is private and only shared with the landlord at {propName}
+              🔒 Free · No commitment · Your info is only shared with the team at {propName}
             </p>
           </div>
         )}
