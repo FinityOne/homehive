@@ -930,8 +930,8 @@ export default function PropertyPageClient({
               )}
             </div>
 
-            {/* AVAILABLE FROM — standard rentals */}
-            {home.listing_type === 'standard_rental' && home.available_from && (
+            {/* AVAILABLE FROM */}
+            {home.available_from && (
               <div className="section" style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.2)' }}>
                 <div className="section-label" style={{ color: '#059669' }}>Move-In Ready</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

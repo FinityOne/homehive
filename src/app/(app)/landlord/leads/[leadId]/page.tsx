@@ -11,18 +11,19 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'tour_scheduled', 'closed']
+// tour_scheduled is a legacy status — treated as qualified in the pipeline display
+const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'closed']
 
 const STATUS_META: Record<Lead['status'], { label: string; color: string; bg: string; border: string; desc: string; icon: string }> = {
-  new:            { label: 'New',           color: '#3b82f6', bg: '#eff6ff',   border: '#bfdbfe', desc: 'Just submitted — needs outreach',          icon: '📩' },
-  contacted:      { label: 'Contacted',     color: '#f97316', bg: '#fff7ed',   border: '#fed7aa', desc: 'You\'ve reached out, awaiting response',    icon: '📞' },
-  follow_up:      { label: 'Follow Up',     color: '#c2410c', bg: '#fff7ed',   border: '#fed7aa', desc: 'Needs a follow-up touch',                  icon: '🔄' },
-  engaged:        { label: 'Engaged',       color: '#d97706', bg: '#fffbeb',   border: '#fde68a', desc: 'In active conversation',                    icon: '💬' },
-  qualified:      { label: 'Qualified',     color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
-  matching:       { label: 'Matching',      color: '#8b5cf6', bg: '#f5f3ff',   border: '#ddd6fe', desc: 'Pairing with roommates',                    icon: '🤝' },
-  cold:           { label: 'Cold',          color: '#64748b', bg: '#f8fafc',   border: '#e2e8f0', desc: 'No response — may need reactivation',       icon: '❄️' },
-  tour_scheduled: { label: 'Qualified',     color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
-  closed:         { label: 'Closed',        color: '#6b7280', bg: '#f9fafb',   border: '#e5e7eb', desc: 'Lead closed out',                           icon: '🏁' },
+  new:            { label: 'New',            color: '#3b82f6', bg: '#eff6ff',   border: '#bfdbfe', desc: 'Just submitted — needs outreach',          icon: '📩' },
+  contacted:      { label: 'Contacted',      color: '#f97316', bg: '#fff7ed',   border: '#fed7aa', desc: 'You\'ve reached out, awaiting response',    icon: '📞' },
+  follow_up:      { label: 'Follow Up',      color: '#c2410c', bg: '#fff7ed',   border: '#fed7aa', desc: 'Needs a follow-up touch',                  icon: '🔄' },
+  engaged:        { label: 'Engaged',        color: '#d97706', bg: '#fffbeb',   border: '#fde68a', desc: 'In active conversation',                    icon: '💬' },
+  qualified:      { label: 'Qualified',      color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
+  matching:       { label: 'Roommate Match', color: '#8b5cf6', bg: '#f5f3ff',   border: '#ddd6fe', desc: 'Pairing with roommates',                    icon: '🤝' },
+  cold:           { label: 'Cold',           color: '#64748b', bg: '#f8fafc',   border: '#e2e8f0', desc: 'No response — may need reactivation',       icon: '❄️' },
+  tour_scheduled: { label: 'Qualified',      color: '#10b981', bg: '#f0fdf4',   border: '#bbf7d0', desc: 'Pre-screen complete, strong candidate',      icon: '✅' },
+  closed:         { label: 'Closed',         color: '#6b7280', bg: '#f9fafb',   border: '#e5e7eb', desc: 'Lead closed out',                           icon: '🏁' },
 }
 
 type Prescreen = {
@@ -1288,9 +1289,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
           {/* ── PIPELINE ── */}
           <div className="ld2-pipeline">
             {STATUS_ORDER.map((s, i) => {
-              const currentIdx = STATUS_ORDER.indexOf(lead.status)
+              // tour_scheduled maps to qualified in the pipeline
+              const effectiveStatus = lead.status === 'tour_scheduled' ? 'qualified' : lead.status
+              const currentIdx = STATUS_ORDER.indexOf(effectiveStatus)
               const isPast = i < currentIdx
-              const isActive = lead.status === s
+              const isActive = effectiveStatus === s
               return (
                 <div key={s} className={`ld2-stage ${isActive ? 'active' : isPast ? 'past' : 'future'}`}
                   onClick={() => { if (!isActive) { setPendingStatus(s); setStatusModal(true) } }}>
@@ -2510,7 +2513,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
             {STATUS_ORDER.filter(s => s !== 'closed').map(s => {
               const sm = STATUS_META[s]
-              const isCurrent = lead.status === s
+              const effectiveLeadStatus = lead.status === 'tour_scheduled' ? 'qualified' : lead.status
+              const isCurrent = effectiveLeadStatus === s
               const isSelected = pendingStatus === s
               return (
                 <div

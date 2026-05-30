@@ -28,7 +28,7 @@ export const STATUS_META: Record<string, { label: string; color: string; bg: str
   follow_up:      { label: 'Follow Up',  color: '#c2410c', bg: 'rgba(194,65,12,0.08)',   border: 'rgba(194,65,12,0.25)' },
   engaged:        { label: 'Engaged',    color: '#eab308', bg: 'rgba(234,179,8,0.08)',   border: 'rgba(234,179,8,0.3)'  },
   qualified:      { label: 'Qualified',  color: '#10b981', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)'},
-  matching:       { label: 'Matching',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',  border: 'rgba(139,92,246,0.25)'},
+  matching:       { label: 'Roommate Match', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)',  border: 'rgba(139,92,246,0.25)'},
   cold:           { label: 'Cold',       color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.25)'},
   closed:         { label: 'Closed',     color: '#6b7280', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.25)'},
   tour_scheduled: { label: 'Qualified',  color: '#10b981', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)'},
@@ -410,7 +410,6 @@ export default function LeadsListPage() {
     <div className="ll-col-hdr">
       <div className="ll-col-hdr-cell">Lead</div>
       <div className="ll-col-hdr-cell ll-hdr-contact">Contact</div>
-      <div className="ll-col-hdr-cell ll-hdr-signals">Signals</div>
       <div className="ll-col-hdr-cell ll-hdr-prop">{showPropCol ? 'Property' : 'Move-in'}</div>
       <div className="ll-col-hdr-cell ll-hdr-score ll-sort-hdr" style={{ textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
         onClick={() => setSortBy('score')}
@@ -462,13 +461,13 @@ export default function LeadsListPage() {
             {initials(lead.first_name, lead.last_name)}
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
               <span style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {lead.first_name || '—'}{lead.last_name ? ` ${lead.last_name}` : ''}
               </span>
               {heat.icon && <span title={heat.label} style={{ fontSize: 11 }}>{heat.icon}</span>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginTop: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
               {gc > 1 && (
                 <span style={{ fontSize: 9, fontWeight: 700, color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 8, padding: '1px 5px', whiteSpace: 'nowrap' }}>
                   ×{gc} group
@@ -520,26 +519,7 @@ export default function LeadsListPage() {
           </div>
         </div>
 
-        {/* COL 3: Signals */}
-        <div className="ll-lead-cell ll-cell-signals">
-          {hasPrescreen && (
-            <span className="ll-signal-pill" style={{ color: '#10b981', background: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.25)' }}>
-              ✓ Screened
-            </span>
-          )}
-          {hasToured && (
-            <span className="ll-signal-pill" style={{ color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.25)' }}>
-              ✓ Toured
-            </span>
-          )}
-          {upcomingTourDate && (
-            <span className="ll-signal-pill" style={{ color: '#0ea5e9', background: 'rgba(14,165,233,0.1)', borderColor: 'rgba(14,165,233,0.25)' }}>
-              📅 {new Date(upcomingTourDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            </span>
-          )}
-        </div>
-
-        {/* COL 4: Property (or move-in if grouped) */}
+        {/* COL 3: Property (or move-in if grouped) */}
         <div className="ll-lead-cell ll-cell-prop">
           {showPropName && prop ? (
             <>
@@ -551,10 +531,22 @@ export default function LeadsListPage() {
           )}
         </div>
 
-        {/* COL 5: Score */}
+        {/* COL 4: Score + signals */}
         <div className="ll-lead-cell ll-cell-score" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: isCold ? '#94a3b8' : sc.color, background: isCold ? 'rgba(148,163,184,0.1)' : sc.bg, borderRadius: 6, padding: '2px 6px', display: 'inline-block', lineHeight: 1.3 }}>
             {isCold ? '—' : score}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 3, marginTop: 3, flexWrap: 'wrap' }}>
+            {hasPrescreen && <span style={{ fontSize: 9, fontWeight: 700, color: '#10b981' }} title="Pre-screened">✓S</span>}
+            {hasToured && <span style={{ fontSize: 9, fontWeight: 700, color: '#8b5cf6' }} title="Toured">✓T</span>}
+            {upcomingTourDate && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#0ea5e9' }} title={`Tour: ${upcomingTourDate}`}>
+                📅{new Date(upcomingTourDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
+            )}
+            {!hasPrescreen && !hasToured && !upcomingTourDate && (
+              <span style={{ fontSize: 9, color: '#d4d0c8' }}>—</span>
+            )}
           </div>
         </div>
 
@@ -696,46 +688,38 @@ export default function LeadsListPage() {
         .ll-cold-body { background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
 
         /* Table-grid lead row */
-        .ll-col-hdr { display: grid; grid-template-columns: 1.4fr 1.2fr 105px 120px 72px 60px 160px 120px; align-items: center; gap: 0; padding: 7px 20px; background: #f8f7f4; border-bottom: 1px solid #ece9e2; }
-        .ll-col-hdr-cell { font-size: 10px; font-weight: 700; color: #a8a49c; text-transform: uppercase; letter-spacing: 0.6px; }
+        .ll-col-hdr { display: grid; grid-template-columns: 1.4fr 1.3fr 130px 82px 60px 170px 120px; align-items: center; gap: 0; padding: 7px 20px; background: #f8f7f4; border-bottom: 1px solid #ece9e2; }
+        .ll-col-hdr-cell { font-size: 10px; font-weight: 700; color: #a8a49c; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }
         .ll-sort-hdr:hover { color: #6b6b6b; }
-        .ll-lead-card { display: grid; grid-template-columns: 1.4fr 1.2fr 105px 120px 72px 60px 160px 120px; align-items: center; gap: 0; padding: 11px 20px; cursor: pointer; transition: background 0.1s; position: relative; border-bottom: 1px solid #f2f0ec; }
+        .ll-lead-card { display: grid; grid-template-columns: 1.4fr 1.3fr 130px 82px 60px 170px 120px; align-items: center; gap: 0; padding: 10px 20px; cursor: pointer; transition: background 0.1s; position: relative; border-bottom: 1px solid #f2f0ec; }
         .ll-lead-card:last-child { border-bottom: none; }
         .ll-lead-card:hover { background: #faf9f6; }
-        .ll-lead-cell { padding: 0 12px 0 0; min-width: 0; overflow: hidden; }
+        .ll-lead-cell { padding: 0 14px 0 0; min-width: 0; overflow: hidden; }
         .ll-cell-contact { display: flex; flex-direction: column; gap: 2px; }
-        .ll-cell-signals { display: flex; flex-direction: column; gap: 3px; }
         .ll-contact-row { display: flex; align-items: center; width: 100%; }
         .ll-contact-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ll-signal-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid; white-space: nowrap; line-height: 1.5; }
-        @media (max-width: 1300px) {
-          .ll-col-hdr { grid-template-columns: 1.4fr 1.2fr 105px 120px 72px 160px 110px; }
+        @media (max-width: 1200px) {
+          .ll-col-hdr { grid-template-columns: 1.4fr 1.3fr 110px 82px 170px 110px; }
           .ll-col-hdr .ll-hdr-age { display: none; }
-          .ll-lead-card { grid-template-columns: 1.4fr 1.2fr 105px 120px 72px 160px 110px; }
+          .ll-lead-card { grid-template-columns: 1.4fr 1.3fr 110px 82px 170px 110px; }
           .ll-cell-age { display: none; }
         }
-        @media (max-width: 1050px) {
-          .ll-col-hdr { grid-template-columns: 1.4fr 1.2fr 105px 72px 160px 110px; }
+        @media (max-width: 960px) {
+          .ll-col-hdr { grid-template-columns: 1.4fr 1.3fr 82px 170px 110px; }
           .ll-col-hdr .ll-hdr-prop, .ll-col-hdr .ll-hdr-age { display: none; }
-          .ll-lead-card { grid-template-columns: 1.4fr 1.2fr 105px 72px 160px 110px; }
+          .ll-lead-card { grid-template-columns: 1.4fr 1.3fr 82px 170px 110px; }
           .ll-cell-prop, .ll-cell-age { display: none; }
         }
-        @media (max-width: 800px) {
-          .ll-col-hdr { grid-template-columns: 1fr 1fr 105px auto auto; }
+        @media (max-width: 720px) {
+          .ll-col-hdr { grid-template-columns: 1fr 1fr auto auto; }
           .ll-col-hdr .ll-hdr-score, .ll-col-hdr .ll-hdr-prop, .ll-col-hdr .ll-hdr-age { display: none; }
-          .ll-lead-card { grid-template-columns: 1fr 1fr 105px auto auto; }
+          .ll-lead-card { grid-template-columns: 1fr 1fr auto auto; }
           .ll-cell-score, .ll-cell-prop, .ll-cell-age { display: none; }
         }
-        @media (max-width: 640px) {
-          .ll-col-hdr { grid-template-columns: 1fr auto auto; }
-          .ll-col-hdr .ll-hdr-contact, .ll-col-hdr .ll-hdr-signals, .ll-col-hdr .ll-hdr-score, .ll-col-hdr .ll-hdr-prop, .ll-col-hdr .ll-hdr-age { display: none; }
-          .ll-lead-card { grid-template-columns: 1fr auto auto; }
-          .ll-cell-contact, .ll-cell-signals, .ll-cell-score, .ll-cell-prop, .ll-cell-age { display: none; }
-        }
-        @media (max-width: 500px) {
+        @media (max-width: 520px) {
           .ll-col-hdr { display: none; }
           .ll-lead-card { grid-template-columns: 1fr auto auto; gap: 8px; }
-          .ll-cell-contact, .ll-cell-signals, .ll-cell-prop, .ll-cell-score, .ll-cell-age { display: none; }
+          .ll-cell-contact, .ll-cell-score, .ll-cell-prop, .ll-cell-age { display: none; }
         }
 
         .ll-copy-wrap { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
@@ -824,7 +808,7 @@ export default function LeadsListPage() {
                 <span className="ll-stat-num">{displayLeads.filter(l => l.status !== 'closed').length}</span>
                 <span>Active</span>
               </button>
-              {['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching'].map(s => {
+              {['new', 'contacted', 'follow_up', 'engaged', 'qualified'].map(s => {
                 const cnt = counts[s] || 0
                 if (cnt === 0 && statusFilter !== s) return null
                 const meta = STATUS_META[s]
@@ -840,6 +824,16 @@ export default function LeadsListPage() {
                   </button>
                 )
               })}
+              {/* Roommate Matching — always visible */}
+              <button
+                className={`ll-stat-pill${statusFilter === 'matching' ? ' active' : ''}`}
+                style={{ color: '#8b5cf6', borderColor: statusFilter === 'matching' ? '#8b5cf6' : '#e8e5de' }}
+                onClick={() => setStatusFilter(statusFilter === 'matching' ? 'all' : 'matching')}
+                title="Leads being paired with roommates"
+              >
+                <span className="ll-stat-num" style={{ color: '#8b5cf6' }}>{counts['matching'] || 0}</span>
+                <span style={{ color: '#6b6b6b' }}>Roommate Match</span>
+              </button>
               {/* Cold separator */}
               {(counts['cold'] || 0) > 0 && (
                 <>

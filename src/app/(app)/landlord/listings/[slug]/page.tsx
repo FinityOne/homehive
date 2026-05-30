@@ -14,7 +14,7 @@ import {
   replacePropertyRooms,
   Property,
 } from '@/lib/properties'
-import { getLeadsForOwner, Lead } from '@/lib/leads'
+import type { Lead } from '@/lib/leads'
 
 const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
 
@@ -187,6 +187,10 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
 
   const [property, setProperty]     = useState<Property | null>(null)
   const [leads, setLeads]           = useState<Lead[]>([])
+  const [leadsPage, setLeadsPage]   = useState(1)
+  const [leadsTotal, setLeadsTotal] = useState(0)
+  const [leadsLoading, setLeadsLoading] = useState(false)
+  const LEADS_PAGE_SIZE = 20
   const [loading, setLoading]       = useState(true)
   const [activeTab, setActiveTab]   = useState<Tab>('overview')
   const [hasPlan, setHasPlan]       = useState(false)
@@ -201,6 +205,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const [listingType, setListingType]           = useState<'standard_rental' | 'sublease' | 'lease_transfer'>('standard_rental')
   const [subleaseStart, setSubleaseStart]       = useState('')
   const [subleaseEnd, setSubleaseEnd]           = useState('')
+  const [availableFrom, setAvailableFrom]       = useState('')
   const [totalRooms, setTotalRooms]             = useState('')
   const [availableRooms, setAvailableRooms]     = useState('')
   const [typeSaving, setTypeSaving]             = useState(false)
@@ -235,21 +240,28 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      const [props, lds, { data: unlocks }, { data: plan }] = await Promise.all([
+      const [props, { data: unlocks }, { data: plan }] = await Promise.all([
         getPropertiesByOwner(user.id),
-        getLeadsForOwner(user.id),
         supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', user.id),
         supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', user.id).eq('status', 'active').maybeSingle(),
       ])
       const found = props.find(p => p.slug === slug)
       if (!found) { router.push('/landlord/listings'); return }
 
-      const slugLeads = lds.filter(l => l.property === slug)
       const activePlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
       setProperty(found)
-      setLeads(slugLeads)
       setHasPlan(!!activePlan)
       setUnlockedIds((unlocks || []).map((u: any) => u.lead_id))
+
+      // Fetch first page of leads for this property
+      const { data: firstPage, count } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact' })
+        .eq('property', slug)
+        .order('created_at', { ascending: false })
+        .range(0, LEADS_PAGE_SIZE - 1)
+      setLeads(firstPage ?? [])
+      setLeadsTotal(count ?? 0)
 
       setBasics({
         name: found.name || '', address: found.address || '', description: found.description || '',
@@ -261,6 +273,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       setListingType(found.listing_type || 'standard_rental')
       setSubleaseStart(found.sublease_start_date || '')
       setSubleaseEnd(found.sublease_end_date || '')
+      setAvailableFrom(found.available_from || '')
       setTotalRooms(found.total_rooms?.toString() || '')
       setAvailableRooms(found.available?.toString() || '')
       setRentalMode(found.rental_mode ?? 'whole_home')
@@ -278,6 +291,25 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
     }
     load()
   }, [slug, router])
+
+  // Re-fetch when page changes (after initial load)
+  useEffect(() => {
+    if (leadsPage === 1 || loading) return
+    const fetchPage = async () => {
+      setLeadsLoading(true)
+      const from = (leadsPage - 1) * LEADS_PAGE_SIZE
+      const { data } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('property', slug)
+        .order('created_at', { ascending: false })
+        .range(from, from + LEADS_PAGE_SIZE - 1)
+      setLeads(data ?? [])
+      setLeadsLoading(false)
+    }
+    fetchPage()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadsPage, slug])
 
   function flash(setter: (v: { ok: boolean; text: string } | null) => void, ok: boolean, text: string) {
     setter({ ok, text })
@@ -309,6 +341,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       listing_type:        listingType,
       sublease_start_date: listingType !== 'standard_rental' ? subleaseStart || null : null,
       sublease_end_date:   listingType !== 'standard_rental' ? subleaseEnd   || null : null,
+      available_from:      listingType === 'standard_rental' ? availableFrom || null : null,
       rental_mode:         rentalMode,
     }
 
@@ -531,6 +564,16 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                     <div className="detail-value">{property.asu_distance ? `${property.asu_distance} mi` : '—'}</div>
                   </div>
                 </div>
+                {property.available_from && property.listing_type === 'standard_rental' && (
+                  <div className="detail-row" style={{ marginTop: '12px' }}>
+                    <div className="detail-item">
+                      <div className="detail-label">Available From</div>
+                      <div className="detail-value" style={{ color: '#059669', fontWeight: 600 }}>
+                        {new Date(property.available_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {(property.sublease_start_date || property.sublease_end_date) && (
                   <div className="detail-row" style={{ marginTop: '12px' }}>
                     <div className="detail-item">
@@ -621,17 +664,44 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             {/* Leads */}
             <div className="lp-card">
               <div className="lp-card-hdr">
-                <span className="lp-card-title">Leads ({leads.length})</span>
-                {leads.length > 0 && (
+                <span className="lp-card-title">Leads ({leadsTotal})</span>
+                {leadsTotal > 0 && (
                   <a href="/landlord/leads" style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>View all in CRM →</a>
                 )}
               </div>
-              <div className="lp-card-body" style={{ padding: 0 }}>
+              <div className="lp-card-body" style={{ padding: 0, position: 'relative' }}>
+                {leadsLoading && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.6)', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ fontSize: 13, color: '#9b9b9b', fontFamily: "'DM Sans', sans-serif" }}>Loading…</div>
+                  </div>
+                )}
                 <LeadsTable
                   leads={leads}
                   hasPlan={hasPlan}
                   initialUnlockedIds={unlockedIds}
                 />
+                {leadsTotal > LEADS_PAGE_SIZE && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid #f1f5f9', fontFamily: "'DM Sans', sans-serif" }}>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                      {(leadsPage - 1) * LEADS_PAGE_SIZE + 1}–{Math.min(leadsPage * LEADS_PAGE_SIZE, leadsTotal)} of {leadsTotal} leads
+                    </span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        disabled={leadsPage === 1}
+                        onClick={() => setLeadsPage(p => p - 1)}
+                        style={{ padding: '5px 12px', border: '1.5px solid #e8e5de', borderRadius: 6, background: '#fff', fontSize: 12, fontWeight: 600, cursor: leadsPage === 1 ? 'not-allowed' : 'pointer', opacity: leadsPage === 1 ? 0.4 : 1, fontFamily: "'DM Sans', sans-serif", color: '#4a4a4a' }}
+                      >← Prev</button>
+                      <span style={{ fontSize: 12, color: '#6b6b6b', fontWeight: 600, alignSelf: 'center' }}>
+                        Page {leadsPage} of {Math.ceil(leadsTotal / LEADS_PAGE_SIZE)}
+                      </span>
+                      <button
+                        disabled={leadsPage >= Math.ceil(leadsTotal / LEADS_PAGE_SIZE)}
+                        onClick={() => setLeadsPage(p => p + 1)}
+                        style={{ padding: '5px 12px', border: '1.5px solid #e8e5de', borderRadius: 6, background: '#fff', fontSize: 12, fontWeight: 600, cursor: leadsPage >= Math.ceil(leadsTotal / LEADS_PAGE_SIZE) ? 'not-allowed' : 'pointer', opacity: leadsPage >= Math.ceil(leadsTotal / LEADS_PAGE_SIZE) ? 0.4 : 1, fontFamily: "'DM Sans', sans-serif", color: '#4a4a4a' }}
+                      >Next →</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -750,6 +820,20 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                     <label className="fl">End Date</label>
                     <input className="fi" type="date" value={subleaseEnd} onChange={e => setSubleaseEnd(e.target.value)} />
                   </div>
+                </div>
+              )}
+
+              {/* Available from — standard rentals */}
+              {listingType === 'standard_rental' && (
+                <div className="fg" style={{ marginTop: '8px', maxWidth: 220 }}>
+                  <label className="fl">Available From</label>
+                  <input
+                    className="fi"
+                    type="date"
+                    value={availableFrom}
+                    onChange={e => setAvailableFrom(e.target.value)}
+                  />
+                  <div className="form-hint">Shown on the listing so renters know when they can move in.</div>
                 </div>
               )}
 
