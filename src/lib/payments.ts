@@ -239,6 +239,25 @@ export function fmtOrdinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
+// Average number of days in a month, per the lease's proration clause:
+// "the number of days prorated times the monthly rate divided by 30.2".
+export const PRORATION_DAYS_PER_MONTH = 30.2
+
+// Prorated rent for a partial period.
+// Per the lease: (days prorated) × (monthly rate) ÷ 30.2, rounded UP to the closest dollar.
+// e.g. $700/mo for 10 days → ceil(700 × 10 / 30.2) = ceil(231.79) = $232.
+export function computeProratedRent(monthlyAmount: number, proratedDays: number): number {
+  if (proratedDays <= 0 || monthlyAmount <= 0) return 0
+  return Math.ceil((monthlyAmount * proratedDays) / PRORATION_DAYS_PER_MONTH)
+}
+
+// Whole number of days from `from` (inclusive) up to `to` (exclusive).
+function daysBetween(from: string, to: string): number {
+  const a = new Date(from + 'T00:00:00').getTime()
+  const b = new Date(to   + 'T00:00:00').getTime()
+  return Math.round((b - a) / 86_400_000)
+}
+
 // Prorate a monthly amount for a partial first month.
 // startDate is when the tenant starts; dueDay is the plan's payment due day.
 // Returns { proratedAmount, fullMonths, startDate } to show a preview.
@@ -260,7 +279,7 @@ export function computeProration(monthlyAmount: number, startDate: string, dueDa
   // If start is on/before due day, first full payment is this month (prorate from start → due day)
   // If start is after due day, first full payment is next month (prorate from start → end of month)
   let proratedDays: number
-  let totalDays = 30.5 // average month
+  const totalDays = PRORATION_DAYS_PER_MONTH // average month
   let firstDueYear = year
   let firstDueMonth = month + 1 // next month (0-indexed → 1-indexed → shift +1)
 
@@ -277,7 +296,7 @@ export function computeProration(monthlyAmount: number, startDate: string, dueDa
     firstDueMonth = (month + 1) % 12
   }
 
-  const proratedAmount = Math.round((monthlyAmount / totalDays) * proratedDays * 100) / 100
+  const proratedAmount = computeProratedRent(monthlyAmount, proratedDays)
 
   // First full month due date
   const nextLastDay = new Date(firstDueYear, firstDueMonth + 1, 0).getDate()
@@ -285,6 +304,109 @@ export function computeProration(monthlyAmount: number, startDate: string, dueDa
   const firstDueDate = `${firstDueYear}-${String(firstDueMonth + 1).padStart(2, '0')}-${String(nextDueDay).padStart(2, '0')}`
 
   return { proratedAmount, proratedDays, totalDays, firstDueDate }
+}
+
+// A single row in a generated payment schedule.
+//   move_in          — full month's rent, due on the first day of the lease
+//   prorated_credit  — the following month, reduced by the prorated amount
+//   regular          — a normal full-rent payment
+export type ScheduleEntryKind = 'move_in' | 'prorated_credit' | 'regular'
+export type ScheduleEntry = {
+  due_date: string
+  amount: number
+  kind: ScheduleEntryKind
+}
+
+// Build the full payment schedule for one payer over the life of the lease,
+// applying the lease's mid-month proration convention:
+//
+//   • If the lease starts on the due day, every payment is the full monthly amount.
+//   • Otherwise the tenant pays the FULL first month's rent on the first day of the
+//     lease (move-in). They only owe the prorated rent for the days actually occupied
+//     that partial first month, so the full payment overpays by a credit of
+//     (monthly rent − prorated rent). That credit is applied to the following month,
+//     making it: following = monthly rent − credit = the prorated rent itself
+//     = (daysStayed × rate ÷ 30.2, rounded up). All later payments are the full amount.
+//
+// Worked example — $847/mo, lease starts May 9 (23 days in residence), due day 1:
+//   prorated May rent = ceil(23 × 847 ÷ 30.2) = $646
+//   move-in (May 9)   = $847 (full)
+//   credit            = 847 − 646 = $201
+//   June 1            = 847 − 201 = $646  (== the prorated rent)
+export function buildPaymentSchedule(
+  leaseStart: string,
+  leaseEnd: string,
+  dueDay: number,
+  monthlyAmount: number,
+): ScheduleEntry[] {
+  const regular = generateScheduleDates(leaseStart, leaseEnd, dueDay)
+  if (regular.length === 0) return []
+
+  // No partial first period — the lease starts on (or after) the first due day.
+  if (daysBetween(leaseStart, regular[0]) <= 0) {
+    return regular.map(due_date => ({ due_date, amount: monthlyAmount, kind: 'regular' as const }))
+  }
+
+  // Partial first month → full rent at move-in; the following month is the prorated
+  // rent for the days occupied (equivalently, full rent minus the move-in overpayment).
+  const daysStayed   = daysBetween(leaseStart, regular[0])
+  const followingAmt = computeProratedRent(monthlyAmount, daysStayed)
+
+  const entries: ScheduleEntry[] = [
+    // Full first month's rent, paid on the first day of the lease.
+    { due_date: leaseStart, amount: monthlyAmount, kind: 'move_in' },
+    // Following month = prorated first-month rent (full rent − move-in credit).
+    { due_date: regular[0], amount: followingAmt, kind: 'prorated_credit' },
+  ]
+  // Remaining months at full rent.
+  for (let i = 1; i < regular.length; i++) {
+    entries.push({ due_date: regular[i], amount: monthlyAmount, kind: 'regular' })
+  }
+  return entries
+}
+
+// Preview of how proration affects a payer's first two payments, for the create-plan UI.
+export function previewProration(
+  leaseStart: string,
+  leaseEnd: string,
+  dueDay: number,
+  monthlyAmount: number,
+): {
+  applies: boolean
+  daysStayed: number        // occupied days of the partial first month
+  proratedRent: number      // prorated rent owed for those occupied days
+  credit: number            // move-in overpayment applied to the following month
+  moveInDate: string
+  moveInAmount: number
+  followingDate: string
+  followingAmount: number
+} | null {
+  const regular = generateScheduleDates(leaseStart, leaseEnd, dueDay)
+  if (regular.length === 0) return null
+  const daysStayed = daysBetween(leaseStart, regular[0])
+  if (daysStayed <= 0) {
+    return {
+      applies: false,
+      daysStayed: 0,
+      proratedRent: 0,
+      credit: 0,
+      moveInDate: leaseStart,
+      moveInAmount: monthlyAmount,
+      followingDate: regular[0],
+      followingAmount: monthlyAmount,
+    }
+  }
+  const proratedRent = computeProratedRent(monthlyAmount, daysStayed)
+  return {
+    applies: true,
+    daysStayed,
+    proratedRent,
+    credit: Math.max(0, monthlyAmount - proratedRent),
+    moveInDate: leaseStart,
+    moveInAmount: monthlyAmount,
+    followingDate: regular[0],
+    followingAmount: proratedRent,
+  }
 }
 
 // ─── DATA ACCESS ─────────────────────────────────────────────────────────────
@@ -451,18 +573,24 @@ export async function createPlan(
       if (liErr) return { planId, error: liErr }
     }
 
-    const schedule = generateScheduleDates(input.leaseStart, input.leaseEnd, input.dueDay)
+    const schedule = buildPaymentSchedule(input.leaseStart, input.leaseEnd, input.dueDay, t.monthlyTotal)
     if (schedule.length > 0) {
       const { error: sErr } = await supabase
         .from('scheduled_payments')
-        .insert(schedule.map(due_date => ({
+        .insert(schedule.map(e => ({
           plan_id:          planId,
           plan_tenant_id:   tenant.id,
-          due_date,
-          amount:           t.monthlyTotal,
+          due_date:         e.due_date,
+          amount:           e.amount,
           status:           'pending',
           paid_amount:      0,
           late_fees_applied: 0,
+          notes:
+            e.kind === 'move_in'
+              ? 'First month — full rent due at move-in'
+              : e.kind === 'prorated_credit'
+                ? 'Prorated first month — rent for days occupied (full rent minus move-in credit)'
+                : null,
         })))
       if (sErr) return { planId, error: sErr }
     }

@@ -566,7 +566,7 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
                   <div className="proration-box" style={{ marginTop: 10 }}>
                     <strong>Proration preview:</strong> First payment on {fmtDate(newStartDate)} is{' '}
                     <strong>{fmtCurrency(prorationPreview.proratedAmount)}</strong>{' '}
-                    ({prorationPreview.proratedDays} of 30.5 days).
+                    ({prorationPreview.proratedDays} of {prorationPreview.totalDays} days).
                     Full payments of <strong>{fmtCurrency(parseFloat(newMonthly))}</strong> start{' '}
                     {fmtDate(prorationPreview.firstDueDate)}.
                   </div>

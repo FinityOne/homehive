@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import {
-  createPlan, generateScheduleDates, fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
-  LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES, type SpecialCategory,
+  createPlan, generateScheduleDates, buildPaymentSchedule, previewProration,
+  fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
+  PRORATION_DAYS_PER_MONTH, LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES, type SpecialCategory,
 } from '@/lib/payments'
 
 const supabase = createBrowserClient(
@@ -190,6 +191,23 @@ export default function NewPaymentPlanPage() {
   const previewDates = selectedLease
     ? generateScheduleDates(selectedLease.start_date, selectedLease.end_date, dueDay)
     : []
+
+  // Mid-month proration preview (uses the plan's combined monthly total).
+  const proration = selectedLease && grandTotal > 0
+    ? previewProration(selectedLease.start_date, selectedLease.end_date, dueDay, grandTotal)
+    : null
+  const prorationApplies = !!proration?.applies
+
+  // Plan-level schedule entries (combined across payers) for the review preview.
+  const previewEntries = selectedLease && grandTotal > 0
+    ? buildPaymentSchedule(selectedLease.start_date, selectedLease.end_date, dueDay, grandTotal)
+    : []
+  const totalPayments = (previewDates.length + (prorationApplies ? 1 : 0)) * tenants.length
+  // With proration the schedule is: move-in (full) + following (prorated) + (M−1) full months.
+  // = grandTotal × M + prorated following amount.
+  const leaseTotal = prorationApplies && proration
+    ? grandTotal * previewDates.length + proration.followingAmount
+    : grandTotal * previewDates.length
 
   const canNext: Record<number, boolean> = {
     1: !!selectedPropId && !!selectedLeaseId && planName.trim().length > 0,
@@ -440,9 +458,24 @@ export default function NewPaymentPlanPage() {
             </Field>
 
             {selectedLease && (
-              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px 14px', marginBottom: 20, fontSize: '13px', color: '#475569', border: '1px solid #e2e8f0' }}>
+              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px 14px', marginBottom: prorationApplies ? 12 : 20, fontSize: '13px', color: '#475569', border: '1px solid #e2e8f0' }}>
                 📅 Will generate <strong>{generateScheduleDates(selectedLease.start_date, selectedLease.end_date, dueDay).length}</strong> monthly payments
                 — {fmtDate(selectedLease.start_date)} through {fmtDate(selectedLease.end_date)}
+              </div>
+            )}
+
+            {/* Mid-month proration notice */}
+            {proration?.applies && (
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 14px', marginBottom: 20, fontSize: '12.5px', color: '#1e40af', lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>↺ Mid-month start — rent prorated</div>
+                The lease starts mid-month, so the full first month&apos;s rent ({fmtCurrency(proration.moveInAmount)})
+                is due on <strong>{fmtDate(proration.moveInDate)}</strong>. The tenant only owes prorated rent of{' '}
+                <strong>{fmtCurrency(proration.proratedRent)}</strong>{' '}
+                for the {proration.daysStayed} day{proration.daysStayed !== 1 ? 's' : ''} occupied
+                ({proration.daysStayed} × {fmtCurrency(grandTotal)} ÷ {PRORATION_DAYS_PER_MONTH}, rounded up),
+                leaving a <strong>{fmtCurrency(proration.credit)}</strong> credit.
+                The following payment on <strong>{fmtDate(proration.followingDate)}</strong> applies that credit:{' '}
+                <strong>{fmtCurrency(proration.followingAmount)}</strong> (rent − credit). Later months are full rent.
               </div>
             )}
 
@@ -587,8 +620,9 @@ export default function NewPaymentPlanPage() {
                 <LabelVal label="Due on"      value={fmtOrdinal(dueDay) + ' of each month'} />
                 <LabelVal label="Tenants"     value={String(tenants.length)} />
                 <LabelVal label="Monthly total" value={fmtCurrency(grandTotal)} />
-                <LabelVal label="Payments"    value={`${previewDates.length * tenants.length} total (${previewDates.length} months × ${tenants.length} payer${tenants.length !== 1 ? 's' : ''})`} />
-                <LabelVal label="Lease total" value={fmtCurrency(grandTotal * previewDates.length)} />
+                <LabelVal label="Payments"    value={`${totalPayments} total${prorationApplies ? ` (incl. move-in × ${tenants.length})` : ` (${previewDates.length} months × ${tenants.length} payer${tenants.length !== 1 ? 's' : ''})`}`} />
+                <LabelVal label="Lease total" value={fmtCurrency(leaseTotal)} />
+                {prorationApplies && proration && <LabelVal label="Proration" value={`${proration.daysStayed}d → ${fmtCurrency(proration.proratedRent)} prorated; ${fmtCurrency(proration.credit)} credit next month`} />}
                 {lateFeeEnabled && feeAmount && <LabelVal label="Late fees" value={`${fmtCurrency(parseFloat(feeAmount))} every ${feeFreqDays}d after ${graceDays}d grace`} />}
               </div>
             </div>
@@ -616,14 +650,18 @@ export default function NewPaymentPlanPage() {
 
             {/* Sample months */}
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>FIRST 3 MONTHS</div>
-              {previewDates.slice(0, 3).map(d => (
-                <div key={d} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f8fafc', borderRadius: '8px', marginBottom: 6 }}>
-                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>Due {fmtDate(d)}</span>
-                  <span style={{ fontSize: '13px', color: '#64748b' }}>{fmtCurrency(grandTotal)} across {tenants.length} payer{tenants.length !== 1 ? 's' : ''}</span>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>FIRST {Math.min(3, previewEntries.length)} PAYMENTS</div>
+              {previewEntries.slice(0, 3).map((e, i) => (
+                <div key={`${e.due_date}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: e.kind === 'regular' ? '#f8fafc' : '#eff6ff', border: e.kind === 'regular' ? 'none' : '1px solid #bfdbfe', borderRadius: '8px', marginBottom: 6 }}>
+                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
+                    Due {fmtDate(e.due_date)}
+                    {e.kind === 'move_in' && <span style={{ fontSize: '11px', color: '#1e40af', fontWeight: 600, marginLeft: 6 }}>· move-in (full)</span>}
+                    {e.kind === 'prorated_credit' && <span style={{ fontSize: '11px', color: '#1e40af', fontWeight: 600, marginLeft: 6 }}>· rent − prorate</span>}
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#64748b' }}>{fmtCurrency(e.amount)} across {tenants.length} payer{tenants.length !== 1 ? 's' : ''}</span>
                 </div>
               ))}
-              {previewDates.length > 3 && <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', paddingTop: 4 }}>+ {previewDates.length - 3} more months</div>}
+              {previewEntries.length > 3 && <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', paddingTop: 4 }}>+ {previewEntries.length - 3} more payments</div>}
             </div>
 
             {error && <div style={{ marginTop: 16, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#991b1b' }}>{error}</div>}
