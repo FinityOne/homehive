@@ -83,11 +83,13 @@ export async function POST(req: Request) {
   let landlordEmail = process.env.ADMIN_EMAIL!
   let landlordFirstName = ''
   let landlordId = ''
+  let hasFaqs = false
+  const faqUrl = property ? `${siteUrl}/homes/${property}/faq` : ''
 
   if (property) {
     const { data: prop } = await supabase
       .from('properties')
-      .select('name, address, price, owner_id, property_images(url, position)')
+      .select('id, name, address, price, owner_id, property_images(url, position)')
       .eq('slug', property)
       .single()
 
@@ -96,6 +98,16 @@ export async function POST(req: Request) {
       propertyAddress = prop.address
       propertyPrice = prop.price
       landlordId = prop.owner_id || ''
+
+      // Does this listing have answered FAQs worth linking in the welcome email?
+      try {
+        const { count } = await supabase
+          .from('property_faqs')
+          .select('id', { count: 'exact', head: true })
+          .eq('property_id', prop.id)
+          .neq('answer', '')
+        hasFaqs = (count ?? 0) > 0
+      } catch (_) {}
       const imgs = (prop.property_images as { url: string; position: number }[] | null) ?? []
       propertyHeroImage = imgs.sort((a, b) => a.position - b.position)[0]?.url || ''
 
@@ -305,6 +317,20 @@ export async function POST(req: Request) {
     <p style="margin:0 0 20px;font-size:12px;color:#b0a898;text-align:center;line-height:1.6;">
       This link is personal to you · Takes 2 minutes · No commitment
     </p>
+
+    ${hasFaqs ? `
+    <!-- FAQ link -->
+    <div style="border-top:1px solid #f0ede6;padding-top:18px;margin-bottom:18px;">
+      <div style="background:#f8f7f4;border:1px solid #e8e5de;border-radius:12px;padding:16px 18px;">
+        <div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:4px;">❓ Have questions about ${propertyName}?</div>
+        <p style="margin:0 0 12px;font-size:13px;color:#4a4a4a;line-height:1.6;">
+          We've answered the most common questions — utilities, parking, lease terms, tours and more.
+        </p>
+        <a href="${faqUrl}" style="display:inline-block;background:#1a1a1a;color:#FFC627;text-decoration:none;font-size:13px;font-weight:700;padding:10px 20px;border-radius:8px;">
+          Read the FAQ →
+        </a>
+      </div>
+    </div>` : ''}
 
     <!-- Already completed note -->
     <div style="border-top:1px solid #f0ede6;padding-top:16px;">

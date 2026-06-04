@@ -5,6 +5,7 @@ import { useState, use, useEffect, useRef, useCallback } from 'react'
 import { usePostHog } from 'posthog-js/react'
 import { createBrowserClient } from '@supabase/ssr'
 import { getPropertyBySlug, Property } from '@/lib/properties'
+import { getFaqsByPropertyId, PropertyFaq } from '@/lib/faqs'
 import { notFound } from 'next/navigation'
 import PhoneInput from '@/components/ui/PhoneInput'
 
@@ -80,6 +81,7 @@ export default function PropertyPageClient({
   const [commentText, setCommentText] = useState('')
   const [submittingComment, setSubmittingComment] = useState(false)
   const [commentError, setCommentError] = useState<string | null>(null)
+  const [faqs, setFaqs] = useState<PropertyFaq[]>([])
 
   const openRoomLightbox = useCallback((images: string[], index: number, roomName: string) => {
     setRoomLightbox({ images, index, roomName })
@@ -109,6 +111,12 @@ export default function PropertyPageClient({
   useEffect(() => {
     getPropertyBySlug(slug).then(p => setHome(p ?? null))
   }, [slug])
+
+  // Load FAQs once we know the property id
+  useEffect(() => {
+    if (!home?.id) return
+    getFaqsByPropertyId(home.id).then(rows => setFaqs(rows.filter(f => f.answer.trim())))
+  }, [home?.id])
 
   useEffect(() => {
     if (!home?.owner_id) return
@@ -756,6 +764,15 @@ export default function PropertyPageClient({
         .nearby-place { font-size: 13px; color: var(--hh-text-2); }
         .nearby-time  { font-size: 12px; color: var(--hh-accent); font-weight: 600; }
 
+        .faq-inline   { border: 1px solid var(--hh-border-faint); border-radius: 12px; overflow: hidden; background: #fff; }
+        .faq-inline summary { list-style: none; cursor: pointer; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--hh-text); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .faq-inline summary::-webkit-details-marker { display: none; }
+        .faq-inline summary::after { content: '+'; font-size: 20px; color: var(--hh-primary); font-weight: 300; flex-shrink: 0; line-height: 1; }
+        .faq-inline[open] summary::after { content: '\\2212'; }
+        .faq-inline-a { padding: 0 16px 14px; font-size: 13.5px; color: var(--hh-text-2); line-height: 1.65; white-space: pre-wrap; }
+        .faq-inline-more { display: inline-block; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--hh-primary); text-decoration: none; }
+        .faq-inline-more:hover { text-decoration: underline; }
+
         .rec-grid    { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
         .rec-card    { border: 1px solid var(--hh-border-faint); border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: box-shadow 0.2s, transform 0.2s; background: #fff; }
         .rec-card:hover { box-shadow: 0 12px 40px rgba(34,40,16,0.11); transform: translateY(-3px); }
@@ -1207,6 +1224,24 @@ export default function PropertyPageClient({
               </div>
             )}
 
+            {/* FAQ */}
+            {faqs.length > 0 && (
+              <div className="section">
+                <div className="section-label">Frequently Asked Questions</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {faqs.slice(0, 4).map(f => (
+                    <details key={f.id} className="faq-inline">
+                      <summary>{f.question}</summary>
+                      <div className="faq-inline-a">{f.answer}</div>
+                    </details>
+                  ))}
+                </div>
+                <a href={`/homes/${home.slug}/faq`} className="faq-inline-more">
+                  {faqs.length > 4 ? `View all ${faqs.length} questions` : 'View full FAQ page'} →
+                </a>
+              </div>
+            )}
+
             {/* RECOMMENDED PROPERTIES */}
             {recommended.length > 0 && (
               <div className="section">
@@ -1342,7 +1377,7 @@ export default function PropertyPageClient({
           </div>{/* /prop-left */}
 
           {/* RIGHT — sticky form card */}
-          <div className="prop-right">
+          <div className="prop-right" id="inquiry">
 
             {/* Posted by landlord */}
             {landlordProfile && (

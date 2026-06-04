@@ -17,19 +17,21 @@ import {
 import type { Lead } from '@/lib/leads'
 
 const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
+const FaqManager = dynamic(() => import('@/components/listings/FaqManager'), { ssr: false })
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Tab = 'overview' | 'basics' | 'type' | 'location' | 'offer' | 'calendar'
+type Tab = 'overview' | 'basics' | 'type' | 'location' | 'offer' | 'faq' | 'calendar'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',  label: 'Overview'          },
   { id: 'basics',    label: 'Basics'             },
   { id: 'type',      label: 'Type & Availability'},
   { id: 'location',  label: 'Location & Details' },
   { id: 'offer',     label: 'Special Offer'      },
+  { id: 'faq',       label: '❓ FAQ'             },
   { id: 'calendar',  label: '📅 Tour Calendar'   },
 ]
 
@@ -1092,6 +1094,15 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── FAQ TAB ──────────────────────────────────────────────────── */}
+        {activeTab === 'faq' && property && (
+          <div className="lp-card">
+            <div className="lp-card-body">
+              <FaqManager propertyId={property.id} slug={property.slug} isActive={property.is_active} />
             </div>
           </div>
         )}
