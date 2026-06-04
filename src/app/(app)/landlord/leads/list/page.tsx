@@ -68,6 +68,19 @@ type Prescreen = {
   lease_length: string | null; group_size: number | null
 }
 
+// Today as YYYY-MM-DD, in local time (for native <input type="date"> min)
+function todayISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Closest upcoming 1st of the month, as YYYY-MM-DD (for native <input type="date">)
+function nextFirstOfMonth(): string {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
 function computeScore(lead: Lead, prescreen: Prescreen | null, price: number | null): number {
   const statusBase: Record<string, number> = {
     new: 5, contacted: 15, follow_up: 20, engaged: 35,
@@ -152,7 +165,7 @@ export default function LeadsListPage() {
   const [sortBy, setSortBy] = useState<'score' | 'date'>('score')
   const [tourMap, setTourMap] = useState<Record<string, string>>({}) // lead_id -> scheduled_date
   const [showAddModal, setShowAddModal] = useState(false)
-  const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
+  const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: nextFirstOfMonth() })
   const [addingLead, setAddingLead] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
@@ -308,7 +321,7 @@ export default function LeadsListPage() {
       })
       if (res.ok) {
         setShowAddModal(false)
-        setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
+        setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: nextFirstOfMonth() })
         await loadLeads()
         showToast('Lead added + pre-screen email sent!')
       } else showToast('Failed to add lead')
@@ -1144,7 +1157,7 @@ export default function LeadsListPage() {
             </div>
             <div className="field-col" style={{ marginTop: 14 }}>
               <label className="field-label">Move-in</label>
-              <input className="field-input" placeholder="e.g. August 2026" value={addForm.move_in_date} onChange={e => setAddForm(f => ({ ...f, move_in_date: e.target.value }))} />
+              <input className="field-input" type="date" min={todayISO()} value={addForm.move_in_date} onChange={e => setAddForm(f => ({ ...f, move_in_date: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setShowAddModal(false)}>Cancel</button>

@@ -52,6 +52,21 @@ function getHeat(createdAt: string | null) {
   return { icon: '·', color: '#cbd5e1', label: '7d+' }
 }
 
+// Today as YYYY-MM-DD, in local time (for native <input type="date"> min)
+function todayISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Closest upcoming 1st of the month, as YYYY-MM-DD (for native <input type="date">)
+function nextFirstOfMonth(): string {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}-01`
+}
+
 function timeAgo(d: string | null): string {
   if (!d) return '—'
   const diff = Date.now() - new Date(d).getTime()
@@ -99,7 +114,7 @@ export default function LandlordLeadsPage() {
 
   // Add lead modal
   const [showAddModal, setShowAddModal] = useState(false)
-  const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
+  const [addForm, setAddForm] = useState({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: nextFirstOfMonth() })
   const [addingLead, setAddingLead] = useState(false)
 
   // Copy to clipboard — key format: `${leadId}:email` or `${leadId}:phone`
@@ -457,7 +472,7 @@ export default function LandlordLeadsPage() {
       if (res.ok) {
         ph?.capture('lead_added_manually', { property: addForm.property })
         setShowAddModal(false)
-        setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: '' })
+        setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: nextFirstOfMonth() })
         await loadLeads()
         showToast('Lead added + pre-screen email sent!')
       } else {
@@ -1266,7 +1281,7 @@ export default function LandlordLeadsPage() {
 
             <div className="field-col" style={{ marginTop: '14px' }}>
               <label className="field-label">Desired Move-in</label>
-              <input className="field-input" placeholder="e.g. August 2026" value={addForm.move_in_date} onChange={e => setAddForm(f => ({ ...f, move_in_date: e.target.value }))} />
+              <input className="field-input" type="date" min={todayISO()} value={addForm.move_in_date} onChange={e => setAddForm(f => ({ ...f, move_in_date: e.target.value }))} />
             </div>
 
             <div style={{ background: '#fdf9ec', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 14px', marginTop: '16px', marginBottom: '20px', fontSize: '12px', color: '#92400e' }}>

@@ -282,8 +282,16 @@ export default function PropertyPageClient({
   const mainImage  = allImages[activePhoto] ?? ''
   const avail      = availabilityConfig(home.available, home.total_rooms)
   const isPopular  = (home.asu_score ?? 0) >= 8
+
+  // Earliest selectable move-in: the listing's available_from if it's set and in
+  // the future, otherwise today. Locks out every date before the home is ready.
+  const todayStr   = new Date().toISOString().split('T')[0]
+  const minMoveIn  = home.available_from && home.available_from > todayStr ? home.available_from : todayStr
+  const availFromLabel = home.available_from
+    ? new Date(home.available_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : null
   const effectivePhone = loggedInUser?.phone || formData.phone.trim()
-  const canSubmit  = formData.first_name.trim() !== '' && formData.email.trim() !== '' && effectivePhone !== '' && formData.move_in_date !== ''
+  const canSubmit  = formData.first_name.trim() !== '' && formData.email.trim() !== '' && effectivePhone !== '' && formData.move_in_date !== '' && formData.move_in_date >= minMoveIn
 
   const listingTypeCfg = home.listing_type === 'sublease'
     ? { label: 'Sublease', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' }
@@ -579,11 +587,17 @@ export default function PropertyPageClient({
                 type="date"
                 value={formData.move_in_date}
                 onChange={handleChange}
-                min={new Date().toISOString().split('T')[0]}
+                min={minMoveIn}
                 style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
                 onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
                 onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}
               />
+              {availFromLabel && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#059669', marginTop: '6px', paddingLeft: '2px' }}>
+                  <span style={{ fontSize: '12px' }}>🔒</span>
+                  <span>Available from <strong>{availFromLabel}</strong> — earlier dates are locked</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -623,12 +637,17 @@ export default function PropertyPageClient({
               type="date"
               value={formData.move_in_date}
               onChange={handleChange}
-              min={new Date().toISOString().split('T')[0]}
+              min={minMoveIn}
               style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
               onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
               onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}
             />
-            {!formData.move_in_date && (
+            {availFromLabel ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#059669', marginTop: '6px', paddingLeft: '2px' }}>
+                <span style={{ fontSize: '12px' }}>🔒</span>
+                <span>Available from <strong>{availFromLabel}</strong> — earlier dates are locked</span>
+              </div>
+            ) : !formData.move_in_date && (
               <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '4px', paddingLeft: '2px' }}>When do you want to move in? *</div>
             )}
           </div>
