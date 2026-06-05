@@ -5,6 +5,7 @@ import { useState, useEffect, use } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
+import { getNextBestPlan, actionKindTag, type LeadActionContext, type ReservationState, type RecommendedAction } from '@/lib/leadActions'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 
 const supabase = createBrowserClient(
@@ -881,6 +882,134 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
     ? `$${prescreen.monthly_budget.toLocaleString()} / $${property.price.toLocaleString()} · ${prescreen.monthly_budget >= property.price ? '+' : ''}${Math.round(((prescreen.monthly_budget - property.price) / property.price) * 100)}%`
     : null
 
+  // ── Next Best Action engine ──────────────────────────────────────────────
+  const reservationState: ReservationState =
+    !activeReservation ? 'none'
+    : isActiveResAcc ? 'accepted'
+    : isActiveResExp ? 'expired'
+    : 'pending'
+
+  const moveInMonths = (() => {
+    if (!prescreen?.move_in_date) return null
+    const d = new Date(prescreen.move_in_date)
+    if (isNaN(d.getTime())) return null
+    return (d.getTime() - Date.now()) / (30 * 86400000)
+  })()
+
+  const nbaCtx: LeadActionContext = {
+    status: lead.status,
+    closedReason: lead.closed_reason ?? null,
+    firstName: lead.first_name || '',
+    hoursSinceCreated: lead.created_at ? (Date.now() - new Date(lead.created_at).getTime()) / 3600000 : null,
+    hasPrescreen,
+    toured: !!(lead.toured || (tourDiffDays !== null && tourDiffDays < 0)),
+    hasUpcomingTour: !!tourData && tourDiffDays !== null && tourDiffDays >= 0,
+    tourDaysUntil: tourDiffDays,
+    tourReminderSent: !!(tourData?.reminder_sent || tourInviteSent),
+    reservation: reservationState,
+    budgetRatio: prescreen?.monthly_budget && property?.price ? prescreen.monthly_budget / property.price : null,
+    moveInMonths,
+    groupSize: prescreen?.group_size ?? null,
+    matchScore,
+    hasPhone: !!lead.phone,
+  }
+  const nbaPlan = getNextBestPlan(nbaCtx)
+  const primaryBusy =
+    (['send_prescreen', 'reactivate'].includes(nbaPlan.primary.id) && reminding) ||
+    (nbaPlan.primary.id === 'invite_tour' && inviting) ||
+    (nbaPlan.primary.id === 'send_tour_reminder' && sendingTourReminder)
+
+  const urgencyStyle: Record<string, { label: string; color: string; bg: string }> = {
+    now:   { label: 'Do it now',  color: '#fecaca', bg: 'rgba(239,68,68,0.18)' },
+    today: { label: 'Today',      color: '#fed7aa', bg: 'rgba(249,115,22,0.18)' },
+    soon:  { label: 'This week',  color: '#bfdbfe', bg: 'rgba(59,130,246,0.18)' },
+    low:   { label: 'No rush',    color: '#cbd5e1', bg: 'rgba(148,163,184,0.18)' },
+  }
+
+  // Ready-to-send scripts for copy/call actions, personalized to this lead.
+  const fn = lead.first_name || 'there'
+  const propName = property?.name || lead.property || 'the place'
+  const listingLink = lead.property ? `${siteUrl}/homes/${lead.property}` : siteUrl
+  const meName = landlordName || 'the landlord'
+  const scriptFor = (id: RecommendedAction['id']): string => {
+    switch (id) {
+      case 'call_now':
+        return `Hi ${fn}, this is ${meName} about ${propName}. I saw you were interested — I'd love to answer any questions and help you find a time to come see it. Is now a good moment to chat?`
+      case 'discuss_pricing':
+        return `Hi ${fn}! I know ${propName} is a bit above the budget you mentioned. I have some flexibility on terms and move-in timing and may be able to make it work — want to talk through a couple of options?`
+      case 'ask_referral':
+        return `Hi ${fn}! It was great connecting. If any of your friends are still looking for a place near campus, I'd love an intro — I'll take great care of them. ${listingLink}`
+      default:
+        return `Hi ${fn}! Thanks for your interest in ${propName}. Happy to answer any questions — want to set up a time to come see it? ${listingLink}`
+    }
+  }
+
+  const runAction = (a: RecommendedAction) => {
+    switch (a.id) {
+      case 'call_now':
+        navigator.clipboard.writeText(scriptFor('call_now')).catch(() => {})
+        if (lead.phone) { window.location.href = `tel:${lead.phone}` ; showToast('Call script copied — dialing…') }
+        else showToast('No phone on file — call script copied')
+        break
+      case 'text_followup':
+        navigator.clipboard.writeText(scriptFor('text_followup')); showToast('Message copied — paste & send')
+        break
+      case 'discuss_pricing':
+        navigator.clipboard.writeText(scriptFor('discuss_pricing')); showToast('Pricing message copied')
+        break
+      case 'ask_referral':
+        navigator.clipboard.writeText(scriptFor('ask_referral')); showToast('Referral message copied')
+        break
+      case 'copy_prescreen_link':
+        navigator.clipboard.writeText(prescreenUrl); showToast('Pre-screen link copied')
+        break
+      case 'send_prescreen':
+      case 'reactivate':
+        sendReminder()
+        break
+      case 'invite_tour':
+        handleInviteToTour()
+        break
+      case 'book_tour_manual':
+      case 'reschedule_tour':
+        setManualTourModal(true)
+        break
+      case 'send_tour_reminder':
+        handleSendTourReminder()
+        break
+      case 'build_offer':
+      case 'new_offer':
+        setReserveModal(true)
+        break
+      case 'view_offer':
+        if (activeReservation) window.open(`/landlord/leads/${leadId}/offer/${activeReservation.id}`, '_blank')
+        else setReserveModal(true)
+        break
+      case 'start_lease':
+        router.push('/landlord/leases/new')
+        break
+      case 'mark_contacted':
+        handleStatusUpdate('contacted')
+        break
+      case 'mark_engaged':
+        handleStatusUpdate('engaged')
+        break
+      case 'close_leased':
+        handleStatusUpdate('closed', 'leased')
+        break
+      case 'reopen_lead':
+        handleStatusUpdate('contacted')
+        break
+      case 'prep_unit':
+      case 'collect_deposit':
+      case 'confirm_occupants':
+        showToast(a.detail)
+        break
+      default:
+        break
+    }
+  }
+
   return (
     <>
       <style>{`
@@ -957,18 +1086,32 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
         .ld2-stage.active .ld2-stage-days { color: #8C1D40; font-weight: 600; }
 
         /* ── AI CARD ── */
-        .ld2-ai { background: #111; border-radius: 14px; padding: 22px 24px; margin-bottom: 16px; display: flex; gap: 24px; align-items: flex-start; }
+        .ld2-ai { background: #111; border-radius: 14px; padding: 22px 24px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 18px; }
+        .ld2-ai-top { display: flex; gap: 24px; align-items: flex-start; }
         .ld2-ai-left { flex: 1; min-width: 0; }
-        .ld2-ai-label { font-size: 11px; font-weight: 700; color: #4ade80; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
-        .ld2-ai-heading { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 8px; line-height: 1.4; letter-spacing: -0.2px; }
+        .ld2-ai-label { font-size: 11px; font-weight: 700; color: #4ade80; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .ld2-ai-stage { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; color: #e2e8f0; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); padding: 2px 9px; border-radius: 20px; text-transform: none; }
+        .ld2-ai-urg { font-size: 9px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; padding: 3px 9px; border-radius: 20px; }
+        .ld2-ai-heading { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 8px; line-height: 1.35; letter-spacing: -0.3px; }
         .ld2-ai-body { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.7; margin-bottom: 14px; }
         .ld2-ai-chips { display: flex; flex-wrap: wrap; gap: 6px; }
         .ld2-ai-chip { font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
-        .ld2-ai-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
-        .ld2-ai-cta { background: #4ade80; color: #111; border: none; border-radius: 9px; padding: 11px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-        .ld2-ai-cta:hover { background: #22c55e; }
-        .ld2-ai-link { font-size: 12px; color: rgba(255,255,255,0.5); background: none; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: underline; }
-        .ld2-ai-link:hover { color: rgba(255,255,255,0.8); }
+        .ld2-ai-primary { flex-shrink: 0; width: 290px; display: flex; flex-direction: column; gap: 8px; }
+        .ld2-ai-cta { background: #4ade80; color: #111; border: none; border-radius: 10px; padding: 14px 18px; font-size: 14.5px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; width: 100%; transition: background 0.13s; letter-spacing: -0.2px; }
+        .ld2-ai-cta:hover:not(:disabled) { background: #22c55e; }
+        .ld2-ai-cta:disabled { opacity: 0.6; cursor: default; }
+        .ld2-ai-cta-detail { font-size: 11.5px; color: rgba(255,255,255,0.5); line-height: 1.5; text-align: center; }
+        .ld2-ai-secondary { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; }
+        .ld2-ai-sec-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.4); margin-bottom: 10px; }
+        .ld2-ai-acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
+        .ld2-ai-act { display: flex; align-items: flex-start; gap: 10px; text-align: left; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 11px 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.13s, border-color 0.13s; }
+        .ld2-ai-act:hover { background: rgba(255,255,255,0.1); border-color: rgba(74,222,128,0.5); }
+        .ld2-ai-act-ic { font-size: 16px; flex-shrink: 0; line-height: 1.4; }
+        .ld2-ai-act-main { flex: 1; min-width: 0; }
+        .ld2-ai-act-label { display: block; font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+        .ld2-ai-act-detail { display: block; font-size: 11px; color: rgba(255,255,255,0.5); line-height: 1.45; }
+        .ld2-ai-act-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #4ade80; background: rgba(74,222,128,0.12); border-radius: 5px; padding: 3px 6px; flex-shrink: 0; white-space: nowrap; }
+        @media (max-width: 760px) { .ld2-ai-top { flex-direction: column; } .ld2-ai-primary { width: 100%; } }
 
         /* ── 3-COL GRID ── */
         .ld2-grid { display: grid; grid-template-columns: 300px 1fr 300px; gap: 14px; align-items: start; }
@@ -1344,40 +1487,46 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
           {/* ── AI NEXT BEST ACTION ── */}
           <div className="ld2-ai">
-            <div className="ld2-ai-left">
-              <div className="ld2-ai-label">✦ AI · Next Best Action</div>
-              <div className="ld2-ai-heading">
-                {lead.status === 'cold' && 'Send a personal reactivation note — this lead needs a warm nudge.'}
-                {lead.status === 'new' && `Reach out to ${lead.first_name || 'this lead'} now — responding within 1 hour triples conversion.`}
-                {lead.status === 'contacted' && `Follow up with ${lead.first_name || 'this lead'} — 24h nudge boosts reply rates significantly.`}
-                {lead.status === 'follow_up' && 'Try a different channel — switch from email to text or call.'}
-                {lead.status === 'engaged' && `Push toward a tour or offer — ${lead.first_name || 'this lead'} is actively engaged.`}
-                {lead.status === 'qualified' && 'Schedule a tour or build a reservation offer — this lead is fully qualified.'}
-                {lead.status === 'tour_scheduled' && `Prep the unit and send a reminder 24h before the tour.`}
-                {lead.status === 'closed' && 'This lead is closed — no action needed.'}
+            <div className="ld2-ai-top">
+              <div className="ld2-ai-left">
+                <div className="ld2-ai-label">
+                  ✦ AI · Next Best Action
+                  <span className="ld2-ai-stage">{nbaPlan.stageLabel}</span>
+                  <span className="ld2-ai-urg" style={{ color: urgencyStyle[nbaPlan.urgency].color, background: urgencyStyle[nbaPlan.urgency].bg }}>
+                    {urgencyStyle[nbaPlan.urgency].label}
+                  </span>
+                </div>
+                <div className="ld2-ai-heading">{nbaPlan.headline}</div>
+                <div className="ld2-ai-body">{nbaPlan.reasoning}</div>
+                <div className="ld2-ai-chips">
+                  {insight.chips.map((c, i) => <span key={i} className="ld2-ai-chip">{c.label}</span>)}
+                </div>
               </div>
-              <div className="ld2-ai-body">{insight.paragraph}</div>
-              <div className="ld2-ai-chips">
-                {insight.chips.map((c, i) => <span key={i} className="ld2-ai-chip">{c.label}</span>)}
+              <div className="ld2-ai-primary">
+                <button className="ld2-ai-cta" disabled={primaryBusy} onClick={() => runAction(nbaPlan.primary)}>
+                  {primaryBusy ? 'Working…' : `${nbaPlan.primary.icon} ${nbaPlan.primary.label}`}
+                </button>
+                <div className="ld2-ai-cta-detail">{nbaPlan.primary.detail}</div>
               </div>
             </div>
-            <div className="ld2-ai-right">
-              {needsRemind ? (
-                <button className="ld2-ai-cta" disabled={reminding} onClick={sendReminder}>
-                  ✦ {reminding ? 'Sending…' : 'Send reactivation'}
-                </button>
-              ) : tourData ? (
-                <button className="ld2-ai-cta" onClick={() => setSendingTourReminder ? setSendingTourReminder(true) : null} disabled style={{ opacity: 0.6 }}>
-                  ✦ Send tour reminder
-                </button>
-              ) : (
-                <button className="ld2-ai-cta" onClick={() => setReserveModal(true)}>
-                  ✦ Build offer
-                </button>
-              )}
-              <button className="ld2-ai-link" onClick={() => window.open(`/landlord/leads/${leadId}/offer/${activeReservation?.id || ''}`, '_blank')}>Preview draft</button>
-              <button className="ld2-ai-link">Dismiss</button>
-            </div>
+
+            {nbaPlan.secondary.length > 0 && (
+              <div className="ld2-ai-secondary">
+                <div className="ld2-ai-sec-label">Then, in order of impact</div>
+                <div className="ld2-ai-acts">
+                  {nbaPlan.secondary.map(a => (
+                    <button key={a.id} className="ld2-ai-act" onClick={() => runAction(a)}>
+                      <span className="ld2-ai-act-ic">{a.icon}</span>
+                      <span className="ld2-ai-act-main">
+                        <span className="ld2-ai-act-label">{a.label}</span>
+                        <span className="ld2-ai-act-detail">{a.detail}</span>
+                      </span>
+                      <span className="ld2-ai-act-tag">{actionKindTag(a.kind)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── 3-COL GRID ── */}
