@@ -8,6 +8,7 @@ import { getPropertyBySlug, Property } from '@/lib/properties'
 import { getFaqsByPropertyId, PropertyFaq } from '@/lib/faqs'
 import { notFound } from 'next/navigation'
 import PhoneInput from '@/components/ui/PhoneInput'
+import { identifyVisitor } from '@/lib/visitorId'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -355,6 +356,11 @@ export default function PropertyPageClient({
       })
       if (res.ok) {
         const data = await res.json()
+        // Stitch this email onto all of the visitor's prior anonymous hits.
+        if (formData.email) {
+          localStorage.setItem('hh_identified_email', formData.email)
+          identifyVisitor(formData.email, formData.first_name || null, 'lead_form')
+        }
         ph?.capture('inquiry_submitted', {
           property_slug: slug,
           property_name: home?.name,
