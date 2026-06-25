@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
@@ -10,6 +10,8 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+const RESEND_COOLDOWN = 30
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -18,11 +20,25 @@ function LoginForm() {
   const next = searchParams.get('next')
   const prefillEmail = searchParams.get('email') || ''
   const oauthError = searchParams.get('error')
-  const [email, setEmail]       = useState(prefillEmail)
-  const [password, setPassword] = useState('')
-  const [showPw, setShowPw]     = useState(false)
-  const [error, setError]       = useState('')
-  const [loading, setLoading]   = useState(false)
+
+  const [step, setStep]       = useState<'email' | 'code'>('email')
+  const [email, setEmail]     = useState(prefillEmail)
+  const [code, setCode]       = useState('')
+  const [error, setError]     = useState('')
+  const [loading, setLoading] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
+  const codeRef = useRef<HTMLInputElement>(null)
+
+  // Resend cooldown ticker
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setInterval(() => setCooldown(c => (c <= 1 ? 0 : c - 1)), 1000)
+    return () => clearInterval(t)
+  }, [cooldown])
+
+  useEffect(() => {
+    if (step === 'code') codeRef.current?.focus()
+  }, [step])
 
   const handleGoogleLogin = async () => {
     setLoading(true)
@@ -30,24 +46,56 @@ function LoginForm() {
     await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } })
   }
 
-  const handleLogin = async () => {
-    if (!email || !password) { setError('Please fill in both fields.'); return }
+  const sendCode = async (isResend = false) => {
+    if (!email) { setError('Please enter your email.'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address.'); return }
     setLoading(true)
     setError('')
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      const res = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, mode: 'login' }),
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setError(data.error || 'Something went wrong. Please try again.')
+        setLoading(false)
+        return
+      }
+
+      ph?.capture(isResend ? 'login_code_resent' : 'login_code_sent')
+      setStep('code')
+      setCooldown(RESEND_COOLDOWN)
+    } catch {
+      setError('Network error. Please check your connection and try again.')
+    }
+    setLoading(false)
+  }
+
+  const handleVerify = async () => {
+    if (code.length < 6) { setError('Enter the 6-digit code from your email.'); return }
+    setLoading(true)
+    setError('')
+
+    const { data, error: authError } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'email',
+    })
+
     if (authError || !data.user) {
       const msg = authError?.message?.toLowerCase() || ''
-      let errorText = 'Incorrect email or password. Try again.'
-      if (msg.includes('email not confirmed')) {
-        errorText = 'Please verify your email before signing in. Check your inbox.'
-      } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
+      let errorText = 'That code isn’t right. Double-check and try again.'
+      if (msg.includes('expired') || msg.includes('invalid')) {
+        errorText = 'That code is invalid or expired. Request a new one below.'
+      } else if (msg.includes('too many') || msg.includes('rate limit')) {
         errorText = 'Too many attempts. Please wait a few minutes and try again.'
-      } else if (msg.includes('network') || msg.includes('fetch')) {
-        errorText = 'Network error. Please check your connection and try again.'
       }
       setError(errorText)
-      ph?.capture('login_failed', { error: authError?.message || 'invalid_credentials' })
+      ph?.capture('login_failed', { error: authError?.message || 'invalid_code' })
       setLoading(false)
       return
     }
@@ -121,7 +169,30 @@ function LoginForm() {
           background: #fff;
           box-shadow: 0 0 0 3px rgba(140,29,64,0.08);
         }
-        .login-input.has-toggle { padding-right: 56px; }
+
+        .code-input {
+          width: 100%;
+          height: 64px;
+          padding: 0 14px;
+          border: 1.5px solid #e8e4db;
+          border-radius: 12px;
+          font-size: 30px;
+          font-weight: 600;
+          font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+          text-align: center;
+          letter-spacing: 12px;
+          color: #1a1a1a;
+          background: #faf9f6;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+        }
+        .code-input::placeholder { letter-spacing: 8px; color: #d4cfc4; }
+        .code-input:focus {
+          border-color: #8C1D40;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(140,29,64,0.08);
+        }
 
         .login-btn {
           width: 100%;
@@ -155,25 +226,12 @@ function LoginForm() {
           flex-shrink: 0;
         }
 
-        .pw-toggle {
-          position: absolute;
-          right: 14px;
-          top: 50%;
-          transform: translateY(-50%);
-          background: none;
-          border: none;
-          font-size: 12px;
-          font-weight: 600;
-          font-family: 'DM Sans', sans-serif;
-          color: #9b9b9b;
-          cursor: pointer;
-          padding: 4px 2px;
-          letter-spacing: 0.3px;
-          text-transform: uppercase;
-          transition: color 0.15s;
-          user-select: none;
+        .text-link {
+          background: none; border: none; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; font-weight: 600;
+          color: #8C1D40; padding: 0;
         }
-        .pw-toggle:hover { color: #1a1a1a; }
+        .text-link:disabled { color: #c5c0b5; cursor: not-allowed; }
 
         .google-btn {
           width: 100%;
@@ -219,14 +277,16 @@ function LoginForm() {
 
           {/* Headline */}
           <div style={{ fontFamily: "'Fraunces', serif", fontSize: '26px', fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.4px', lineHeight: 1.2, marginBottom: '7px' }}>
-            Welcome back.
+            {step === 'email' ? 'Welcome back.' : 'Check your email.'}
           </div>
           <div style={{ fontSize: '13px', color: '#9b9b9b', lineHeight: 1.55, marginBottom: '28px' }}>
-            Your next home is waiting — sign in to pick up where you left off.
+            {step === 'email'
+              ? 'Enter your email and we’ll send you a sign-in code — no password needed.'
+              : <>We sent a 6-digit code to <strong style={{ color: '#1a1a1a' }}>{email}</strong>. Enter it below to sign in.</>}
           </div>
 
           {/* Alerts */}
-          {registered && (
+          {registered && step === 'email' && (
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '11px 14px', fontSize: '13px', color: '#166534', marginBottom: '18px', lineHeight: 1.4 }}>
               Account created — you&apos;re all set. Sign in below.
             </div>
@@ -244,98 +304,117 @@ function LoginForm() {
             </div>
           )}
 
-          {/* Google */}
-          <button className="google-btn" onClick={handleGoogleLogin} disabled={loading}>
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            Continue with Google
-          </button>
-
-          <div className="or-divider">
-            <div className="or-divider-line" />
-            <span className="or-divider-text">or continue with email</span>
-            <div className="or-divider-line" />
-          </div>
-
-          {/* Email */}
-          <div style={{ marginBottom: '16px' }}>
-            <label htmlFor="login-email" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
-              Email
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              autoComplete="email"
-              autoCapitalize="none"
-              placeholder="you@email.com"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError('') }}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              className="login-input"
-            />
-          </div>
-
-          {/* Password */}
-          <div style={{ marginBottom: '6px' }}>
-            <label htmlFor="login-password" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
-              Password
-            </label>
-            <div style={{ position: 'relative' }}>
-              <input
-                id="login-password"
-                type={showPw ? 'text' : 'password'}
-                autoComplete="current-password"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError('') }}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className={`login-input${showPw ? '' : ' has-toggle'}`}
-              />
-              <button
-                type="button"
-                className="pw-toggle"
-                onClick={() => setShowPw(v => !v)}
-                tabIndex={-1}
-                aria-label={showPw ? 'Hide password' : 'Show password'}
-              >
-                {showPw ? 'Hide' : 'Show'}
+          {step === 'email' ? (
+            <>
+              {/* Google */}
+              <button className="google-btn" onClick={handleGoogleLogin} disabled={loading}>
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Continue with Google
               </button>
-            </div>
-          </div>
 
-          {/* Forgot password */}
-          <div style={{ textAlign: 'right', marginTop: '8px' }}>
-            <a
-              href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}
-              style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}
-              onMouseOver={e => (e.currentTarget.style.color = '#8C1D40')}
-              onMouseOut={e => (e.currentTarget.style.color = '#9b9b9b')}
-            >
-              Forgot password?
-            </a>
-          </div>
+              <div className="or-divider">
+                <div className="or-divider-line" />
+                <span className="or-divider-text">or continue with email</span>
+                <div className="or-divider-line" />
+              </div>
 
-          {/* Submit */}
-          <button
-            className="login-btn"
-            onClick={handleLogin}
-            disabled={loading}
-            style={{ marginTop: '16px', marginBottom: '20px' }}
-          >
-            {loading ? <><span className="spinner" />Signing in…</> : 'Sign in'}
-          </button>
+              {/* Email */}
+              <div style={{ marginBottom: '16px' }}>
+                <label htmlFor="login-email" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
+                  Email
+                </label>
+                <input
+                  id="login-email"
+                  type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  placeholder="you@email.com"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setError('') }}
+                  onKeyDown={e => e.key === 'Enter' && sendCode()}
+                  className="login-input"
+                />
+              </div>
+
+              {/* Submit */}
+              <button
+                className="login-btn"
+                onClick={() => sendCode()}
+                disabled={loading}
+                style={{ marginTop: '8px', marginBottom: '20px' }}
+              >
+                {loading ? <><span className="spinner" />Sending code…</> : 'Send sign-in code'}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Code entry */}
+              <div style={{ marginBottom: '16px' }}>
+                <label htmlFor="login-code" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
+                  6-digit code
+                </label>
+                <input
+                  id="login-code"
+                  ref={codeRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="······"
+                  value={code}
+                  onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+                  onKeyDown={e => e.key === 'Enter' && handleVerify()}
+                  className="code-input"
+                />
+              </div>
+
+              <button
+                className="login-btn"
+                onClick={handleVerify}
+                disabled={loading || code.length < 6}
+                style={{ marginTop: '8px', marginBottom: '16px' }}
+              >
+                {loading ? <><span className="spinner" />Verifying…</> : 'Sign in'}
+              </button>
+
+              <div style={{ textAlign: 'center', fontSize: '13px', color: '#9b9b9b', marginBottom: '4px' }}>
+                Didn’t get it?{' '}
+                <button
+                  className="text-link"
+                  onClick={() => sendCode(true)}
+                  disabled={loading || cooldown > 0}
+                  style={{ fontSize: '13px' }}
+                >
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+                </button>
+              </div>
+              <div style={{ textAlign: 'center', fontSize: '12px' }}>
+                <button
+                  className="text-link"
+                  onClick={() => { setStep('email'); setCode(''); setError('') }}
+                  style={{ color: '#9b9b9b', fontWeight: 500, fontSize: '12px' }}
+                >
+                  ← Use a different email
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Sign up CTA */}
-          <div style={{ textAlign: 'center', fontSize: '13px', color: '#9b9b9b' }}>
-            New to HomeHive?{' '}
-            <a href={`/signup${next ? `?next=${encodeURIComponent(next)}` : ''}`} style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
-              Create a free account →
-            </a>
-          </div>
+          {step === 'email' && (
+            <div style={{ textAlign: 'center', fontSize: '13px', color: '#9b9b9b' }}>
+              New to HomeHive?{' '}
+              <a href={`/signup${next ? `?next=${encodeURIComponent(next)}` : ''}`} style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
+                Create a free account →
+              </a>
+            </div>
+          )}
 
           {/* Trust signals */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #f0ede6' }}>
