@@ -9,6 +9,8 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+type BgStatus = 'initiated' | 'pending_verification' | 'conditionally_approved' | 'approved' | 'declined'
+
 type BgCheck = {
   id: string
   created_at: string
@@ -21,6 +23,9 @@ type BgCheck = {
   criminal_check: string | null
   eviction_check: string | null
   notes: string | null
+  status: BgStatus | null
+  tenant_id: string | null
+  bg_check_emails: { ref_type: string | null; status: string; sent_at: string }[] | null
   leads: {
     id: string
     first_name: string | null
@@ -29,6 +34,28 @@ type BgCheck = {
     property: string | null
     status: string | null
   } | null
+}
+
+// The "your application is being reviewed" email is logged with ref_type 'applicant'.
+function reviewEmailSentAt(c: BgCheck): string | null {
+  const sent = (c.bg_check_emails || [])
+    .filter(e => e.ref_type === 'applicant' && e.status === 'sent')
+    .map(e => e.sent_at)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+  return sent[0] || null
+}
+
+function statusPill(c: BgCheck): { label: string; color: string; bg: string; border: string } {
+  const s = c.status || 'initiated'
+  if (s === 'approved') {
+    return c.tenant_id
+      ? { label: 'Tenant Created', color: '#059669', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.3)' }
+      : { label: 'Approved', color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)' }
+  }
+  if (s === 'declined')               return { label: 'Declined',    color: '#dc2626', bg: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.25)' }
+  if (s === 'conditionally_approved') return { label: 'Conditional', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.3)' }
+  if (s === 'pending_verification')   return { label: 'Pending',     color: '#f97316', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.3)' }
+  return                                     { label: 'Initiated',   color: '#6b6b6b', bg: '#f5f4f0',               border: '#e8e5de' }
 }
 
 function checkScore(c: BgCheck): { passed: number; total: number } {
@@ -133,20 +160,33 @@ export default function BackgroundChecksPage() {
         .bgc-empty-icon { font-size: 40px; margin-bottom: 12px; }
         .bgc-empty-title { font-size: 16px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
         .bgc-empty-sub { font-size: 13px; color: #9b9b9b; margin-bottom: 18px; }
-        .bgc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-        .bgc-card { background: #fff; border-radius: 12px; border: 1px solid #e8e5de; padding: 16px 18px; cursor: pointer; transition: all 0.15s; }
-        .bgc-card:hover { border-color: #8C1D40; box-shadow: 0 2px 16px rgba(140,29,64,0.1); transform: translateY(-1px); }
-        .bgc-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
-        .bgc-card-av { width: 38px; height: 38px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .bgc-card-name { font-size: 14px; font-weight: 700; color: #1a1a1a; }
-        .bgc-card-email { font-size: 11px; color: #9b9b9b; margin-top: 2px; }
-        .bgc-card-date { font-size: 10px; color: #b0a898; }
-        .bgc-checks-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
-        .bgc-dot { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; border: 1px solid; }
+        /* List */
+        .bgc-list { background: #fff; border-radius: 14px; border: 1px solid #e8e5de; overflow: hidden; }
+        .bgc-list-head { display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-bottom: 1px solid #f0ede6; background: #faf9f6; }
+        .bgc-lh { font-size: 10px; font-weight: 700; color: #b0a898; text-transform: uppercase; letter-spacing: 0.6px; }
+        .bgc-row { display: flex; align-items: center; gap: 14px; padding: 13px 18px; cursor: pointer; transition: background 0.12s; border-bottom: 1px solid #f0ede6; text-decoration: none; color: inherit; }
+        .bgc-row:last-child { border-bottom: none; }
+        .bgc-row:hover { background: #faf9f6; }
+        .bgc-row-av { width: 38px; height: 38px; border-radius: 50%; background: #8C1D40; color: #FFC627; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .bgc-row-id { flex: 1; min-width: 0; }
+        .bgc-row-name { font-size: 14px; font-weight: 700; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bgc-row-email { font-size: 12px; color: #9b9b9b; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bgc-status-pill { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+        .bgc-dots { display: flex; gap: 5px; flex-shrink: 0; width: 132px; }
+        .bgc-dot { width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; border: 1px solid; }
         .dot-clear { color: #10b981; background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.25); }
         .dot-notclear { color: #ef4444; background: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.2); }
-        .dot-pending { color: #9b9b9b; background: #f5f4f0; border-color: #e8e5de; }
-        .bgc-score { font-size: 11px; font-weight: 700; color: #3a3a3a; }
+        .dot-pending { color: #c5c0b5; background: #faf9f6; border-color: #ececec; }
+        .bgc-score { font-size: 12px; font-weight: 700; width: 64px; text-align: right; flex-shrink: 0; }
+        .bgc-row-date { font-size: 11px; color: #b0a898; width: 74px; text-align: right; flex-shrink: 0; }
+        .bgc-row-chev { color: #d0cdc5; font-size: 15px; flex-shrink: 0; }
+        @media(max-width: 760px) {
+          .bgc-list-head { display: none; }
+          .bgc-dots { display: none; }
+          .bgc-review-cell { display: none; }
+          .bgc-score { width: auto; }
+          .bgc-row-date { display: none; }
+        }
 
         /* Modal */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; display: flex; align-items: flex-end; justify-content: center; padding: 0; backdrop-filter: blur(3px); }
@@ -196,11 +236,22 @@ export default function BackgroundChecksPage() {
             </button>
           </div>
         ) : (
-          <div className="bgc-grid">
+          <div className="bgc-list">
+            <div className="bgc-list-head">
+              <span style={{ width: '38px', flexShrink: 0 }} />
+              <span className="bgc-lh" style={{ flex: 1 }}>Applicant</span>
+              <span className="bgc-lh" style={{ width: '116px', flexShrink: 0 }}>Status</span>
+              <span className="bgc-lh bgc-col-review" style={{ width: '120px', flexShrink: 0 }}>Review Email</span>
+              <span className="bgc-lh" style={{ width: '132px', flexShrink: 0 }}>Screening</span>
+              <span className="bgc-lh" style={{ width: '64px', textAlign: 'right', flexShrink: 0 }}>Clear</span>
+              <span className="bgc-lh" style={{ width: '74px', textAlign: 'right', flexShrink: 0 }}>Updated</span>
+              <span style={{ width: '15px', flexShrink: 0 }} />
+            </div>
             {checks.map(c => {
               const lead = c.leads
               const initials = ((lead?.first_name?.[0] || '') + (lead?.last_name?.[0] || '')).toUpperCase() || (lead?.email?.[0]?.toUpperCase() || '?')
               const score = checkScore(c)
+              const pill = statusPill(c)
               const checkFields: { label: string; value: string | null }[] = [
                 { label: 'Employment', value: c.employment_check },
                 { label: 'Residence', value: c.current_residence_check },
@@ -208,50 +259,54 @@ export default function BackgroundChecksPage() {
                 { label: 'Eviction', value: c.eviction_check },
               ]
               return (
-                <div key={c.id} className="bgc-card" onClick={() => router.push(`/landlord/background-checks/${c.id}`)}>
-                  <div className="bgc-card-top">
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <div className="bgc-card-av">{initials}</div>
-                      <div>
-                        <div className="bgc-card-name">
-                          {lead?.first_name || lead?.last_name ? `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim() : lead?.email}
-                        </div>
-                        <div className="bgc-card-email">{lead?.email}</div>
-                      </div>
+                <a key={c.id} className="bgc-row" href={`/landlord/background-checks/${c.id}`} target="_blank" rel="noopener noreferrer">
+                  <div className="bgc-row-av">{initials}</div>
+                  <div className="bgc-row-id">
+                    <div className="bgc-row-name">
+                      {lead?.first_name || lead?.last_name ? `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim() : lead?.email}
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div className="bgc-card-date">{timeAgo(c.updated_at || c.created_at)}</div>
-                      <div className="bgc-score" style={{ marginTop: '4px', color: score.passed === score.total ? '#10b981' : score.passed > 0 ? '#f97316' : '#9b9b9b' }}>
-                        {score.passed}/{score.total} clear
-                      </div>
+                    <div className="bgc-row-email">
+                      {lead?.email}{lead?.property ? ` · 📍 ${lead.property}` : ''}
                     </div>
                   </div>
-
-                  <div className="bgc-checks-row">
+                  <span className="bgc-status-pill" style={{ width: '116px', color: pill.color, background: pill.bg, borderColor: pill.border, textAlign: 'center' }}>
+                    {pill.label}
+                  </span>
+                  {(() => {
+                    const reviewSent = reviewEmailSentAt(c)
+                    return (
+                      <span
+                        className="bgc-review-cell"
+                        title={reviewSent ? `“Under review” email sent ${timeAgo(reviewSent)}` : '“Under review” email not sent yet'}
+                        style={{
+                          width: '120px', flexShrink: 0, fontSize: '11px', fontWeight: 600,
+                          display: 'inline-flex', alignItems: 'center', gap: '5px',
+                          color: reviewSent ? '#059669' : '#b0a898',
+                        }}
+                      >
+                        {reviewSent
+                          ? <>✅ <span>Sent</span></>
+                          : <>✉️ <span style={{ color: '#9b9b9b' }}>Not sent</span></>}
+                      </span>
+                    )
+                  })()}
+                  <div className="bgc-dots">
                     {checkFields.map(f => (
-                      <span key={f.label} className={`bgc-dot ${f.value === 'clear' ? 'dot-clear' : f.value === 'not_clear' ? 'dot-notclear' : 'dot-pending'}`}>
-                        {f.value === 'clear' ? '✓' : f.value === 'not_clear' ? '✕' : '○'} {f.label}
+                      <span
+                        key={f.label}
+                        title={`${f.label}: ${f.value === 'clear' ? 'Clear' : f.value === 'not_clear' ? 'Not clear' : 'Pending'}`}
+                        className={`bgc-dot ${f.value === 'clear' ? 'dot-clear' : f.value === 'not_clear' ? 'dot-notclear' : 'dot-pending'}`}
+                      >
+                        {f.value === 'clear' ? '✓' : f.value === 'not_clear' ? '✕' : '○'}
                       </span>
                     ))}
-                    {c.cosigner && (
-                      <span className="bgc-dot" style={{ color: '#8b5cf6', background: 'rgba(139,92,246,0.08)', borderColor: 'rgba(139,92,246,0.25)' }}>
-                        Cosigner: {c.cosigner === 'need_cosigner' ? 'Needed' : c.cosigner === 'pending' ? 'Pending' : c.cosigner === 'yes' ? 'Yes' : 'No'}
-                      </span>
-                    )}
-                    {c.credit && (
-                      <span className="bgc-dot" style={{
-                        color: c.credit === 'great' ? '#10b981' : c.credit === 'average' ? '#f97316' : '#ef4444',
-                        background: c.credit === 'great' ? 'rgba(16,185,129,0.08)' : c.credit === 'average' ? 'rgba(249,115,22,0.08)' : 'rgba(239,68,68,0.06)',
-                        borderColor: c.credit === 'great' ? 'rgba(16,185,129,0.25)' : c.credit === 'average' ? 'rgba(249,115,22,0.25)' : 'rgba(239,68,68,0.2)',
-                      }}>
-                        Credit: {c.credit.charAt(0).toUpperCase() + c.credit.slice(1)}
-                      </span>
-                    )}
                   </div>
-                  {lead?.property && (
-                    <div style={{ marginTop: '8px', fontSize: '11px', color: '#b0a898' }}>📍 {lead.property}</div>
-                  )}
-                </div>
+                  <div className="bgc-score" style={{ color: score.passed === score.total ? '#10b981' : score.passed > 0 ? '#f97316' : '#9b9b9b' }}>
+                    {score.passed}/{score.total}
+                  </div>
+                  <div className="bgc-row-date">{timeAgo(c.updated_at || c.created_at)}</div>
+                  <span className="bgc-row-chev">›</span>
+                </a>
               )
             })}
           </div>

@@ -44,6 +44,37 @@ export async function POST(
     return Response.json({ error: 'first_name and email are required' }, { status: 400 })
   }
 
+  const normalizedEmail = email.toLowerCase().trim()
+
+  // Guard against duplicates: a tenant with this email may already exist for
+  // this landlord. If so, link the check to it instead of creating a copy.
+  const { data: existing } = await supabaseAdmin
+    .from('tenants')
+    .select('id, first_name, last_name')
+    .eq('owner_id', landlordId)
+    .ilike('email', normalizedEmail)
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    await supabaseAdmin
+      .from('background_checks')
+      .update({
+        decision:   'passed',
+        status:     'approved',
+        tenant_id:  existing.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', checkId)
+
+    const name = [existing.first_name, existing.last_name].filter(Boolean).join(' ').trim()
+    return Response.json({
+      tenantId: existing.id,
+      already_exists: true,
+      message: `A tenant with this email already exists${name ? ` (${name})` : ''} — linked to it instead of creating a duplicate.`,
+    })
+  }
+
   // Create tenant
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
@@ -51,7 +82,7 @@ export async function POST(
       owner_id:   landlordId,
       first_name: first_name.trim(),
       last_name:  last_name?.trim() || null,
-      email:      email.toLowerCase().trim(),
+      email:      normalizedEmail,
       phone:      phone?.trim() || null,
       notes:      notes?.trim() || null,
       status:     'active',
@@ -65,11 +96,12 @@ export async function POST(
     return Response.json({ error: 'Failed to create tenant' }, { status: 500 })
   }
 
-  // Update background check: mark as passed and link tenant
+  // Update background check: mark as approved/passed and link tenant
   await supabaseAdmin
     .from('background_checks')
     .update({
       decision:   'passed',
+      status:     'approved',
       tenant_id:  tenant.id,
       updated_at: new Date().toISOString(),
     })

@@ -23,13 +23,29 @@ export async function GET(
 
   const { data, error } = await supabaseAdmin
     .from('background_checks')
-    .select(`*, leads(*), bg_check_references(*)`)
+    .select(`*, leads(*), bg_check_references(*), bg_check_emails(*)`)
     .eq('id', checkId)
     .eq('landlord_id', landlordId)
     .single()
 
   if (error || !data) return Response.json({ error: 'Not found' }, { status: 404 })
-  return Response.json({ check: data })
+
+  // The lead's `property` is a listing slug — resolve the real street address
+  // for use in landlord-facing emails (e.g. conditional-approval template).
+  let property_address: string | null = null
+  const propRef = (data.leads as { property?: string | null } | null)?.property
+  if (propRef) {
+    const { data: prop } = await supabaseAdmin
+      .from('properties')
+      .select('address')
+      .eq('slug', propRef)
+      .maybeSingle()
+    property_address = prop?.address
+      ?? (await supabaseAdmin.from('properties').select('address').eq('name', propRef).maybeSingle()).data?.address
+      ?? null
+  }
+
+  return Response.json({ check: { ...data, property_address } })
 }
 
 export async function PATCH(
@@ -44,11 +60,26 @@ export async function PATCH(
   const allowed = [
     'is_student','cosigner','credit','credit_score',
     'employment_check','current_residence_check',
-    'criminal_check','eviction_check','notes','decision',
+    'criminal_check','eviction_check','notes','decision','status',
   ]
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]
+  }
+
+  // Validate status and keep the legacy `decision` field in sync so the
+  // list/score views and the convert flow stay consistent.
+  if ('status' in updates) {
+    const VALID = ['initiated','pending_verification','conditionally_approved','approved','declined']
+    if (!VALID.includes(updates.status as string)) {
+      return Response.json({ error: 'Invalid status' }, { status: 400 })
+    }
+    if (!('decision' in body)) {
+      updates.decision =
+        updates.status === 'approved' ? 'passed' :
+        updates.status === 'declined' ? 'failed' :
+        null
+    }
   }
 
   const { data, error } = await supabaseAdmin

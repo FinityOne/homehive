@@ -28,7 +28,7 @@ type TextQuestion = {
 }
 type Question = PillQuestion | YesNoQuestion | TextQuestion
 
-const QUESTIONS: Question[] = [
+const RESIDENCE_QUESTIONS: Question[] = [
   {
     id: 'confirmed',
     label: 'Did this person reside at your property?',
@@ -70,6 +70,50 @@ const QUESTIONS: Question[] = [
     label: 'Would you rent to this person again?',
     type: 'pills',
     options: ['Definitely yes', 'Probably yes', 'Probably not', 'Definitely not'],
+  },
+]
+
+const EMPLOYER_QUESTIONS: Question[] = [
+  {
+    id: 'employed',
+    label: 'Is {name} currently employed at your organization?',
+    type: 'yesno',
+    detailTrigger: 'yes',
+    detailPrompt: 'Approximate start date or length of employment',
+  },
+  {
+    id: 'title',
+    label: 'What is their job title?',
+    type: 'text',
+    placeholder: 'e.g. Sales Associate',
+    optional: true,
+  },
+  {
+    id: 'employment_type',
+    label: 'Is their position full-time, part-time, or contract?',
+    type: 'pills',
+    options: ['Full-time', 'Part-time', 'Contract', 'Seasonal / Temp'],
+  },
+  {
+    id: 'income',
+    label: 'What is their approximate gross monthly income?',
+    type: 'text',
+    placeholder: 'e.g. $3,500 / month',
+    optional: true,
+  },
+  {
+    id: 'standing',
+    label: 'Is their employment in good standing, with no pending termination?',
+    type: 'yesno',
+    detailTrigger: 'no',
+    detailPrompt: 'Please briefly explain (optional)',
+  },
+  {
+    id: 'garnishments',
+    label: 'Are there any active wage garnishments or liens on their wages?',
+    type: 'yesno',
+    detailTrigger: 'yes',
+    detailPrompt: 'Briefly describe (optional)',
   },
 ]
 
@@ -177,12 +221,15 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
   const [notFound, setNotFound] = useState(false)
   const [ref, setRef] = useState<RefData | null>(null)
   const [leadName, setLeadName] = useState('')
-  const [answers, setAnswers] = useState<Record<string, AnswerState>>(
-    Object.fromEntries(QUESTIONS.map(q => [q.id, { value: '', detail: '' }]))
-  )
+  const [answers, setAnswers] = useState<Record<string, AnswerState>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+
+  const isEmployer = ref?.type === 'employer'
+  const QUESTIONS = isEmployer ? EMPLOYER_QUESTIONS : RESIDENCE_QUESTIONS
+  const personName = leadName || 'this applicant'
+  const fillName = (label: string) => label.replace('{name}', personName)
 
   useEffect(() => {
     fetch(`/api/ref/${token}`)
@@ -197,10 +244,10 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
   }, [token])
 
   const setAnswer = (id: string, value: string) =>
-    setAnswers(prev => ({ ...prev, [id]: { ...prev[id], value } }))
+    setAnswers(prev => ({ ...prev, [id]: { value, detail: prev[id]?.detail || '' } }))
 
   const setDetail = (id: string, detail: string) =>
-    setAnswers(prev => ({ ...prev, [id]: { ...prev[id], detail } }))
+    setAnswers(prev => ({ ...prev, [id]: { value: prev[id]?.value || '', detail } }))
 
   const answeredCount = Object.values(answers).filter(a => a.value).length
   const progress = Math.round((answeredCount / QUESTIONS.length) * 100)
@@ -214,9 +261,9 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
     setError('')
     const responses = [
       ...QUESTIONS.map(q => ({
-        question: q.label,
-        answer: answers[q.id].value || '—',
-        ...(answers[q.id].detail ? { detail: answers[q.id].detail } : {}),
+        question: fillName(q.label),
+        answer: answers[q.id]?.value || '—',
+        ...(answers[q.id]?.detail ? { detail: answers[q.id].detail } : {}),
       })),
       ...(answers['_notes']?.value?.trim()
         ? [{ question: 'Additional notes', answer: answers['_notes'].value.trim() }]
@@ -323,11 +370,20 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
 
           {/* Context header */}
           <div className="context-card">
-            <div className="context-eyebrow">Rental Reference Request</div>
+            <div className="context-eyebrow">{isEmployer ? 'Employment Verification Request' : 'Rental Reference Request'}</div>
             <div className="context-name">{leadName}</div>
             <div className="context-sub">
-              {leadName} has applied to rent a property managed by our team
-              {ref.name ? ` and has listed you — ${ref.name} — as their previous landlord` : ' and has listed you as their previous landlord'}.
+              {isEmployer ? (
+                <>
+                  {leadName} has applied to rent a property managed by our team
+                  {ref.name ? ` and has listed your organization — ${ref.name} — as their current employer` : ' and has listed your organization as their current employer'}.
+                </>
+              ) : (
+                <>
+                  {leadName} has applied to rent a property managed by our team
+                  {ref.name ? ` and has listed you — ${ref.name} — as their previous landlord` : ' and has listed you as their previous landlord'}.
+                </>
+              )}
             </div>
             {ref.address && (
               <div className="context-addr">📍 {ref.address}</div>
@@ -349,8 +405,8 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
               </div>
               <div style={{ fontSize: '14px', color: '#6b6b6b', lineHeight: 1.7 }}>
                 {submitted
-                  ? <>Your reference for <strong>{leadName}</strong> has been submitted. We genuinely appreciate you taking the time.</>
-                  : <>A reference for <strong>{leadName}</strong> has already been received. Thank you for your time.</>
+                  ? <>Your {isEmployer ? 'verification' : 'reference'} for <strong>{leadName}</strong> has been submitted. We genuinely appreciate you taking the time.</>
+                  : <>A {isEmployer ? 'verification' : 'reference'} for <strong>{leadName}</strong> has already been received. Thank you for your time.</>
                 }
               </div>
             </div>
@@ -366,7 +422,7 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
 
               {/* Questions */}
               {QUESTIONS.map(q => {
-                const ans = answers[q.id]
+                const ans = answers[q.id] || { value: '', detail: '' }
                 const isAnswered = !!ans.value
 
                 const showDetail = (() => {
@@ -378,7 +434,7 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
                 return (
                   <div key={q.id} className={`q-card${isAnswered ? ' answered' : ''}`}>
                     <div className="q-number">{QUESTIONS.indexOf(q) + 1}</div>
-                    <div className="q-text">{q.label}</div>
+                    <div className="q-text">{fillName(q.label)}</div>
 
                     {q.type === 'yesno' && (
                       <YesNoGroup value={ans.value} onChange={v => setAnswer(q.id, v)} disabled={submitting} />
@@ -441,7 +497,7 @@ export default function RefFormPage({ params }: { params: Promise<{ token: strin
                 disabled={submitting || answeredCount === 0}
                 onClick={handleSubmit}
               >
-                {submitting ? 'Submitting…' : 'Submit Reference'}
+                {submitting ? 'Submitting…' : isEmployer ? 'Submit Verification' : 'Submit Reference'}
               </button>
             </>
           )}

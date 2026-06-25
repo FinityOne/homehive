@@ -24,7 +24,8 @@ export async function GET(req: Request) {
     .select(`
       *,
       leads(id, first_name, last_name, email, phone, property, status),
-      bg_check_references(*)
+      bg_check_references(*),
+      bg_check_emails(ref_type, status, sent_at)
     `)
     .eq('landlord_id', landlordId)
     .order('created_at', { ascending: false })

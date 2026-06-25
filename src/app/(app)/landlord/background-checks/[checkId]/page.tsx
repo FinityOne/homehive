@@ -1,7 +1,7 @@
 'use client'
 import { getSiteUrl } from '@/lib/siteUrl'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, Fragment } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { formatPhoneDisplay } from '@/components/ui/PhoneInput'
@@ -33,6 +33,29 @@ type Reference = {
   public_token: string; responses: RefResponse[] | null; created_at: string
 }
 
+type EmailLog = {
+  id: string; bg_check_id: string; ref_id: string | null
+  ref_type: 'employer' | 'residence' | 'applicant' | null
+  recipient: string; recipient_name: string | null; subject: string | null
+  status: 'sent' | 'failed'; error: string | null
+  sent_by: string | null; sent_at: string
+}
+
+type BgStatus = 'initiated' | 'pending_verification' | 'conditionally_approved' | 'approved' | 'declined'
+
+// Ordered happy-path used by the flow graphic. `declined` is an off-path
+// terminal state, and the final "Tenant Created" node is derived from tenant_id.
+const STATUS_FLOW: { key: BgStatus; label: string; short: string }[] = [
+  { key: 'initiated',              label: 'Initiated',              short: 'Started' },
+  { key: 'pending_verification',   label: 'Pending Verification',   short: 'Verifying' },
+  { key: 'conditionally_approved', label: 'Conditionally Approved', short: 'Conditional' },
+  { key: 'approved',               label: 'Approved',               short: 'Approved' },
+]
+
+const STATUS_INDEX: Record<BgStatus, number> = {
+  initiated: 0, pending_verification: 1, conditionally_approved: 2, approved: 3, declined: -1,
+}
+
 type BgCheck = {
   id: string; lead_id: string; landlord_id: string
   is_student: boolean | null
@@ -45,10 +68,12 @@ type BgCheck = {
   eviction_check: 'clear' | 'not_clear' | null
   notes: string | null
   decision: 'passed' | 'failed' | null
+  status: BgStatus
   tenant_id: string | null
   created_at: string; updated_at: string
   leads: Lead | null
   bg_check_references: Reference[]
+  bg_check_emails: EmailLog[]
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -199,13 +224,27 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
   const [editingRef, setEditingRef] = useState<string | null>(null)
   const [editRefForm, setEditRefForm] = useState<Partial<Reference & { income_monthly_str: string }>>({})
   const [templateModal, setTemplateModal] = useState<{ type: 'employer' | 'residence'; refName?: string } | null>(null)
+  const [cosignerModal, setCosignerModal] = useState(false)
+  const [copiedCosigner, setCopiedCosigner] = useState<string | null>(null)
+  const [conditionalModal, setConditionalModal] = useState(false)
+  const [pendingItems, setPendingItems] = useState('')
+  const [copiedConditional, setCopiedConditional] = useState<string | null>(null)
+  const [propertyAddress, setPropertyAddress] = useState<string | null>(null)
   const [copiedQ, setCopiedQ] = useState<number | null>(null)
   const [sendingEmail, setSendingEmail] = useState<string | null>(null)
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
   const [copiedText, setCopiedText] = useState<string | null>(null)
 
+  // Email history + preview-before-send
+  const [emails, setEmails] = useState<EmailLog[]>([])
+  const [previewRefId, setPreviewRefId] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ subject: string; html: string; recipient: string; recipientName: string | null; refType: 'employer' | 'residence' } | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
   // Final decision state
-  const [decision, setDecision] = useState<'passed' | 'failed' | null>(null)
+  const [status, setStatus] = useState<BgStatus>('initiated')
+  const [statusSaving, setStatusSaving] = useState<BgStatus | null>(null)
+  const [notifying, setNotifying] = useState(false)
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [decisionSaving, setDecisionSaving] = useState(false)
   const [showConvertModal, setShowConvertModal] = useState(false)
@@ -231,6 +270,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
       const { check: c } = await res.json()
       setCheck(c)
       setRefs(c.bg_check_references || [])
+      setEmails(c.bg_check_emails || [])
       setForm({
         is_student: c.is_student,
         cosigner: c.cosigner,
@@ -242,8 +282,9 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
         eviction_check: c.eviction_check,
         notes: c.notes || '',
       })
-      setDecision(c.decision ?? null)
+      setStatus((c.status as BgStatus) ?? 'initiated')
       setTenantId(c.tenant_id ?? null)
+      setPropertyAddress(c.property_address ?? null)
       // Pre-fill convert form from lead
       const l = c.leads
       if (l) {
@@ -342,6 +383,27 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     }
   }
 
+  // Open the preview modal (fetches the exact rendered email; sends nothing)
+  const handleOpenPreview = async (refId: string) => {
+    setPreviewRefId(refId)
+    setPreview(null)
+    setPreviewLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}/references/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ refId }),
+    })
+    if (res.ok) {
+      setPreview(await res.json())
+    } else {
+      const body = await res.json().catch(() => ({}))
+      showToast(body.error || 'Could not load preview', 'error')
+      setPreviewRefId(null)
+    }
+    setPreviewLoading(false)
+  }
+
   const handleSendEmail = async (refId: string) => {
     setSendingEmail(refId)
     const { data: { session } } = await supabase.auth.getSession()
@@ -351,12 +413,16 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
       body: JSON.stringify({ refId }),
     })
     if (res.ok) {
+      const body = await res.json().catch(() => ({}))
       setRefs(prev => prev.map(r => {
         if (r.id !== refId) return r
         return r.type === 'residence'
           ? { ...r, status: 'contacted' as Reference['status'], contact_date: new Date().toISOString().split('T')[0] }
           : r
       }))
+      if (body.log) setEmails(prev => [body.log as EmailLog, ...prev])
+      setPreviewRefId(null)
+      setPreview(null)
       showToast('Verification email sent!')
     } else {
       const body = await res.json()
@@ -443,21 +509,48 @@ Really appreciate your time — thank you!`
     }
   }
 
-  const handleDeclineFinal = async () => {
-    setDecisionSaving(true)
+  // Advance / change the background check lifecycle status
+  const handleStatusChange = async (newStatus: BgStatus) => {
+    setStatusSaving(newStatus)
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`/api/background-checks/${checkId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ decision: 'failed' }),
+      body: JSON.stringify({ status: newStatus }),
     })
     if (res.ok) {
-      setDecision('failed')
-      showToast('Application declined')
+      setStatus(newStatus)
+      const labels: Record<BgStatus, string> = {
+        initiated: 'Reopened — back to Initiated',
+        pending_verification: 'Moved to Pending Verification',
+        conditionally_approved: 'Marked Conditionally Approved',
+        approved: 'Approved',
+        declined: 'Application declined',
+      }
+      showToast(labels[newStatus])
     } else {
-      showToast('Failed to update', 'error')
+      showToast('Failed to update status', 'error')
     }
-    setDecisionSaving(false)
+    setStatusSaving(null)
+  }
+
+  // Engagement email: tell the applicant their check is under review
+  const handleNotifyReview = async () => {
+    setNotifying(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}/notify-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+    })
+    if (res.ok) {
+      const body = await res.json().catch(() => ({}))
+      if (body.log) setEmails(prev => [body.log as EmailLog, ...prev])
+      showToast('Applicant notified — review update sent!')
+    } else {
+      const body = await res.json().catch(() => ({}))
+      showToast(body.error || 'Failed to send notification', 'error')
+    }
+    setNotifying(false)
   }
 
   const handleConvertToTenant = async () => {
@@ -471,10 +564,10 @@ Really appreciate your time — thank you!`
     })
     const json = await res.json()
     if (res.ok) {
-      setDecision('passed')
+      setStatus('approved')
       setTenantId(json.tenantId)
       setShowConvertModal(false)
-      showToast('Tenant created successfully!')
+      showToast(json.already_exists ? (json.message || 'Linked to existing tenant') : 'Tenant created successfully!')
     } else {
       showToast(json.error || 'Failed to create tenant', 'error')
     }
@@ -520,7 +613,7 @@ Really appreciate your time — thank you!`
         .bgd-hdr-title { font-size: 16px; font-weight: 700; color: #1a1a1a; }
         .bgd-hdr-sub { font-size: 11px; color: #9b9b9b; }
 
-        .bgd-body { padding: 20px 24px 60px; display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; max-width: 1200px; }
+        .bgd-body { padding: 20px 24px 60px; display: grid; grid-template-columns: 1fr 400px; gap: 16px; align-items: start; }
         @media(max-width:900px) { .bgd-body { grid-template-columns: 1fr; } }
 
         .bgd-card { background: #fff; border-radius: 12px; border: 1px solid #e8e5de; margin-bottom: 14px; overflow: hidden; }
@@ -629,6 +722,18 @@ Really appreciate your time — thank you!`
           >
             {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
           </button>
+        </div>
+
+        {/* Status flow graphic */}
+        <div style={{ padding: '18px 24px 4px' }}>
+          <div className="bgd-card" style={{ marginBottom: 0 }}>
+            <div className="bgd-card-hd">
+              <span className="bgd-card-ttl">Background Check Progress</span>
+            </div>
+            <div className="bgd-card-bd" style={{ padding: '20px 24px' }}>
+              <StatusFlow status={status} tenantCreated={!!tenantId} />
+            </div>
+          </div>
         </div>
 
         <div className="bgd-body">
@@ -810,83 +915,168 @@ Really appreciate your time — thank you!`
               </div>
             </div>
 
+            {/* ── Email History ── */}
+            <div className="bgd-card">
+              <div className="bgd-card-hd">
+                <span className="bgd-card-ttl">Email History</span>
+                <span style={{ fontSize: '11px', color: '#9b9b9b', fontWeight: 600 }}>
+                  {emails.filter(e => e.status === 'sent').length} sent
+                </span>
+              </div>
+              <div className="bgd-card-bd">
+                {emails.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '16px 0', fontSize: '12px', color: '#9b9b9b' }}>
+                    No verification emails sent yet. Use <strong>Preview &amp; Send</strong> on an employer or residence contact to get started.
+                  </div>
+                ) : (
+                  [...emails]
+                    .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
+                    .map(e => {
+                      const failed = e.status === 'failed'
+                      return (
+                        <div key={e.id} style={{ display: 'flex', gap: '10px', padding: '10px 0', borderBottom: '1px solid #f5f4f0' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', background: e.ref_type === 'employer' ? 'rgba(59,130,246,0.1)' : e.ref_type === 'applicant' ? 'rgba(255,198,39,0.18)' : 'rgba(16,185,129,0.1)' }}>
+                            {e.ref_type === 'employer' ? '💼' : e.ref_type === 'applicant' ? '👤' : '🏠'}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {e.subject || (e.ref_type === 'employer' ? 'Employment verification' : e.ref_type === 'applicant' ? 'Application update' : 'Rental reference')}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>
+                              To {e.recipient_name ? `${e.recipient_name} · ` : ''}{e.recipient}
+                            </div>
+                            {failed && e.error && (
+                              <div style={{ fontSize: '10px', color: '#dc2626', marginTop: '3px' }}>⚠ {e.error}</div>
+                            )}
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <span style={{
+                              display: 'inline-block', fontSize: '9px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.4px',
+                              ...(failed
+                                ? { color: '#dc2626', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }
+                                : { color: '#10b981', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }),
+                            }}>
+                              {failed ? 'Failed' : 'Sent'}
+                            </span>
+                            <div style={{ fontSize: '10px', color: '#9b9b9b', marginTop: '4px', whiteSpace: 'nowrap' }} title={new Date(e.sent_at).toLocaleString()}>
+                              {timeAgo(e.sent_at)}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                )}
+              </div>
+            </div>
+
           </div>
 
           {/* RIGHT COLUMN */}
           <div>
 
-            {/* ── Final Decision ── */}
-            {decision === null && (
-              <div className="decision-card-undecided">
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>Final Decision</div>
-                <div style={{ fontSize: '13px', color: '#6b6b6b', marginBottom: '14px', lineHeight: 1.5 }}>
-                  Ready to make a call? Approving will create a tenant profile you can immediately link to a lease.
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="btn-approve"
-                    disabled={decisionSaving}
-                    onClick={() => setShowConvertModal(true)}
-                  >
-                    ✓ Approve &amp; Create Tenant
-                  </button>
-                  <button
-                    className="btn-decline"
-                    disabled={decisionSaving}
-                    onClick={handleDeclineFinal}
-                  >
-                    ✕ Decline
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* ── Actions ── */}
+            {(() => {
+              const STATUS_PILL: Record<BgStatus, { label: string; color: string; bg: string; border: string }> = {
+                initiated:              { label: 'Initiated',              color: '#6b6b6b', bg: '#f5f4f0',               border: '#e8e5de' },
+                pending_verification:   { label: 'Pending Verification',   color: '#f97316', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.3)' },
+                conditionally_approved: { label: 'Conditionally Approved', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.3)' },
+                approved:               { label: 'Approved',               color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)' },
+                declined:               { label: 'Declined',               color: '#dc2626', bg: 'rgba(239,68,68,0.06)',  border: 'rgba(239,68,68,0.25)' },
+              }
+              const pill = STATUS_PILL[status]
+              const hint: Record<BgStatus, string> = {
+                initiated:              'Kick off the screening — begin verification when you’re ready to start checking references.',
+                pending_verification:   'Verification in progress. Approve outright, or mark conditionally approved if you need a cosigner or extra documents.',
+                conditionally_approved: 'Conditionally approved — finalize the approval once your conditions are met.',
+                approved:               tenantId ? 'Approved and converted to a tenant.' : 'Approved! Create their tenant profile to move them onto a lease.',
+                declined:               'This application was declined. You can reopen it to continue the review.',
+              }
+              const busy = statusSaving !== null || decisionSaving
+              const primaryBtn: React.CSSProperties = { width: '100%', background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: busy ? 0.6 : 1 }
+              const ghostBtn: React.CSSProperties = { flex: 1, background: '#fff', color: '#6b6b6b', border: '1.5px solid #e8e5de', borderRadius: '9px', padding: '10px 14px', fontSize: '12px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }
+              return (
+                <div className="bgd-card">
+                  <div className="bgd-card-hd">
+                    <span className="bgd-card-ttl">Actions</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px', color: pill.color, background: pill.bg, border: `1px solid ${pill.border}`, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      {pill.label}
+                    </span>
+                  </div>
+                  <div className="bgd-card-bd">
+                    <div style={{ fontSize: '12.5px', color: '#6b6b6b', lineHeight: 1.5, marginBottom: '14px' }}>
+                      {hint[status]}
+                    </div>
 
-            {decision === 'passed' && (
-              <div className="decision-card-passed">
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>Final Decision</div>
-                <div className="decision-badge-pass">✓ Approved</div>
-                {tenantId && (
-                  <a href={`/landlord/tenants`} className="tenant-link-btn">
-                    View in Tenants →
-                  </a>
-                )}
-                <button className="undo-link" onClick={async () => {
-                  const { data: { session } } = await supabase.auth.getSession()
-                  await fetch(`/api/background-checks/${checkId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-                    body: JSON.stringify({ decision: null }),
-                  })
-                  setDecision(null)
-                }}>Undo decision</button>
-              </div>
-            )}
+                    {/* Primary forward actions */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {status === 'initiated' && (
+                        <button style={primaryBtn} disabled={busy} onClick={() => handleStatusChange('pending_verification')}>
+                          {statusSaving === 'pending_verification' ? 'Starting…' : '▶ Begin Verification'}
+                        </button>
+                      )}
 
-            {decision === 'failed' && (
-              <div className="decision-card-failed">
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>Final Decision</div>
-                <div className="decision-badge-fail">✕ Declined</div>
-                <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                  <button
-                    className="btn-approve"
-                    style={{ flex: '0 0 auto' }}
-                    disabled={decisionSaving}
-                    onClick={() => { setDecision(null); setShowConvertModal(true) }}
-                  >
-                    ✓ Approve Instead
-                  </button>
+                      {status === 'pending_verification' && (
+                        <>
+                          <button style={{ ...primaryBtn, background: '#fff', color: '#8b5cf6', border: '1.5px solid rgba(139,92,246,0.4)' }} disabled={busy} onClick={() => handleStatusChange('conditionally_approved')}>
+                            {statusSaving === 'conditionally_approved' ? 'Saving…' : '◑ Mark Conditionally Approved'}
+                          </button>
+                          <button className="btn-approve" style={{ width: '100%' }} disabled={busy} onClick={() => handleStatusChange('approved')}>
+                            {statusSaving === 'approved' ? 'Approving…' : '✓ Approve'}
+                          </button>
+                        </>
+                      )}
+
+                      {status === 'conditionally_approved' && (
+                        <button className="btn-approve" style={{ width: '100%' }} disabled={busy} onClick={() => handleStatusChange('approved')}>
+                          {statusSaving === 'approved' ? 'Approving…' : '✓ Approve'}
+                        </button>
+                      )}
+
+                      {status === 'approved' && !tenantId && (
+                        <button className="btn-approve" style={{ width: '100%' }} disabled={busy} onClick={() => setShowConvertModal(true)}>
+                          ＋ Create Tenant
+                        </button>
+                      )}
+
+                      {tenantId && (
+                        <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '12px 14px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>👤 Tenant created</div>
+                          <a href="/landlord/tenants" className="tenant-link-btn" style={{ marginTop: '8px' }}>View in Tenants →</a>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Secondary actions */}
+                    {status !== 'declined' && (
+                      <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f0ede6' }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <button style={ghostBtn} disabled={notifying || busy} onClick={handleNotifyReview}>
+                            {notifying ? 'Sending…' : '✉ Notify “Under Review”'}
+                          </button>
+                          <button style={ghostBtn} disabled={busy} onClick={() => setCosignerModal(true)}>
+                            👥 Request Co-signer
+                          </button>
+                          <button style={ghostBtn} disabled={busy} onClick={() => setConditionalModal(true)}>
+                            📝 Conditional Approval Email
+                          </button>
+                        </div>
+                        {!tenantId && (
+                          <button style={{ ...ghostBtn, width: '100%', marginTop: '8px', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.3)' }} disabled={busy} onClick={() => handleStatusChange('declined')}>
+                            {statusSaving === 'declined' ? '…' : '✕ Decline Application'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {status === 'declined' && (
+                      <button style={{ ...primaryBtn, background: '#fff', color: '#8C1D40', border: '1.5px solid rgba(140,29,64,0.4)' }} disabled={busy} onClick={() => handleStatusChange('initiated')}>
+                        {statusSaving === 'initiated' ? 'Reopening…' : '↺ Reopen Check'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <button className="undo-link" onClick={async () => {
-                  const { data: { session } } = await supabase.auth.getSession()
-                  await fetch(`/api/background-checks/${checkId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-                    body: JSON.stringify({ decision: null }),
-                  })
-                  setDecision(null)
-                }}>Undo decision</button>
-              </div>
-            )}
+              )
+            })()}
 
             {/* ── Score Widget ── */}
             {(() => {
@@ -962,7 +1152,9 @@ Really appreciate your time — thank you!`
                     onEditCancel={() => setEditingRef(null)}
                     onDelete={() => handleDeleteRef(ref.id)}
                     onTemplate={() => setTemplateModal({ type: 'employer', refName: ref.name || undefined })}
-                    onSendEmail={ref.email ? () => handleSendEmail(ref.id) : undefined}
+                    onSendEmail={ref.email ? () => handleOpenPreview(ref.id) : undefined}
+                    lastSentAt={emails.find(e => e.ref_id === ref.id && e.status === 'sent')?.sent_at || null}
+                    sentCount={emails.filter(e => e.ref_id === ref.id && e.status === 'sent').length}
                     onCopyEmail={ref.email ? () => {
                       navigator.clipboard.writeText(buildPlainTextEmail(ref, lead, 'employer'))
                       setCopiedEmail(ref.id)
@@ -1030,7 +1222,9 @@ Really appreciate your time — thank you!`
                     onEditCancel={() => setEditingRef(null)}
                     onDelete={() => handleDeleteRef(ref.id)}
                     onTemplate={() => setTemplateModal({ type: 'residence', refName: ref.name || undefined })}
-                    onSendEmail={ref.email ? () => handleSendEmail(ref.id) : undefined}
+                    onSendEmail={ref.email ? () => handleOpenPreview(ref.id) : undefined}
+                    lastSentAt={emails.find(e => e.ref_id === ref.id && e.status === 'sent')?.sent_at || null}
+                    sentCount={emails.filter(e => e.ref_id === ref.id && e.status === 'sent').length}
                     onCopyEmail={ref.email ? () => {
                       navigator.clipboard.writeText(buildPlainTextEmail(ref, lead, 'residence'))
                       setCopiedEmail(ref.id)
@@ -1197,13 +1391,215 @@ Really appreciate your time — thank you!`
           </div>
         </div>
       )}
+
+      {/* ── CO-SIGNER REQUEST TEMPLATE MODAL ── */}
+      {cosignerModal && (() => {
+        const first = lead?.first_name?.trim() || 'there'
+        const propLine = propertyAddress ? ` to rent ${propertyAddress}` : ''
+        const subject = `Next steps on your application${propertyAddress ? ` — ${propertyAddress}` : ''}`
+        const body = `Hi ${first},
+
+Thank you for applying${propLine} and for taking the time to complete your application.
+
+After reviewing everything, the income we were able to verify doesn't quite meet our standard requirement of 2.5× the monthly rent. This is very common and does not disqualify you — we'd simply need you to add a co-signer (also called a guarantor) to move forward.
+
+A co-signer is usually a parent or close relative who agrees to cover the rent if you're ever unable to. They'll need to meet the income requirement and complete a quick background and credit check of their own.
+
+If you're able to provide a co-signer, just reply to this email with their full name and email address, and I'll send them the next steps directly. If you have any questions at all, I'm happy to help.
+
+Looking forward to getting you moved in!
+
+Best regards,
+[Your name]`
+        const fullEmail = `Subject: ${subject}\n\n${body}`
+        const copy = (text: string, key: string) => {
+          navigator.clipboard.writeText(text)
+          setCopiedCosigner(key)
+          setTimeout(() => setCopiedCosigner(null), 2000)
+        }
+        return (
+          <div className="modal-overlay" onClick={() => setCosignerModal(false)}>
+            <div className="modal-box" style={{ maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                <div>
+                  <div className="modal-ttl">👥 Request a Co-signer</div>
+                  <div className="modal-sub">Income doesn’t meet the 2.5× rent requirement. Copy this email, then send it to {first} from your inbox.</div>
+                </div>
+                <button onClick={() => setCosignerModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#9b9b9b', cursor: 'pointer', padding: '2px', lineHeight: 1 }}>✕</button>
+              </div>
+
+              {/* Subject */}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '14px 0 6px' }}>Subject</div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input readOnly value={subject} onFocus={e => e.currentTarget.select()} style={{ flex: 1, border: '1.5px solid #e8e5de', borderRadius: '9px', padding: '9px 12px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: '#faf9f6', outline: 'none' }} />
+                <button onClick={() => copy(subject, 'subject')} style={{ flexShrink: 0, background: copiedCosigner === 'subject' ? 'rgba(16,185,129,0.08)' : '#faf9f6', border: `1.5px solid ${copiedCosigner === 'subject' ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '8px', padding: '9px 12px', fontSize: '12px', fontWeight: 600, color: copiedCosigner === 'subject' ? '#10b981' : '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                  {copiedCosigner === 'subject' ? '✓' : 'Copy'}
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '14px 0 6px' }}>Message</div>
+              <textarea readOnly value={body} onFocus={e => e.currentTarget.select()} rows={14} style={{ width: '100%', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: '#faf9f6', outline: 'none', lineHeight: 1.6, resize: 'vertical' }} />
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button onClick={() => copy(fullEmail, 'all')} style={{ flex: 2, background: copiedCosigner === 'all' ? '#0f172a' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                  {copiedCosigner === 'all' ? '✓ Copied!' : '📋 Copy Email'}
+                </button>
+                <button onClick={() => setCosignerModal(false)} style={{ flex: 1, background: '#f5f4f0', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '13px', color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── CONDITIONAL APPROVAL TEMPLATE MODAL ── */}
+      {conditionalModal && (() => {
+        const first = lead?.first_name?.trim() || 'there'
+        const place = propertyAddress || null
+        const subject = `🎉 You're conditionally approved${place ? ` — ${place}` : ''}!`
+        const items = pendingItems.split('\n').map(s => s.trim()).filter(Boolean)
+        const itemsBlock = items.length
+          ? items.map(i => `  ✅  ${i}`).join('\n')
+          : '  ✅  [List each outstanding item here — one per line]'
+        const body = `Hi ${first}! 🎉
+
+Fantastic news — you've been conditionally approved${place ? ` for ${place}` : ''}! 🏡 We're genuinely excited about the idea of having you as a resident, and we can't wait to get you moved in.
+
+You're almost there! ✨ Just a few quick items left to wrap up before we can finalize everything and prepare your lease:
+
+${itemsBlock}
+
+As soon as these are taken care of, we'll send over your lease and the final next steps right away. 🔑 If anything above is unclear or you have questions, just reply to this email — I'm always happy to help!
+
+Welcome (almost!) home — let's get you settled. 😊
+
+Warm regards,
+[Your name]`
+        const fullEmail = `Subject: ${subject}\n\n${body}`
+        const copy = (text: string, key: string) => {
+          navigator.clipboard.writeText(text)
+          setCopiedConditional(key)
+          setTimeout(() => setCopiedConditional(null), 2000)
+        }
+        return (
+          <div className="modal-overlay" onClick={() => setConditionalModal(false)}>
+            <div className="modal-box" style={{ maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                <div>
+                  <div className="modal-ttl">📝 Conditional Approval Email</div>
+                  <div className="modal-sub">List the pending items below — they’ll appear in the email. Then copy and send it to {first}.</div>
+                </div>
+                <button onClick={() => setConditionalModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#9b9b9b', cursor: 'pointer', padding: '2px', lineHeight: 1 }}>✕</button>
+              </div>
+
+              {/* Pending items input */}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '14px 0 6px' }}>Pending items — one per line</div>
+              <textarea
+                value={pendingItems}
+                onChange={e => setPendingItems(e.target.value)}
+                rows={4}
+                placeholder={'e.g. Signed co-signer agreement\nProof of renter’s insurance\nFirst month’s rent + deposit'}
+                style={{ width: '100%', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '11px 13px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: '#fff', outline: 'none', lineHeight: 1.6, resize: 'vertical' }}
+                autoFocus
+              />
+
+              {/* Subject */}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '14px 0 6px' }}>Subject</div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input readOnly value={subject} onFocus={e => e.currentTarget.select()} style={{ flex: 1, border: '1.5px solid #e8e5de', borderRadius: '9px', padding: '9px 12px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: '#faf9f6', outline: 'none' }} />
+                <button onClick={() => copy(subject, 'subject')} style={{ flexShrink: 0, background: copiedConditional === 'subject' ? 'rgba(16,185,129,0.08)' : '#faf9f6', border: `1.5px solid ${copiedConditional === 'subject' ? 'rgba(16,185,129,0.4)' : '#e8e5de'}`, borderRadius: '8px', padding: '9px 12px', fontSize: '12px', fontWeight: 600, color: copiedConditional === 'subject' ? '#10b981' : '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                  {copiedConditional === 'subject' ? '✓' : 'Copy'}
+                </button>
+              </div>
+
+              {/* Body preview */}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '14px 0 6px' }}>Message preview</div>
+              <textarea readOnly value={body} onFocus={e => e.currentTarget.select()} rows={14} style={{ width: '100%', border: '1.5px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: '#faf9f6', outline: 'none', lineHeight: 1.6, resize: 'vertical' }} />
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button onClick={() => copy(fullEmail, 'all')} style={{ flex: 2, background: copiedConditional === 'all' ? '#0f172a' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                  {copiedConditional === 'all' ? '✓ Copied!' : '📋 Copy Email'}
+                </button>
+                <button onClick={() => setConditionalModal(false)} style={{ flex: 1, background: '#f5f4f0', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '13px', color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── EMAIL PREVIEW MODAL ── */}
+      {previewRefId && (
+        <div className="modal-overlay" onClick={() => { if (!sendingEmail) { setPreviewRefId(null); setPreview(null) } }}>
+          <div className="modal-box" style={{ maxWidth: '640px', padding: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+
+            {/* Modal header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ede6', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="modal-ttl" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {preview ? (preview.refType === 'employer' ? '💼 Employment Verification' : '🏠 Rental Reference') : 'Email Preview'}
+                  </div>
+                  {preview && (
+                    <div style={{ fontSize: '12px', color: '#6b6b6b', marginTop: '6px', lineHeight: 1.6 }}>
+                      <div><span style={{ color: '#9b9b9b' }}>To: </span><strong style={{ color: '#1a1a1a' }}>{preview.recipientName ? `${preview.recipientName} · ` : ''}{preview.recipient}</strong></div>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><span style={{ color: '#9b9b9b' }}>Subject: </span>{preview.subject}</div>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { if (!sendingEmail) { setPreviewRefId(null); setPreview(null) } }} disabled={!!sendingEmail} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#9b9b9b', cursor: sendingEmail ? 'not-allowed' : 'pointer', padding: '2px', lineHeight: 1, flexShrink: 0 }}>✕</button>
+              </div>
+            </div>
+
+            {/* Rendered email */}
+            <div style={{ flex: 1, overflow: 'auto', background: '#f5f4f0', minHeight: '240px' }}>
+              {previewLoading || !preview ? (
+                <div style={{ padding: '60px 0', textAlign: 'center', fontSize: '13px', color: '#9b9b9b' }}>Loading preview…</div>
+              ) : (
+                <iframe
+                  title="Email preview"
+                  sandbox=""
+                  srcDoc={preview.html}
+                  style={{ width: '100%', height: '420px', border: 'none', display: 'block' }}
+                />
+              )}
+            </div>
+
+            {/* Footer actions */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #f0ede6', display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ fontSize: '11px', color: '#9b9b9b', flex: 1, lineHeight: 1.4 }}>
+                Review the email above. Nothing is sent until you confirm.
+              </div>
+              <button
+                onClick={() => { if (!sendingEmail) { setPreviewRefId(null); setPreview(null) } }}
+                disabled={!!sendingEmail}
+                className="btn-ghost-sm"
+                style={{ padding: '10px 18px' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => previewRefId && handleSendEmail(previewRefId)}
+                disabled={!preview || !!sendingEmail}
+                style={{ background: (!preview || sendingEmail) ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '9px', padding: '10px 22px', fontSize: '13px', fontWeight: 700, cursor: (!preview || sendingEmail) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              >
+                {sendingEmail ? '⏳ Sending…' : '✉ Confirm & Send'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </>
   )
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, onStatusChange, onEdit, onEditChange, onEditSave, onEditCancel, onDelete, onTemplate, onSendEmail, onCopyEmail, onCopyText, isSending, isCopied, isCopiedText }: {
+function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, onStatusChange, onEdit, onEditChange, onEditSave, onEditCancel, onDelete, onTemplate, onSendEmail, onCopyEmail, onCopyText, isSending, isCopied, isCopiedText, lastSentAt, sentCount }: {
   ref_: Reference
   expanded: boolean
   editing: boolean
@@ -1223,6 +1619,8 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
   isSending?: boolean
   isCopied?: boolean
   isCopiedText?: boolean
+  lastSentAt?: string | null
+  sentCount?: number
 }) {
   const sc = statusColors[ref_.status]
   return (
@@ -1352,14 +1750,14 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
               )}
 
               {(onSendEmail || onCopyEmail || onCopyText) && (
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '6px', marginBottom: lastSentAt ? '6px' : '10px', flexWrap: 'wrap' }}>
                   {onSendEmail && (
                     <button
                       onClick={onSendEmail}
                       disabled={isSending}
                       style={{ flex: 1, minWidth: '90px', background: isSending ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 10px', fontSize: '11px', fontWeight: 700, cursor: isSending ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: isSending ? 0.7 : 1 }}
                     >
-                      {isSending ? '⏳ Sending…' : '✉ Send Email'}
+                      {isSending ? '⏳ Sending…' : lastSentAt ? '✉ Preview & Resend' : '✉ Preview & Send'}
                     </button>
                   )}
                   {onCopyEmail && (
@@ -1378,6 +1776,13 @@ function RefCard({ ref_, expanded, editing, editForm, statusColors, onToggle, on
                       {isCopiedText ? '✓ Copied!' : '💬 Copy Text'}
                     </button>
                   )}
+                </div>
+              )}
+
+              {lastSentAt && (
+                <div style={{ fontSize: '10px', color: '#9b9b9b', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span style={{ color: '#10b981' }}>✓</span>
+                  Email sent {timeAgo(lastSentAt)}{sentCount && sentCount > 1 ? ` · ${sentCount} sent total` : ''}
                 </div>
               )}
 
@@ -1463,6 +1868,54 @@ function AddRefForm({ type, form, saving, onChange, onSave, onCancel }: {
         </button>
         <button onClick={onCancel} className="btn-ghost-sm">Cancel</button>
       </div>
+    </div>
+  )
+}
+
+// ── Status flow graphic ─────────────────────────────────────────────────────────
+
+function StatusFlow({ status, tenantCreated }: { status: BgStatus; tenantCreated: boolean }) {
+  if (status === 'declined') {
+    return (
+      <div style={{ background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>✕</div>
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: '#dc2626' }}>Application Declined</div>
+          <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '1px' }}>This background check was closed as declined. You can reopen it from the actions panel.</div>
+        </div>
+      </div>
+    )
+  }
+
+  const nodes = [...STATUS_FLOW.map(s => s.label), 'Tenant Created']
+  const currentIndex = tenantCreated ? 4 : STATUS_INDEX[status]
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto', paddingBottom: '4px' }}>
+      {nodes.map((label, i) => {
+        const done = i < currentIndex || (i === currentIndex && i === 4)
+        const active = i === currentIndex && i !== 4
+        const circleStyle: React.CSSProperties = done
+          ? { background: '#8C1D40', color: '#fff', border: '2px solid #8C1D40' }
+          : active
+            ? { background: '#fff', color: '#8C1D40', border: '2px solid #8C1D40', boxShadow: '0 0 0 4px rgba(140,29,64,0.1)' }
+            : { background: '#f0ede6', color: '#b0a898', border: '2px solid #e8e5de' }
+        return (
+          <Fragment key={label}>
+            {i > 0 && (
+              <div style={{ flex: 1, height: '2px', minWidth: '20px', background: i <= currentIndex ? '#8C1D40' : '#e8e5de', marginTop: '15px' }} />
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: '92px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, transition: 'all 0.2s', ...circleStyle }}>
+                {done ? (i === 4 ? '👤' : '✓') : (i + 1)}
+              </div>
+              <div style={{ fontSize: '10.5px', fontWeight: active ? 700 : 600, color: active ? '#8C1D40' : done ? '#1a1a1a' : '#9b9b9b', textAlign: 'center', marginTop: '7px', lineHeight: 1.3 }}>
+                {label}
+              </div>
+            </div>
+          </Fragment>
+        )
+      })}
     </div>
   )
 }
