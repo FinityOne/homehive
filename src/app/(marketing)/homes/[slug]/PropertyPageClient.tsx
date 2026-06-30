@@ -8,6 +8,7 @@ import { getPropertyBySlug, Property } from '@/lib/properties'
 import { getFaqsByPropertyId, PropertyFaq } from '@/lib/faqs'
 import { notFound } from 'next/navigation'
 import PhoneInput from '@/components/ui/PhoneInput'
+import SaveButton from '@/components/SaveButton'
 import { identifyVisitor } from '@/lib/visitorId'
 
 const supabase = createBrowserClient(
@@ -926,6 +927,7 @@ export default function PropertyPageClient({
               <div className="gallery-hero">
                 {mainImage && <img src={mainImage} alt={home.name} />}
                 <div className="gallery-hero-overlay" />
+                <SaveButton slug={home.slug} />
                 {allImages.length > 1 && (
                   <div className="gallery-count" onClick={() => {}}>
                     🖼 {allImages.length} photos
