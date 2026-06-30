@@ -19,6 +19,8 @@ export async function GET(req: Request) {
   const landlordId = await getLandlordId(req)
   if (!landlordId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Top-level list shows primary applicants only — co-signer checks (is_cosigner)
+  // are nested under their applicant and surfaced via a count + the detail page.
   const { data, error } = await supabaseAdmin
     .from('background_checks')
     .select(`
@@ -28,10 +30,30 @@ export async function GET(req: Request) {
       bg_check_emails(ref_type, status, sent_at)
     `)
     .eq('landlord_id', landlordId)
+    .eq('is_cosigner', false)
     .order('created_at', { ascending: false })
 
   if (error) return Response.json({ error: 'Failed to fetch' }, { status: 500 })
-  return Response.json({ checks: data || [] })
+
+  // Attach co-signers to their parent applicant (explicit query — self-referential
+  // PostgREST embeds are direction-ambiguous, so we group manually).
+  const checks = data || []
+  const { data: cosigners } = await supabaseAdmin
+    .from('background_checks')
+    .select('id, status, decision, cosigner_for_check_id')
+    .eq('landlord_id', landlordId)
+    .eq('is_cosigner', true)
+
+  const byParent = new Map<string, { id: string; status: string; decision: string | null }[]>()
+  for (const cs of cosigners || []) {
+    if (!cs.cosigner_for_check_id) continue
+    const arr = byParent.get(cs.cosigner_for_check_id) || []
+    arr.push({ id: cs.id, status: cs.status, decision: cs.decision })
+    byParent.set(cs.cosigner_for_check_id, arr)
+  }
+  for (const c of checks) c.cosigners = byParent.get(c.id) || []
+
+  return Response.json({ checks })
 }
 
 export async function POST(req: Request) {

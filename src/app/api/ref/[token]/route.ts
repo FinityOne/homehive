@@ -15,7 +15,7 @@ async function notifyLandlord(bgCheckId: string, refType: string, refName: strin
   try {
     const { data: bgCheck } = await supabaseAdmin
       .from('background_checks')
-      .select('id, landlord_id, leads(first_name, last_name)')
+      .select('id, landlord_id, is_cosigner, subject_first_name, subject_last_name, leads(first_name, last_name)')
       .eq('id', bgCheckId)
       .single()
     if (!bgCheck) return
@@ -29,7 +29,9 @@ async function notifyLandlord(bgCheckId: string, refType: string, refName: strin
 
     const lead = (Array.isArray(bgCheck.leads) ? bgCheck.leads[0] : bgCheck.leads) as
       { first_name: string | null; last_name: string | null } | null
-    const leadName = [lead?.first_name, lead?.last_name].filter(Boolean).join(' ').trim() || 'an applicant'
+    const leadName = bgCheck.is_cosigner
+      ? ([bgCheck.subject_first_name, bgCheck.subject_last_name].filter(Boolean).join(' ').trim() || 'a co-signer')
+      : ([lead?.first_name, lead?.last_name].filter(Boolean).join(' ').trim() || 'an applicant')
     const isEmployer = refType === 'employer'
     const kind = isEmployer ? 'Employment verification' : 'Rental reference'
     const from = refName || (isEmployer ? 'An employer' : 'A previous landlord')
@@ -82,17 +84,22 @@ export async function GET(
 
   if (!ref) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  // Fetch the lead name via the bg_check
+  // Fetch the subject's name via the bg_check. Co-signer checks store the name
+  // on the row (subject_*); applicant checks read it from the linked lead.
   const { data: bgCheck } = await supabaseAdmin
     .from('background_checks')
-    .select('leads(first_name, last_name)')
+    .select('is_cosigner, subject_first_name, subject_last_name, leads(first_name, last_name)')
     .eq('id', ref.bg_check_id)
     .single()
 
   const lead = (Array.isArray(bgCheck?.leads) ? bgCheck?.leads[0] : bgCheck?.leads) as { first_name: string | null; last_name: string | null } | null
-  const leadName = lead?.first_name && lead?.last_name
-    ? `${lead.first_name} ${lead.last_name}`
-    : lead?.first_name || 'the applicant'
+  const leadName = bgCheck?.is_cosigner
+    ? (bgCheck.subject_first_name && bgCheck.subject_last_name
+        ? `${bgCheck.subject_first_name} ${bgCheck.subject_last_name}`
+        : bgCheck.subject_first_name || 'the co-signer')
+    : (lead?.first_name && lead?.last_name
+        ? `${lead.first_name} ${lead.last_name}`
+        : lead?.first_name || 'the applicant')
 
   return Response.json({
     ref: {

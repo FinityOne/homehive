@@ -26,6 +26,7 @@ type BgCheck = {
   status: BgStatus | null
   tenant_id: string | null
   bg_check_emails: { ref_type: string | null; status: string; sent_at: string }[] | null
+  cosigners: { id: string; status: string; decision: string | null }[] | null
   leads: {
     id: string
     first_name: string | null
@@ -262,8 +263,18 @@ export default function BackgroundChecksPage() {
                 <a key={c.id} className="bgc-row" href={`/landlord/background-checks/${c.id}`} target="_blank" rel="noopener noreferrer">
                   <div className="bgc-row-av">{initials}</div>
                   <div className="bgc-row-id">
-                    <div className="bgc-row-name">
-                      {lead?.first_name || lead?.last_name ? `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim() : lead?.email}
+                    <div className="bgc-row-name" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {lead?.first_name || lead?.last_name ? `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim() : lead?.email}
+                      </span>
+                      {c.cosigners && c.cosigners.length > 0 && (
+                        <span
+                          title={`${c.cosigners.length} co-signer${c.cosigners.length !== 1 ? 's' : ''} attached`}
+                          style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, color: '#8C1D40', background: 'rgba(140,29,64,0.08)', border: '1px solid rgba(140,29,64,0.2)', borderRadius: '20px', padding: '1px 8px' }}
+                        >
+                          👥 {c.cosigners.length}
+                        </span>
+                      )}
                     </div>
                     <div className="bgc-row-email">
                       {lead?.email}{lead?.property ? ` · 📍 ${lead.property}` : ''}

@@ -288,11 +288,12 @@ function SectionHeading({ label, count }: { label: string; count: number }) {
 }
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
-function HomesPageInner() {
+function HomesPageInner({ initialProperties }: { initialProperties?: Property[] }) {
   const ph = usePostHog()
   const initialFilters = useInitialFilters()
-  const [properties, setProperties] = useState<Property[]>([])
-  const [loading, setLoading] = useState(true)
+  const hasInitial = !!(initialProperties && initialProperties.length > 0)
+  const [properties, setProperties] = useState<Property[]>(initialProperties ?? [])
+  const [loading, setLoading] = useState(!hasInitial)
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'price' | 'score' | 'distance'>('price')
@@ -300,8 +301,11 @@ function HomesPageInner() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    getProperties().then(data => { setProperties(data); setLoading(false) })
-  }, [])
+    // Server-rendered into the initial HTML; only client-fetch as a fallback.
+    if (!hasInitial) {
+      getProperties().then(data => { setProperties(data); setLoading(false) })
+    }
+  }, [hasInitial])
 
   const filtered = useMemo(() => {
     return properties
@@ -698,10 +702,10 @@ function HomesPageInner() {
   )
 }
 
-export default function HomesPageClient() {
+export default function HomesPageClient({ initialProperties }: { initialProperties?: Property[] }) {
   return (
     <Suspense fallback={null}>
-      <HomesPageInner />
+      <HomesPageInner initialProperties={initialProperties} />
     </Suspense>
   )
 }

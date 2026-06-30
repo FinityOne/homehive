@@ -1,5 +1,10 @@
 import type { Metadata } from 'next'
 import HomePageClient from './HomePageClient'
+import { getHomeCardsServer } from '@/lib/homeData'
+
+// Re-render at most once a minute. Listings render in the initial HTML (no
+// client round-trip) and stay fresh without a DB hit on every request.
+export const revalidate = 60
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 const DEFAULT_OG = `${SITE_URL}/opengraph-image`
@@ -273,7 +278,10 @@ const faqJsonLd = {
   ],
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Fetch listings on the server so cards are in the initial HTML.
+  const initialProperties = await getHomeCardsServer()
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageJsonLd) }} />
@@ -281,7 +289,7 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(featuredListingsJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
-      <HomePageClient />
+      <HomePageClient initialProperties={initialProperties} />
     </>
   )
 }

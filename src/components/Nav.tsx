@@ -34,6 +34,13 @@ export default function Nav() {
   const [scrolled,     setScrolled]     = useState(false)
   const [mobileOpen,   setMobileOpen]   = useState(false)
   const [profileOpen,  setProfileOpen]  = useState(false)
+  const [search,       setSearch]       = useState('')
+
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    const q = search.trim()
+    window.location.href = q ? `/homes?q=${encodeURIComponent(q)}` : '/homes'
+  }
   const [user, setUser] = useState<{
     email: string; fullName: string; role: string; avatarUrl: string | null
   } | null>(null)
@@ -145,6 +152,38 @@ export default function Nav() {
           line-height: 1;
         }
         .nav-link:hover { color: var(--hh-text); background: var(--hh-bg-alt); }
+
+        /* ─── NAVBAR SEARCH ──────────────────────────────────────── */
+        .nav-search {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          background: var(--hh-bg-alt);
+          border: 1px solid var(--hh-border);
+          border-radius: 100px;
+          padding: 6px 14px;
+          height: 36px;
+          width: 230px;
+          max-width: 30vw;
+          transition: border-color 0.15s, box-shadow 0.15s, width 0.2s;
+        }
+        .nav-search:focus-within {
+          border-color: var(--hh-primary);
+          box-shadow: 0 0 0 3px rgba(140,29,64,0.08);
+          background: #fff;
+        }
+        .nav-search svg { flex-shrink: 0; color: var(--hh-ink-300); }
+        .nav-search input {
+          border: none;
+          background: none;
+          outline: none;
+          font-size: 13px;
+          color: var(--hh-text);
+          font-family: var(--hh-font-ui, 'Geist', sans-serif);
+          width: 100%;
+          letter-spacing: -0.01em;
+        }
+        .nav-search input::placeholder { color: var(--hh-text-placeholder, #9b9b9b); }
 
         .nav-sep {
           width: 1px;
@@ -554,6 +593,19 @@ export default function Nav() {
 
         {/* Center links */}
         <div className="nav-center">
+          {/* Minimal search — routes to the browse page */}
+          <form className="nav-search" onSubmit={submitSearch} role="search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search homes near ASU…"
+              aria-label="Search homes"
+            />
+          </form>
           {NAV_LINKS.map(({ href, label, live }) => (
             <a key={href} href={href} className="nav-link">
               {label}

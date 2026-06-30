@@ -30,7 +30,7 @@ export async function resolveReferenceEmail(
 
   const { data: bgCheck } = await admin
     .from('background_checks')
-    .select('id, lead_id, leads(first_name, last_name, email)')
+    .select('id, lead_id, is_cosigner, subject_first_name, subject_last_name, subject_email, leads(first_name, last_name, email)')
     .eq('id', checkId)
     .eq('landlord_id', userId)
     .single()
@@ -57,12 +57,17 @@ export async function resolveReferenceEmail(
   const landlordEmail = profile?.email || userEmail || 'hello@homehive.live'
 
   // PostgREST returns the embedded relation as an array or object depending on
-  // the relationship; normalize to a single lead.
+  // the relationship; normalize to a single lead. Co-signer checks have no lead —
+  // the verification subject is the co-signer, stored in the subject_* fields.
   const rawLead = bgCheck.leads as unknown
   const lead = (Array.isArray(rawLead) ? rawLead[0] : rawLead) as Lead | null
-  const leadName = lead?.first_name && lead?.last_name
-    ? `${lead.first_name} ${lead.last_name}`
-    : lead?.first_name || lead?.email || 'the applicant'
+  const leadName = bgCheck.is_cosigner
+    ? (bgCheck.subject_first_name && bgCheck.subject_last_name
+        ? `${bgCheck.subject_first_name} ${bgCheck.subject_last_name}`
+        : bgCheck.subject_first_name || bgCheck.subject_email || 'the co-signer')
+    : (lead?.first_name && lead?.last_name
+        ? `${lead.first_name} ${lead.last_name}`
+        : lead?.first_name || lead?.email || 'the applicant')
 
   const refType: RefEmailType = ref.type === 'employer' ? 'employer' : 'residence'
   const formUrl = `${getSiteUrl()}/ref/${ref.public_token}`

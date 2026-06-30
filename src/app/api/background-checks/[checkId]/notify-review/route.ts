@@ -77,7 +77,7 @@ export async function POST(
 
   const { data: bgCheck } = await supabaseAdmin
     .from('background_checks')
-    .select('id, leads(first_name, last_name, email)')
+    .select('id, is_cosigner, subject_first_name, subject_last_name, subject_email, leads(first_name, last_name, email)')
     .eq('id', checkId)
     .eq('landlord_id', user.id)
     .single()
@@ -85,10 +85,15 @@ export async function POST(
   if (!bgCheck) return Response.json({ error: 'Not found' }, { status: 404 })
 
   const rawLead = bgCheck.leads as unknown
-  const lead = (Array.isArray(rawLead) ? rawLead[0] : rawLead) as
+  const embeddedLead = (Array.isArray(rawLead) ? rawLead[0] : rawLead) as
     { first_name: string | null; last_name: string | null; email: string } | null
 
-  if (!lead?.email) return Response.json({ error: 'Applicant has no email address' }, { status: 400 })
+  // Co-signer checks have no lead — notify the co-signer (subject) instead.
+  const lead = bgCheck.is_cosigner
+    ? { first_name: bgCheck.subject_first_name, last_name: bgCheck.subject_last_name, email: bgCheck.subject_email }
+    : embeddedLead
+
+  if (!lead?.email) return Response.json({ error: 'No email address on file for this subject' }, { status: 400 })
 
   const { data: profile } = await supabaseAdmin
     .from('profiles')

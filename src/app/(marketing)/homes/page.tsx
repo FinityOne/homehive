@@ -1,5 +1,8 @@
 import type { Metadata } from 'next'
 import HomesPageClient from './HomesPageClient'
+import { getHomeCardsServer } from '@/lib/homeData'
+
+export const revalidate = 60
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 const DEFAULT_OG = `${SITE_URL}/opengraph-image`
@@ -56,12 +59,13 @@ const webPageJsonLd = {
   about: { '@type': 'Thing', name: 'Off-campus student housing listings near ASU Tempe' },
 }
 
-export default function HomesPage() {
+export default async function HomesPage() {
+  const initialProperties = await getHomeCardsServer()
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageJsonLd) }} />
-      <HomesPageClient />
+      <HomesPageClient initialProperties={initialProperties} />
     </>
   )
 }

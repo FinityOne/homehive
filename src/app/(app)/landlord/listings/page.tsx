@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, Property } from '@/lib/properties'
+import { getPropertiesByOwner, setPropertyArchived, Property } from '@/lib/properties'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +14,7 @@ export default function ListingsPage() {
   const router = useRouter()
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => { document.title = 'Listings — Landlord | HomeHive' }, [])
 
@@ -27,6 +28,22 @@ export default function ListingsPage() {
     }
     load()
   }, [router])
+
+  const toggleArchive = async (p: Property, archived: boolean) => {
+    setBusyId(p.id)
+    const { error } = await setPropertyArchived(p.id, archived)
+    if (!error) {
+      const stamp = new Date().toISOString()
+      setProperties(prev => prev.map(x => x.id === p.id ? {
+        ...x,
+        archived_at: archived ? stamp : null,
+        archived_reason: archived ? 'manual' : null,
+        archive_warned_at: null,
+        ...(archived ? {} : { updated_at: stamp }),
+      } as Property : x))
+    }
+    setBusyId(null)
+  }
 
   if (loading) {
     return (
@@ -60,6 +77,16 @@ export default function ListingsPage() {
         .badge-pending  { background: #fef3c7; color: #92400e; }
         .badge-rejected { background: #fff1f2; color: #9f1239; }
         .badge-inactive { background: #e5e7eb; color: #6b7280; }
+        .badge-archived { background: #fae8ef; color: #8C1D40; }
+
+        .prop-card.is-archived { opacity: 0.72; }
+        .prop-card.is-archived .prop-card-img { filter: grayscale(0.6); }
+        .archive-warn { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 7px 10px; font-size: 11px; color: #92400e; line-height: 1.45; margin-top: 2px; }
+        .btn-reactivate { display: block; text-align: center; background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; }
+        .btn-reactivate:hover { background: #731734; }
+        .btn-reactivate:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-archive-link { background: none; border: none; color: #9ca3af; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: underline; margin-top: 8px; display: block; width: 100%; text-align: center; }
+        .btn-archive-link:hover { color: #6b7280; }
 
         .prop-card-body { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
         .prop-card-name { font-size: 15px; font-weight: 600; color: #0f172a; line-height: 1.3; }
@@ -129,24 +156,30 @@ export default function ListingsPage() {
           ) : (
             properties.map(p => {
               const availPct = p.total_rooms > 0 ? (p.available / p.total_rooms) * 100 : 0
+              const isArchived = !!p.archived_at
+              const warnedSoon = !!p.archive_warned_at && !isArchived
               return (
-                <div key={p.id} className="prop-card">
+                <div key={p.id} className={`prop-card${isArchived ? ' is-archived' : ''}`}>
                   <div className="prop-card-img-wrap">
                     {p.images?.[0]
                       ? <img src={p.images[0]} alt={p.name} className="prop-card-img" />
                       : <div className="prop-card-img-placeholder">🏠</div>
                     }
-                    <span className={`prop-status-badge ${
-                      p.admin_status === 'active'   ? 'badge-active'   :
-                      p.admin_status === 'pending'  ? 'badge-pending'  :
-                      p.admin_status === 'rejected' ? 'badge-rejected' :
-                      'badge-inactive'
-                    }`}>
-                      {p.admin_status === 'active'   ? 'Live'          :
-                       p.admin_status === 'pending'  ? 'Under Review'  :
-                       p.admin_status === 'rejected' ? 'Not Approved'  :
-                       'Inactive'}
-                    </span>
+                    {isArchived ? (
+                      <span className="prop-status-badge badge-archived">Archived</span>
+                    ) : (
+                      <span className={`prop-status-badge ${
+                        p.admin_status === 'active'   ? 'badge-active'   :
+                        p.admin_status === 'pending'  ? 'badge-pending'  :
+                        p.admin_status === 'rejected' ? 'badge-rejected' :
+                        'badge-inactive'
+                      }`}>
+                        {p.admin_status === 'active'   ? 'Live'          :
+                         p.admin_status === 'pending'  ? 'Under Review'  :
+                         p.admin_status === 'rejected' ? 'Not Approved'  :
+                         'Inactive'}
+                      </span>
+                    )}
                   </div>
                   <div className="prop-card-body">
                     <div className="prop-card-name">{p.name}</div>
@@ -163,8 +196,31 @@ export default function ListingsPage() {
                         <div className="avail-bar-fill" style={{ width: `${availPct}%` }} />
                       </div>
                     </div>
+
+                    {isArchived && (
+                      <div className="archive-warn">
+                        Archived for inactivity — hidden from students. Re-activate to make it live again.
+                      </div>
+                    )}
+                    {warnedSoon && (
+                      <div className="archive-warn">
+                        ⏳ No recent activity — this will auto-archive in ~3 days. Edit it to keep it live.
+                      </div>
+                    )}
+
                     <div className="prop-card-footer">
-                      <a href={`/landlord/listings/${p.slug}`} className="btn-manage">Manage →</a>
+                      {isArchived ? (
+                        <button className="btn-reactivate" disabled={busyId === p.id} onClick={() => toggleArchive(p, false)}>
+                          {busyId === p.id ? 'Re-activating…' : '↻ Re-activate Listing'}
+                        </button>
+                      ) : (
+                        <>
+                          <a href={`/landlord/listings/${p.slug}`} className="btn-manage">Manage →</a>
+                          <button className="btn-archive-link" disabled={busyId === p.id} onClick={() => toggleArchive(p, true)}>
+                            {busyId === p.id ? 'Archiving…' : 'Archive listing'}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

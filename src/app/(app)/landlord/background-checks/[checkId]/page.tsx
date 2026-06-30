@@ -35,7 +35,7 @@ type Reference = {
 
 type EmailLog = {
   id: string; bg_check_id: string; ref_id: string | null
-  ref_type: 'employer' | 'residence' | 'applicant' | null
+  ref_type: 'employer' | 'residence' | 'applicant' | 'cosigner' | null
   recipient: string; recipient_name: string | null; subject: string | null
   status: 'sent' | 'failed'; error: string | null
   sent_by: string | null; sent_at: string
@@ -56,8 +56,28 @@ const STATUS_INDEX: Record<BgStatus, number> = {
   initiated: 0, pending_verification: 1, conditionally_approved: 2, approved: 3, declined: -1,
 }
 
+type CosignerSummary = {
+  id: string
+  subject_first_name: string | null; subject_last_name: string | null
+  subject_email: string | null; subject_phone: string | null
+  cosigner_relationship: string | null
+  status: BgStatus; decision: 'passed' | 'failed' | null; tenant_id: string | null
+  credit: 'great' | 'average' | 'poor' | null; credit_score: number | null
+  criminal_check: 'clear' | 'not_clear' | null; eviction_check: 'clear' | 'not_clear' | null
+  employment_check: 'clear' | 'not_clear' | null; current_residence_check: 'clear' | 'not_clear' | null
+  income_monthly: number | null; welcome_email_sent_at: string | null; created_at: string
+}
+
+type CosignerContext = {
+  primary_check_id: string
+  primary_lead_id: string | null
+  primary_name: string
+  primary_tenant_id: string | null
+  relationship: string | null
+}
+
 type BgCheck = {
-  id: string; lead_id: string; landlord_id: string
+  id: string; lead_id: string | null; landlord_id: string
   is_student: boolean | null
   cosigner: 'yes' | 'no' | 'pending' | 'need_cosigner' | null
   credit: 'great' | 'average' | 'poor' | null
@@ -70,6 +90,14 @@ type BgCheck = {
   decision: 'passed' | 'failed' | null
   status: BgStatus
   tenant_id: string | null
+  // co-signer + income
+  is_cosigner: boolean
+  cosigner_for_check_id: string | null
+  cosigner_relationship: string | null
+  income_monthly: number | null
+  property_rent: number | null
+  cosigner_context: CosignerContext | null
+  cosigners: CosignerSummary[] | null
   created_at: string; updated_at: string
   leads: Lead | null
   bg_check_references: Reference[]
@@ -97,6 +125,54 @@ function computeScore(f: {
   if (score >= 80) return { score, tier: 'good',   label: 'Good to Go',   color: '#10b981', bg: 'rgba(16,185,129,0.08)' }
   if (score >= 60) return { score, tier: 'medium', label: 'Medium Risk',  color: '#f97316', bg: 'rgba(249,115,22,0.08)' }
   return               { score, tier: 'high',   label: 'High Risk',    color: '#ef4444', bg: 'rgba(239,68,68,0.07)' }
+}
+
+// Co-signer scoring weights what matters most for a guarantor: credit and
+// income carry the most weight, then criminal + eviction history. Employment is
+// a minor factor and residence history is not scored (they won't live there).
+// Total = 100: Credit 30 · Income 30 · Criminal 20 · Eviction 15 · Employment 5.
+function computeCosignerScore(f: {
+  criminal_check: string | null; eviction_check: string | null
+  employment_check: string | null
+  credit: string | null; credit_score: number | null
+  income_monthly: number | null
+}, rent: number | null): { score: number; tier: 'good' | 'medium' | 'high'; label: string; color: string; bg: string; incomePts: number; creditPts: number } {
+  const clearPts = (val: string | null, full: number) => (val === 'clear' ? full : 0)
+
+  let creditPts = 0
+  if (f.credit_score) {
+    creditPts = f.credit_score >= 750 ? 30 : f.credit_score >= 700 ? 26 : f.credit_score >= 680 ? 22 : f.credit_score >= 650 ? 16 : f.credit_score >= 600 ? 10 : 5
+  } else if (f.credit === 'great') creditPts = 30
+  else if (f.credit === 'average') creditPts = 18
+  else if (f.credit === 'poor') creditPts = 6
+
+  // Income scored against the 3× monthly-rent guarantor standard.
+  let incomePts = 0
+  if (f.income_monthly && rent && rent > 0) {
+    const m = f.income_monthly / rent
+    incomePts = m >= 3 ? 30 : m >= 2.5 ? 24 : m >= 2 ? 18 : m >= 1.5 ? 10 : 4
+  }
+
+  const score = creditPts + incomePts + clearPts(f.criminal_check, 20) + clearPts(f.eviction_check, 15) + clearPts(f.employment_check, 5)
+
+  if (score >= 80) return { score, tier: 'good',   label: 'Strong Co-signer', color: '#10b981', bg: 'rgba(16,185,129,0.08)', incomePts, creditPts }
+  if (score >= 60) return { score, tier: 'medium', label: 'Adequate',         color: '#f97316', bg: 'rgba(249,115,22,0.08)', incomePts, creditPts }
+  return               { score, tier: 'high',   label: 'Weak Co-signer',   color: '#ef4444', bg: 'rgba(239,68,68,0.07)', incomePts, creditPts }
+}
+
+// Income-to-rent multiple indicator. Guarantor target is 3× the monthly rent.
+function incomeMultiple(income: number | null, rent: number | null): {
+  state: 'none' | 'no_rent' | 'pass' | 'near' | 'low'
+  multiple: number | null
+  label: string; color: string; bg: string; border: string
+} {
+  if (!income) return { state: 'none', multiple: null, label: 'No income recorded', color: '#9b9b9b', bg: '#f5f4f0', border: '#e8e5de' }
+  if (!rent || rent <= 0) return { state: 'no_rent', multiple: null, label: 'Rent unknown — can’t compute multiple', color: '#9b9b9b', bg: '#f5f4f0', border: '#e8e5de' }
+  const m = income / rent
+  const mx = Math.round(m * 10) / 10
+  if (m >= 3) return { state: 'pass', multiple: mx, label: `${mx}× rent · meets 3× requirement`, color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.35)' }
+  if (m >= 2) return { state: 'near', multiple: mx, label: `${mx}× rent · below 3× target`, color: '#f97316', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.35)' }
+  return { state: 'low', multiple: mx, label: `${mx}× rent · well below 3×`, color: '#ef4444', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.3)' }
 }
 
 // ── Template questions ────────────────────────────────────────────────────────
@@ -211,6 +287,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
     current_residence_check: null as string | null,
     criminal_check: null as string | null,
     eviction_check: null as string | null,
+    income_monthly: null as number | null,
     notes: '',
   })
 
@@ -250,6 +327,13 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
   const [showConvertModal, setShowConvertModal] = useState(false)
   const [convertForm, setConvertForm] = useState({ first_name: '', last_name: '', email: '', phone: '', notes: '' })
 
+  // Co-signers (only relevant on a primary applicant's check)
+  const [cosigners, setCosigners] = useState<CosignerSummary[]>([])
+  const [addingCosigner, setAddingCosigner] = useState(false)
+  const [cosignerForm, setCosignerForm] = useState({ first_name: '', last_name: '', email: '', phone: '', relationship: '' })
+  const [savingCosigner, setSavingCosigner] = useState(false)
+  const [linking, setLinking] = useState(false)
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
@@ -271,6 +355,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
       setCheck(c)
       setRefs(c.bg_check_references || [])
       setEmails(c.bg_check_emails || [])
+      setCosigners(c.cosigners || [])
       setForm({
         is_student: c.is_student,
         cosigner: c.cosigner,
@@ -280,6 +365,7 @@ export default function BgCheckDetailPage({ params }: { params: Promise<{ checkI
         current_residence_check: c.current_residence_check,
         criminal_check: c.criminal_check,
         eviction_check: c.eviction_check,
+        income_monthly: c.income_monthly ?? null,
         notes: c.notes || '',
       })
       setStatus((c.status as BgStatus) ?? 'initiated')
@@ -574,6 +660,61 @@ Really appreciate your time — thank you!`
     setDecisionSaving(false)
   }
 
+  // Add a co-signer to this (primary) applicant's screening
+  const handleAddCosigner = async () => {
+    if (!cosignerForm.first_name || !cosignerForm.email) return
+    setSavingCosigner(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}/cosigners`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify(cosignerForm),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (res.ok) {
+      const c = json.check
+      const summary: CosignerSummary = {
+        id: c.id,
+        subject_first_name: c.subject_first_name, subject_last_name: c.subject_last_name,
+        subject_email: c.subject_email, subject_phone: c.subject_phone,
+        cosigner_relationship: c.cosigner_relationship,
+        status: c.status, decision: c.decision, tenant_id: c.tenant_id,
+        credit: c.credit, credit_score: c.credit_score,
+        criminal_check: c.criminal_check, eviction_check: c.eviction_check,
+        employment_check: c.employment_check, current_residence_check: c.current_residence_check,
+        income_monthly: c.income_monthly, welcome_email_sent_at: c.welcome_email_sent_at, created_at: c.created_at,
+      }
+      setCosigners(prev => [...prev, summary])
+      setCheck(prev => prev ? { ...prev, cosigner: 'yes' } : prev)
+      setForm(f => ({ ...f, cosigner: 'yes' }))
+      setAddingCosigner(false)
+      setCosignerForm({ first_name: '', last_name: '', email: '', phone: '', relationship: '' })
+      showToast(json.email_sent === false ? 'Co-signer added (welcome email failed to send)' : 'Co-signer added & welcomed by email!')
+    } else {
+      showToast(json.error || 'Failed to add co-signer', 'error')
+    }
+    setSavingCosigner(false)
+  }
+
+  // Link an approved co-signer to the primary applicant's tenant (as guarantor)
+  const handleLinkTenant = async () => {
+    setLinking(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/background-checks/${checkId}/link-tenant`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    })
+    const json = await res.json().catch(() => ({}))
+    if (res.ok) {
+      setStatus('approved')
+      setTenantId(json.tenantId)
+      showToast(json.already_exists ? 'Already linked to the tenant' : 'Co-signer linked to tenant as guarantor!')
+    } else {
+      showToast(json.error || 'Failed to link co-signer', 'error')
+    }
+    setLinking(false)
+  }
+
   if (loading) return (
     <div style={{ padding: '32px', fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap'); @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
@@ -592,6 +733,9 @@ Really appreciate your time — thank you!`
   const initials = ((lead?.first_name?.[0] || '') + (lead?.last_name?.[0] || '')).toUpperCase() || lead?.email?.[0]?.toUpperCase() || '?'
   const employers = refs.filter(r => r.type === 'employer')
   const residences = refs.filter(r => r.type === 'residence')
+  const isCosigner = check.is_cosigner
+  const ctx = check.cosigner_context
+  const rent = check.property_rent
 
   const STATUS_COLORS: Record<Reference['status'], { color: string; bg: string; border: string; label: string }> = {
     pending:    { color: '#9b9b9b', bg: '#f5f4f0',                  border: '#e8e5de',              label: 'Pending' },
@@ -711,7 +855,7 @@ Really appreciate your time — thank you!`
             <div className="bgd-hdr-title">
               {lead?.first_name || lead?.last_name
                 ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim()
-                : lead?.email} — Background Check
+                : lead?.email} — {isCosigner ? 'Co-signer Check' : 'Background Check'}
             </div>
             <div className="bgd-hdr-sub">Started {timeAgo(check.created_at)}{check.updated_at !== check.created_at ? ` · Updated ${timeAgo(check.updated_at)}` : ''}</div>
           </div>
@@ -745,6 +889,11 @@ Really appreciate your time — thank you!`
             <div className="lead-banner">
               <div className="lead-av">{initials}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
+                {isCosigner && (
+                  <span style={{ display: 'inline-block', fontSize: '9px', fontWeight: 800, letterSpacing: '0.7px', textTransform: 'uppercase', color: '#1a1a1a', background: '#FFC627', borderRadius: '5px', padding: '2px 7px', marginBottom: '5px' }}>
+                    👥 Co-signer{ctx?.relationship ? ` · ${ctx.relationship}` : ''}
+                  </span>
+                )}
                 <div className="lead-name">
                   {lead?.first_name || lead?.last_name
                     ? `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim()
@@ -754,15 +903,86 @@ Really appreciate your time — thank you!`
                   {lead?.email}
                   {lead?.phone ? ` · +1 ${formatPhoneDisplay(lead.phone)}` : ''}
                 </div>
-                {lead?.property && <div className="lead-prop">📍 {lead.property}</div>}
+                {isCosigner && ctx
+                  ? <div className="lead-prop">🔗 Co-signing for {ctx.primary_name}{lead?.property ? ` · 📍 ${lead.property}` : ''}</div>
+                  : lead?.property && <div className="lead-prop">📍 {lead.property}</div>}
               </div>
-              <button
-                onClick={() => lead && window.open(`/landlord/leads/${lead.id}`, '_blank')}
-                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', padding: '7px 13px', fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', flexShrink: 0 }}
-              >
-                View Lead →
-              </button>
+              {isCosigner && ctx
+                ? <button
+                    onClick={() => window.open(`/landlord/background-checks/${ctx.primary_check_id}`, '_blank')}
+                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', padding: '7px 13px', fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    View Applicant →
+                  </button>
+                : <button
+                    onClick={() => lead?.id && window.open(`/landlord/leads/${lead.id}`, '_blank')}
+                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', padding: '7px 13px', fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    View Lead →
+                  </button>}
             </div>
+
+            {/* ── Co-signers (primary applicants only) ── */}
+            {!isCosigner && (
+              <div className="bgd-card">
+                <div className="bgd-card-hd">
+                  <span className="bgd-card-ttl">Co-signers / Guarantors</span>
+                  <button
+                    onClick={() => setAddingCosigner(true)}
+                    style={{ fontSize: '11px', color: '#8C1D40', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                  >
+                    + Add Co-signer
+                  </button>
+                </div>
+                <div className="bgd-card-bd">
+                  {cosigners.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '14px 8px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
+                      No co-signers yet. Add one if the applicant’s income is below <strong>3× rent</strong> or they need a guarantor — the co-signer gets their own screening &amp; a welcome email.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {cosigners.map(cs => {
+                        const csName = [cs.subject_first_name, cs.subject_last_name].filter(Boolean).join(' ').trim() || cs.subject_email || 'Co-signer'
+                        const csInitials = ((cs.subject_first_name?.[0] || '') + (cs.subject_last_name?.[0] || '')).toUpperCase() || cs.subject_email?.[0]?.toUpperCase() || '?'
+                        const cscore = computeCosignerScore(cs, rent)
+                        const im = incomeMultiple(cs.income_monthly, rent)
+                        const sp = {
+                          initiated:              { label: 'Initiated',   color: '#6b6b6b', bg: '#f5f4f0' },
+                          pending_verification:   { label: 'Verifying',   color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
+                          conditionally_approved: { label: 'Conditional', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+                          approved:               { label: cs.tenant_id ? 'Linked' : 'Approved', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
+                          declined:               { label: 'Declined',    color: '#dc2626', bg: 'rgba(239,68,68,0.08)' },
+                        }[cs.status] || { label: cs.status, color: '#6b6b6b', bg: '#f5f4f0' }
+                        return (
+                          <a
+                            key={cs.id}
+                            href={`/landlord/background-checks/${cs.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '11px 12px', border: '1px solid #f0ede6', borderRadius: '10px', textDecoration: 'none', color: 'inherit', background: '#faf9f6' }}
+                          >
+                            <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#8C1D40', color: '#FFC627', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{csInitials}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: 700, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {csName}
+                                {cs.cosigner_relationship && <span style={{ fontSize: '10px', fontWeight: 600, color: '#9b9b9b' }}>· {cs.cosigner_relationship}</span>}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ color: cscore.color, fontWeight: 700 }}>{cscore.score}/100 · {cscore.label}</span>
+                                {im.multiple != null && <span style={{ color: im.color, fontWeight: 600 }}>{im.multiple}× rent</span>}
+                                {!cs.welcome_email_sent_at && <span style={{ color: '#b0a898' }}>✉ welcome not sent</span>}
+                              </div>
+                            </div>
+                            <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, padding: '3px 9px', borderRadius: '20px', color: sp.color, background: sp.bg }}>{sp.label}</span>
+                            <span style={{ color: '#d0cdc5', fontSize: '14px', flexShrink: 0 }}>›</span>
+                          </a>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── Checklist ── */}
             <div className="bgd-card">
@@ -794,17 +1014,19 @@ Really appreciate your time — thank you!`
                   onChange={v => setForm(f => ({ ...f, is_student: v }))}
                 />
 
-                <ToggleGroup
-                  label="Cosigner"
-                  value={form.cosigner}
-                  options={[
-                    { value: 'yes',          label: '✓ Has Cosigner',   color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.4)' },
-                    { value: 'no',           label: '✕ No Cosigner',    color: '#6b6b6b', bg: '#f5f4f0',               border: '#d0cdc5' },
-                    { value: 'pending',      label: '⏳ Pending',        color: '#f97316', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.4)' },
-                    { value: 'need_cosigner',label: '⚠ Need Cosigner',  color: '#dc2626', bg: 'rgba(220,38,38,0.06)', border: 'rgba(220,38,38,0.35)' },
-                  ]}
-                  onChange={v => setForm(f => ({ ...f, cosigner: v }))}
-                />
+                {!isCosigner && (
+                  <ToggleGroup
+                    label="Cosigner"
+                    value={form.cosigner}
+                    options={[
+                      { value: 'yes',          label: '✓ Has Cosigner',   color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.4)' },
+                      { value: 'no',           label: '✕ No Cosigner',    color: '#6b6b6b', bg: '#f5f4f0',               border: '#d0cdc5' },
+                      { value: 'pending',      label: '⏳ Pending',        color: '#f97316', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.4)' },
+                      { value: 'need_cosigner',label: '⚠ Need Cosigner',  color: '#dc2626', bg: 'rgba(220,38,38,0.06)', border: 'rgba(220,38,38,0.35)' },
+                    ]}
+                    onChange={v => setForm(f => ({ ...f, cosigner: v }))}
+                  />
+                )}
 
                 <ToggleGroup
                   label="Credit"
@@ -845,6 +1067,48 @@ Really appreciate your time — thank you!`
                     )}
                   </div>
                 </div>
+
+                {/* Monthly income — a tracked line item with a live rent-multiple
+                    indicator (3× rent is the guarantor target). */}
+                {(() => {
+                  const im = incomeMultiple(form.income_monthly, rent)
+                  return (
+                    <div style={{ marginBottom: '18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                          Monthly Income{isCosigner ? '' : ' (optional)'}
+                        </span>
+                        {rent ? <span style={{ fontSize: '10px', color: '#b0a898' }}>Rent: ${rent.toLocaleString()}/mo</span> : null}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1.5px solid #e8e5de', borderRadius: '9px', padding: '0 12px', background: '#faf9f6' }}>
+                          <span style={{ fontSize: '14px', fontWeight: 700, color: '#9b9b9b' }}>$</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={100}
+                            placeholder="e.g. 6000"
+                            value={form.income_monthly ?? ''}
+                            onChange={e => setForm(f => ({ ...f, income_monthly: e.target.value ? parseInt(e.target.value) : null }))}
+                            style={{ width: '110px', border: 'none', padding: '8px 0', fontSize: '14px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif", color: '#1a1a1a', background: 'transparent', outline: 'none' }}
+                          />
+                          <span style={{ fontSize: '11px', color: '#9b9b9b' }}>/mo</span>
+                        </div>
+                        <span style={{
+                          fontSize: '11px', fontWeight: 700, padding: '5px 11px', borderRadius: '20px',
+                          color: im.color, background: im.bg, border: `1px solid ${im.border}`,
+                        }}>
+                          {im.state === 'pass' ? '✓ ' : im.state === 'near' ? '◑ ' : im.state === 'low' ? '⚠ ' : ''}{im.label}
+                        </span>
+                      </div>
+                      {im.state === 'low' && (
+                        <div style={{ fontSize: '10.5px', color: '#dc2626', marginTop: '6px' }}>
+                          Income falls short of the 3× monthly rent standard{isCosigner ? '' : ' — consider requesting a co-signer'}.
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Verification Checks</div>
 
@@ -935,12 +1199,12 @@ Really appreciate your time — thank you!`
                       const failed = e.status === 'failed'
                       return (
                         <div key={e.id} style={{ display: 'flex', gap: '10px', padding: '10px 0', borderBottom: '1px solid #f5f4f0' }}>
-                          <div style={{ width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', background: e.ref_type === 'employer' ? 'rgba(59,130,246,0.1)' : e.ref_type === 'applicant' ? 'rgba(255,198,39,0.18)' : 'rgba(16,185,129,0.1)' }}>
-                            {e.ref_type === 'employer' ? '💼' : e.ref_type === 'applicant' ? '👤' : '🏠'}
+                          <div style={{ width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', background: e.ref_type === 'employer' ? 'rgba(59,130,246,0.1)' : e.ref_type === 'applicant' ? 'rgba(255,198,39,0.18)' : e.ref_type === 'cosigner' ? 'rgba(140,29,64,0.1)' : 'rgba(16,185,129,0.1)' }}>
+                            {e.ref_type === 'employer' ? '💼' : e.ref_type === 'applicant' ? '👤' : e.ref_type === 'cosigner' ? '👥' : '🏠'}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {e.subject || (e.ref_type === 'employer' ? 'Employment verification' : e.ref_type === 'applicant' ? 'Application update' : 'Rental reference')}
+                              {e.subject || (e.ref_type === 'employer' ? 'Employment verification' : e.ref_type === 'applicant' ? 'Application update' : e.ref_type === 'cosigner' ? 'Co-signer welcome' : 'Rental reference')}
                             </div>
                             <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>
                               To {e.recipient_name ? `${e.recipient_name} · ` : ''}{e.recipient}
@@ -988,10 +1252,12 @@ Really appreciate your time — thank you!`
                 initiated:              'Kick off the screening — begin verification when you’re ready to start checking references.',
                 pending_verification:   'Verification in progress. Approve outright, or mark conditionally approved if you need a cosigner or extra documents.',
                 conditionally_approved: 'Conditionally approved — finalize the approval once your conditions are met.',
-                approved:               tenantId ? 'Approved and converted to a tenant.' : 'Approved! Create their tenant profile to move them onto a lease.',
+                approved:               isCosigner
+                  ? (tenantId ? 'Approved and linked to the tenant as guarantor.' : 'Approved! Link this co-signer to the applicant’s tenant as their guarantor.')
+                  : (tenantId ? 'Approved and converted to a tenant.' : 'Approved! Create their tenant profile to move them onto a lease.'),
                 declined:               'This application was declined. You can reopen it to continue the review.',
               }
-              const busy = statusSaving !== null || decisionSaving
+              const busy = statusSaving !== null || decisionSaving || linking
               const primaryBtn: React.CSSProperties = { width: '100%', background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: busy ? 0.6 : 1 }
               const ghostBtn: React.CSSProperties = { flex: 1, background: '#fff', color: '#6b6b6b', border: '1.5px solid #e8e5de', borderRadius: '9px', padding: '10px 14px', fontSize: '12px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }
               return (
@@ -1032,15 +1298,29 @@ Really appreciate your time — thank you!`
                         </button>
                       )}
 
-                      {status === 'approved' && !tenantId && (
+                      {status === 'approved' && !tenantId && !isCosigner && (
                         <button className="btn-approve" style={{ width: '100%' }} disabled={busy} onClick={() => setShowConvertModal(true)}>
                           ＋ Create Tenant
                         </button>
                       )}
 
+                      {status === 'approved' && !tenantId && isCosigner && (
+                        ctx?.primary_tenant_id ? (
+                          <button className="btn-approve" style={{ width: '100%' }} disabled={busy} onClick={handleLinkTenant}>
+                            {linking ? 'Linking…' : `🔗 Link to ${ctx.primary_name}'s Tenant`}
+                          </button>
+                        ) : (
+                          <div style={{ background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '11px 13px', fontSize: '12px', color: '#6b6b6b', lineHeight: 1.5 }}>
+                            Approve and convert {ctx?.primary_name || 'the primary applicant'} to a tenant first — then you can link this co-signer as their guarantor.
+                          </div>
+                        )
+                      )}
+
                       {tenantId && (
                         <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '12px 14px' }}>
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>👤 Tenant created</div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {isCosigner ? '🔗 Linked as guarantor' : '👤 Tenant created'}
+                          </div>
                           <a href="/landlord/tenants" className="tenant-link-btn" style={{ marginTop: '8px' }}>View in Tenants →</a>
                         </div>
                       )}
@@ -1080,7 +1360,7 @@ Really appreciate your time — thank you!`
 
             {/* ── Score Widget ── */}
             {(() => {
-              const s = computeScore(form)
+              const s = isCosigner ? computeCosignerScore(form, rent) : computeScore(form)
               const pct = (s.score / 100) * 100
               return (
                 <div style={{ background: s.bg, border: `1.5px solid ${s.color}30`, borderRadius: '14px', padding: '18px 20px', marginBottom: '14px' }}>
@@ -1102,7 +1382,9 @@ Really appreciate your time — thank you!`
                     <div style={{ height: '100%', width: `${pct}%`, background: s.color, borderRadius: '3px', transition: 'width 0.4s' }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '10px', color: '#9b9b9b' }}>
-                    <span>Criminal 30 · Eviction 25 · Employment 20 · Residence 15 · Credit 10</span>
+                    <span>{isCosigner
+                      ? 'Credit 30 · Income 30 · Criminal 20 · Eviction 15 · Employment 5'
+                      : 'Criminal 30 · Eviction 25 · Employment 20 · Residence 15 · Credit 10'}</span>
                   </div>
                 </div>
               )
@@ -1342,6 +1624,62 @@ Really appreciate your time — thank you!`
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ADD CO-SIGNER MODAL ── */}
+      {addingCosigner && (
+        <div className="modal-overlay" onClick={() => setAddingCosigner(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+              <div>
+                <div className="modal-ttl">👥 Add a Co-signer</div>
+                <div className="modal-sub">
+                  We’ll set up a full screening for the co-signer and email them a welcome note letting them know they’ve been added{lead?.first_name ? ` to ${lead.first_name}’s application` : ''}.
+                </div>
+              </div>
+              <button onClick={() => setAddingCosigner(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#9b9b9b', cursor: 'pointer', padding: '2px', lineHeight: 1 }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>First Name *</label>
+                <input className="convert-modal-input" type="text" value={cosignerForm.first_name} onChange={e => setCosignerForm(f => ({ ...f, first_name: e.target.value }))} placeholder="First name" autoFocus />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Last Name</label>
+                <input className="convert-modal-input" type="text" value={cosignerForm.last_name} onChange={e => setCosignerForm(f => ({ ...f, last_name: e.target.value }))} placeholder="Last name" />
+              </div>
+            </div>
+
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Email *</label>
+            <input className="convert-modal-input" type="email" value={cosignerForm.email} onChange={e => setCosignerForm(f => ({ ...f, email: e.target.value }))} placeholder="cosigner@email.com" />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Phone</label>
+                <input className="convert-modal-input" type="tel" value={cosignerForm.phone} onChange={e => setCosignerForm(f => ({ ...f, phone: e.target.value }))} placeholder="Phone number" />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Relationship</label>
+                <input className="convert-modal-input" type="text" value={cosignerForm.relationship} onChange={e => setCosignerForm(f => ({ ...f, relationship: e.target.value }))} placeholder="e.g. Parent, Relative" list="cosigner-rel-options" />
+                <datalist id="cosigner-rel-options">
+                  <option value="Parent" /><option value="Guardian" /><option value="Relative" /><option value="Spouse / Partner" /><option value="Employer" /><option value="Friend" />
+                </datalist>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button
+                disabled={!cosignerForm.first_name || !cosignerForm.email || savingCosigner}
+                onClick={handleAddCosigner}
+                style={{ flex: 2, background: savingCosigner || !cosignerForm.first_name || !cosignerForm.email ? '#9b9b9b' : '#8C1D40', color: '#fff', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '14px', fontWeight: 700, cursor: savingCosigner ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              >
+                {savingCosigner ? 'Adding…' : 'Add & Send Welcome'}
+              </button>
+              <button onClick={() => setAddingCosigner(false)} style={{ flex: 1, background: '#f5f4f0', border: 'none', borderRadius: '9px', padding: '11px', fontSize: '13px', color: '#6b6b6b', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Cancel</button>
             </div>
           </div>
         </div>

@@ -53,6 +53,10 @@ export type Property = {
   utilities_included: boolean
   rental_mode: 'whole_home' | 'by_room'
   available_from: string | null
+  // archive lifecycle (auto-archived after 30d of inactivity; NULL = live)
+  archived_at: string | null
+  archived_reason: string | null
+  archive_warned_at: string | null
   // joined
   tags: string[]
   images: string[]
@@ -136,6 +140,39 @@ function mapProperty(p: any): Property {
       .sort((a: any, b: any) => a.position - b.position)
       .map((r: any) => r.reason),
     rooms,
+  }
+}
+
+// ── Home / browse card data ──────────────────────────────────────────────────
+// The home & browse pages only render card fields (name, price, beds/baths,
+// distance, tags, images). They never touch rooms / nearby / asu_reasons, so the
+// card query skips those joins entirely — far less data + DB work per request.
+export const PROPERTY_CARD_SELECT = `
+  *,
+  property_tags ( tag ),
+  property_images ( url, position, room_id )
+`
+
+// Tolerant mapper for the lightweight card query: rooms/nearby/asu_reasons that
+// weren't fetched come back as empty arrays so the Property type stays satisfied.
+export function mapPropertyCard(p: any): Property {
+  const generalImages = [...(p.property_images ?? [])]
+    .filter((i: any) => i.room_id == null)
+    .sort((a: any, b: any) => a.position - b.position)
+    .map((i: any) => i.url)
+  // Fall back to any image if there are no general (non-room) images
+  const images = generalImages.length > 0
+    ? generalImages
+    : [...(p.property_images ?? [])].sort((a: any, b: any) => a.position - b.position).map((i: any) => i.url)
+
+  return {
+    ...p,
+    rental_mode: (p.rental_mode ?? 'whole_home') as 'whole_home' | 'by_room',
+    tags: (p.property_tags ?? []).map((t: any) => t.tag),
+    images,
+    nearby: [],
+    asu_reasons: [],
+    rooms: [],
   }
 }
 
@@ -241,13 +278,16 @@ export async function getTotalPropertyCount(): Promise<number> {
   return count ?? 0
 }
 
+// Public listing feed for the home + browse pages. Uses the lightweight card
+// query and excludes archived listings so only fresh inventory shows.
 export async function getProperties(): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')
-    .select(PROPERTY_SELECT)
+    .select(PROPERTY_CARD_SELECT)
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
+    .is('archived_at', null)
     .order('created_at', { ascending: true })
 
   if (error || !data) {
@@ -255,7 +295,7 @@ export async function getProperties(): Promise<Property[]> {
     return []
   }
 
-  return data.map(mapProperty)
+  return data.map(mapPropertyCard)
 }
 
 export async function getPropertiesByOwner(userId: string): Promise<Property[]> {
@@ -288,6 +328,23 @@ export async function updatePropertyCore(
   id: string,
   updates: Partial<Pick<Property, 'name'|'address'|'description'|'price'|'total_rooms'|'available'|'beds'|'baths'|'sqft'|'asu_distance'|'lat'|'lng'|'map_embed_url'|'asu_score'|'is_active'|'is_featured'|'security_deposit'|'utilities_included'|'rental_mode'|'available_from'>>
 ): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('properties')
+    .update(updates)
+    .eq('id', id)
+  return { error }
+}
+
+// Archive / re-activate a listing. Re-activating bumps updated_at so the
+// freshness clock resets and clears any pending archive warning.
+export async function setPropertyArchived(
+  id: string,
+  archived: boolean,
+  reason: string | null = archived ? 'manual' : null,
+): Promise<{ error: any }> {
+  const updates = archived
+    ? { archived_at: new Date().toISOString(), archived_reason: reason }
+    : { archived_at: null, archived_reason: null, archive_warned_at: null, updated_at: new Date().toISOString() }
   const { error } = await supabase
     .from('properties')
     .update(updates)

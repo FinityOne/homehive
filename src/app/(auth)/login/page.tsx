@@ -102,12 +102,19 @@ function LoginForm() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, full_name')
       .eq('id', data.user.id)
       .single()
 
     const role = profile?.role || 'tenant'
     ph?.capture('login_completed', { role })
+
+    // Notify admin of the login (fire-and-forget — never blocks the redirect)
+    void fetch('/api/auth/notify-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: profile?.full_name || '', email, role }),
+    }).catch(() => {})
 
     if (next) { router.push(next); return }
     if (role === 'admin') router.push('/admin')

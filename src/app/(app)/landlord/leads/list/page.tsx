@@ -158,6 +158,7 @@ export default function LeadsListPage() {
   const [closeNotes, setCloseNotes] = useState('')
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set())
   const [freeLeadIds, setFreeLeadIds] = useState<Set<string>>(new Set())
+  const [hasPlan, setHasPlan] = useState(false)
   const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
   const [prescreenMap, setPrescreenMap] = useState<Record<string, Prescreen>>({})
   const [page, setPage] = useState(1)
@@ -169,7 +170,7 @@ export default function LeadsListPage() {
   const [addingLead, setAddingLead] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
-  const isLeadVisible = (lead: Lead) => freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
+  const isLeadVisible = (lead: Lead) => hasPlan || freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
 
   useEffect(() => { document.title = 'Leads — HomeHive' }, [])
 
@@ -180,9 +181,10 @@ export default function LeadsListPage() {
     })
   }, [router])
 
-  const loadLeads = useCallback(async () => {
+  // One-time bootstrap: properties, unlocks, plan. Leads themselves are loaded
+  // lazily per selected property (below) so we never pull every lead up front.
+  const bootstrap = useCallback(async () => {
     if (!userId) return
-    setLoading(true)
     const [{ data: propsData }, { data: unlocks }, { data: plan }] = await Promise.all([
       supabase.from('properties').select('slug, name, address, price').eq('owner_id', userId).order('created_at', { ascending: true }),
       supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
@@ -190,17 +192,29 @@ export default function LeadsListPage() {
     ])
     const props = (propsData || []) as Property[]
     setProperties(props)
-    // Auto-select first property on initial load
-    setPropertyFilter(prev => prev === null && props.length > 0 ? props[0].slug : prev ?? 'all')
-    const slugs = props.map(p => p.slug).filter(Boolean) as string[]
-    if (slugs.length === 0) { setLeads([]); setLoading(false); return }
+    setHasPlan(!!(plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)))
+    setUnlockedIds(new Set((unlocks || []).map((u: { lead_id: string }) => u.lead_id)))
+    // Default to the first property — the most common view. 'All properties' is opt-in.
+    setPropertyFilter(prev => prev ?? (props.length > 0 ? props[0].slug : 'all'))
+    if (props.length === 0) { setLeads([]); setLoading(false) }
+  }, [userId])
+
+  useEffect(() => { bootstrap() }, [bootstrap])
+
+  // Lazy lead loader — fetches only the leads for the active property filter, plus
+  // their tour/prescreen overlays. Switching to another property (or "all") loads
+  // that set on demand instead of everything at once.
+  const loadLeadsFor = useCallback(async (key: string) => {
+    const allSlugs = properties.map(p => p.slug).filter(Boolean) as string[]
+    if (allSlugs.length === 0) return
+    const slugs = key === 'all' ? allSlugs : [key]
+    setLoading(true)
 
     const leadsData = await getLeadsForSlugs(slugs)
     leadsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
     setLeads(leadsData)
     setFreeLeadIds(computeFreeLeadIds(leadsData))
 
-    // Fetch upcoming confirmed tours for all leads
     const leadIds = leadsData.map(l => l.id)
     if (leadIds.length > 0) {
       const today = new Date().toISOString().split('T')[0]
@@ -210,15 +224,10 @@ export default function LeadsListPage() {
         .in('lead_id', leadIds)
         .eq('status', 'confirmed')
         .gte('scheduled_date', today)
-      if (tours) {
-        const tmap: Record<string, string> = {}
-        for (const t of tours) tmap[t.lead_id] = t.scheduled_date
-        setTourMap(tmap)
-      }
-    }
+      const tmap: Record<string, string> = {}
+      for (const t of tours || []) tmap[t.lead_id] = t.scheduled_date
+      setTourMap(tmap)
 
-    // Batch-fetch prescreens for score computation (only leads that completed pre-screen)
-    if (leadsData.length > 0) {
       const qualifiedIds = leadsData
         .filter(l => ['qualified', 'matching', 'cold', 'closed', 'tour_scheduled'].includes(l.status))
         .map(l => l.id)
@@ -227,24 +236,22 @@ export default function LeadsListPage() {
           .from('pre_screens')
           .select('lead_id, occupation, is_student, monthly_budget, move_in_date, lease_length, group_size')
           .in('lead_id', qualifiedIds)
-        if (pscreens) {
-          const map: Record<string, Prescreen> = {}
-          for (const p of pscreens) map[p.lead_id] = p as Prescreen
-          setPrescreenMap(map)
-        }
-      }
-    }
-
-    const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
-    if (hasPlan) {
-      setUnlockedIds(new Set(leadsData.map(l => l.id)))
+        const map: Record<string, Prescreen> = {}
+        for (const p of pscreens || []) map[p.lead_id] = p as Prescreen
+        setPrescreenMap(map)
+      } else setPrescreenMap({})
     } else {
-      setUnlockedIds(new Set((unlocks || []).map((u: { lead_id: string }) => u.lead_id)))
+      setTourMap({})
+      setPrescreenMap({})
     }
     setLoading(false)
-  }, [userId])
+  }, [properties])
 
-  useEffect(() => { loadLeads() }, [loadLeads])
+  // Load (and reload) leads whenever the active property filter changes.
+  useEffect(() => {
+    if (propertyFilter !== null && properties.length > 0) loadLeadsFor(propertyFilter)
+  }, [propertyFilter, properties.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { setPage(1) }, [search, statusFilter, propertyFilter])
 
   const handleStatusChange = async (lead: Lead, newStatus: Lead['status']) => {
@@ -294,7 +301,7 @@ export default function LeadsListPage() {
 
   const handleUnlockSuccess = (unlockType: string) => {
     if (unlockType === 'subscription') {
-      setUnlockedIds(new Set(leads.map(l => l.id)))
+      setHasPlan(true)
     } else if (unlockModalLeadId) {
       setUnlockedIds(prev => new Set([...prev, unlockModalLeadId]))
     }
@@ -320,9 +327,12 @@ export default function LeadsListPage() {
         body: JSON.stringify(addForm),
       })
       if (res.ok) {
+        const targetProp = addForm.property
         setShowAddModal(false)
         setAddForm({ first_name: '', last_name: '', email: '', phone: '', property: '', move_in_date: nextFirstOfMonth() })
-        await loadLeads()
+        // Jump to the new lead's property so it's visible; reload if already active.
+        if (targetProp && targetProp !== propertyFilter) setPropertyFilter(targetProp)
+        else await loadLeadsFor(propertyFilter ?? (properties[0]?.slug ?? 'all'))
         showToast('Lead added + pre-screen email sent!')
       } else showToast('Failed to add lead')
     } catch { showToast('Failed to add lead') }

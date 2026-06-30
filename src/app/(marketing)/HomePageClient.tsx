@@ -1,7 +1,7 @@
 'use client'
 
 import '@/styles/brand-tokens.css'
-import { Suspense, useState, useEffect, useRef } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getProperties, type Property } from '@/lib/properties'
 
@@ -18,18 +18,6 @@ const TYPE_CONFIG = {
 } as const
 
 // ─── QUICK FILTERS ────────────────────────────────────────────────────────────
-const QUICK_FILTERS: { label: string; params: Record<string, string> }[] = [
-  { label: 'Walk to campus', params: { beds: '1' } },
-  { label: 'Furnished',      params: { q: 'furnished' } },
-  { label: 'Solo studio',    params: { beds: '1' } },
-  { label: 'Pet-friendly',   params: { q: 'pet' } },
-  { label: 'Female-only',    params: { q: 'female' } },
-  { label: 'Summer sublet',  params: { q: 'sublease' } },
-  { label: 'Under $700',     params: { price_max: '700' } },
-  { label: 'Pool',           params: { q: 'pool' } },
-  { label: 'In-unit W/D',   params: { q: 'washer' } },
-]
-
 // ─── EDITORIAL PICKS ─────────────────────────────────────────────────────────
 type EditorialTab = 'rent' | 'sublets' | 'roommates'
 
@@ -410,105 +398,60 @@ function SkeletonRow() {
 }
 
 // ─── BUDGET POPOVER ───────────────────────────────────────────────────────────
-function BudgetField({ min, max, onChange }: { min: number; max: number; onChange: (min: number, max: number) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
+// ─── LISTING CARD ───────────────────────────────────────────────────────────
+function ListingCard({ h }: { h: Property }) {
+  const img = h.images?.[0]
+  const dist = typeof h.asu_distance === 'number'
+    ? (h.asu_distance <= 0.4 ? 'Walk to ASU' : `${h.asu_distance} mi to ASU`)
+    : null
+  const typeLabel = h.listing_type === 'sublease' ? 'Sublease' : h.listing_type === 'lease_transfer' ? 'Lease transfer' : null
   return (
-    <div ref={ref} className="sf-field sf-field--budget" onClick={() => setOpen(o => !o)}>
-      <div className="sf-label">BUDGET</div>
-      <div className="sf-value">${min.toLocaleString()} – ${max.toLocaleString()} / mo</div>
-      {open && (
-        <div className="sf-budget-popover" onClick={e => e.stopPropagation()}>
-          <div className="sf-budget-row">
-            <label>Min</label>
-            <input
-              type="number"
-              value={min}
-              min={0}
-              max={max - 100}
-              step={50}
-              onChange={e => onChange(Number(e.target.value), max)}
-              className="sf-budget-input"
-            />
-          </div>
-          <div className="sf-budget-row">
-            <label>Max</label>
-            <input
-              type="number"
-              value={max}
-              min={min + 100}
-              max={5000}
-              step={50}
-              onChange={e => onChange(min, Number(e.target.value))}
-              className="sf-budget-input"
-            />
-          </div>
+    <a href={`/homes/${h.slug}`} className="lc-card">
+      <div className="lc-media">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {img ? <img src={img} alt={h.name} loading="lazy" /> : <div className="lc-media-ph">🏠</div>}
+        {typeLabel && <span className="lc-type">{typeLabel}</span>}
+        {dist && <span className="lc-badge">📍 {dist}</span>}
+      </div>
+      <div className="lc-body">
+        <div className="lc-top">
+          <span className="lc-name">{h.name}</span>
+          {h.asu_score ? <span className="lc-score">★ {h.asu_score.toFixed(1)}</span> : null}
         </div>
-      )}
-    </div>
+        <div className="lc-meta">
+          {[h.beds > 0 ? `${h.beds} bd` : null, h.baths > 0 ? `${h.baths} ba` : null, h.tags?.[0] || null]
+            .filter(Boolean).join(' · ')}
+        </div>
+        <div className="lc-price"><strong>${h.price?.toLocaleString()}</strong> <span>/mo</span></div>
+      </div>
+    </a>
   )
 }
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-function HomePageInner() {
+function HomePageInner({ initialProperties }: { initialProperties?: Property[] }) {
   const searchParams    = useSearchParams()
   const guestName       = searchParams.get('name') || ''
   const isPersonalized  = !!guestName
 
-  const [properties, setProperties]                 = useState<Property[]>([])
-  const [loading, setLoading]                       = useState(true)
+  const hasInitial = !!(initialProperties && initialProperties.length > 0)
+  const [properties, setProperties]                 = useState<Property[]>(initialProperties ?? [])
+  const [loading, setLoading]                       = useState(!hasInitial)
   const [showLandlordBanner, setShowLandlordBanner] = useState(false)
 
-  // Search bar state
-  const today = new Date()
-  const defaultMoveIn = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().split('T')[0]
-  const [moveIn, setMoveIn]                 = useState(defaultMoveIn)
-  const [budgetMin, setBudgetMin]           = useState(600)
-  const [budgetMax, setBudgetMax]           = useState(1400)
-  const [roommates, setRoommates]           = useState(1)
-  const [activeQuickFilter, setActiveQuickFilter] = useState<string | null>(null)
-
   useEffect(() => {
-    getProperties().then(data => { setProperties(data); setLoading(false) })
-    if (!sessionStorage.getItem('hh_landlord_bar_dismissed')) setShowLandlordBanner(true)
-  }, [])
-
-  const featuredHome  = properties.find(p => p.is_featured) || properties[0] || null
-  const rentRow       = properties.filter(p => p.listing_type === 'standard_rental').sort((a, b) => b.asu_score - a.asu_score).slice(0, 8)
-  const subleaseRow   = properties.filter(p => p.listing_type === 'sublease').sort((a, b) => a.price - b.price).slice(0, 8)
-  const transferRow   = properties.filter(p => p.listing_type === 'lease_transfer').sort((a, b) => a.price - b.price).slice(0, 8)
-
-  // Count homes matching current search params
-  const matchCount = properties.filter(p => p.price >= budgetMin && p.price <= budgetMax && p.beds >= roommates).length
-
-  const handleSearch = () => {
-    const params = new URLSearchParams({
-      price_max: String(budgetMax),
-      beds: String(roommates),
-    })
-    window.location.href = `/homes?${params.toString()}`
-  }
-
-  const handleQuickFilter = (f: typeof QUICK_FILTERS[number]) => {
-    if (activeQuickFilter === f.label) {
-      setActiveQuickFilter(null)
-      return
+    // Listings are server-rendered into the initial HTML; only fetch on the
+    // client as a fallback when they weren't provided (e.g. dev/edge cases).
+    if (!hasInitial) {
+      getProperties().then(data => { setProperties(data); setLoading(false) })
     }
-    setActiveQuickFilter(f.label)
-    const params = new URLSearchParams(f.params)
-    window.location.href = `/homes?${params.toString()}`
-  }
+    if (!sessionStorage.getItem('hh_landlord_bar_dismissed')) setShowLandlordBanner(true)
+  }, [hasInitial])
 
-  const moveInDisplay = moveIn
-    ? new Date(moveIn + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : 'Any date'
+  // Listings-first: surface featured, then closest/best-scored homes immediately.
+  const gridHomes = [...properties]
+    .sort((a, b) => (b.is_featured ? 1 : 0) - (a.is_featured ? 1 : 0) || (b.asu_score || 0) - (a.asu_score || 0))
+    .slice(0, 12)
 
   return (
     <>
@@ -613,6 +556,42 @@ function HomePageInner() {
 
         /* ── DIVIDER ── */
         .section-divider { border: none; border-top: 1px solid var(--hh-border-faint); margin: 40px 0; }
+
+        /* ── LEAD BAND (compact, listings-first) ── */
+        .lead-band { padding: 38px 0 24px; }
+        .lead-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--hh-text-muted); display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+        .lead-eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: livePulse 2.4s ease-in-out infinite; }
+        .lead-h1 { font-family: var(--hh-font-display); font-size: clamp(32px, 4.8vw, 56px); font-weight: 350; line-height: 1.04; letter-spacing: -0.03em; color: var(--hh-text); margin: 0 0 14px; }
+        .lead-h1 em { font-style: italic; color: var(--hh-primary); }
+        .lead-sub { font-size: 15px; line-height: 1.6; color: var(--hh-text-muted); max-width: 560px; margin: 0 0 22px; }
+        .lead-chips { display: flex; flex-wrap: wrap; gap: 9px; }
+        .lead-chip { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--hh-text-2); background: var(--hh-bg-alt); border: 1px solid var(--hh-border); border-radius: 100px; padding: 8px 15px; text-decoration: none; transition: color 0.15s, border-color 0.15s, transform 0.15s, background 0.15s; white-space: nowrap; }
+        .lead-chip:hover { border-color: var(--hh-primary); color: var(--hh-primary); transform: translateY(-1px); }
+        .lead-chip--all { background: var(--hh-ink-900); color: #fff; border-color: var(--hh-ink-900); font-weight: 600; }
+        .lead-chip--all:hover { background: var(--hh-hive-800); color: #fff; border-color: var(--hh-hive-800); }
+
+        /* ── LISTINGS GRID ── */
+        .lc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px 20px; }
+        .lc-card { text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: transform 0.18s; }
+        .lc-card:hover { transform: translateY(-3px); }
+        .lc-media { position: relative; aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: var(--hh-bg-alt); box-shadow: 0 1px 3px rgba(34,40,16,0.06); }
+        .lc-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
+        .lc-card:hover .lc-media img { transform: scale(1.045); }
+        .lc-media-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 40px; background: linear-gradient(135deg, #ede9e0 0%, #d9d2c5 100%); }
+        .lc-badge { position: absolute; left: 12px; bottom: 12px; background: rgba(22,24,16,0.82); backdrop-filter: blur(8px); color: #fff; font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 100px; }
+        .lc-type { position: absolute; top: 12px; left: 12px; background: var(--hh-accent); color: #1a1a1a; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 9px; border-radius: 6px; }
+        .lc-body { padding: 12px 4px 4px; }
+        .lc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+        .lc-name { font-size: 15px; font-weight: 600; color: var(--hh-text); line-height: 1.3; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lc-score { flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--hh-text); }
+        .lc-meta { font-size: 13px; color: var(--hh-text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lc-price { font-size: 14px; color: var(--hh-text); margin-top: 8px; }
+        .lc-price strong { font-size: 17px; font-weight: 700; }
+        .lc-price span { color: var(--hh-text-muted); font-size: 13px; }
+        @media (max-width: 600px) {
+          .lc-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 12px; }
+          .lead-band { padding: 26px 0 18px; }
+        }
 
         /* ── EDITORIAL PICKS ── */
         .ep-section { margin-bottom: 64px; }
@@ -817,6 +796,7 @@ function HomePageInner() {
           .rm-card--featured { transform: translateY(0); }
         }
         @media (max-width: 640px) {
+          .wrap { padding: 0 16px; }
           .hero-h1 { font-size: 42px; }
           .hero-stats { gap: 20px; }
           .sf-bar { grid-template-columns: 1fr; }
@@ -859,155 +839,28 @@ function HomePageInner() {
 
       <div className="wrap">
 
-        {/* ── HERO ── */}
-        <div className="hero">
-
-          {/* Left */}
-          <div className="hero-left">
-            <div className="hero-eyebrow">
-              ASU Tempe
-              <span className="hero-eyebrow-dot" />
-              {loading ? '…' : `${properties.length} homes available`}
-            </div>
-
-            <h1 className="hero-h1">
-              Find a home,
-              <em className="hero-h1-italic">not a horror story.</em>
-            </h1>
-
-            <p className="hero-desc">
-              Every host on HomeHive is ID-verified. Every photo is taken in the last 60 days.
-              Built for students — not for landlords with a spreadsheet.
-            </p>
-
-            <div className="hero-stats">
-              <div>
-                <div className="hero-stat-num">{loading ? '—' : properties.length.toLocaleString()}</div>
-                <div className="hero-stat-label">verified homes</div>
-              </div>
-              <div>
-                <div className="hero-stat-num">1</div>
-                <div className="hero-stat-label">campus covered</div>
-              </div>
-              <div>
-                <div className="hero-stat-num">4.9</div>
-                <div className="hero-stat-label">avg. student rating</div>
-              </div>
-            </div>
+        {/* ── LEAD BAND — tight, direct, then straight into listings ── */}
+        <div className="lead-band">
+          <div className="lead-eyebrow">
+            <span className="lead-eyebrow-dot" />
+            ASU Tempe · {loading ? '…' : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live now`}
           </div>
-
-          {/* Right — featured property card */}
-          <div className="hero-right">
-            <div className="hero-img-card">
-              {featuredHome?.images?.[0] ? (
-                <img src={featuredHome.images[0]} alt={featuredHome.name} />
-              ) : (
-                <div className="hero-img-placeholder">
-                  <span className="hero-img-placeholder-label">Editorial hero image · interior, late afternoon, warm tones</span>
-                </div>
-              )}
-
-              {/* Dark badge top-right */}
-              <div className="hero-badge-card">
-                <div className="hero-badge-eyebrow">
-                  New · Tempe
-                </div>
-                <div className="hero-badge-text">
-                  {loading ? '…' : `${properties.length > 0 ? properties.filter(p => p.asu_distance !== undefined && p.asu_distance <= 0.75).length || properties.length : 0} homes within a 10-min walk of campus.`}
-                </div>
-              </div>
-            </div>
-
-            {/* Review card — floating below */}
-            <div className="hero-review-card">
-              <div className="hero-review-photo">🎓</div>
-              <div className="hero-review-body">
-                <div className="hero-review-header">
-                  <span className="hero-verified-pill">
-                    <span className="hero-verified-dot" />
-                    Verified host
-                  </span>
-                  <span className="hero-review-updated">Updated 3d ago</span>
-                </div>
-                <div className="hero-review-quote">&ldquo;Hannah&rsquo;s place was exactly as listed.&rdquo;</div>
-                <div className="hero-review-attr">— Maya R., ASU &rsquo;27</div>
-              </div>
-            </div>
+          <h1 className="lead-h1">
+            Your next place near ASU —<br />
+            <em>found in minutes, not weeks.</em>
+          </h1>
+          <p className="lead-sub">ID-verified hosts. Real photos. No broker fees. Tap a home to apply in two minutes.</p>
+          <div className="lead-chips">
+            <a href="/homes" className="lead-chip lead-chip--all">Browse all homes →</a>
+            <a href="/homes?price_max=700" className="lead-chip">Under $700</a>
+            <a href="/homes?q=furnished" className="lead-chip">Furnished</a>
+            <a href="/homes?q=sublease" className="lead-chip">Subleases</a>
+            <a href="/homes?q=female" className="lead-chip">Female-only</a>
+            <a href="/roommates" className="lead-chip">Find roommates</a>
           </div>
         </div>
 
-        {/* ── SEARCH BAR ── */}
-        <div className="search-section">
-          <div className="sf-bar">
-
-            {/* Campus */}
-            <div className="sf-field sf-field--campus">
-              <div className="sf-label">Campus</div>
-              <div className="sf-value">ASU Tempe, AZ</div>
-            </div>
-
-            {/* Move-In */}
-            <div className="sf-field sf-field--movein">
-              <div className="sf-label">Move-In</div>
-              <div className="sf-value">{moveInDisplay}</div>
-              <input
-                type="date"
-                className="sf-movein-input"
-                value={moveIn}
-                onChange={e => setMoveIn(e.target.value)}
-                aria-label="Move-in date"
-              />
-            </div>
-
-            {/* Budget */}
-            <BudgetField
-              min={budgetMin}
-              max={budgetMax}
-              onChange={(mn, mx) => { setBudgetMin(mn); setBudgetMax(mx) }}
-            />
-
-            {/* Roommates */}
-            <div className="sf-field sf-field--roommates">
-              <div className="sf-label">Roommates</div>
-              <div className="sf-roommates-ctrl">
-                <button
-                  className="sf-rm-btn"
-                  onClick={e => { e.stopPropagation(); setRoommates(r => Math.max(1, r - 1)) }}
-                  aria-label="Fewer roommates"
-                >−</button>
-                <span className="sf-rm-val">{roommates}</span>
-                <button
-                  className="sf-rm-btn"
-                  onClick={e => { e.stopPropagation(); setRoommates(r => Math.min(6, r + 1)) }}
-                  aria-label="More roommates"
-                >+</button>
-                <span className="sf-value-muted" style={{ fontSize: 12 }}>looking</span>
-              </div>
-            </div>
-
-            {/* Search button */}
-            <button className="sf-search-btn" onClick={handleSearch}>
-              Search {!loading && matchCount > 0 ? `${matchCount} ` : ''}homes
-            </button>
-          </div>
-
-          {/* Quick filter chips */}
-          <div className="qf-row">
-            {QUICK_FILTERS.map(f => (
-              <button
-                key={f.label}
-                className={`qf-chip${activeQuickFilter === f.label ? ' active' : ''}`}
-                onClick={() => handleQuickFilter(f)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <hr className="section-divider" />
-
-        {/* ── EDITORIAL PICKS ── */}
+        {/* ── LISTINGS GRID — the whole point of the page ── */}
         {loading ? (
           <SkeletonRow />
         ) : properties.length === 0 ? (
@@ -1028,7 +881,14 @@ function HomePageInner() {
           </>
         ) : (
           <>
-            <EditorialPicks rentals={rentRow} sublets={[...subleaseRow, ...transferRow]} />
+            <div className="lc-grid">
+              {gridHomes.map(h => <ListingCard key={h.slug} h={h} />)}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 28 }}>
+              <a href="/homes" className="lead-chip lead-chip--all">See all {properties.length} homes →</a>
+            </div>
+
+            <hr className="section-divider" />
 
             <TrustSection />
 
@@ -1054,10 +914,10 @@ function HomePageInner() {
   )
 }
 
-export default function HomePageClient() {
+export default function HomePageClient({ initialProperties }: { initialProperties?: Property[] }) {
   return (
     <Suspense fallback={null}>
-      <HomePageInner />
+      <HomePageInner initialProperties={initialProperties} />
     </Suspense>
   )
 }
