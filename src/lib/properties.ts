@@ -298,6 +298,29 @@ export async function getProperties(): Promise<Property[]> {
   return data.map(mapPropertyCard)
 }
 
+// Fetch a specific set of live listings by slug (used by the Shortlist page).
+// Preserves the caller's slug order so a shared shortlist keeps its ordering.
+export async function getPropertiesBySlugs(slugs: string[]): Promise<Property[]> {
+  if (!slugs.length) return []
+  const { data, error } = await supabase
+    .from('properties')
+    .select(PROPERTY_CARD_SELECT)
+    .in('slug', slugs)
+    .eq('is_active', true)
+    .eq('admin_status', 'active')
+    .eq('is_test', false)
+    .is('archived_at', null)
+
+  if (error || !data) {
+    console.error('Error fetching properties by slug:', error)
+    return []
+  }
+
+  const mapped = data.map(mapPropertyCard)
+  const order = new Map(slugs.map((s, i) => [s, i]))
+  return mapped.sort((a, b) => (order.get(a.slug) ?? 0) - (order.get(b.slug) ?? 0))
+}
+
 export async function getPropertiesByOwner(userId: string): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')

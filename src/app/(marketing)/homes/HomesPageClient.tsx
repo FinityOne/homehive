@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getProperties, Property } from '@/lib/properties'
 import { usePostHog } from 'posthog-js/react'
+import SaveButton from '@/components/SaveButton'
 
 // ─── FILTER STATE ────────────────────────────────────────────────────────────
 type Filters = {
@@ -243,6 +244,9 @@ function HomeCard({ home, onHover, featured = false }: { home: Property; onHover
         }
         {/* Gradient overlay for featured */}
         {featured && <div className="hc2-grad" />}
+
+        {/* Save to shortlist */}
+        <SaveButton slug={home.slug} />
 
         {/* Type badge */}
         <div className="hc2-type-badge" style={{ background: tc.bg, color: tc.color, border: `1px solid ${tc.border}` }}>

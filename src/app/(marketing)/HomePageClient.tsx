@@ -4,6 +4,7 @@ import '@/styles/brand-tokens.css'
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getProperties, type Property } from '@/lib/properties'
+import SaveButton from '@/components/SaveButton'
 
 function fmtDate(d: string | null | undefined) {
   if (!d) return null
@@ -410,6 +411,7 @@ function ListingCard({ h }: { h: Property }) {
       <div className="lc-media">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {img ? <img src={img} alt={h.name} loading="lazy" /> : <div className="lc-media-ph">🏠</div>}
+        <SaveButton slug={h.slug} />
         {typeLabel && <span className="lc-type">{typeLabel}</span>}
         {dist && <span className="lc-badge">📍 {dist}</span>}
       </div>

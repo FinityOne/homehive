@@ -3,6 +3,7 @@
 import '@/styles/brand-tokens.css'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
+import { getShortlist, onShortlistChange } from '@/lib/shortlist'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,6 +36,13 @@ export default function Nav() {
   const [mobileOpen,   setMobileOpen]   = useState(false)
   const [profileOpen,  setProfileOpen]  = useState(false)
   const [search,       setSearch]       = useState('')
+  const [savedCount,   setSavedCount]   = useState(0)
+
+  useEffect(() => {
+    const sync = () => setSavedCount(getShortlist().length)
+    sync()
+    return onShortlistChange(sync)
+  }, [])
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -152,6 +160,8 @@ export default function Nav() {
           line-height: 1;
         }
         .nav-link:hover { color: var(--hh-text); background: var(--hh-bg-alt); }
+        .nav-saved { display: inline-flex; align-items: center; gap: 6px; color: var(--hh-primary); }
+        .nav-saved-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 100px; background: var(--hh-primary); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
 
         /* ─── NAVBAR SEARCH ──────────────────────────────────────── */
         .nav-search {
@@ -612,6 +622,10 @@ export default function Nav() {
               {live && <span className="nav-live-dot" title="New listings" />}
             </a>
           ))}
+          <a href="/saved" className="nav-link nav-saved">
+            ♥ Shortlist
+            {savedCount > 0 && <span className="nav-saved-badge">{savedCount}</span>}
+          </a>
           <div className="nav-sep" />
           {HOST_LINKS.map(({ href, label }) => (
             <a key={href} href={href} className="nav-link">{label}</a>
@@ -725,6 +739,13 @@ export default function Nav() {
               <span className="mob-link-chevron">›</span>
             </a>
           ))}
+          <a href="/saved" className="mob-link" onClick={() => setMobileOpen(false)}>
+            <span className="mob-link-inner">
+              ♥ Shortlist
+              {savedCount > 0 && <span className="nav-saved-badge">{savedCount}</span>}
+            </span>
+            <span className="mob-link-chevron">›</span>
+          </a>
 
           <div className="mob-link-label" style={{ marginTop: 8 }}>Hosts & Info</div>
           {HOST_LINKS.map(({ href, label }) => (
