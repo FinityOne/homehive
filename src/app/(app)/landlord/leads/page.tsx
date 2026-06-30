@@ -97,6 +97,256 @@ function computeFreeLeadIds(leads: Lead[]): Set<string> {
   return new Set(Object.values(oldestBySlug).map(l => l.id))
 }
 
+// ─── Leads-over-time chart (dependency-free SVG; lowest-friction, no bundle bloat) ──
+function LeadsTrendChart({ leads }: { leads: Lead[] }) {
+  const [range, setRange] = useState<30 | 90>(30)
+
+  const buckets = (() => {
+    const out: { label: string; full: string; count: number }[] = []
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
+    const countIn = (from: Date, to: Date) =>
+      leads.filter(l => {
+        if (!l.created_at) return false
+        const t = new Date(l.created_at).getTime()
+        return t >= from.getTime() && t < to.getTime()
+      }).length
+
+    if (range === 30) {
+      for (let i = 29; i >= 0; i--) {
+        const day = new Date(startOfToday); day.setDate(day.getDate() - i)
+        const next = new Date(day); next.setDate(next.getDate() + 1)
+        out.push({
+          label: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          full: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          count: countIn(day, next),
+        })
+      }
+    } else {
+      for (let i = 12; i >= 0; i--) {
+        const wkStart = new Date(startOfToday); wkStart.setDate(wkStart.getDate() - i * 7 - 6)
+        const wkEnd = new Date(startOfToday); wkEnd.setDate(wkEnd.getDate() - i * 7 + 1)
+        out.push({
+          label: wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          full: `Week of ${wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          count: countIn(wkStart, wkEnd),
+        })
+      }
+    }
+    return out
+  })()
+
+  const n = buckets.length
+  const totalInRange = buckets.reduce((s, b) => s + b.count, 0)
+  const maxCount = Math.max(1, ...buckets.map(b => b.count))
+  const niceMax = maxCount <= 4 ? maxCount : Math.ceil(maxCount / 5) * 5
+
+  const W = 720, H = 200, padL = 26, padR = 12, padT = 14, padB = 24
+  const innerW = W - padL - padR, innerH = H - padT - padB
+  const x = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW)
+  const y = (v: number) => padT + innerH - (v / niceMax) * innerH
+
+  const linePath = buckets.map((b, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(b.count).toFixed(1)}`).join(' ')
+  const areaPath = `${linePath} L ${x(n - 1).toFixed(1)} ${y(0).toFixed(1)} L ${x(0).toFixed(1)} ${y(0).toFixed(1)} Z`
+  const gridVals = [0, niceMax / 2, niceMax]
+  const labelEvery = range === 30 ? 5 : 2
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Leads over time</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
+            <strong style={{ color: '#0f172a', fontSize: 15 }}>{totalInRange}</strong> new lead{totalInRange !== 1 ? 's' : ''} in the last {range} days
+          </div>
+        </div>
+        <div style={{ display: 'inline-flex', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+          {([30, 90] as const).map(r => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              style={{
+                padding: '6px 12px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                background: range === r ? '#8C1D40' : '#fff', color: range === r ? '#fff' : '#64748b',
+              }}
+            >
+              {r}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        <defs>
+          <linearGradient id="leadAreaFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8C1D40" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#8C1D40" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {gridVals.map((v, i) => (
+          <g key={i}>
+            <line x1={padL} y1={y(v)} x2={W - padR} y2={y(v)} stroke="#f1f5f9" strokeWidth="1" />
+            <text x={padL - 6} y={y(v) + 3} textAnchor="end" fontSize="9" fill="#cbd5e1">{Math.round(v)}</text>
+          </g>
+        ))}
+        <path d={areaPath} fill="url(#leadAreaFill)" />
+        <path d={linePath} fill="none" stroke="#8C1D40" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {buckets.map((b, i) => (
+          <g key={i}>
+            <circle cx={x(i)} cy={y(b.count)} r={b.count > 0 ? 2.5 : 0} fill="#8C1D40" />
+            <rect x={x(i) - innerW / n / 2} y={padT} width={innerW / n} height={innerH} fill="transparent">
+              <title>{`${b.full}: ${b.count} lead${b.count !== 1 ? 's' : ''}`}</title>
+            </rect>
+            {i % labelEvery === 0 && (
+              <text x={x(i)} y={H - 8} textAnchor="middle" fontSize="9" fill="#94a3b8">{b.label}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+// ─── Conversion funnel (HTML bars — clear drop-off across stages) ───────────────
+function ConversionFunnelChart({ leads }: { leads: Lead[] }) {
+  const maxStage = (l: Lead): number => {
+    if (l.status === 'closed') return l.closed_reason === 'leased' ? 4 : 1
+    switch (l.status) {
+      case 'new': return 0
+      case 'contacted': case 'follow_up': case 'cold': return 1
+      case 'engaged': case 'matching': return 2
+      case 'qualified': case 'tour_scheduled': return 3
+      default: return 0
+    }
+  }
+  const stages = [
+    { label: 'All leads', color: '#3b82f6' },
+    { label: 'Contacted', color: '#f97316' },
+    { label: 'Engaged',   color: '#eab308' },
+    { label: 'Qualified', color: '#10b981' },
+    { label: 'Leased',    color: '#8b5cf6' },
+  ]
+  const total = leads.length
+  const counts = stages.map((_, i) => leads.filter(l => maxStage(l) >= i).length)
+  const top = Math.max(1, counts[0])
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 14 }}>Conversion funnel</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {stages.map((s, i) => {
+          const c = counts[i]
+          const pctOfTotal = total > 0 ? Math.round((c / total) * 100) : 0
+          return (
+            <div key={s.label}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                <span style={{ color: '#475569', fontWeight: 600 }}>{s.label}</span>
+                <span style={{ color: '#94a3b8' }}>{c} · {pctOfTotal}%</span>
+              </div>
+              <div style={{ height: 14, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden' }}>
+                <div style={{ width: `${(c / top) * 100}%`, height: '100%', background: s.color, borderRadius: 5 }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Lead status mix (SVG donut) ────────────────────────────────────────────────
+function StatusDonutChart({ leads }: { leads: Lead[] }) {
+  const agg: Record<string, { label: string; color: string; count: number }> = {}
+  STATUS_ORDER.forEach(s => {
+    const c = leads.filter(l => l.status === s).length
+    if (!c) return
+    const { label, color } = STATUS_META[s]
+    if (agg[label]) agg[label].count += c
+    else agg[label] = { label, color, count: c }
+  })
+  const counts = Object.values(agg)
+  const total = counts.reduce((a, b) => a + b.count, 0)
+  const r = 52, sw = 22, C = 2 * Math.PI * r
+  let acc = 0
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 14 }}>Lead status mix</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+        <svg viewBox="0 0 140 140" style={{ width: 124, height: 124, flexShrink: 0 }}>
+          <g transform="rotate(-90 70 70)">
+            {total === 0 ? (
+              <circle cx="70" cy="70" r={r} fill="none" stroke="#f1f5f9" strokeWidth={sw} />
+            ) : counts.map((x, i) => {
+              const dash = (x.count / total) * C
+              const seg = (
+                <circle key={i} cx="70" cy="70" r={r} fill="none" stroke={x.color} strokeWidth={sw}
+                  strokeDasharray={`${dash.toFixed(2)} ${(C - dash).toFixed(2)}`} strokeDashoffset={(-acc).toFixed(2)} />
+              )
+              acc += dash
+              return seg
+            })}
+          </g>
+          <text x="70" y="67" textAnchor="middle" fontSize="26" fontWeight="800" fill="#0f172a">{total}</text>
+          <text x="70" y="85" textAnchor="middle" fontSize="10" fill="#94a3b8">leads</text>
+        </svg>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 110 }}>
+          {counts.length === 0 ? <span style={{ fontSize: 12, color: '#94a3b8' }}>No leads</span> :
+            counts.map((x, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: x.color, flexShrink: 0 }} />
+                <span style={{ color: '#475569', flex: 1 }}>{x.label}</span>
+                <span style={{ color: '#0f172a', fontWeight: 700 }}>{x.count}</span>
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Leads by property (HTML bars; click a bar to toggle that property) ─────────
+function LeadsByPropertyChart({ analytics, selected, onSelect }: {
+  analytics: { slug: string; name: string; totalLeads: number; activeLeads: number; byStatus: Record<string, number> }[]
+  selected: string
+  onSelect: (slug: string) => void
+}) {
+  const rows = [...analytics].sort((a, b) => b.totalLeads - a.totalLeads)
+  const max = Math.max(1, ...rows.map(r => r.totalLeads))
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Leads by property</div>
+        <div style={{ fontSize: 10, color: '#cbd5e1' }}>click to filter</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {rows.map(r => {
+          const isSel = selected === r.slug
+          const closed = r.byStatus.closed || 0
+          return (
+            <div key={r.slug} onClick={() => onSelect(isSel ? 'all' : r.slug)}
+              style={{ cursor: 'pointer', opacity: selected === 'all' || isSel ? 1 : 0.45 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                <span style={{ color: isSel ? '#8C1D40' : '#475569', fontWeight: isSel ? 700 : 600 }}>{r.name}</span>
+                <span style={{ color: '#94a3b8' }}>{r.totalLeads} total · {r.activeLeads} active</span>
+              </div>
+              <div style={{ display: 'flex', height: 14, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden' }}>
+                <div style={{ width: `${(r.activeLeads / max) * 100}%`, background: '#8C1D40' }} title={`${r.activeLeads} active`} />
+                <div style={{ width: `${(closed / max) * 100}%`, background: '#cbd5e1' }} title={`${closed} closed`} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: '#94a3b8' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: '#8C1D40' }} /> Active</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: '#cbd5e1' }} /> Closed</span>
+      </div>
+    </div>
+  )
+}
+
 export default function LandlordLeadsPage() {
   const router = useRouter()
   const ph = usePostHog()
@@ -108,6 +358,7 @@ export default function LandlordLeadsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<Lead['status'] | 'all'>('all')
   const [propertyFilter, setPropertyFilter] = useState('all')
+  const [overviewProperty, setOverviewProperty] = useState('all')
   const [toast, setToast] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'insights' | 'leads'>('overview')
   const [emailPreview, setEmailPreview] = useState<{ lead: Lead; subject: string; html: string } | null>(null)
@@ -521,14 +772,15 @@ export default function LandlordLeadsPage() {
     .sort((a, b) => b.score - a.score)
     .slice(0, 6)
 
-  // ─── Overview KPIs ───────────────────────────────────────────────────────────
-  const activeLeads = leads.filter(l => l.status !== 'closed')
-  const newThisWeek = leads.filter(l => staleDays(l) <= 7).length
-  const qualifiedPlus = leads.filter(l => ['qualified', 'tour_scheduled'].includes(l.status)).length
-  const leasedCount = leads.filter(l => l.status === 'closed' && l.closed_reason === 'leased').length
-  const respondedCount = leads.filter(l => ['engaged', 'qualified', 'tour_scheduled'].includes(l.status)).length
-  const responseRate = leads.length > 0 ? Math.round((respondedCount / leads.length) * 100) : 0
-  const coldCount = leads.filter(l => l.status === 'cold').length
+  // ─── Overview KPIs (scoped to the property selected in the top toggle) ─────────
+  const overviewLeads = overviewProperty === 'all' ? leads : leads.filter(l => l.property === overviewProperty)
+  const activeLeads = overviewLeads.filter(l => l.status !== 'closed')
+  const newThisWeek = overviewLeads.filter(l => staleDays(l) <= 7).length
+  const qualifiedPlus = overviewLeads.filter(l => ['qualified', 'tour_scheduled'].includes(l.status)).length
+  const leasedCount = overviewLeads.filter(l => l.status === 'closed' && l.closed_reason === 'leased').length
+  const respondedCount = overviewLeads.filter(l => ['engaged', 'qualified', 'tour_scheduled'].includes(l.status)).length
+  const responseRate = overviewLeads.length > 0 ? Math.round((respondedCount / overviewLeads.length) * 100) : 0
+  const coldCount = overviewLeads.filter(l => l.status === 'cold').length
 
   // ─── Suggestion engine ──────────────────────────────────────────────────────
   type Suggestion = {
@@ -998,6 +1250,30 @@ export default function LandlordLeadsPage() {
               </div>
             ) : (
               <>
+                {/* ── Property toggle ── */}
+                {properties.length > 1 && (
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 18 }}>
+                    {[{ slug: 'all', name: 'All properties' }, ...properties].map(p => {
+                      const active = overviewProperty === p.slug
+                      return (
+                        <button
+                          key={p.slug}
+                          onClick={() => setOverviewProperty(p.slug)}
+                          style={{
+                            whiteSpace: 'nowrap', flexShrink: 0, padding: '7px 14px', borderRadius: 100,
+                            fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                            border: `1px solid ${active ? '#8C1D40' : '#e2e8f0'}`,
+                            background: active ? '#8C1D40' : '#fff',
+                            color: active ? '#fff' : '#475569',
+                          }}
+                        >
+                          {p.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
                 {/* ── Urgent action banner ── */}
                 {needsActionCount > 0 && (
                   <a
@@ -1062,63 +1338,23 @@ export default function LandlordLeadsPage() {
                   ))}
                 </div>
 
-                {/* ── Pipeline funnel ── */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', marginBottom: 24 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 14 }}>Pipeline Breakdown</div>
-                  <div style={{ display: 'flex', gap: 3, height: 10, borderRadius: 6, overflow: 'hidden', marginBottom: 14 }}>
-                    {STATUS_ORDER.map(s => {
-                      const count = leads.filter(l => l.status === s).length
-                      const pct = leads.length > 0 ? (count / leads.length) * 100 : 0
-                      const colors: Record<string, string> = {
-                        new: '#3b82f6', contacted: '#f97316', follow_up: '#c2410c',
-                        engaged: '#eab308', cold: '#94a3b8', qualified: '#10b981',
-                        tour_scheduled: '#8b5cf6', closed: '#e2e8f0',
-                      }
-                      return pct > 0 ? (
-                        <div key={s} style={{ flex: pct, background: colors[s], minWidth: 4 }} title={`${STATUS_META[s].label}: ${count}`} />
-                      ) : null
-                    })}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {STATUS_ORDER.map(s => {
-                      const count = leads.filter(l => l.status === s).length
-                      if (count === 0) return null
-                      const colors: Record<string, string> = {
-                        new: '#3b82f6', contacted: '#f97316', follow_up: '#c2410c',
-                        engaged: '#eab308', cold: '#94a3b8', qualified: '#10b981',
-                        tour_scheduled: '#8b5cf6', closed: '#6b7280',
-                      }
-                      const descriptions: Record<string, string> = {
-                        new: 'need first contact',
-                        contacted: 'waiting on response',
-                        follow_up: 'in follow-up queue',
-                        engaged: 'pre-screen not done',
-                        cold: 'no response — reactivate?',
-                        qualified: 'ready for tour',
-                        tour_scheduled: 'tour booked',
-                        closed: 'done',
-                      }
-                      return (
-                        <div
-                          key={s}
-                          onClick={() => { window.location.href = '/landlord/leads/list' }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
-                        >
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors[s], flexShrink: 0 }} />
-                          <span style={{ fontSize: 12, fontWeight: 700, color: colors[s] }}>{count}</span>
-                          <span style={{ fontSize: 12, color: '#64748b' }}>{STATUS_META[s].label}</span>
-                          <span style={{ fontSize: 11, color: '#94a3b8' }}>— {descriptions[s]}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
+                {/* ── Leads over time ── */}
+                <LeadsTrendChart leads={overviewLeads} />
+
+                {/* ── Funnel + status mix ── */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 16 }}>
+                  <ConversionFunnelChart leads={overviewLeads} />
+                  <StatusDonutChart leads={overviewLeads} />
                 </div>
+
+                {/* ── Leads by property ── */}
+                <LeadsByPropertyChart analytics={propertyAnalytics} selected={overviewProperty} onSelect={setOverviewProperty} />
 
                 {/* ── Per-property deep dive ── */}
                 {propertyAnalytics.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Properties</div>
-                    {propertyAnalytics.map(pa => {
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.7px' }}>{overviewProperty === 'all' ? 'Properties' : 'Property detail'}</div>
+                    {propertyAnalytics.filter(pa => overviewProperty === 'all' || pa.slug === overviewProperty).map(pa => {
                       const funnelColors: Record<string, string> = {
                         new: '#3b82f6', contacted: '#f97316', follow_up: '#c2410c',
                         engaged: '#eab308', cold: '#94a3b8', qualified: '#10b981',
