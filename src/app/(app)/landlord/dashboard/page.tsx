@@ -398,6 +398,7 @@ export default function LandlordDashboard() {
         .stat-num   { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 300; color: #0f172a; letter-spacing: -1px; line-height: 1; }
         .stat-sub   { font-size: 11px; color: #94a3b8; margin-top: 5px; }
 
+        .db-section-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; color: #0f172a; letter-spacing: -0.3px; margin: 4px 0 14px; }
         .db-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
         .db-row-full { margin-bottom: 24px; }
 
@@ -544,20 +545,17 @@ export default function LandlordDashboard() {
         </div>
 
         {/* ── CHARTS ── */}
-        {(leads.length > 0 || totalRooms > 0 || allSPs.length > 0) && (
-          <>
-            <div className="db-row-full">
-              <LeadsTrendPanel dates={leads.map(l => l.created_at)} />
-            </div>
-            <div className="db-row">
-              <LeadStatusDonut leads={leads} />
-              <OccupancyByProperty properties={properties} />
-            </div>
-            <div className="db-row-full">
-              <CollectionsBars payments={allSPs} />
-            </div>
-          </>
-        )}
+        <div className="db-section-title">📊 Portfolio analytics</div>
+        <div className="db-row-full">
+          <LeadsTrendPanel dates={leads.map(l => l.created_at)} />
+        </div>
+        <div className="db-row">
+          <LeadStatusDonut leads={leads} />
+          <OccupancyByProperty properties={properties} />
+        </div>
+        <div className="db-row-full">
+          <CollectionsBars payments={allSPs} />
+        </div>
 
         {/* ── ROW: Payments + Leases ── */}
         <div className="db-row">
