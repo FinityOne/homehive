@@ -272,6 +272,7 @@ export default function LandlordDashboard() {
   const [leads, setLeads]           = useState<Lead[]>([])
   const [leases, setLeases]         = useState<Lease[]>([])
   const [plans, setPlans]           = useState<PaymentPlan[]>([])
+  const [dashProperty, setDashProperty] = useState('all')
   const [loading, setLoading]       = useState(true)
 
   useEffect(() => { document.title = 'Dashboard — Landlord | HomeHive' }, [])
@@ -329,6 +330,12 @@ export default function LandlordDashboard() {
   const thisMonth = { y: today.getFullYear(), m: today.getMonth() }
 
   const allSPs = plans.flatMap(p => p.scheduled_payments || [])
+
+  // ─── Property-scoped views for the analytics section (top stats stay portfolio-wide) ──
+  const scopedLeads      = dashProperty === 'all' ? leads : leads.filter(l => l.property === dashProperty)
+  const scopedPlans      = dashProperty === 'all' ? plans : plans.filter(p => p.property?.slug === dashProperty)
+  const scopedSPs        = scopedPlans.flatMap(p => p.scheduled_payments || [])
+  const scopedProperties = dashProperty === 'all' ? properties : properties.filter(p => p.slug === dashProperty)
 
   const thisMonthSPs = allSPs.filter(sp => {
     const d = new Date(sp.due_date + 'T00:00:00')
@@ -399,6 +406,11 @@ export default function LandlordDashboard() {
         .stat-sub   { font-size: 11px; color: #94a3b8; margin-top: 5px; }
 
         .db-section-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; color: #0f172a; letter-spacing: -0.3px; margin: 4px 0 14px; }
+        .db-analytics-hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
+        .db-prop-toggle { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; max-width: 100%; }
+        .db-prop-pill { white-space: nowrap; flex-shrink: 0; padding: 6px 13px; border-radius: 100px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; border: 1px solid #e2e8f0; background: #fff; color: #475569; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+        .db-prop-pill:hover { border-color: #8C1D40; color: #8C1D40; }
+        .db-prop-pill.is-active { background: #8C1D40; border-color: #8C1D40; color: #fff; }
         .db-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
         .db-row-full { margin-bottom: 24px; }
 
@@ -545,16 +557,36 @@ export default function LandlordDashboard() {
         </div>
 
         {/* ── CHARTS ── */}
-        <div className="db-section-title">📊 Portfolio analytics</div>
+        <div className="db-analytics-hd">
+          <div className="db-section-title" style={{ margin: 0 }}>
+            📊 {dashProperty === 'all' ? 'Portfolio analytics' : 'Property analytics'}
+          </div>
+          {properties.length > 1 && (
+            <div className="db-prop-toggle">
+              {[{ slug: 'all', name: 'All properties' }, ...properties].map(p => {
+                const active = dashProperty === p.slug
+                return (
+                  <button
+                    key={p.slug}
+                    onClick={() => setDashProperty(p.slug)}
+                    className={`db-prop-pill${active ? ' is-active' : ''}`}
+                  >
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
         <div className="db-row-full">
-          <LeadsTrendPanel dates={leads.map(l => l.created_at)} />
+          <LeadsTrendPanel dates={scopedLeads.map(l => l.created_at)} />
         </div>
         <div className="db-row">
-          <LeadStatusDonut leads={leads} />
-          <OccupancyByProperty properties={properties} />
+          <LeadStatusDonut leads={scopedLeads} />
+          <OccupancyByProperty properties={scopedProperties} />
         </div>
         <div className="db-row-full">
-          <CollectionsBars payments={allSPs} />
+          <CollectionsBars payments={scopedSPs} />
         </div>
 
         {/* ── ROW: Payments + Leases ── */}
