@@ -322,7 +322,9 @@ export default function LandlordDashboard() {
   const vacantRooms  = properties.reduce((s, p) => s + (p.available || 0), 0)
   const occupiedRooms = totalRooms - vacantRooms
   const occupancyPct = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
-  const liveProps    = properties.filter(p => p.admin_status === 'active').length
+  // "Live" means approved by HomeHive *and* switched on by the landlord —
+  // a listing marked Rented or Inactive isn't out there working for them.
+  const liveProps    = properties.filter(p => p.admin_status === 'active' && (p.listing_status ?? 'active') === 'active').length
   const pendingProps = properties.filter(p => p.admin_status === 'pending')
 
   // ─── Payment metrics ─────────────────────────────────────────────────────────

@@ -228,11 +228,14 @@ function HomeCard({ home, onHover, featured = false }: { home: Property; onHover
   const start   = fmtDate(home.sublease_start_date)
   const end     = fmtDate(home.sublease_end_date)
   const isSub   = home.listing_type === 'sublease' || home.listing_type === 'lease_transfer'
+  // Rented homes only reach this list when the landlord kept them up for a
+  // waitlist — label them so nobody inquires expecting a move-in date.
+  const isRented = home.listing_status === 'rented'
 
   return (
     <a
       href={`/homes/${home.slug}`}
-      className={`hc2-card${featured ? ' hc2-featured' : ''}`}
+      className={`hc2-card${featured ? ' hc2-featured' : ''}${isRented ? ' hc2-rented' : ''}`}
       onMouseEnter={() => onHover(home.slug)}
       onMouseLeave={() => onHover(null)}
     >
@@ -250,7 +253,7 @@ function HomeCard({ home, onHover, featured = false }: { home: Property; onHover
 
         {/* Type badge */}
         <div className="hc2-type-badge" style={{ background: tc.bg, color: tc.color, border: `1px solid ${tc.border}` }}>
-          {tc.label}
+          {isRented ? 'Rented' : tc.label}
         </div>
 
         {/* Price chip */}
@@ -270,7 +273,11 @@ function HomeCard({ home, onHover, featured = false }: { home: Property; onHover
           {isSub && start && end && (
             <span className="hc2-date-pill">{start} – {end}</span>
           )}
-          {!isSub && home.available_from && (
+          {isRented ? (
+            <span className="hc2-avail-pill">
+              {home.rented_until ? `Opens ${fmtDate(home.rented_until)} · waitlist` : 'Waitlist open'}
+            </span>
+          ) : !isSub && home.available_from && (
             <span className="hc2-avail-pill">
               Available {fmtDate(home.available_from)}
             </span>
@@ -324,6 +331,9 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
         return true
       })
       .sort((a, b) => {
+        // Rented (waitlist) listings always sort below anything move-in ready.
+        const rentedDiff = Number(a.listing_status === 'rented') - Number(b.listing_status === 'rented')
+        if (rentedDiff !== 0) return rentedDiff
         if (sortBy === 'price') return a.price - b.price
         if (sortBy === 'score') return b.asu_score - a.asu_score
         if (sortBy === 'distance') return a.asu_distance - b.asu_distance
@@ -443,6 +453,9 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
         .hc2-img-wrap { position: relative; height: 200px; overflow: hidden; background: var(--hh-bg-alt); }
         .hc2-img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
         .hc2-card:hover .hc2-img { transform: scale(1.06); }
+        /* Rented listings stay browsable for waitlist interest, visually de-emphasised */
+        .hc2-rented .hc2-img { filter: grayscale(0.35); }
+        .hc2-rented:hover .hc2-img { filter: grayscale(0); }
         .hc2-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg, var(--hh-bg-alt) 0%, var(--hh-bg) 50%, var(--hh-bg-alt) 100%); }
 
         /* Gradient overlay */

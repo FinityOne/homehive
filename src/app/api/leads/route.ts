@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
 import { notifyLandlord } from '@/lib/notifyLandlord'
+import { canReceiveLeads, type ListingStatus } from '@/lib/listingStatus'
 
 // Anon key for public lead inserts (RLS allows)
 const supabase = createClient(
@@ -27,6 +28,27 @@ export async function POST(req: Request) {
   } = body
 
   console.log('Incoming lead:', JSON.stringify({ first_name, email, phone, move_in_date, property, utm_source, utm_campaign }, null, 2))
+
+  // 0. Respect the landlord's status: a listing that's rented, off-market, or
+  // has inquiries paused must not take new leads even if a stale page posts one.
+  if (property) {
+    const { data: prop } = await supabaseAdmin
+      .from('properties')
+      .select('listing_status, accepting_inquiries, show_when_rented')
+      .eq('slug', property)
+      .maybeSingle()
+
+    if (prop && !canReceiveLeads({
+      listing_status: (prop.listing_status ?? 'active') as ListingStatus,
+      accepting_inquiries: prop.accepting_inquiries ?? true,
+      show_when_rented: prop.show_when_rented ?? false,
+    })) {
+      return Response.json(
+        { error: 'This listing is not accepting inquiries right now.', code: 'not_accepting' },
+        { status: 409 }
+      )
+    }
+  }
 
   // 1. Save to Supabase
   const { data, error } = await supabase

@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, updatePropertyCore, Property } from '@/lib/properties'
+import ListingStatusControl from '@/components/listings/ListingStatusControl'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +23,6 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
 
   const [available, setAvailable] = useState('')
   const [totalRooms, setTotalRooms] = useState('')
-  const [isActive, setIsActive] = useState(false)
   const [isFeatured, setIsFeatured] = useState(false)
   const [availableFrom, setAvailableFrom] = useState('')
 
@@ -40,7 +40,6 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
       setProperty(found)
       setAvailable(found.available?.toString() || '0')
       setTotalRooms(found.total_rooms?.toString() || '0')
-      setIsActive(found.is_active ?? false)
       setIsFeatured(found.is_featured ?? false)
       setAvailableFrom(found.available_from ?? '')
       setLoading(false)
@@ -54,10 +53,11 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
     setErrorMsg('')
     setSuccessMsg('')
 
+    // `is_active` is intentionally not written here — it's derived from the
+    // listing status + HomeHive approval by updateListingStatus().
     const { error } = await updatePropertyCore(property.id, {
       available: parseInt(available) || 0,
       total_rooms: parseInt(totalRooms) || 0,
-      is_active: isActive,
       is_featured: isFeatured,
       available_from: availableFrom || null,
     })
@@ -185,16 +185,17 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
 
         <div className="section-heading">Listing Status</div>
 
-        <div className="toggle-row">
-          <div className="toggle-info">
-            <div className="toggle-title">Active Listing</div>
-            <div className="toggle-sub">When active, your property is visible to students searching for housing</div>
+        {property && (
+          <div style={{ marginBottom: '18px' }}>
+            <ListingStatusControl
+              key={property.id}
+              property={property}
+              onSaved={patch => setProperty(p => (p ? { ...p, ...patch } as Property : p))}
+            />
           </div>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-            <span className="toggle-slider" />
-          </label>
-        </div>
+        )}
+
+        <div className="section-heading">Promotion</div>
 
         <div className="toggle-row">
           <div className="toggle-info">

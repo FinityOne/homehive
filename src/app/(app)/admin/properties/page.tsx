@@ -5,6 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { getAllPropertiesForAdmin, updatePropertyAdminStatus } from '@/lib/properties'
 import type { Property, AdminStatus } from '@/lib/properties'
+import { LISTING_STATUS_META } from '@/lib/listingStatus'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -205,6 +206,17 @@ export default function AdminPropertiesPage() {
                         >
                           {l.is_featured ? '⭐' : '☆'}
                         </span>
+                        {/* The landlord's own status — approving a listing they
+                            marked Rented/Inactive still leaves it hidden. */}
+                        {(l.listing_status ?? 'active') !== 'active' && (
+                          <span
+                            className="test-pill"
+                            style={{ background: '#eff6ff', color: '#1e40af' }}
+                            title={`Landlord set this listing to ${LISTING_STATUS_META[l.listing_status].label} — it stays hidden from students regardless of review status.`}
+                          >
+                            {LISTING_STATUS_META[l.listing_status].label.toUpperCase()}
+                          </span>
+                        )}
                       </div>
                       <div className="p-addr">{l.address}</div>
                     </td>

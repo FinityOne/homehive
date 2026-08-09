@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, setPropertyArchived, Property } from '@/lib/properties'
+import { getPropertiesByOwner, setPropertyArchived, updateListingStatus, Property } from '@/lib/properties'
+import { LISTING_STATUS_META, LISTING_STATUS_ORDER, type ListingStatus } from '@/lib/listingStatus'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,6 +46,25 @@ export default function ListingsPage() {
     setBusyId(null)
   }
 
+  // Quick status change straight from the card. Deeper settings (waitlist,
+  // promotion, inquiry pausing) live on the listing's Status & Availability page.
+  const changeStatus = async (p: Property, next: ListingStatus) => {
+    if (next === (p.listing_status ?? 'active')) return
+    setBusyId(p.id)
+    const patch = {
+      listing_status: next,
+      marketing_enabled: p.marketing_enabled ?? true,
+      accepting_inquiries: p.accepting_inquiries ?? true,
+      show_when_rented: next === 'rented' ? (p.show_when_rented ?? false) : false,
+      rented_until: next === 'rented' ? (p.rented_until ?? null) : null,
+    }
+    const { error } = await updateListingStatus(p.id, patch, p.admin_status)
+    if (!error) {
+      setProperties(prev => prev.map(x => x.id === p.id ? { ...x, ...patch } as Property : x))
+    }
+    setBusyId(null)
+  }
+
   if (loading) {
     return (
       <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
@@ -77,6 +97,7 @@ export default function ListingsPage() {
         .badge-pending  { background: #fef3c7; color: #92400e; }
         .badge-rejected { background: #fff1f2; color: #9f1239; }
         .badge-inactive { background: #e5e7eb; color: #6b7280; }
+        .badge-rented   { background: #eff6ff; color: #1e40af; }
         .badge-archived { background: #fae8ef; color: #8C1D40; }
 
         .prop-card.is-archived { opacity: 0.72; }
@@ -96,6 +117,13 @@ export default function ListingsPage() {
         .prop-card-avail { font-size: 12px; color: #64748b; }
         .avail-bar-track { height: 4px; background: #e2e8f0; border-radius: 10px; overflow: hidden; margin-top: 2px; }
         .avail-bar-fill { height: 100%; background: #10b981; border-radius: 10px; }
+        .status-picker { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+        .status-picker label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-select { flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; font-size: 12.5px; font-weight: 600; font-family: 'DM Sans', sans-serif; color: #0f172a; background: #fff; cursor: pointer; outline: none; }
+        .status-select:focus { border-color: #10b981; }
+        .status-select:disabled { opacity: 0.6; cursor: not-allowed; }
+        .status-effect { font-size: 11px; color: #94a3b8; line-height: 1.4; margin-top: 4px; }
+
         .prop-card-footer { margin-top: auto; padding-top: 12px; }
         .btn-manage { display: block; text-align: center; background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; }
         .btn-manage:hover { background: #1e293b; }
@@ -158,6 +186,16 @@ export default function ListingsPage() {
               const availPct = p.total_rooms > 0 ? (p.available / p.total_rooms) * 100 : 0
               const isArchived = !!p.archived_at
               const warnedSoon = !!p.archive_warned_at && !isArchived
+              const listingStatus = (p.listing_status ?? 'active') as ListingStatus
+              // The landlord's own status wins the badge when they've taken the
+              // listing off the market; otherwise show where it sits with us.
+              const statusBadge =
+                listingStatus === 'rented'   ? { cls: 'badge-rented',   text: p.show_when_rented ? 'Rented · waitlist' : 'Rented' } :
+                listingStatus === 'inactive' ? { cls: 'badge-inactive', text: 'Inactive' } :
+                p.admin_status === 'active'   ? { cls: 'badge-active',   text: p.marketing_enabled === false ? 'Live · not promoted' : 'Live' } :
+                p.admin_status === 'pending'  ? { cls: 'badge-pending',  text: 'Under Review' } :
+                p.admin_status === 'rejected' ? { cls: 'badge-rejected', text: 'Not Approved' } :
+                                                { cls: 'badge-inactive', text: 'Inactive' }
               return (
                 <div key={p.id} className={`prop-card${isArchived ? ' is-archived' : ''}`}>
                   <div className="prop-card-img-wrap">
@@ -168,17 +206,7 @@ export default function ListingsPage() {
                     {isArchived ? (
                       <span className="prop-status-badge badge-archived">Archived</span>
                     ) : (
-                      <span className={`prop-status-badge ${
-                        p.admin_status === 'active'   ? 'badge-active'   :
-                        p.admin_status === 'pending'  ? 'badge-pending'  :
-                        p.admin_status === 'rejected' ? 'badge-rejected' :
-                        'badge-inactive'
-                      }`}>
-                        {p.admin_status === 'active'   ? 'Live'          :
-                         p.admin_status === 'pending'  ? 'Under Review'  :
-                         p.admin_status === 'rejected' ? 'Not Approved'  :
-                         'Inactive'}
-                      </span>
+                      <span className={`prop-status-badge ${statusBadge.cls}`}>{statusBadge.text}</span>
                     )}
                   </div>
                   <div className="prop-card-body">
@@ -196,6 +224,26 @@ export default function ListingsPage() {
                         <div className="avail-bar-fill" style={{ width: `${availPct}%` }} />
                       </div>
                     </div>
+
+                    {!isArchived && (
+                      <div>
+                        <div className="status-picker">
+                          <label htmlFor={`status-${p.id}`}>Status</label>
+                          <select
+                            id={`status-${p.id}`}
+                            className="status-select"
+                            value={listingStatus}
+                            disabled={busyId === p.id}
+                            onChange={e => changeStatus(p, e.target.value as ListingStatus)}
+                          >
+                            {LISTING_STATUS_ORDER.map(s => (
+                              <option key={s} value={s}>{LISTING_STATUS_META[s].label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="status-effect">{LISTING_STATUS_META[listingStatus].blurb}</div>
+                      </div>
+                    )}
 
                     {isArchived && (
                       <div className="archive-warn">

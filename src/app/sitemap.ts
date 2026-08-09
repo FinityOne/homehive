@@ -90,6 +90,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .select('slug, created_at')
       .eq('is_active', true)
       .eq('is_test', false)
+      // The sitemap is a promotional surface: only Live listings whose landlord
+      // left marketing on get submitted to search engines.
+      .eq('listing_status', 'active')
+      .eq('marketing_enabled', true)
       .order('created_at', { ascending: false })
 
     if (data) {

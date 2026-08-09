@@ -21,7 +21,18 @@ function getInitials(email: string, fullName?: string): string {
 }
 
 // ─── TYPES ─────────────────────────────────────────────────────────────────────
-type NavItem = { href: string; label: string; icon: string; exact?: boolean }
+type NavItem = {
+  href: string
+  label: string
+  icon: string
+  exact?: boolean
+  /** Shown in the mobile bottom bar. Everything else lives behind the menu. */
+  primary?: boolean
+  /** Shorter label for the bottom bar, where space is tight. */
+  short?: string
+}
+/** A labelled run of nav items. An unlabelled group renders with no heading. */
+type NavGroup = { label?: string; items: NavItem[] }
 
 type Notification = {
   id: string
@@ -33,38 +44,90 @@ type Notification = {
   created_at: string
 }
 
-const NAV_ITEMS: Record<'tenant' | 'landlord' | 'admin', NavItem[]> = {
+/**
+ * Nav is grouped by where the landlord is in the tenancy lifecycle, in the order
+ * the work actually happens: fill the property → run the tenancy → close it out.
+ * That's the same spine Buildium/AppFolio/DoorLoop use (leasing → residents →
+ * accounting → settings), and it means a landlord looking for "who applied" or
+ * "who still owes me" only has to scan one short group rather than 13 flat links.
+ */
+const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
   tenant: [
-    { href: '/dashboard',      label: 'Overview',       icon: '⊞', exact: true },
-    { href: '/homes',          label: 'Browse Homes',   icon: '▣' },
-    { href: '/groups',         label: 'My Groups',      icon: '🐝' },
-    { href: '/dashboard/list', label: 'List your place', icon: '⊕' },
+    {
+      items: [
+        { href: '/dashboard',      label: 'Overview',        icon: '⊞', exact: true, primary: true },
+        { href: '/homes',          label: 'Browse Homes',    icon: '▣', primary: true, short: 'Browse' },
+        { href: '/groups',         label: 'My Groups',       icon: '🐝', primary: true, short: 'Groups' },
+        { href: '/dashboard/list', label: 'List your place', icon: '⊕', primary: true, short: 'List' },
+      ],
+    },
   ],
   landlord: [
-    { href: '/landlord/dashboard',  label: 'Overview',    icon: '⊞', exact: true },
-    { href: '/landlord/listings',   label: 'My Listings', icon: '▣' },
-    { href: '/landlord/leads/list',  label: 'Leads',       icon: '◉' },
-    { href: '/landlord/comments',    label: 'Comments',    icon: '💬' },
-    { href: '/landlord/roommates',  label: 'Roommates',   icon: '👥' },
-    { href: '/landlord/calendar',   label: 'Calendar',    icon: '📅' },
-    { href: '/landlord/tenants',    label: 'Tenants',     icon: '◎' },
-    { href: '/landlord/leases',     label: 'Leases',      icon: '📋' },
-    { href: '/landlord/payments',     label: 'Payments',     icon: '💳' },
-    { href: '/landlord/automations',       label: 'Automations',       icon: '⚡' },
-    { href: '/landlord/background-checks', label: 'Background Checks', icon: '🔍' },
-    { href: '/landlord/customizations',    label: 'Customizations',    icon: '✦' },
+    {
+      items: [
+        { href: '/landlord/dashboard', label: 'Overview', icon: '⊞', exact: true, primary: true },
+      ],
+    },
+    {
+      // Filling the property — ordered as the funnel runs.
+      label: 'Leasing',
+      items: [
+        { href: '/landlord/listings',          label: 'My Listings',       icon: '▣', primary: true, short: 'Listings' },
+        { href: '/landlord/comments',          label: 'Comments',          icon: '💬' },
+        { href: '/landlord/leads/list',        label: 'Leads',             icon: '◉', primary: true },
+        { href: '/landlord/calendar',          label: 'Tours & Calendar',  icon: '📅', short: 'Tours' },
+        { href: '/landlord/roommates',         label: 'Roommates',         icon: '👥' },
+        { href: '/landlord/background-checks', label: 'Screening',         icon: '🔍' },
+      ],
+    },
+    {
+      // Everyone already in place, through to move-out.
+      label: 'Residents',
+      items: [
+        { href: '/landlord/tenants',     label: 'Tenants',     icon: '◎' },
+        { href: '/landlord/leases',      label: 'Leases',      icon: '📋', primary: true },
+        { href: '/landlord/payments',    label: 'Payments',    icon: '💳', primary: true },
+        { href: '/landlord/inspections', label: 'Move-out',    icon: '🔎' },
+      ],
+    },
+    {
+      label: 'Settings',
+      items: [
+        { href: '/landlord/automations',    label: 'Automations',    icon: '⚡' },
+        { href: '/landlord/customizations', label: 'Customizations', icon: '✦' },
+      ],
+    },
   ],
   admin: [
-    { href: '/admin',                    label: 'Overview',         icon: '⊞', exact: true },
-    { href: '/admin/users/tenants',       label: 'Tenants',          icon: '◎' },
-    { href: '/admin/users/landlords',     label: 'Landlords',        icon: '🏠' },
-    { href: '/admin/users/admins',        label: 'Admin Team',       icon: '⚙' },
-    { href: '/admin/properties',         label: 'Properties',       icon: '▣' },
-    { href: '/admin/leads',              label: 'Leads',            icon: '◉' },
-    { href: '/admin/payments',           label: 'Payments',         icon: '💳' },
-    { href: '/admin/upgrade-requests',   label: 'Upgrade Requests', icon: '⬆' },
-    { href: '/admin/marketing',          label: 'Marketing',        icon: '📣' },
-    { href: '/admin/visitors',           label: 'Visitors',         icon: '👁' },
+    {
+      items: [
+        { href: '/admin', label: 'Overview', icon: '⊞', exact: true, primary: true },
+      ],
+    },
+    {
+      label: 'People',
+      items: [
+        { href: '/admin/users/tenants',   label: 'Tenants',    icon: '◎', primary: true },
+        { href: '/admin/users/landlords', label: 'Landlords',  icon: '🏠', primary: true },
+        { href: '/admin/users/admins',    label: 'Admin Team', icon: '⚙' },
+      ],
+    },
+    {
+      label: 'Operations',
+      items: [
+        { href: '/admin/properties',       label: 'Properties',       icon: '▣', primary: true, short: 'Props' },
+        { href: '/admin/leads',            label: 'Leads',            icon: '◉' },
+        { href: '/admin/payments',         label: 'Payments',         icon: '💳', primary: true },
+        { href: '/admin/upgrade-requests', label: 'Upgrade Requests', icon: '⬆' },
+      ],
+    },
+    {
+      label: 'Growth',
+      items: [
+        { href: '/admin/marketing', label: 'Marketing', icon: '📣' },
+        { href: '/admin/visitors',  label: 'Visitors',  icon: '👁' },
+      ],
+    },
   ],
 }
 
@@ -290,7 +353,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     landlord: role === 'landlord' || role === 'admin',
     admin:    role === 'admin',
   }
-  const navItems     = NAV_ITEMS[currentPortal]
+  const navGroups    = NAV_GROUPS[currentPortal]
+  // The bottom bar only fits a handful of tabs; the rest stay in the menu.
+  const mobileTabs   = navGroups.flatMap(g => g.items).filter(i => i.primary).slice(0, 5)
   const theme        = THEMES[currentPortal]
   const otherPortals = (['tenant', 'landlord', 'admin'] as const)
     .filter(p => p !== currentPortal && canSeePortals[p])
@@ -299,6 +364,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isActive = (item: NavItem) =>
     pathname === item.href ||
     (!item.exact && item.href !== '/' && pathname.startsWith(item.href + '/'))
+
+  // Count badges, keyed by the nav item they belong to.
+  const badgeFor = (href: string): { count: number; color: string; prefix?: string } | null => {
+    if (href === '/admin/upgrade-requests' && pendingUpgradeCount > 0)
+      return { count: pendingUpgradeCount, color: '#f59e0b' }
+    if (href === '/admin/users/tenants' && newUserCounts['tenant'] > 0)
+      return { count: newUserCounts['tenant'], color: '#0f766e', prefix: '+' }
+    if (href === '/admin/users/landlords' && newUserCounts['landlord'] > 0)
+      return { count: newUserCounts['landlord'], color: '#6b21a8', prefix: '+' }
+    if (href === '/admin/users/admins' && newUserCounts['admin'] > 0)
+      return { count: newUserCounts['admin'], color: '#1e3a8a', prefix: '+' }
+    if (href === '/landlord/payments' && overduePaymentsCount > 0)
+      return { count: overduePaymentsCount, color: '#ef4444' }
+    return null
+  }
 
   const avatarEl = user ? (
     user.avatarUrl
@@ -507,6 +587,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
 
         .sb-nav { padding: 2px 8px 8px; }
+
+        /* Stage groupings — a hairline plus a quiet label, enough to chunk the
+           list without turning the sidebar into a stack of headings. */
+        .sb-group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider); }
+        .sb-group-label {
+          font-size: 9.5px; font-weight: 700; color: var(--user-sub);
+          text-transform: uppercase; letter-spacing: 0.9px;
+          padding: 0 10px 6px; font-family: 'DM Sans', sans-serif;
+        }
         .sb-nav-item {
           display: flex; align-items: center; gap: 9px; padding: 8px 10px;
           border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif;
@@ -704,40 +793,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <nav className="sb-nav">
-              {navItems.map(item => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  className={`sb-nav-item${isActive(item) ? ' active' : ''}`}
-                >
-                  <span className="sb-nav-icon">{item.icon}</span>
-                  {item.label}
-                  {item.href === '/admin/upgrade-requests' && pendingUpgradeCount > 0 && (
-                    <span style={{ marginLeft: 'auto', background: '#f59e0b', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
-                      {pendingUpgradeCount}
-                    </span>
-                  )}
-                  {item.href === '/admin/users/tenants' && newUserCounts['tenant'] > 0 && (
-                    <span style={{ marginLeft: 'auto', background: '#0f766e', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
-                      +{newUserCounts['tenant']}
-                    </span>
-                  )}
-                  {item.href === '/admin/users/landlords' && newUserCounts['landlord'] > 0 && (
-                    <span style={{ marginLeft: 'auto', background: '#6b21a8', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
-                      +{newUserCounts['landlord']}
-                    </span>
-                  )}
-                  {item.href === '/admin/users/admins' && newUserCounts['admin'] > 0 && (
-                    <span style={{ marginLeft: 'auto', background: '#1e3a8a', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
-                      +{newUserCounts['admin']}
-                    </span>
-                  )}
-                  {item.href === '/landlord/payments' && overduePaymentsCount > 0 && (
-                    <span style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', flexShrink: 0 }}>
-                      {overduePaymentsCount}
-                    </span>
-                  )}
-                </a>
+              {navGroups.map((group, gi) => (
+                <div key={group.label ?? `group-${gi}`} className={group.label ? 'sb-group' : undefined}>
+                  {group.label && <div className="sb-group-label">{group.label}</div>}
+                  {group.items.map(item => {
+                    const badge = badgeFor(item.href)
+                    return (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        className={`sb-nav-item${isActive(item) ? ' active' : ''}`}
+                      >
+                        <span className="sb-nav-icon">{item.icon}</span>
+                        {item.label}
+                        {badge && (
+                          <span
+                            style={{
+                              marginLeft: 'auto', background: badge.color, color: '#fff',
+                              fontSize: '10px', fontWeight: 700, padding: '1px 6px',
+                              borderRadius: '10px', flexShrink: 0,
+                            }}
+                          >
+                            {badge.prefix ?? ''}{badge.count}
+                          </span>
+                        )}
+                      </a>
+                    )
+                  })}
+                </div>
               ))}
               {/* Landlord portal link for tenants who've been upgraded */}
               {currentPortal === 'tenant' && (role === 'landlord' || role === 'admin') && (
@@ -769,25 +852,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Mobile bottom tab bar */}
+      {/* Mobile bottom tab bar — the few destinations worth a permanent tab.
+          Everything else stays one tap away behind the menu button. */}
       <div className="mob-bottom-nav" style={theme as React.CSSProperties}>
         <div className="mob-bottom-inner">
-          {navItems.map(item => (
-            <a
-              key={item.href}
-              href={item.href}
-              className={`mob-tab${isActive(item) ? ' active' : ''}`}
-              style={{ position: 'relative' }}
-            >
-              <span className="mob-tab-icon">{item.icon}</span>
-              <span className="mob-tab-label">{item.label}</span>
-              {item.href === '/landlord/payments' && overduePaymentsCount > 0 && (
-                <span style={{ position: 'absolute', top: 6, right: '50%', marginRight: -18, background: '#ef4444', color: '#fff', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', minWidth: 16, textAlign: 'center' }}>
-                  {overduePaymentsCount}
-                </span>
-              )}
-            </a>
-          ))}
+          {mobileTabs.map(item => {
+            const badge = badgeFor(item.href)
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                className={`mob-tab${isActive(item) ? ' active' : ''}`}
+                style={{ position: 'relative' }}
+              >
+                <span className="mob-tab-icon">{item.icon}</span>
+                <span className="mob-tab-label">{item.short ?? item.label}</span>
+                {badge && (
+                  <span style={{ position: 'absolute', top: 6, right: '50%', marginRight: -18, background: badge.color, color: '#fff', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', minWidth: 16, textAlign: 'center' }}>
+                    {badge.prefix ?? ''}{badge.count}
+                  </span>
+                )}
+              </a>
+            )
+          })}
+          <button
+            className={`mob-tab${sidebarOpen ? ' active' : ''}`}
+            onClick={() => setSidebarOpen(o => !o)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            <span className="mob-tab-icon">☰</span>
+            <span className="mob-tab-label">More</span>
+          </button>
         </div>
       </div>
     </>

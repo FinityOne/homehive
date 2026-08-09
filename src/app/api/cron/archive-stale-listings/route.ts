@@ -34,13 +34,16 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Live, non-test listings that aren't already archived
+  // Live, non-test listings that aren't already archived. Listings the landlord
+  // deliberately set to Rented or Inactive are already off the market — nagging
+  // them about inactivity would be noise.
   const { data: props, error } = await supabaseAdmin
     .from('properties')
     .select('id, slug, name, owner_id, updated_at, created_at, archive_warned_at')
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
+    .eq('listing_status', 'active')
     .is('archived_at', null)
 
   if (error) return Response.json({ error: 'Failed to load listings' }, { status: 500 })

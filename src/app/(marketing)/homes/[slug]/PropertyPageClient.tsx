@@ -6,6 +6,7 @@ import { usePostHog } from 'posthog-js/react'
 import { createBrowserClient } from '@supabase/ssr'
 import { getPropertyBySlug, Property } from '@/lib/properties'
 import { getFaqsByPropertyId, PropertyFaq } from '@/lib/faqs'
+import { acceptsInquiries, acceptsWaitlist } from '@/lib/listingStatus'
 import { notFound } from 'next/navigation'
 import PhoneInput from '@/components/ui/PhoneInput'
 import SaveButton from '@/components/SaveButton'
@@ -290,7 +291,11 @@ export default function PropertyPageClient({
   // ── Derived values ────────────────────────────────────────────────────────
   const allImages  = home.images.filter(Boolean)
   const mainImage  = allImages[activePhoto] ?? ''
-  const avail      = availabilityConfig(home.available, home.total_rooms)
+  // A rented home has no rooms to offer — override the urgency badge so the page
+  // never advertises availability the landlord has switched off.
+  const avail      = home.listing_status === 'rented'
+    ? { text: 'Currently rented', color: '#1e40af', bg: '#eff6ff', urgent: false }
+    : availabilityConfig(home.available, home.total_rooms)
   const isPopular  = (home.asu_score ?? 0) >= 8
 
   // Earliest selectable move-in: the listing's available_from if it's set and in
@@ -314,10 +319,13 @@ export default function PropertyPageClient({
     !effectivePhone && 'phone',
     !formData.move_in_date && 'move-in date',
   ].filter(Boolean)
+  const waitlistMode = acceptsWaitlist(home)
   const ctaCopy = canSubmit
-    ? `Check availability for ${formData.first_name.trim().split(' ')[0]} →`
+    ? waitlistMode
+      ? `Join the waitlist as ${formData.first_name.trim().split(' ')[0]} →`
+      : `Check availability for ${formData.first_name.trim().split(' ')[0]} →`
     : missingFields.length === 4
-      ? 'Check Availability →'
+      ? waitlistMode ? 'Join the Waitlist →' : 'Check Availability →'
       : `Add your ${missingFields[0]} to continue`
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -402,8 +410,48 @@ export default function PropertyPageClient({
     closed:         { label: 'Closed',            desc: 'This inquiry has been closed.',                                                           color: '#6b7280', bg: '#f3f4f6' },
   }
 
+  // ── Landlord-set availability (see src/lib/listingStatus.ts) ─────────────
+  const isRented    = home.listing_status === 'rented'
+  const canInquire  = acceptsInquiries(home)
+  const isWaitlist  = acceptsWaitlist(home)
+  const availAgain  = home.rented_until
+    ? new Date(home.rented_until + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : null
+
   // ── Form JSX (shared between sidebar + mobile drawer) ────────────────────
   const FormContent = () => {
+    // Rented but kept public — reframe the form as a waitlist rather than
+    // pretending the home is available.
+    const RentedBanner = isRented ? (
+      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>
+          Currently rented
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--hh-text-2)', lineHeight: 1.6 }}>
+          This home is leased{availAgain ? ` until ${availAgain}` : ''}. Join the waitlist and you&apos;ll be
+          first to hear when it opens up — waitlist renters usually get a look before it goes public.
+        </p>
+      </div>
+    ) : null
+
+    // Landlord paused inquiries — the listing stays browsable, the form doesn't.
+    if (!canInquire && !isWaitlist) {
+      return (
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>
+            Not taking inquiries right now
+          </div>
+          <p style={{ fontSize: '13px', color: 'var(--hh-text-2)', lineHeight: 1.6, marginBottom: '12px' }}>
+            This home isn&apos;t accepting new requests at the moment. Browse other verified homes near
+            campus — most students find a match the same week.
+          </p>
+          <a href="/homes" style={{ display: 'block', textAlign: 'center', padding: '12px', background: 'var(--hh-ink-900)', color: '#fff', borderRadius: '9px', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>
+            See similar homes →
+          </a>
+        </div>
+      )
+    }
+
     // Offer banner (shown above form if offer exists)
     const OfferBanner = home.offer_amount ? (
       <div style={{ background: 'linear-gradient(135deg, #1c2420 0%, var(--hh-hive-800) 100%)', border: '1px solid rgba(217,161,74,0.5)', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
@@ -432,7 +480,8 @@ export default function PropertyPageClient({
       const needsPrescreen = existingLead.status === 'new' || existingLead.status === 'contacted'
       return (
         <>
-          {OfferBanner}
+          {RentedBanner}
+      {OfferBanner}
           <div style={{ background: cfg.bg, border: `1px solid ${cfg.color}22`, borderRadius: '12px', padding: '18px', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
@@ -519,6 +568,7 @@ export default function PropertyPageClient({
 
     return (
     <>
+      {RentedBanner}
       {OfferBanner}
 
       {/* Price header */}

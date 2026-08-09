@@ -280,7 +280,9 @@ const faqJsonLd = {
 
 export default async function HomePage() {
   // Fetch listings on the server so cards are in the initial HTML.
-  const initialProperties = await getHomeCardsServer()
+  // Homepage is a promotional surface — listings with marketing turned off,
+  // or that aren't Live, stay out of it.
+  const initialProperties = await getHomeCardsServer({ marketingOnly: true })
 
   return (
     <>

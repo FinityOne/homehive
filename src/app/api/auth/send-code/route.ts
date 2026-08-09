@@ -15,6 +15,10 @@ const MAX_PER_HOUR    = 6    // hard cap per email per hour
 
 type Mode = 'login' | 'signup'
 
+// The code length we design for. Supabase's Auth "Email OTP Length" setting is
+// the source of truth for what generateLink actually returns.
+const EXPECTED_CODE_LENGTH = 6
+
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
@@ -94,9 +98,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Generate the 6-digit code via Supabase's native OTP ─────────────────────
+  // ── Generate the code via Supabase's native OTP ─────────────────────────────
   // For both login and (freshly created) signup users we mint a magic-link OTP
-  // and pull out the 6-digit code to deliver ourselves via Resend.
+  // and pull out the code to deliver ourselves via Resend. The length comes from
+  // the project's Auth "Email OTP Length" setting (we want 6) — we report the
+  // actual length back to the client so the input can never be shorter than the
+  // code we emailed, even if that setting drifts.
   const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
     type: 'magiclink',
     email,
@@ -111,6 +118,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true })
   }
 
+  if (code.length !== EXPECTED_CODE_LENGTH) {
+    console.warn(
+      `[send-code] Supabase returned a ${code.length}-digit OTP; expected ${EXPECTED_CODE_LENGTH}. ` +
+      `Set Auth → Email → "Email OTP Length" to ${EXPECTED_CODE_LENGTH} in the Supabase dashboard.`
+    )
+  }
+
   // ── Send the code ───────────────────────────────────────────────────────────
   await resend.emails.send({
     from: 'HomeHive <hello@homehive.live>',
@@ -121,7 +135,7 @@ export async function POST(req: NextRequest) {
 
   await supabaseAdmin.from('auth_code_sends').insert({ email, ip: clientIp(req), mode })
 
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, codeLength: code.length })
 }
 
 function codeEmailHtml(code: string, mode: Mode): string {

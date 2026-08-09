@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
+import { DEFAULT_CODE_LENGTH, normalizeCodeLength, sanitizeCode } from '@/lib/authCode'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,6 +28,9 @@ function LoginForm() {
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  // Digits in the emailed code. 6 by default; the send-code API reports the real
+  // length so the input can never truncate a longer code from Supabase.
+  const [codeLength, setCodeLength] = useState(DEFAULT_CODE_LENGTH)
   const codeRef = useRef<HTMLInputElement>(null)
 
   // Resend cooldown ticker
@@ -66,6 +70,9 @@ function LoginForm() {
         return
       }
 
+      const len = normalizeCodeLength(data.codeLength)
+      setCodeLength(len)
+      setCode(c => sanitizeCode(c, len))
       ph?.capture(isResend ? 'login_code_resent' : 'login_code_sent')
       setStep('code')
       setCooldown(RESEND_COOLDOWN)
@@ -76,7 +83,7 @@ function LoginForm() {
   }
 
   const handleVerify = async () => {
-    if (code.length < 6) { setError('Enter the 6-digit code from your email.'); return }
+    if (code.length < codeLength) { setError(`Enter the ${codeLength}-digit code from your email.`); return }
     setLoading(true)
     setError('')
 
@@ -289,7 +296,7 @@ function LoginForm() {
           <div style={{ fontSize: '13px', color: '#9b9b9b', lineHeight: 1.55, marginBottom: '28px' }}>
             {step === 'email'
               ? 'Enter your email and we’ll send you a sign-in code — no password needed.'
-              : <>We sent a 6-digit code to <strong style={{ color: '#1a1a1a' }}>{email}</strong>. Enter it below to sign in.</>}
+              : <>We sent a {codeLength}-digit code to <strong style={{ color: '#1a1a1a' }}>{email}</strong>. Enter it below to sign in.</>}
           </div>
 
           {/* Alerts */}
@@ -363,7 +370,7 @@ function LoginForm() {
               {/* Code entry */}
               <div style={{ marginBottom: '16px' }}>
                 <label htmlFor="login-code" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
-                  6-digit code
+                  {codeLength}-digit code
                 </label>
                 <input
                   id="login-code"
@@ -372,10 +379,10 @@ function LoginForm() {
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   pattern="[0-9]*"
-                  maxLength={6}
-                  placeholder="······"
+                  maxLength={codeLength}
+                  placeholder={'·'.repeat(codeLength)}
                   value={code}
-                  onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+                  onChange={e => { setCode(sanitizeCode(e.target.value, codeLength)); setError('') }}
                   onKeyDown={e => e.key === 'Enter' && handleVerify()}
                   className="code-input"
                 />
@@ -384,7 +391,7 @@ function LoginForm() {
               <button
                 className="login-btn"
                 onClick={handleVerify}
-                disabled={loading || code.length < 6}
+                disabled={loading || code.length < codeLength}
                 style={{ marginTop: '8px', marginBottom: '16px' }}
               >
                 {loading ? <><span className="spinner" />Verifying…</> : 'Sign in'}

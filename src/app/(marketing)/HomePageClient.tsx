@@ -445,7 +445,7 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
     // Listings are server-rendered into the initial HTML; only fetch on the
     // client as a fallback when they weren't provided (e.g. dev/edge cases).
     if (!hasInitial) {
-      getProperties().then(data => { setProperties(data); setLoading(false) })
+      getProperties({ marketingOnly: true }).then(data => { setProperties(data); setLoading(false) })
     }
     if (!sessionStorage.getItem('hh_landlord_bar_dismissed')) setShowLandlordBanner(true)
   }, [hasInitial])

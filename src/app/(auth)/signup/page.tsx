@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
+import { DEFAULT_CODE_LENGTH, normalizeCodeLength, sanitizeCode } from '@/lib/authCode'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -153,6 +154,9 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
   const [stage, setStage] = useState<'form' | 'code'>('form')
   const [form, setForm] = useState({ name: '', email: prefillEmail, phone: '' })
   const [code, setCode] = useState('')
+  // Digits in the emailed code — reported by /api/auth/send-code so the input
+  // always fits the code we actually sent (see src/lib/authCode.ts).
+  const [codeLength, setCodeLength] = useState(DEFAULT_CODE_LENGTH)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [cooldown, setCooldown] = useState(0)
@@ -215,6 +219,9 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
         return
       }
 
+      const len = normalizeCodeLength(data.codeLength)
+      setCodeLength(len)
+      setCode(c => sanitizeCode(c, len))
       ph?.capture(isResend ? 'signup_code_resent' : 'signup_code_sent', { role })
       setStage('code')
       setCooldown(RESEND_COOLDOWN)
@@ -225,7 +232,7 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
   }
 
   const handleVerify = async () => {
-    if (code.length < 6) { setError('Enter the 6-digit code from your email.'); return }
+    if (code.length < codeLength) { setError(`Enter the ${codeLength}-digit code from your email.`); return }
     setLoading(true)
     setError('')
 
@@ -353,7 +360,7 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
           </a>
           <div style={{ fontSize: '14px', color: '#9b9b9b', marginBottom: '28px' }}>
             {stage === 'code'
-              ? <>Enter the 6-digit code we sent to <strong style={{ color: '#1a1a1a' }}>{form.email}</strong>.</>
+              ? <>Enter the {codeLength}-digit code we sent to <strong style={{ color: '#1a1a1a' }}>{form.email}</strong>.</>
               : isLandlord ? 'List your place on HomeHive' : 'Find your perfect place on HomeHive'}
           </div>
 
@@ -448,7 +455,7 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
             <>
               {/* Code entry */}
               <div className="f" style={{ marginBottom: '20px' }}>
-                <label>6-digit code</label>
+                <label>{codeLength}-digit code</label>
                 <input
                   ref={codeRef}
                   className="code-input"
@@ -456,18 +463,18 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   pattern="[0-9]*"
-                  maxLength={6}
-                  placeholder="······"
+                  maxLength={codeLength}
+                  placeholder={'·'.repeat(codeLength)}
                   value={code}
-                  onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+                  onChange={e => { setCode(sanitizeCode(e.target.value, codeLength)); setError('') }}
                   onKeyDown={e => e.key === 'Enter' && handleVerify()}
                 />
               </div>
 
               <button
                 onClick={handleVerify}
-                disabled={loading || code.length < 6}
-                style={{ width: '100%', background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '8px', padding: '13px', fontSize: '14px', fontWeight: 600, cursor: loading || code.length < 6 ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: loading || code.length < 6 ? 0.6 : 1, marginBottom: '16px' }}
+                disabled={loading || code.length < codeLength}
+                style={{ width: '100%', background: '#8C1D40', color: '#fff', border: 'none', borderRadius: '8px', padding: '13px', fontSize: '14px', fontWeight: 600, cursor: loading || code.length < codeLength ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif", opacity: loading || code.length < codeLength ? 0.6 : 1, marginBottom: '16px' }}
               >
                 {loading ? 'Verifying…' : 'Create account'}
               </button>

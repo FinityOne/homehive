@@ -6,6 +6,10 @@ import { useRouter } from 'next/navigation'
 import { getLeaseById, getLeaseStatus, formatLeaseDate, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import type { Lease, LeaseStatus, LeaseDocument } from '@/lib/leases'
 import { computeProration, fmtCurrency, fmtDate } from '@/lib/payments'
+import {
+  getInspectionsForLease, createInspectionFromLease, computeTotals, fmtMoney,
+  type Inspection,
+} from '@/lib/inspections'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,6 +47,10 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
   const [loading, setLoading] = useState(true)
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
 
+  // Checkout inspections covering this lease
+  const [inspections, setInspections] = useState<Inspection[]>([])
+  const [creatingInspection, setCreatingInspection] = useState(false)
+
   // Payment plan members state
   const [plan, setPlan] = useState<PaymentPlanInfo | null>(null)
   const [showAddMember, setShowAddMember] = useState(false)
@@ -77,6 +85,7 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
           return
         }
         setLease(data)
+        getInspectionsForLease(leaseId).then(setInspections)
         Promise.all(
           (data.documents || []).map(async (d: LeaseDocument) => {
             const url = await getLeaseDocumentSignedUrl(d.storage_path)
@@ -204,6 +213,31 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
       .in('status', ['pending', 'late'])
       .gt('due_date', afterDate)
     setTerminatePreview(count ?? 0)
+  }
+
+  // Start a move-out report seeded from this lease: property, dates and every
+  // tenant come across, then more leases can be linked on the report itself.
+  async function startInspection() {
+    if (!lease) return
+    setCreatingInspection(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setCreatingInspection(false); return }
+
+    const { id, error } = await createInspectionFromLease(
+      user.id,
+      {
+        id: lease.id,
+        property_id: lease.property_id,
+        start_date: lease.start_date,
+        end_date: lease.end_date,
+        unit_number: lease.unit_number,
+        tenants: lease.tenants.map(t => ({ tenant_id: t.tenant_id, name: t.name, email: t.email })),
+      },
+      lease.property?.name
+    )
+    setCreatingInspection(false)
+    if (error || !id) { setMemberError('Could not start the inspection. Please try again.'); return }
+    router.push(`/landlord/inspections/${id}`)
   }
 
   if (loading) {
@@ -586,6 +620,63 @@ export default function ViewLeasePage({ params }: { params: Promise<{ leaseId: s
             )}
           </div>
         )}
+
+        {/* Checkout inspection */}
+        <div className="detail-card">
+          <div className="card-header-row">
+            <div className="detail-card-title" style={{ marginBottom: 2 }}>Checkout Inspection</div>
+            {inspections.length > 0 && (
+              <a href="/landlord/inspections" className="plan-link">All inspections →</a>
+            )}
+          </div>
+
+          {inspections.length === 0 ? (
+            <>
+              <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.6, marginBottom: 14 }}>
+                {status === 'past'
+                  ? 'This lease has ended. Generate a move-out report to log findings, attach photos, split costs across tenants and reconcile deposits.'
+                  : 'Generate a move-out report when the tenancy ends — log findings with photos and costs, charge each to the right tenant, and share a printable deposit reconciliation.'}
+                {' '}You can link other leases in the same property so one report covers the whole house.
+              </div>
+              <button className="btn-edit" onClick={startInspection} disabled={creatingInspection}>
+                {creatingInspection ? 'Starting…' : 'Start checkout inspection'}
+              </button>
+            </>
+          ) : (
+            <>
+              {inspections.map(ins => {
+                const t = computeTotals(ins)
+                return (
+                  <div key={ins.id} className="member-row">
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span className="member-name">{ins.title || 'Move-out inspection'}</span>
+                        <span className={`member-badge ${ins.status === 'settled' ? 'badge-active' : ins.status === 'finalized' ? 'badge-terminated' : 'badge-completed'}`}>
+                          {ins.status === 'settled' ? 'Settled' : ins.status === 'finalized' ? 'Awaiting refunds' : 'Draft'}
+                        </span>
+                      </div>
+                      <div className="member-meta">
+                        {ins.items.length} finding{ins.items.length !== 1 ? 's' : ''} ·{' '}
+                        {ins.parties.length} tenant{ins.parties.length !== 1 ? 's' : ''} ·{' '}
+                        {fmtMoney(t.chargeable)} charged
+                        {ins.status !== 'draft' && t.outstandingRefunds > 0
+                          ? ` · ${fmtMoney(t.outstandingRefunds)} still to refund`
+                          : ` · ${fmtMoney(t.totalRefunds)} refundable`}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <a href={`/checkout-report/${ins.share_token}`} target="_blank" rel="noopener noreferrer" className="plan-link">Report ↗</a>
+                      <a href={`/landlord/inspections/${ins.id}`} className="plan-link">Open →</a>
+                    </div>
+                  </div>
+                )
+              })}
+              <button className="btn-add-sm" style={{ marginTop: 12 }} onClick={startInspection} disabled={creatingInspection}>
+                {creatingInspection ? 'Starting…' : '+ New inspection'}
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Notes */}
         {lease.notes && (

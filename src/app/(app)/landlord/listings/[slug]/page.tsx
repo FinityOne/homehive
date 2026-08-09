@@ -15,7 +15,9 @@ import {
   Property,
 } from '@/lib/properties'
 import type { Lead } from '@/lib/leads'
+import { LISTING_STATUS_META, isPublicStatus, type ListingStatus } from '@/lib/listingStatus'
 
+const ListingStatusControl = dynamic(() => import('@/components/listings/ListingStatusControl'), { ssr: false })
 const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
 const FaqManager = dynamic(() => import('@/components/listings/FaqManager'), { ssr: false })
 
@@ -524,6 +526,20 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               </div>
             </div>
 
+            {/* Status & visibility */}
+            <div className="lp-card">
+              <div className="lp-card-hdr">
+                <span className="lp-card-title">Status &amp; Visibility</span>
+              </div>
+              <div className="lp-card-body">
+                <ListingStatusControl
+                  key={property.id}
+                  property={property}
+                  onSaved={patch => setProperty(p => (p ? { ...p, ...patch } as Property : p))}
+                />
+              </div>
+            </div>
+
             {/* Snapshot */}
             <div className="lp-card">
               <div className="lp-card-hdr"><span className="lp-card-title">Snapshot</span></div>
@@ -531,7 +547,13 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                 <div className="detail-row">
                   <div className="detail-item">
                     <div className="detail-label">Status</div>
-                    <span className={`badge ${property.is_active ? 'badge-green' : 'badge-grey'}`}>{property.is_active ? 'Active' : 'Inactive'}</span>
+                    <span className={`badge ${
+                      property.listing_status === 'active' ? (property.is_active ? 'badge-green' : 'badge-grey')
+                      : property.listing_status === 'rented' ? 'badge-blue'
+                      : 'badge-grey'
+                    }`}>
+                      {LISTING_STATUS_META[(property.listing_status ?? 'active') as ListingStatus].label}
+                    </span>
                   </div>
                   <div className="detail-item">
                     <div className="detail-label">Listing Type</div>

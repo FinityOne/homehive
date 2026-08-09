@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { computeIsActive, type ListingStatus } from './listingStatus'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,6 +54,13 @@ export type Property = {
   utilities_included: boolean
   rental_mode: 'whole_home' | 'by_room'
   available_from: string | null
+  // landlord-controlled market state (see src/lib/listingStatus.ts)
+  listing_status: ListingStatus
+  marketing_enabled: boolean
+  accepting_inquiries: boolean
+  show_when_rented: boolean
+  rented_until: string | null
+  status_changed_at: string | null
   // archive lifecycle (auto-archived after 30d of inactivity; NULL = live)
   archived_at: string | null
   archived_reason: string | null
@@ -95,6 +103,19 @@ const PROPERTY_SELECT = `
   property_rooms ( id, property_id, name, price, is_available, position )
 `
 
+// Status columns default to "live" so rows written before the status feature —
+// or by code paths that don't set them — never read as accidentally hidden.
+function statusDefaults(p: any) {
+  return {
+    listing_status: (p.listing_status ?? 'active') as ListingStatus,
+    marketing_enabled: p.marketing_enabled ?? true,
+    accepting_inquiries: p.accepting_inquiries ?? true,
+    show_when_rented: p.show_when_rented ?? false,
+    rented_until: p.rented_until ?? null,
+    status_changed_at: p.status_changed_at ?? null,
+  }
+}
+
 function mapProperty(p: any): Property {
   // Sort all images by position
   const allImages: any[] = [...(p.property_images ?? [])].sort((a, b) => a.position - b.position)
@@ -129,6 +150,7 @@ function mapProperty(p: any): Property {
 
   return {
     ...p,
+    ...statusDefaults(p),
     rental_mode: (p.rental_mode ?? 'whole_home') as 'whole_home' | 'by_room',
     tags: p.property_tags.map((t: any) => t.tag),
     images,
@@ -167,6 +189,7 @@ export function mapPropertyCard(p: any): Property {
 
   return {
     ...p,
+    ...statusDefaults(p),
     rental_mode: (p.rental_mode ?? 'whole_home') as 'whole_home' | 'by_room',
     tags: (p.property_tags ?? []).map((t: any) => t.tag),
     images,
@@ -259,12 +282,24 @@ export async function updatePropertyAdminStatus(
   isTest: boolean,
   reviewNote?: string | null
 ): Promise<{ error: any }> {
+  // Approving a listing must not override the landlord's own status — a home
+  // they marked Rented or Inactive stays hidden once we approve it.
+  const { data: current } = await supabase
+    .from('properties')
+    .select('listing_status, show_when_rented')
+    .eq('id', id)
+    .single()
+
   const { error } = await supabase
     .from('properties')
     .update({
       admin_status: adminStatus,
       is_test: isTest,
-      is_active: adminStatus === 'active',
+      is_active: computeIsActive({
+        listing_status: (current?.listing_status ?? 'active') as ListingStatus,
+        show_when_rented: current?.show_when_rented ?? false,
+        admin_status: adminStatus,
+      }),
       ...(reviewNote !== undefined ? { review_note: reviewNote } : {}),
     })
     .eq('id', id)
@@ -278,17 +313,30 @@ export async function getTotalPropertyCount(): Promise<number> {
   return count ?? 0
 }
 
+// PostgREST filter for the landlord's status axis: Live listings, plus Rented
+// ones the landlord chose to keep up for waitlist interest. Inactive listings
+// never match. Kept as a string so every public query applies the same rule.
+export const PUBLIC_STATUS_FILTER =
+  'listing_status.eq.active,and(listing_status.eq.rented,show_when_rented.is.true)'
+
 // Public listing feed for the home + browse pages. Uses the lightweight card
 // query and excludes archived listings so only fresh inventory shows.
-export async function getProperties(): Promise<Property[]> {
-  const { data, error } = await supabase
+// `marketingOnly` narrows it to promotional surfaces (homepage / featured).
+export async function getProperties(opts: { marketingOnly?: boolean } = {}): Promise<Property[]> {
+  let query = supabase
     .from('properties')
     .select(PROPERTY_CARD_SELECT)
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
     .is('archived_at', null)
-    .order('created_at', { ascending: true })
+    .or(PUBLIC_STATUS_FILTER)
+
+  if (opts.marketingOnly) {
+    query = query.eq('marketing_enabled', true).eq('listing_status', 'active')
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: true })
 
   if (error || !data) {
     console.error('Error fetching properties:', error)
@@ -310,6 +358,7 @@ export async function getPropertiesBySlugs(slugs: string[]): Promise<Property[]>
     .eq('admin_status', 'active')
     .eq('is_test', false)
     .is('archived_at', null)
+    .or(PUBLIC_STATUS_FILTER)
 
   if (error || !data) {
     console.error('Error fetching properties by slug:', error)
@@ -354,6 +403,38 @@ export async function updatePropertyCore(
   const { error } = await supabase
     .from('properties')
     .update(updates)
+    .eq('id', id)
+  return { error }
+}
+
+export type ListingStatusPatch = {
+  listing_status: ListingStatus
+  marketing_enabled: boolean
+  accepting_inquiries: boolean
+  show_when_rented: boolean
+  rented_until: string | null
+}
+
+/**
+ * Write the landlord's status settings. `is_active` — the column the public RLS
+ * policy and every legacy query read — is recomputed here from both the
+ * landlord's choice and HomeHive's approval state, so the two can never drift.
+ * A listing awaiting review stays hidden no matter what the landlord picks.
+ */
+export async function updateListingStatus(
+  id: string,
+  patch: ListingStatusPatch,
+  adminStatus: string
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('properties')
+    .update({
+      ...patch,
+      // Room counts are deliberately left alone — they're the landlord's data
+      // and must survive a Rented → Live round trip intact.
+      is_active: computeIsActive({ ...patch, admin_status: adminStatus }),
+      status_changed_at: new Date().toISOString(),
+    })
     .eq('id', id)
   return { error }
 }
@@ -544,6 +625,7 @@ export async function getPropertyBySlug(slug: string): Promise<Property | null> 
     .eq('slug', slug)
     .eq('is_active', true)
     .eq('is_test', false)
+    .or(PUBLIC_STATUS_FILTER)
     .single()
 
   if (error || !data) return null
