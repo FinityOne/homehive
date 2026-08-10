@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import InspectionReport from '@/components/inspections/InspectionReport'
+import { resolveLiveEmails } from '@/lib/inspectionContacts'
 import type { Inspection } from '@/lib/inspections'
 
 /**
@@ -45,16 +46,42 @@ export default async function CheckoutReportPage({
   // A malformed token would make PostgREST error on the uuid comparison.
   if (!/^[0-9a-f-]{36}$/i.test(token)) notFound()
 
-  const { data, error } = await supabaseAdmin
+  // One URL shape, two kinds of token: the inspection's (whole-house report) or
+  // a tenant's (their statement only). Tenants can't tell which they hold.
+  let { data, error } = await supabaseAdmin
     .from('checkout_inspections')
     .select(SELECT)
     .eq('share_token', token)
     .maybeSingle()
 
+  let partyId: string | undefined
+
+  if (!data) {
+    const { data: party } = await supabaseAdmin
+      .from('checkout_inspection_parties')
+      .select('id, inspection_id')
+      .eq('share_token', token)
+      .maybeSingle()
+
+    if (party) {
+      partyId = party.id
+      const res = await supabaseAdmin
+        .from('checkout_inspections')
+        .select(SELECT)
+        .eq('id', party.inspection_id)
+        .maybeSingle()
+      data = res.data
+      error = res.error
+    }
+  }
+
   if (error || !data) notFound()
 
   const inspection: Inspection = {
     ...(data as any),
+    // Version history isn't rendered on the report itself — only the current
+    // version number and revision note, which come from the row.
+    revisions: [],
     leases: (data as any).leases ?? [],
     parties: [...((data as any).parties ?? [])]
       .sort((a: any, b: any) => a.position - b.position)
@@ -80,5 +107,14 @@ export default async function CheckoutReportPage({
       })),
   }
 
-  return <InspectionReport inspection={inspection} />
+  // Show current contact details, whichever version of the report this is.
+  // Display-only: a tenant opening their statement shouldn't trigger a write.
+  const liveEmails = await resolveLiveEmails(supabaseAdmin as never, inspection.parties)
+  if (liveEmails.size > 0) {
+    inspection.parties = inspection.parties.map(p =>
+      liveEmails.has(p.id) ? { ...p, email: liveEmails.get(p.id)! } : p
+    )
+  }
+
+  return <InspectionReport inspection={inspection} partyId={partyId} />
 }

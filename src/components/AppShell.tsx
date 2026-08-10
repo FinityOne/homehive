@@ -81,12 +81,13 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
       ],
     },
     {
-      // Everyone already in place, through to move-out.
+      // Everyone already in place, through to move-out. Leases is the hub —
+      // each one owns its own tenants, rent ledger, documents and move-out.
       label: 'Residents',
       items: [
-        { href: '/landlord/tenants',     label: 'Tenants',     icon: '◎' },
         { href: '/landlord/leases',      label: 'Leases',      icon: '📋', primary: true },
-        { href: '/landlord/payments',    label: 'Payments',    icon: '💳', primary: true },
+        { href: '/landlord/tenants',     label: 'Tenants',     icon: '◎' },
+        { href: '/landlord/financials',  label: 'Financials',  icon: '💳', primary: true },
         { href: '/landlord/inspections', label: 'Move-out',    icon: '🔎' },
       ],
     },
@@ -375,7 +376,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return { count: newUserCounts['landlord'], color: '#6b21a8', prefix: '+' }
     if (href === '/admin/users/admins' && newUserCounts['admin'] > 0)
       return { count: newUserCounts['admin'], color: '#1e3a8a', prefix: '+' }
-    if (href === '/landlord/payments' && overduePaymentsCount > 0)
+    if (href === '/landlord/financials' && overduePaymentsCount > 0)
       return { count: overduePaymentsCount, color: '#ef4444' }
     return null
   }

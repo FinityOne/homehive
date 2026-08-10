@@ -7,9 +7,11 @@ import {
   getInspection, updateInspection, setInspectionStatus, deleteInspection,
   addLeaseToInspection, removeLeaseFromInspection,
   addParty, updateParty, removeParty,
+  issueInspection, reopenForRevision, needsResend,
   addItem, updateItem, removeItem,
   uploadItemPhoto, removePhoto,
   findDepositsOnFile, applyDepositMatches,
+  findLiveContacts, applyContactUpdates,
   syncLateFees, setLateFeeIncluded, removeLateFee, explainLateFee,
   recordSettlement, clearSettlement, syncInspectionSettlementStatus,
   computeTotals, fmtMoney, AREA_SUGGESTIONS,
@@ -50,6 +52,14 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
   const [draft, setDraft] = useState<ItemInput>(BLANK_ITEM)
   const [draftCost, setDraftCost] = useState('')
 
+  // Statement preview modal — nothing sends until it's confirmed here.
+  type StatementPreview = {
+    partyId: string; name: string; to: string | null
+    balance: number; alreadySent: boolean; subject: string; html: string
+  }
+  const [preview, setPreview] = useState<{ previews: StatementPreview[]; active: number } | null>(null)
+  const [sending, setSending] = useState(false)
+
   const [newPartyName, setNewPartyName] = useState('')
   const [newPartyEmail, setNewPartyEmail] = useState('')
   const [showAddParty, setShowAddParty] = useState(false)
@@ -88,6 +98,23 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
       })
       setOwnerLeases(await getLeasesForOwner(user.id))
       setLoading(false)
+
+      // Emails follow the live contact record — a statement must never go to an
+      // address the landlord has since corrected. Silent, then reported.
+      const drift = await findLiveContacts(data)
+      if (drift.length > 0) {
+        const { error } = await applyContactUpdates(drift)
+        if (!error) {
+          const fresh = await getInspection(id)
+          if (fresh) setInspection(fresh)
+          setFlash({
+            ok: true,
+            text: `Updated ${drift.length} email${drift.length !== 1 ? 's' : ''} from the latest contact details: ` +
+                  drift.map(d => `${d.name} → ${d.to}`).join(', '),
+          })
+          setTimeout(() => setFlash(null), 8000)
+        }
+      }
     }
     load()
   }, [id, router])
@@ -107,7 +134,17 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
   const linkableLeases = ownerLeases.filter(
     l => l.property_id === inspection.property_id && !linkedLeaseIds.has(l.id)
   )
+  const issuedVersion = inspection.version ?? 0
+  const isRevising = !locked && issuedVersion > 0
+  const staleRecipients = inspection.parties.filter(p => needsResend(inspection, p))
+
   const reportUrl = `/checkout-report/${inspection.share_token}`
+  const absolute = (path: string) =>
+    typeof window !== 'undefined' ? `${window.location.origin}${path}` : path
+  const copy = (path: string, msg: string) => {
+    navigator.clipboard?.writeText(absolute(path))
+    say(true, msg)
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -129,22 +166,74 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
     say(true, 'Details saved.')
   }
 
-  async function toggleFinalized() {
+  /** Issue v1, or a superseding revision once tenants already hold a copy. */
+  async function issue() {
     if (!inspection) return
-    const next = locked ? 'draft' : 'finalized'
+    const isRevision = (inspection.version ?? 0) > 0
+    let note: string | null = null
+
+    if (isRevision) {
+      note = window.prompt(
+        `Issuing version ${inspection.version + 1}. What changed?\n\n` +
+        `This prints on the report so tenants can see why their statement was revised.`,
+        ''
+      )
+      if (note === null) return // cancelled
+      if (!note.trim()) return say(false, 'A revision needs a reason.')
+    }
+
     setBusy(true)
-    const { error } = await setInspectionStatus(id, next, inspection.finalized_at)
-    if (!error && next === 'finalized') {
-      // A report with nothing left to move is settled the moment it's issued.
+    const { version, error } = await issueInspection(inspection, note)
+    if (!error) {
       const fresh = await getInspection(id)
       if (fresh) await syncInspectionSettlementStatus({ ...fresh, status: 'finalized' })
     }
     setBusy(false)
-    if (error) return say(false, 'Could not update status.')
+    if (error) return say(false, 'Could not issue the report.')
     await reload()
-    say(true, next === 'finalized'
-      ? 'Report finalized — deposit settlement is now tracked below.'
-      : 'Reopened for editing.')
+    say(true, version === 1
+      ? 'Version 1 issued — deposit settlement is now tracked below.'
+      : `Version ${version} issued. Tenants who already have an older copy are flagged for re-send.`)
+  }
+
+  /** Reopen an issued report to prepare a correction. */
+  async function reopen() {
+    if (!inspection) return
+    const issued = (inspection.version ?? 0) > 0
+    const sentCount = inspection.parties.filter(p => p.report_sent_at).length
+    if (issued && !confirm(
+      `Reopen version ${inspection.version} for editing?\n\n` +
+      (sentCount > 0
+        ? `${sentCount} tenant${sentCount !== 1 ? 's' : ''} already received this version. `
+        : '') +
+      `Version ${inspection.version} stays on the record — your changes go out as version ${inspection.version + 1}.`
+    )) return
+
+    setBusy(true)
+    const { error } = issued
+      ? await reopenForRevision(id)
+      : await setInspectionStatus(id, 'draft', inspection.finalized_at)
+    setBusy(false)
+    if (error) return say(false, 'Could not reopen the report.')
+    await reload()
+    say(true, issued ? 'Reopened — issue a revision when your changes are done.' : 'Reopened for editing.')
+  }
+
+  /** Manually re-pull emails from the tenant records. */
+  async function syncContacts() {
+    if (!inspection) return
+    setBusy(true)
+    const drift = await findLiveContacts(inspection)
+    if (drift.length === 0) {
+      setBusy(false)
+      return say(true, 'All emails already match the latest contact details.')
+    }
+    const { error } = await applyContactUpdates(drift)
+    setBusy(false)
+    if (error) return say(false, 'Could not update contact details.')
+    await reload()
+    say(true, `Updated ${drift.length} email${drift.length !== 1 ? 's' : ''}: ` +
+      drift.map(d => `${d.name} → ${d.to}`).join(', '))
   }
 
   /** Pull what each tenant actually paid as a deposit out of the payments ledger. */
@@ -161,6 +250,63 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
     if (error) return say(false, 'Could not apply deposits.')
     await reload()
     say(true, `Pulled ${matches.length} deposit${matches.length !== 1 ? 's' : ''} from Payments.`)
+  }
+
+  /**
+   * Open the preview modal. Nothing is sent until the landlord approves what
+   * they can see — the preview is rendered by the same builder as the send.
+   */
+  async function sendStatements(partyIds?: string[]) {
+    if (!inspection) return
+    const targets = partyIds
+      ? totals.perParty.filter(p => partyIds.includes(p.party.id))
+      : totals.perParty
+    if (targets.filter(p => p.party.email?.trim()).length === 0) {
+      return say(false, 'No tenants on this report have an email address.')
+    }
+
+    setBusy(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/inspections/${id}/preview-statements`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify(partyIds ? { partyIds } : {}),
+    })
+    const json = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) return say(false, json.error || 'Could not build the preview.')
+
+    setPreview({ previews: json.previews ?? [], active: 0 })
+  }
+
+  /** Confirmed from the modal — actually send. */
+  async function confirmSend() {
+    if (!preview || !inspection) return
+    const ids = preview.previews.filter(p => p.to).map(p => p.partyId)
+    setSending(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/inspections/${id}/send-report`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ partyIds: ids }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setSending(false)
+
+    if (!res.ok) return say(false, json.error || 'Could not send the statements.')
+    setPreview(null)
+    await reload()
+
+    const bits = [`Sent to ${json.sent} tenant${json.sent !== 1 ? 's' : ''}`]
+    if (json.skipped?.length) bits.push(`${json.skipped.length} skipped (no email)`)
+    if (json.failed?.length) bits.push(`${json.failed.length} failed`)
+    say(json.sent > 0, bits.join(' · '))
   }
 
   /** Bring across every late rent payment from the linked leases. */
@@ -278,9 +424,18 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
             <a href={reportUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost">
               Preview report ↗
             </a>
-            <button className="btn-dark" onClick={toggleFinalized} disabled={busy}>
-              {locked ? 'Reopen' : 'Finalize'}
-            </button>
+            {locked && (
+              <button className="btn-send" onClick={() => sendStatements()} disabled={busy}>
+                ✉ Email tenants
+              </button>
+            )}
+            {locked ? (
+              <button className="btn-ghost" onClick={reopen} disabled={busy}>Revise</button>
+            ) : (
+              <button className="btn-dark" onClick={issue} disabled={busy}>
+                {issuedVersion > 0 ? `Issue version ${issuedVersion + 1}` : 'Finalize & issue'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -313,36 +468,127 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
 
         {flash && <div className={flash.ok ? 'alert-ok' : 'alert-err'}>{flash.text}</div>}
 
-        {locked && (
-          <div className="lock-note">
-            {inspection.status === 'settled'
-              ? <>Every tenant is settled — this inspection is complete. <strong>Reopen</strong> it only if something needs correcting.</>
-              : <>This report is finalized. <strong>Reopen</strong> it to change findings. Record refunds under <strong>Deposit settlement</strong> below.</>}
+        {isRevising && (
+          <div className="revise-note">
+            <strong>Preparing version {issuedVersion + 1}.</strong> Version {issuedVersion} stays on the
+            record and is what tenants currently hold. Make your corrections, then{' '}
+            <strong>Issue version {issuedVersion + 1}</strong> with a reason — you&apos;ll be able to
+            re-send updated statements afterwards.
           </div>
         )}
 
-        {/* Share link */}
+        {locked && (
+          <div className="lock-note">
+            {inspection.status === 'settled'
+              ? <>Version {issuedVersion} issued and every tenant is settled — this inspection is complete. Use <strong>Revise</strong> if something needs correcting.</>
+              : <>Version {issuedVersion} issued{inspection.finalized_at ? ` on ${new Date(inspection.finalized_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}` : ''}. Record refunds under <strong>Deposit settlement</strong>, or <strong>Revise</strong> to correct something.</>}
+          </div>
+        )}
+
+        {staleRecipients.length > 0 && locked && (
+          <div className="alert-warn">
+            {staleRecipients.length} tenant{staleRecipients.length !== 1 ? 's have' : ' has'} an
+            outdated statement — {staleRecipients.map(p => p.name).join(', ')}.{' '}
+            <button className="lnk-btn" onClick={() => sendStatements(staleRecipients.map(p => p.id))}>
+              Re-send updated statements
+            </button>
+          </div>
+        )}
+
+        {/* Share links — the house report, plus one per tenant */}
         <div className="card">
-          <div className="card-hd"><span className="card-title">Shareable report link</span></div>
+          <div className="card-hd"><span className="card-title">Report links</span></div>
           <div className="card-bd">
+            <div className="sub-label">Full report — all tenants</div>
             <div className="share-row">
-              <input className="inp" readOnly value={typeof window !== 'undefined' ? `${window.location.origin}${reportUrl}` : reportUrl} />
-              <button
-                className="btn-ghost"
-                onClick={() => {
-                  navigator.clipboard?.writeText(`${window.location.origin}${reportUrl}`)
-                  say(true, 'Link copied.')
-                }}
-              >
-                Copy
-              </button>
+              <input className="inp" readOnly value={absolute(reportUrl)} />
+              <button className="btn-ghost" onClick={() => copy(reportUrl, 'Full report link copied.')}>Copy</button>
+              <a href={reportUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost">Preview ↗</a>
             </div>
             <div className="hint">
-              Anyone with this link can view the report — no login needed. It has no navigation, so
-              it prints cleanly to PDF.
+              Every finding and each tenant&apos;s reconciliation. This is your record — it shows
+              everyone&apos;s deposits and balances, so share it with care.
             </div>
+
+            {inspection.parties.length > 0 && (
+              <>
+                <div className="sub-label" style={{ marginTop: '20px' }}>
+                  Personal statements — one per tenant
+                </div>
+                <div className="hint" style={{ marginTop: '-4px', marginBottom: '10px' }}>
+                  Each link shows only that person&apos;s charges, their share of common findings and
+                  their own late fees. This is what the emailed statement links to.
+                </div>
+                {totals.perParty.map(pt => {
+                  const url = `/checkout-report/${pt.party.share_token}`
+                  const stale = needsResend(inspection, pt.party)
+                  const hasEmail = !!pt.party.email?.trim()
+                  return (
+                    <div key={pt.party.id} className="share-person">
+                      <div className="share-person-main">
+                        <div className="row-title">{pt.party.name}</div>
+                        <div className="row-sub">
+                          {pt.balance >= 0
+                            ? `${fmtMoney(pt.balance)} refund`
+                            : `${fmtMoney(Math.abs(pt.balance))} owed`}
+                          {!hasEmail
+                            ? ' · no email on file'
+                            : stale
+                              ? ' · sent an older version'
+                              : pt.party.report_sent_at
+                                ? ` · sent ${new Date(pt.party.report_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                                : ' · not sent'}
+                        </div>
+                      </div>
+                      {stale && <span className="pill pill-draft">Outdated</span>}
+                      <button className="btn-ghost" onClick={() => copy(url, `${pt.party.name}'s link copied.`)}>Copy</button>
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="btn-ghost">Preview ↗</a>
+                      {locked && hasEmail && (
+                        <button
+                          className="btn-send-sm"
+                          onClick={() => sendStatements([pt.party.id])}
+                          disabled={busy}
+                          title={`Email this statement to ${pt.party.email}`}
+                        >
+                          ✉ {pt.party.report_sent_at ? 'Resend' : 'Send'}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            )}
           </div>
         </div>
+
+        {/* Version history */}
+        {inspection.revisions.length > 0 && (
+          <div className="card">
+            <div className="card-hd">
+              <span className="card-title">Version history</span>
+              <span className="card-note">Issued statements are superseded, never overwritten</span>
+            </div>
+            <div className="card-bd">
+              {inspection.revisions.map(rev => (
+                <div key={rev.id} className="rev-row">
+                  <span className={`rev-badge${rev.version === issuedVersion ? ' current' : ''}`}>
+                    v{rev.version}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="row-title">
+                      {rev.version === issuedVersion ? 'Current version' : `Superseded by v${rev.version + 1}`}
+                      {rev.note && <span className="rev-note"> — {rev.note}</span>}
+                    </div>
+                    <div className="row-sub">
+                      Issued {new Date(rev.issued_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      {rev.snapshot && ` · ${fmtMoney(rev.snapshot.chargeable)} charged`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Details */}
         <div className="card">
@@ -672,9 +918,19 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
         <div className="card">
           <div className="card-hd">
             <span className="card-title">Deposit settlement</span>
-            <button className="btn-ghost" onClick={syncDeposits} disabled={busy}>
-              Pull deposits from Payments
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {locked && (
+                <button className="btn-send" onClick={() => sendStatements()} disabled={busy}>
+                  ✉ Email all statements
+                </button>
+              )}
+              <button className="btn-ghost" onClick={syncContacts} disabled={busy}>
+                Sync emails
+              </button>
+              <button className="btn-ghost" onClick={syncDeposits} disabled={busy}>
+                Pull deposits from Payments
+              </button>
+            </div>
           </div>
           <div className="card-bd">
             {!locked && (
@@ -692,6 +948,8 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
                 disabled={!locked}
                 onChanged={afterSettlementChange}
                 onFlash={say}
+                onSend={locked ? () => sendStatements([pt.party.id]) : undefined}
+                sending={busy}
               />
             ))}
           </div>
@@ -701,6 +959,92 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
           Delete this inspection
         </button>
       </div>
+
+      {/* ── Statement preview & confirmation ── */}
+      {preview && (() => {
+        const list = preview.previews
+        const current = list[preview.active]
+        const sendable = list.filter(p => p.to)
+        const missing = list.filter(p => !p.to)
+        return (
+          <div className="modal-back" onClick={() => !sending && setPreview(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-hd">
+                <div>
+                  <div className="modal-title">
+                    {list.length === 1 ? `Statement for ${list[0].name}` : `${list.length} statements`}
+                  </div>
+                  <div className="modal-sub">
+                    This is exactly what will be sent. Nothing goes out until you confirm.
+                  </div>
+                </div>
+                <button className="modal-x" onClick={() => setPreview(null)} disabled={sending}>×</button>
+              </div>
+
+              {list.length > 1 && (
+                <div className="modal-tabs">
+                  {list.map((p, i) => (
+                    <button
+                      key={p.partyId}
+                      className={`modal-tab${i === preview.active ? ' active' : ''}`}
+                      onClick={() => setPreview({ ...preview, active: i })}
+                    >
+                      {p.name}
+                      {!p.to && <span className="modal-tab-warn">no email</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {current && (
+                <div className="modal-meta">
+                  <div><span className="modal-meta-k">To</span>{' '}
+                    {current.to
+                      ? <strong>{current.to}</strong>
+                      : <span className="modal-meta-missing">no email on file — will be skipped</span>}
+                  </div>
+                  <div><span className="modal-meta-k">Subject</span> {current.subject}</div>
+                  {current.alreadySent && (
+                    <div className="modal-meta-note">
+                      This tenant already received a statement — sending again replaces their copy.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="modal-body">
+                {current && (
+                  <iframe
+                    title={`Statement preview for ${current.name}`}
+                    srcDoc={current.html}
+                    sandbox=""
+                    className="modal-frame"
+                  />
+                )}
+              </div>
+
+              <div className="modal-ft">
+                <div className="modal-ft-note">
+                  {missing.length > 0 && `${missing.length} without an email will be skipped. `}
+                  {sendable.length > 0
+                    ? `Sending to ${sendable.length} tenant${sendable.length !== 1 ? 's' : ''}.`
+                    : 'Nobody here has an email address.'}
+                </div>
+                <div className="modal-ft-actions">
+                  <button className="btn-ghost" onClick={() => setPreview(null)} disabled={sending}>Cancel</button>
+                  <button className="btn-dark" onClick={confirmSend} disabled={sending || sendable.length === 0}>
+                    {sending
+                      ? 'Sending…'
+                      : sendable.length === 1
+                        ? `Send to ${sendable[0].name}`
+                        : `Send ${sendable.length} statements`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }
@@ -884,12 +1228,15 @@ function PartyRow({
  * share of common damage → what to send back, and whether it's been sent.
  */
 function SettlementCard({
-  pt, disabled, onChanged, onFlash,
+  pt, disabled, onChanged, onFlash, onSend, sending,
 }: {
   pt: PartyTotal
   disabled: boolean
   onChanged: () => Promise<void>
   onFlash: (ok: boolean, text: string) => void
+  /** Present once the report is finalized and can be emailed. */
+  onSend?: () => void
+  sending?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -944,6 +1291,28 @@ function SettlementCard({
         </div>
         <span className={`pill ${meta.cls}`}>{meta.label}</span>
       </div>
+
+      {/* Statement delivery — has this person actually been told? */}
+      {onSend && (
+        <div className="sent-row">
+          {!pt.party.email?.trim() ? (
+            <span className="sent-none">No email on file — add one to send their statement.</span>
+          ) : pt.party.report_sent_at ? (
+            <>
+              <span className="sent-ok">
+                ✓ Statement emailed {new Date(pt.party.report_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {pt.party.report_sent_to ? ` to ${pt.party.report_sent_to}` : ''}
+              </span>
+              <button className="lnk-btn" onClick={onSend} disabled={sending}>Resend</button>
+            </>
+          ) : (
+            <>
+              <span className="sent-none">Statement not sent yet</span>
+              <button className="btn-send-sm" onClick={onSend} disabled={sending}>✉ Send statement</button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="settle-math">
         <div className="sm-row">
@@ -1075,18 +1444,34 @@ function ItemCard({
     await onChanged()
   }
 
-  async function upload(files: FileList | null) {
-    if (!files?.length) return
+  /**
+   * `files` must already be a real array. A FileList is live: the caller resets
+   * the input straight after this returns, which empties the list — if we read
+   * it after an await, every upload silently becomes a no-op.
+   */
+  async function upload(files: File[]) {
+    if (files.length === 0) return
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { onFlash(false, 'Your session expired — sign in again to upload.'); return }
+
     setUploading(true)
     let pos = item.photos.length
-    for (const file of Array.from(files)) {
+    let uploaded = 0
+    for (const file of files) {
       const { error } = await uploadItemPhoto(file, user.id, inspection.id, item.id, pos++)
-      if (error) { onFlash(false, `Upload failed: ${file.name}`); break }
+      if (error) {
+        // Surface what storage actually said — "upload failed" alone is useless.
+        const msg = (error as { message?: string })?.message || 'unknown error'
+        onFlash(false, `Could not upload ${file.name}: ${msg}`)
+        break
+      }
+      uploaded++
     }
     setUploading(false)
-    await onChanged()
+    if (uploaded > 0) {
+      await onChanged()
+      onFlash(true, `${uploaded} photo${uploaded !== 1 ? 's' : ''} added.`)
+    }
   }
 
   return (
@@ -1169,8 +1554,19 @@ function ItemCard({
             </button>
             <label className="btn-ghost" style={{ cursor: 'pointer' }}>
               {uploading ? 'Uploading…' : '+ Photos'}
-              <input type="file" accept="image/*" multiple hidden
-                onChange={e => { upload(e.target.files); e.target.value = '' }} />
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,image/*"
+                multiple
+                hidden
+                disabled={uploading}
+                onChange={e => {
+                  // Snapshot synchronously — resetting the input clears the list.
+                  const picked = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  upload(picked)
+                }}
+              />
             </label>
             <button className="btn-link-danger" onClick={destroy}>Delete</button>
           </div>
@@ -1227,6 +1623,16 @@ const CSS = `
   .src { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 4px; margin-left: 7px; }
   .src-auto { background: #ecfdf5; color: #059669; }
   .settle-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9px; padding: 14px; }
+  .sent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #fafbfc; border: 1px solid #eef2f7; border-radius: 8px; padding: 8px 11px; margin-bottom: 12px; }
+  .sent-ok { font-size: 11.5px; color: #059669; font-weight: 600; }
+  .sent-none { font-size: 11.5px; color: #94a3b8; }
+  .btn-send { background: #fff; color: #0f172a; border: 1.5px solid #0f172a; border-radius: 8px; padding: 9px 15px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-send:hover:not(:disabled) { background: #0f172a; color: #34d399; }
+  .btn-send:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-send-sm { background: #0f172a; color: #34d399; border: none; border-radius: 7px; padding: 5px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-send-sm:disabled { opacity: .5; cursor: not-allowed; }
+  .lnk-btn { background: none; border: none; color: #10b981; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .lnk-btn:hover { text-decoration: underline; }
   .settle-done { font-size: 12.5px; color: #065f46; }
 
   .btn-dark { background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
@@ -1241,6 +1647,14 @@ const CSS = `
   .alert-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px; }
   .alert-err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px; }
   .lock-note { background: #f0f9ff; border: 1px solid #bae6fd; color: #075985; border-radius: 8px; padding: 11px 14px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+  .revise-note { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; color: #92400e; border-radius: 8px; padding: 11px 14px; font-size: 13px; margin-bottom: 16px; line-height: 1.55; }
+  .alert-warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 11px 14px; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
+
+  .rev-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f8fafc; }
+  .rev-row:last-child { border-bottom: none; }
+  .rev-badge { font-size: 11px; font-weight: 700; background: #f1f5f9; color: #64748b; padding: 3px 9px; border-radius: 6px; flex-shrink: 0; }
+  .rev-badge.current { background: #d1fae5; color: #065f46; }
+  .rev-note { font-weight: 400; color: #64748b; }
 
   .card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }
   .card-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; }
@@ -1332,8 +1746,39 @@ const CSS = `
   .lf-mismatch { font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 9px; line-height: 1.5; margin-top: 5px; }
   .lf-amt { font-size: 14px; font-weight: 700; color: #0f172a; white-space: nowrap; }
 
+  /* Statement preview modal */
+  .modal-back { position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 400; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(15,23,42,0.3); }
+  .modal-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid #f1f5f9; }
+  .modal-title { font-size: 16px; font-weight: 700; color: #0f172a; }
+  .modal-sub { font-size: 12px; color: #94a3b8; margin-top: 3px; line-height: 1.5; }
+  .modal-x { background: none; border: none; font-size: 22px; line-height: 1; color: #94a3b8; cursor: pointer; padding: 0 4px; }
+  .modal-x:hover { color: #0f172a; }
+  .modal-tabs { display: flex; gap: 4px; padding: 10px 20px 0; overflow-x: auto; border-bottom: 1px solid #f1f5f9; }
+  .modal-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 7px 11px; font-size: 12.5px; font-weight: 500; color: #64748b; cursor: pointer; font-family: inherit; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  .modal-tab.active { color: #0f172a; font-weight: 700; border-bottom-color: #0f172a; }
+  .modal-tab-warn { font-size: 9px; font-weight: 700; text-transform: uppercase; background: #fef3c7; color: #92400e; padding: 1px 5px; border-radius: 4px; }
+  .modal-meta { padding: 13px 20px; background: #fafbfc; border-bottom: 1px solid #f1f5f9; font-size: 12.5px; color: #334155; line-height: 1.75; }
+  .modal-meta-k { display: inline-block; min-width: 52px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
+  .modal-meta-missing { color: #b45309; font-weight: 600; }
+  .modal-meta-note { margin-top: 5px; font-size: 11.5px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 9px; }
+  .modal-body { flex: 1; overflow: auto; background: #f1f5f9; min-height: 220px; }
+  .modal-frame { width: 100%; height: 460px; border: none; display: block; background: #f1f5f9; }
+  .modal-ft { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-top: 1px solid #f1f5f9; flex-wrap: wrap; }
+  .modal-ft-note { font-size: 12px; color: #64748b; }
+  .modal-ft-actions { display: flex; gap: 9px; }
+
+  @media (max-width: 640px) {
+    .modal-back { padding: 0; }
+    .modal { max-height: 100vh; border-radius: 0; }
+    .modal-frame { height: 340px; }
+  }
+
   .share-row { display: flex; gap: 8px; align-items: center; }
   .share-row .inp { font-size: 12.5px; color: #64748b; }
+  .share-person { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid #f1f5f9; }
+  .share-person:first-of-type { border-top: none; }
+  .share-person-main { flex: 1; min-width: 0; }
 
   .tot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .tot-box { border: 1px solid #eef2f7; background: #fafbfc; border-radius: 9px; padding: 12px 13px; }

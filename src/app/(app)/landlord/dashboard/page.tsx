@@ -598,7 +598,7 @@ export default function LandlordDashboard() {
           <div className="panel">
             <div className="panel-hd">
               <span className="panel-title">Payments</span>
-              <a href="/landlord/payments" className="panel-link">View all →</a>
+              <a href="/landlord/financials" className="panel-link">View all →</a>
             </div>
             <div className="panel-body">
 

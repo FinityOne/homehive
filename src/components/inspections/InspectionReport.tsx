@@ -18,13 +18,39 @@ function partyLabel(p: InspectionParty): string {
   return p.room_label ? `${p.name} · ${p.room_label}` : p.name
 }
 
-export default function InspectionReport({ inspection }: { inspection: Inspection }) {
+export default function InspectionReport({
+  inspection,
+  /**
+   * When set, renders that one tenant's statement instead of the whole house:
+   * only findings they're charged for (their own plus their share of common
+   * ones), only their late fees, only their reconciliation. A departing
+   * housemate has no business seeing everyone else's deposits and balances.
+   */
+  partyId,
+}: {
+  inspection: Inspection
+  partyId?: string
+}) {
   const totals = computeTotals(inspection)
   const isDraft = inspection.status !== 'finalized'
 
+  const personal = partyId ? totals.perParty.find(p => p.party.id === partyId) ?? null : null
+  const isPersonal = !!personal
+
+  // A personal report shows the findings that cost this tenant money, plus
+  // wear-and-tear items — documenting what was *not* charged is what makes the
+  // charges that were applied credible.
+  const chargedItemIds = new Set(personal?.charges.map(c => c.itemId) ?? [])
+  const visibleItems = isPersonal
+    ? inspection.items.filter(i => chargedItemIds.has(i.id) || i.is_wear_and_tear)
+    : inspection.items
+
+  const visibleParties = isPersonal && personal ? [personal.party] : inspection.parties
+  const visibleTotals = isPersonal && personal ? [personal] : totals.perParty
+
   // Findings keep their entered order but group under their area heading.
   const areas: { area: string; items: typeof inspection.items }[] = []
-  for (const item of inspection.items) {
+  for (const item of visibleItems) {
     const area = item.area?.trim() || 'General'
     const bucket = areas.find(a => a.area === area)
     if (bucket) bucket.items.push(item)
@@ -33,6 +59,16 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
 
   const chargedToLabel = (item: (typeof inspection.items)[number]): string => {
     if (item.is_wear_and_tear) return 'Normal wear & tear — not charged'
+
+    // On a personal report, describe the split without naming housemates.
+    if (isPersonal && personal) {
+      const charge = personal.charges.find(c => c.itemId === item.id)
+      if (!charge) return 'Not charged to you'
+      return charge.basis === 'shared'
+        ? `Shared cost of ${fmtMoney(item.cost)}, split ${charge.sharedWith} ways — your share ${fmtMoney(charge.amount)}`
+        : `Charged to you in full`
+    }
+
     if (item.allocation === 'tenants' || item.allocation === 'tenant') {
       const named = inspection.parties.filter(x => (item.party_ids ?? []).includes(x.id))
       if (named.length === 0) return 'Charged to a tenant who is no longer on this report'
@@ -62,6 +98,7 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
         .toolbar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 14px; }
 
         .draft { background: #fffbeb; border: 1.5px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 9px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #92400e; line-height: 1.5; }
+        .revised { background: #eff6ff; border: 1.5px solid #bfdbfe; border-left: 4px solid #3b82f6; border-radius: 9px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #1e40af; line-height: 1.55; }
 
         .hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 18px; margin-bottom: 22px; }
         .brand { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
@@ -128,8 +165,6 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
         .lf-why { font-size: 11px; color: #94a3b8; line-height: 1.55; margin-top: 2px; }
 
         .foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11.5px; color: #94a3b8; line-height: 1.7; }
-        .sig { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; margin-top: 30px; page-break-inside: avoid; }
-        .sig-line { border-top: 1px solid #cbd5e1; padding-top: 6px; font-size: 11px; color: #94a3b8; }
 
         .empty { font-size: 13px; color: #94a3b8; font-style: italic; }
 
@@ -146,7 +181,6 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
           .meta { grid-template-columns: repeat(2, 1fr); }
           .hdr { flex-direction: column; }
           .hdr-right { text-align: left; }
-          .sig { grid-template-columns: 1fr; }
         }
       `}</style>
 
@@ -160,10 +194,24 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
           </div>
         )}
 
+        {/* A revision replaces something the tenant already has — say so plainly. */}
+        {!isDraft && (inspection.version ?? 0) > 1 && (
+          <div className="revised">
+            <strong>Revised statement — version {inspection.version}.</strong> This supersedes
+            version {inspection.version - 1}
+            {inspection.finalized_at
+              ? `, issued ${new Date(inspection.finalized_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+              : ''}.
+            {inspection.revision_note ? ` What changed: ${inspection.revision_note}` : ''}
+          </div>
+        )}
+
         <div className="hdr">
           <div>
             <div className="brand">Home<em>Hive</em></div>
-            <div className="doc-type">Move-out Inspection &amp; Deposit Reconciliation</div>
+            <div className="doc-type">
+              {isPersonal ? 'Move-out Statement' : 'Move-out Inspection & Deposit Reconciliation'}
+            </div>
             <div className="prop-name" style={{ marginTop: '12px' }}>
               {inspection.property?.name ?? 'Property'}
             </div>
@@ -171,6 +219,7 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
           </div>
           <div className="hdr-right">
             <div>Report #{inspection.id.slice(0, 8).toUpperCase()}</div>
+            {(inspection.version ?? 0) > 0 && <div>Version {inspection.version}</div>}
             <div>Inspected {fmtDate(inspection.inspection_date)}</div>
             {inspection.finalized_at && (
               <div>Issued {new Date(inspection.finalized_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
@@ -205,10 +254,10 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
         )}
 
         <div className="sec">
-          <div className="sec-title">Tenants covered by this report</div>
-          {inspection.parties.length === 0 ? (
+          <div className="sec-title">{isPersonal ? 'Prepared for' : 'Tenants covered by this report'}</div>
+          {visibleParties.length === 0 ? (
             <div className="empty">No tenants added.</div>
-          ) : inspection.parties.map(p => (
+          ) : visibleParties.map(p => (
             <div key={p.id} className="party-line">
               <div>
                 <div style={{ fontWeight: 600 }}>{partyLabel(p)}</div>
@@ -223,9 +272,15 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
         </div>
 
         <div className="sec">
-          <div className="sec-title">Findings ({inspection.items.length})</div>
-          {inspection.items.length === 0 ? (
-            <div className="empty">No findings recorded — the property was returned in expected condition.</div>
+          <div className="sec-title">
+            {isPersonal ? `Findings that affect you (${visibleItems.length})` : `Findings (${visibleItems.length})`}
+          </div>
+          {visibleItems.length === 0 ? (
+            <div className="empty">
+              {isPersonal
+                ? 'No findings were charged to you.'
+                : 'No findings recorded — the property was returned in expected condition.'}
+            </div>
           ) : areas.map(group => (
             <div key={group.area}>
               <div className="area-hd">{group.area}</div>
@@ -249,7 +304,13 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
                     )}
                   </div>
                   <div className={`find-cost${item.is_wear_and_tear ? ' wear' : ''}`}>
-                    {item.is_wear_and_tear ? 'No charge' : fmtMoney(item.cost)}
+                    {item.is_wear_and_tear ? 'No charge' : (() => {
+                      const charge = isPersonal && personal
+                        ? personal.charges.find(c => c.itemId === item.id)
+                        : null
+                      // Personal report bills the tenant's share, not the full cost.
+                      return charge ? fmtMoney(charge.amount) : fmtMoney(item.cost)
+                    })()}
                   </div>
                 </div>
               ))}
@@ -257,17 +318,17 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
           ))}
         </div>
 
-        {totals.lateFeeTotal > 0 && (
+        {visibleTotals.some(pt => pt.lateFeesTotal > 0) && (
           <div className="sec">
             <div className="sec-title">Late payment charges</div>
             <div className="lf-intro">
               Rent payments that arrived after their due date. Each charge shows how it was
               calculated from the payment terms in your lease.
             </div>
-            {totals.perParty.filter(pt => pt.lateFees.some(f => f.included)).map(pt => (
+            {visibleTotals.filter(pt => pt.lateFees.some(f => f.included)).map(pt => (
               <div key={pt.party.id} className="lf-block">
                 <div className="lf-name">
-                  {partyLabel(pt.party)}
+                  {isPersonal ? 'Your late payments' : partyLabel(pt.party)}
                   <span className="lf-sum">{fmtMoney(pt.lateFeesTotal)}</span>
                 </div>
                 <table className="lf-table">
@@ -297,8 +358,8 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
         )}
 
         <div className="sec">
-          <div className="sec-title">Deposit reconciliation</div>
-          {totals.perParty.length === 0 ? (
+          <div className="sec-title">{isPersonal ? 'Your deposit' : 'Deposit reconciliation'}</div>
+          {visibleTotals.length === 0 ? (
             <div className="empty">No tenants to reconcile.</div>
           ) : (
             <table className="recon">
@@ -311,7 +372,7 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
                 </tr>
               </thead>
               <tbody>
-                {totals.perParty.map(pt => (
+                {visibleTotals.map(pt => (
                   <tr key={pt.party.id}>
                     <td>
                       <div className="recon-name">{partyLabel(pt.party)}</div>
@@ -360,6 +421,39 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
 
           <div className="totals">
             <div className="totals-inner">
+              {isPersonal && personal ? (
+                <>
+                  <div className="tot-row">
+                    <span>Security deposit held</span>
+                    <span>{fmtMoney(personal.depositHeld)}</span>
+                  </div>
+                  {personal.directTotal > 0 && (
+                    <div className="tot-row">
+                      <span>Damage charged to you</span>
+                      <span>− {fmtMoney(personal.directTotal)}</span>
+                    </div>
+                  )}
+                  {personal.sharedTotal > 0 && (
+                    <div className="tot-row">
+                      <span>Your share of shared damage</span>
+                      <span>− {fmtMoney(personal.sharedTotal)}</span>
+                    </div>
+                  )}
+                  {personal.lateFeesTotal > 0 && (
+                    <div className="tot-row">
+                      <span>Late payment charges</span>
+                      <span>− {fmtMoney(personal.lateFeesTotal)}</span>
+                    </div>
+                  )}
+                  <div className="tot-row grand">
+                    <span>{personal.balance >= 0 ? 'Refund due to you' : 'Balance due from you'}</span>
+                    <span style={{ color: personal.balance >= 0 ? '#059669' : '#dc2626' }}>
+                      {fmtMoney(Math.abs(personal.balance))}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
               <div className="tot-row">
                 <span>Chargeable damages</span>
                 <span>{fmtMoney(totals.damageTotal)}</span>
@@ -390,13 +484,10 @@ export default function InspectionReport({ inspection }: { inspection: Inspectio
                   <span style={{ color: '#dc2626' }}>{fmtMoney(totals.totalOwed)}</span>
                 </div>
               )}
+                </>
+              )}
             </div>
           </div>
-        </div>
-
-        <div className="sig">
-          <div className="sig-line">Landlord / inspector signature &amp; date</div>
-          <div className="sig-line">Tenant acknowledgement &amp; date</div>
         </div>
 
         <div className="foot">

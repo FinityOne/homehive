@@ -128,7 +128,7 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
   }
 
   // Room image handlers
-  async function handleRoomUpload(files: FileList, room: PropertyRoom) {
+  async function handleRoomUpload(files: File[], room: PropertyRoom) {
     if (!property) return
     setRoomUploading(prev => ({ ...prev, [room.id]: true }))
 
@@ -349,11 +349,12 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
                     style={{ display: 'none' }}
                     ref={el => { roomFileInputRefs.current[room.id] = el }}
                     onChange={e => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        handleRoomUpload(e.target.files, room)
-                        // reset so same file can be re-selected
-                        e.target.value = ''
-                      }
+                      // Snapshot before resetting the input: a FileList is live,
+                      // so clearing .value empties it mid-upload and every photo
+                      // after the first is silently dropped.
+                      const picked = Array.from(e.target.files ?? [])
+                      e.target.value = '' // so the same file can be re-selected
+                      if (picked.length > 0) handleRoomUpload(picked, room)
                     }}
                   />
                 </div>

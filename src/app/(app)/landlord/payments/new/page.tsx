@@ -21,6 +21,8 @@ type SpecialDraft  = { category: SpecialCategory; label: string; amount: string;
 
 type Property = { id: string; name: string; slug: string }
 type Lease    = { id: string; start_date: string; end_date: string; rent_amount: number | null }
+/** A person already recorded on the lease — offered as a one-click payer. */
+type LeaseTenant = { id: string; name: string | null; email: string | null }
 
 // ─── STEP INDICATOR ──────────────────────────────────────────────────────────
 
@@ -94,6 +96,7 @@ export default function NewPaymentPlanPage() {
   const [selectedPropId,    setSelectedPropId]    = useState('')
   const [leases,            setLeases]            = useState<Lease[]>([])
   const [selectedLeaseId,   setSelectedLeaseId]   = useState('')
+  const [leaseTenants,      setLeaseTenants]      = useState<LeaseTenant[]>([])
   const [planName,          setPlanName]          = useState('')
 
   // Step 2 — payers
@@ -113,6 +116,17 @@ export default function NewPaymentPlanPage() {
   // Step 4 — special charges
   const [specials, setSpecials] = useState<SpecialDraft[]>([])
 
+  // Declared before the effects that use it — the ?lease= preselect calls it.
+  function loadLeaseTenants(leaseId: string) {
+    setLeaseTenants([])
+    if (!leaseId) return
+    supabase
+      .from('lease_tenants')
+      .select('id, name, email')
+      .eq('lease_id', leaseId)
+      .then(({ data }) => setLeaseTenants((data ?? []).filter(t => t.name || t.email)))
+  }
+
   useEffect(() => { document.title = 'New Payment — Landlord | HomeHive' }, [])
 
   useEffect(() => {
@@ -123,6 +137,33 @@ export default function NewPaymentPlanPage() {
         .then(({ data }) => setProperties(data ?? []))
     })
   }, [])
+
+  // Arriving from a lease ("Set up rent collection") — preselect its property
+  // and the lease itself so the landlord starts on step 1 already filled in.
+  useEffect(() => {
+    const leaseParam = new URLSearchParams(window.location.search).get('lease')
+    if (!leaseParam || properties.length === 0 || selectedLeaseId) return
+
+    supabase
+      .from('leases')
+      .select('id, property_id, start_date, end_date, rent_amount')
+      .eq('id', leaseParam)
+      .maybeSingle()
+      .then(({ data: lease }) => {
+        if (!lease) return
+        const prop = properties.find(p => p.id === lease.property_id)
+        if (!prop) return
+        setSelectedPropId(lease.property_id)
+        setPlanName(`Rent – ${prop.name}`)
+        setLeases([lease])
+        setSelectedLeaseId(lease.id)
+        loadLeaseTenants(lease.id)
+        setTenants(prev => prev.map((t, i) => i === 0 ? {
+          ...t,
+          lineItems: [{ category: 'rent', label: 'Rent', amount: lease.rent_amount?.toString() ?? '' }],
+        } : t))
+      })
+  }, [properties, selectedLeaseId])
 
   const selectedLease = leases.find(l => l.id === selectedLeaseId)
   const selectedProp  = properties.find(p => p.id === selectedPropId)
@@ -139,15 +180,75 @@ export default function NewPaymentPlanPage() {
     if (prop) setPlanName(`Rent – ${prop.name}`)
   }
 
-  // When lease is selected, pre-fill rent line item for single-payer
+  // When lease is selected, pre-fill rent line item and load the people already
+  // on that lease so they can be picked as payers instead of retyped.
   const onSelectLease = (id: string) => {
     setSelectedLeaseId(id)
+    loadLeaseTenants(id)
     const lease = leases.find(l => l.id === id)
     if (!lease) return
     setTenants(prev => prev.map((t, i) => i === 0 ? {
       ...t,
       lineItems: [{ category: 'rent', label: 'Rent', amount: lease.rent_amount?.toString() ?? '' }],
     } : t))
+  }
+
+  // ── Picking payers off the lease ───────────────────────────────────────────
+  const sameParty = (a: { name: string; email: string }, b: LeaseTenant) => {
+    const ae = a.email.trim().toLowerCase(), be = (b.email ?? '').trim().toLowerCase()
+    if (ae && be) return ae === be
+    return a.name.trim().toLowerCase() === (b.name ?? '').trim().toLowerCase()
+  }
+
+  const isPicked = (lt: LeaseTenant) => tenants.some(t => sameParty(t, lt))
+
+  /** Toggle one lease tenant in or out of the payer list. */
+  const togglePayer = (lt: LeaseTenant) => {
+    setSplitType('multi')
+    setTenants(prev => {
+      const existing = prev.findIndex(t => sameParty(t, lt))
+      if (existing >= 0) return prev.filter((_, i) => i !== existing)
+      // Drop the empty starter row the wizard begins with.
+      const seeded = prev.filter(t => t.name.trim() || t.email.trim() || tenantTotal(t) > 0)
+      return [...seeded, {
+        name: lt.name ?? '',
+        email: lt.email ?? '',
+        lineItems: [{ category: 'rent', label: 'Rent', amount: '' }],
+      }]
+    })
+  }
+
+  const addAllLeaseTenants = () => {
+    setSplitType('multi')
+    setTenants(leaseTenants.map(lt => ({
+      name: lt.name ?? '',
+      email: lt.email ?? '',
+      lineItems: [{ category: 'rent', label: 'Rent', amount: '' }],
+    })))
+  }
+
+  /**
+   * Divide the lease rent across the current payers, in whole cents, giving the
+   * remainder to the earliest rows so the parts always sum back to the rent.
+   */
+  const splitRentEvenly = () => {
+    const rent = selectedLease?.rent_amount ?? 0
+    if (rent <= 0 || tenants.length === 0) return
+    const cents = Math.round(rent * 100)
+    const base = Math.floor(cents / tenants.length)
+    let rem = cents - base * tenants.length
+    setTenants(prev => prev.map(t => {
+      const extra = rem > 0 ? 1 : 0
+      rem -= extra
+      const share = ((base + extra) / 100).toFixed(2)
+      const hasRent = t.lineItems.some(li => li.category === 'rent')
+      return {
+        ...t,
+        lineItems: hasRent
+          ? t.lineItems.map(li => li.category === 'rent' ? { ...li, amount: share } : li)
+          : [{ category: 'rent', label: 'Rent', amount: share }, ...t.lineItems],
+      }
+    }))
   }
 
   // Tenant helpers
@@ -335,6 +436,63 @@ export default function NewPaymentPlanPage() {
             <p style={{ fontSize: '13px', color: '#64748b', marginBottom: 20, marginTop: 0 }}>
               Configure who pays and how much. Line items break down the monthly total (rent, utilities, etc.).
             </p>
+
+            {/* People already on the lease — pick instead of retype */}
+            {leaseTenants.length > 0 && (
+              <div style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '14px 16px', marginBottom: 20, background: '#fafbfc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                      Tenants on this lease ({leaseTenants.length})
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: 2 }}>
+                      Tap anyone who pays rent directly — their name and email come across.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={addAllLeaseTenants}
+                      style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                    >
+                      Add all as payers
+                    </button>
+                    {leaseRent > 0 && tenants.length > 1 && (
+                      <button
+                        onClick={splitRentEvenly}
+                        style={{ background: '#0f172a', border: 'none', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#34d399', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                      >
+                        Split {fmtCurrency(leaseRent)} evenly
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {leaseTenants.map(lt => {
+                    const on = isPicked(lt)
+                    return (
+                      <button
+                        key={lt.id}
+                        onClick={() => togglePayer(lt)}
+                        title={lt.email ?? undefined}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 7,
+                          border: `1.5px solid ${on ? '#10b981' : '#e2e8f0'}`,
+                          background: on ? '#ecfdf5' : '#fff',
+                          color: on ? '#065f46' : '#334155',
+                          fontWeight: on ? 700 : 500,
+                          borderRadius: '20px', padding: '7px 13px', fontSize: '13px',
+                          cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                        }}
+                      >
+                        <span style={{ fontSize: '11px' }}>{on ? '✓' : '+'}</span>
+                        {lt.name || lt.email}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Split type */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>

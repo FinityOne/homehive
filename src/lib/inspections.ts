@@ -37,6 +37,11 @@ export type InspectionParty = {
   settled_on: string | null
   settlement_method: string | null
   settlement_note: string | null
+  /** When this tenant was last emailed their statement. */
+  report_sent_at: string | null
+  report_sent_to: string | null
+  /** Token for this tenant's own personalised report link. */
+  share_token: string
   position: number
 }
 
@@ -68,6 +73,19 @@ export type InspectionItem = {
   photos: InspectionPhoto[]
 }
 
+/** One issued version of the report. Rows are append-only history. */
+export type InspectionRevision = {
+  id: string
+  inspection_id: string
+  version: number
+  issued_at: string
+  note: string | null
+  snapshot: {
+    parties: { id: string; name: string; charges: number; deposit: number; balance: number }[]
+    chargeable: number
+  } | null
+}
+
 export type InspectionLeaseLink = {
   id: string
   inspection_id: string
@@ -97,6 +115,10 @@ export type Inspection = {
   share_token: string
   finalized_at: string | null
   settled_at: string | null
+  /** Issued version. 0 = never issued. */
+  version: number
+  revision_note: string | null
+  revisions: InspectionRevision[]
   created_at: string
   updated_at: string
   property?: { id: string; name: string; address: string; slug: string }
@@ -119,7 +141,8 @@ const INSPECTION_SELECT = `
   leases:checkout_inspection_leases ( id, inspection_id, lease_id, lease:leases ( id, start_date, end_date, unit_number, rent_amount ) ),
   parties:checkout_inspection_parties ( * ),
   items:checkout_inspection_items ( *, photos:checkout_inspection_photos ( * ), itemParties:checkout_inspection_item_parties ( party_id ) ),
-  lateFees:checkout_inspection_late_fees ( * )
+  lateFees:checkout_inspection_late_fees ( * ),
+  revisions:checkout_inspection_revisions ( * )
 `
 
 function mapInspection(row: any): Inspection {
@@ -155,7 +178,10 @@ function mapInspection(row: any): Inspection {
       rule_max_total: f.rule_max_total == null ? null : Number(f.rule_max_total),
     }))
 
-  return { ...row, leases: row.leases ?? [], parties, items, lateFees }
+  const revisions: InspectionRevision[] = [...(row.revisions ?? [])]
+    .sort((a: any, b: any) => b.version - a.version)
+
+  return { ...row, leases: row.leases ?? [], parties, items, lateFees, revisions }
 }
 
 // ── Money helpers ────────────────────────────────────────────────────────────
@@ -469,7 +495,7 @@ export async function updateInspection(id: string, patch: InspectionPatch): Prom
 export async function setInspectionStatus(
   id: string,
   status: InspectionStatus,
-  /** Existing issue date, so re-opening and re-finalizing doesn't lose it. */
+  /** Existing issue date, so re-opening and re-issuing doesn't lose it. */
   finalizedAt?: string | null
 ): Promise<{ error: any }> {
   const now = new Date().toISOString()
@@ -477,12 +503,83 @@ export async function setInspectionStatus(
     .from('checkout_inspections')
     .update({
       status,
-      finalized_at: status === 'draft' ? null : (finalizedAt ?? now),
+      finalized_at: status === 'draft' ? finalizedAt ?? null : (finalizedAt ?? now),
       settled_at: status === 'settled' ? now : null,
       updated_at: now,
     })
     .eq('id', id)
   return { error }
+}
+
+/**
+ * Issue the report — version 1 the first time, a superseding revision after.
+ *
+ * Each issue freezes the per-tenant figures into the revision row, so an
+ * earlier version can still be explained once later edits move the live
+ * numbers. A revision always carries a reason; that's the whole point of
+ * re-issuing rather than quietly editing something tenants already hold.
+ */
+export async function issueInspection(
+  inspection: Inspection,
+  note?: string | null
+): Promise<{ version: number; error: any }> {
+  const nextVersion = (inspection.version ?? 0) + 1
+  const now = new Date().toISOString()
+  const totals = computeTotals(inspection)
+
+  const snapshot = {
+    chargeable: totals.chargeable,
+    parties: totals.perParty.map(pt => ({
+      id: pt.party.id,
+      name: pt.party.name,
+      charges: pt.total,
+      deposit: pt.depositHeld,
+      balance: pt.balance,
+    })),
+  }
+
+  const { error: revErr } = await supabase
+    .from('checkout_inspection_revisions')
+    .insert({
+      inspection_id: inspection.id,
+      version: nextVersion,
+      issued_at: now,
+      note: note?.trim() || (nextVersion === 1 ? 'Initial issue' : null),
+      snapshot,
+    })
+  if (revErr) return { version: inspection.version ?? 0, error: revErr }
+
+  const { error } = await supabase
+    .from('checkout_inspections')
+    .update({
+      status: 'finalized',
+      version: nextVersion,
+      revision_note: nextVersion > 1 ? (note?.trim() || null) : null,
+      finalized_at: now,
+      settled_at: null,
+      updated_at: now,
+    })
+    .eq('id', inspection.id)
+
+  return { version: nextVersion, error }
+}
+
+/** Put an issued report back into edit mode so a revision can be prepared. */
+export async function reopenForRevision(id: string): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from('checkout_inspections')
+    .update({ status: 'draft', updated_at: new Date().toISOString() })
+    .eq('id', id)
+  return { error }
+}
+
+/**
+ * A tenant's copy is stale when their statement went out before the current
+ * version was issued — they're holding figures that have since changed.
+ */
+export function needsResend(inspection: Inspection, party: InspectionParty): boolean {
+  if (!party.report_sent_at || !inspection.finalized_at) return false
+  return new Date(party.report_sent_at) < new Date(inspection.finalized_at)
 }
 
 export async function deleteInspection(id: string): Promise<{ error: any }> {
@@ -577,6 +674,83 @@ export async function addParty(
     .single()
   if (error || !data) return { party: null, error }
   return { party: { ...data, deposit_held: Number(data.deposit_held ?? 0) }, error: null }
+}
+
+// ── Live contact details ─────────────────────────────────────────────────────
+
+export type ContactUpdate = {
+  partyId: string
+  name: string
+  from: string | null
+  to: string
+  source: 'tenant record' | 'lease'
+}
+
+/**
+ * Find parties whose email has drifted from the live contact record.
+ *
+ * Names are snapshotted on purpose — an issued statement should keep naming the
+ * person it was issued to. An email is not a historical fact though, it's where
+ * the statement has to land, so it always follows the current record. The
+ * tenant record wins over the lease row, since that's the one landlords keep
+ * up to date.
+ */
+export async function findLiveContacts(inspection: Inspection): Promise<ContactUpdate[]> {
+  const parties = inspection.parties
+  if (parties.length === 0) return []
+
+  const tenantIds = parties.map(p => p.tenant_id).filter(Boolean) as string[]
+  const leaseIds = [...new Set(parties.map(p => p.lease_id).filter(Boolean))] as string[]
+
+  const [tenantsRes, leaseTenantsRes] = await Promise.all([
+    tenantIds.length
+      ? supabase.from('tenants').select('id, email').in('id', tenantIds)
+      : Promise.resolve({ data: [] as any[] }),
+    leaseIds.length
+      ? supabase.from('lease_tenants').select('lease_id, tenant_id, name, email').in('lease_id', leaseIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ])
+
+  const tenantEmail = new Map<string, string>()
+  for (const t of tenantsRes.data ?? []) {
+    if (t.email?.trim()) tenantEmail.set(t.id, t.email.trim())
+  }
+
+  const updates: ContactUpdate[] = []
+  for (const p of parties) {
+    let live: string | null = null
+    let source: ContactUpdate['source'] = 'tenant record'
+
+    if (p.tenant_id && tenantEmail.has(p.tenant_id)) {
+      live = tenantEmail.get(p.tenant_id)!
+    } else {
+      const lt = (leaseTenantsRes.data ?? []).find((r: any) =>
+        r.lease_id === p.lease_id &&
+        (
+          (p.tenant_id && r.tenant_id === p.tenant_id) ||
+          norm(r.name) === norm(p.name) ||
+          (norm(r.email) && norm(r.email) === norm(p.email))
+        )
+      )
+      if (lt?.email?.trim()) { live = lt.email.trim(); source = 'lease' }
+    }
+
+    if (live && norm(live) !== norm(p.email)) {
+      updates.push({ partyId: p.id, name: p.name, from: p.email, to: live, source })
+    }
+  }
+  return updates
+}
+
+export async function applyContactUpdates(updates: ContactUpdate[]): Promise<{ error: any }> {
+  for (const u of updates) {
+    const { error } = await supabase
+      .from('checkout_inspection_parties')
+      .update({ email: u.to })
+      .eq('id', u.partyId)
+    if (error) return { error }
+  }
+  return { error: null }
 }
 
 // ── Deposits on file (from the payments ledger) ───────────────────────────────
@@ -1126,6 +1300,27 @@ export async function removeItem(id: string): Promise<{ error: any }> {
 
 // ── Photos ───────────────────────────────────────────────────────────────────
 
+/**
+ * Phone cameras are the main source here, and they don't always label their
+ * output: iOS often reports an empty `File.type` for HEIC, and some browsers
+ * send `application/octet-stream`. The bucket restricts mime types, so an
+ * unlabelled file gets rejected. Derive the type from the extension instead of
+ * trusting the browser.
+ */
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  heic: 'image/heic', heif: 'image/heif', gif: 'image/gif', avif: 'image/avif',
+}
+
+function resolveUpload(file: File): { ext: string; contentType: string } {
+  const rawExt = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const byExt = MIME_BY_EXT[rawExt]
+  const byBrowser = file.type && file.type.startsWith('image/') ? file.type : null
+  const contentType = byExt ?? byBrowser ?? 'image/jpeg'
+  const ext = rawExt || (contentType.split('/')[1] || 'jpg')
+  return { ext, contentType }
+}
+
 export async function uploadItemPhoto(
   file: File,
   ownerId: string,
@@ -1133,10 +1328,14 @@ export async function uploadItemPhoto(
   itemId: string,
   position: number
 ): Promise<{ photo: InspectionPhoto | null; error: any }> {
-  const ext = file.name.split('.').pop() || 'jpg'
+  const { ext, contentType } = resolveUpload(file)
+  // Generated key — never the user's filename, which can carry spaces, unicode
+  // or '#' and produce an unusable object key.
   const path = `${ownerId}/${inspectionId}/${itemId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
-  const { error: upErr } = await supabase.storage.from('inspection-photos').upload(path, file)
+  const { error: upErr } = await supabase.storage
+    .from('inspection-photos')
+    .upload(path, file, { contentType, upsert: false })
   if (upErr) return { photo: null, error: upErr }
 
   const { data: { publicUrl } } = supabase.storage.from('inspection-photos').getPublicUrl(path)
