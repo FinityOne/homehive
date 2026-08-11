@@ -4,7 +4,10 @@ import { useState, useEffect, useRef } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+import { stripePublishableKey } from '@/lib/stripeEnv'
+
+// Sandbox key locally, live key on Vercel production — see src/lib/stripeEnv.ts
+const stripePromise = loadStripe(stripePublishableKey() ?? '')
 
 const APPEARANCE = {
   theme: 'stripe' as const,

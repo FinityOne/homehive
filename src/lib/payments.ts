@@ -29,7 +29,8 @@ export const SPECIAL_CATEGORIES = [
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
-export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'late' | 'missed' | 'voided'
+// 'processing' = tenant paid by ACH and the transfer is still clearing.
+export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'late' | 'missed' | 'voided' | 'processing'
 export type SpecialCategory = 'security_deposit' | 'special' | 'penalty' | 'other'
 
 export type PaymentLineItem = {
@@ -78,6 +79,15 @@ export type ScheduledPayment = {
   late_fees_applied: number
   notes: string | null
   void_reason: string | null
+  /** How it settled — card/ach = tenant paid online, manual_* = landlord logged it. */
+  payment_method: 'card' | 'ach' | 'manual_zelle' | 'manual_other' | null
+  recorded_by: 'tenant' | 'landlord' | null
+  /** Surcharge the tenant paid on top (5% card, 2% ACH) — not landlord income. */
+  processing_fee: number
+  stripe_payment_intent_id: string | null
+  /** Manual rent reminders sent by the landlord about this charge. */
+  reminder_sent_at: string | null
+  reminder_count: number
   created_at: string
   updated_at: string
   tenant?: { name: string; email: string | null }

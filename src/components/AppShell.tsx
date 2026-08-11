@@ -56,6 +56,7 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
     {
       items: [
         { href: '/dashboard',      label: 'Overview',        icon: '⊞', exact: true, primary: true },
+        { href: '/dashboard/lease', label: 'My Lease & Rent', icon: '🏠', primary: true, short: 'Lease' },
         { href: '/homes',          label: 'Browse Homes',    icon: '▣', primary: true, short: 'Browse' },
         { href: '/groups',         label: 'My Groups',       icon: '🐝', primary: true, short: 'Groups' },
         { href: '/dashboard/list', label: 'List your place', icon: '⊕', primary: true, short: 'List' },
@@ -88,6 +89,7 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
         { href: '/landlord/leases',      label: 'Leases',      icon: '📋', primary: true },
         { href: '/landlord/tenants',     label: 'Tenants',     icon: '◎' },
         { href: '/landlord/financials',  label: 'Financials',  icon: '💳', primary: true },
+        { href: '/landlord/maintenance', label: 'Maintenance', icon: '🔧' },
         { href: '/landlord/inspections', label: 'Move-out',    icon: '🔎' },
       ],
     },

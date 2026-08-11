@@ -1,17 +1,20 @@
 import Stripe from 'stripe'
+import { stripeSecretKey, stripePrices } from '@/lib/stripeEnv'
 import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 
-function getStripe() { return new Stripe(process.env.STRIPE_SECRET_KEY!) }
+function getStripe() { return new Stripe(stripeSecretKey()) }
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const PRICE_MAP = {
-  single_listing: process.env.STRIPE_PRICE_SINGLE_LISTING!,
-  two_listing: process.env.STRIPE_PRICE_TWO_LISTING!,
+// Resolved per request, not at module load: price IDs differ between the
+// sandbox and the live account, and the module may be reused across both.
+function priceMap() {
+  const p = stripePrices()
+  return { single_listing: p.singleListing, two_listing: p.twoListing }
 }
 
 export async function POST(req: Request) {
@@ -20,7 +23,8 @@ export async function POST(req: Request) {
     listingIds: string[]
   }
 
-  if (!plan || !PRICE_MAP[plan]) return Response.json({ error: 'Invalid plan' }, { status: 400 })
+  const PRICES = priceMap()
+  if (!plan || !PRICES[plan]) return Response.json({ error: 'Invalid plan' }, { status: 400 })
 
   // Auth check
   const supabase = await createSupabaseServerClient()
@@ -63,7 +67,7 @@ export async function POST(req: Request) {
   // Create subscription
   const subscription = await stripe.subscriptions.create({
     customer: customerId,
-    items: [{ price: PRICE_MAP[plan] }],
+    items: [{ price: PRICES[plan] }],
     payment_behavior: 'default_incomplete',
     expand: ['latest_invoice.payment_intent'],
   })

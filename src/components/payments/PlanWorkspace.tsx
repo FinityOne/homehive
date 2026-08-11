@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
 import {
   getPlanById, updateScheduledPayment, updateSpecialPayment, updateSpecialPaymentFull, addSpecialPayment,
   updateTenantScheduleAmount, updateLineItem, addLineItem, deleteLineItem, updateTenantMonthlyTotal,
@@ -10,6 +11,12 @@ import {
   type PaymentPlan, type ScheduledPayment, type SpecialPayment, type PaymentStatus, type SpecialCategory,
   type PaymentPlanTenant, type PaymentLineItem,
 } from '@/lib/payments'
+import StripeModeBanner from '@/components/StripeModeBanner'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +31,36 @@ const STATUS_CFG: Record<string, { bg: string; color: string; label: string; dot
   late:    { bg: '#fee2e2', color: '#991b1b', label: 'Late',    dot: '#ef4444' },
   missed:  { bg: '#fce7f3', color: '#9d174d', label: 'Missed',  dot: '#db2777' },
   voided:  { bg: '#f1f5f9', color: '#94a3b8', label: 'Voided',  dot: '#cbd5e1' },
+  // Tenant paid by ACH; the money is in flight and settles in a few days.
+  processing: { bg: '#fef3c7', color: '#92400e', label: 'Clearing', dot: '#f59e0b' },
+}
+
+/**
+ * How a payment was settled. "Paid" alone is ambiguous once tenants can pay
+ * online — the landlord needs to know whether money actually moved through
+ * Stripe or whether they themselves ticked it off after a Zelle transfer.
+ */
+const METHOD_CFG: Record<string, { label: string; bg: string; color: string }> = {
+  card:         { label: 'Card',   bg: '#f5f3ff', color: '#6d28d9' },
+  ach:          { label: 'ACH',    bg: '#eff6ff', color: '#1d4ed8' },
+  manual_zelle: { label: 'Zelle',  bg: '#ecfeff', color: '#0e7490' },
+  manual_other: { label: 'Manual', bg: '#f1f5f9', color: '#64748b' },
+}
+
+function MethodBadge({ method, recordedBy }: { method: string | null; recordedBy?: string | null }) {
+  if (!method) return null
+  const c = METHOD_CFG[method] ?? METHOD_CFG.manual_other
+  const online = method === 'card' || method === 'ach'
+  return (
+    <span
+      title={online
+        ? `Paid online by the tenant (${c.label})`
+        : `Recorded${recordedBy === 'landlord' ? ' by you' : ''} — ${c.label}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: c.bg, color: c.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap' }}
+    >
+      {online ? '⚡' : '✎'} {c.label}
+    </span>
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -41,11 +78,13 @@ function StatusBadge({ status }: { status: string }) {
 const ROW_COLS = '1fr 88px 88px 110px 68px 96px'
 
 function PaymentRow({
-  payment, rule, onUpdate,
+  payment, rule, onUpdate, onRemind,
 }: {
   payment: ScheduledPayment
   rule?: { grace_period_days: number; fee_amount: number; frequency_days: number; max_total_fees: number | null } | null
   onUpdate: (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => void
+  /** Chase this one charge. Absent when the row is already settled. */
+  onRemind?: (payment: ScheduledPayment) => void
 }) {
   const [open,      setOpen]      = useState(false)
   const [saving,    setSaving]    = useState(false)
@@ -140,6 +179,11 @@ function PaymentRow({
         {/* Status */}
         <div style={{ textAlign: 'center' }}>
           <StatusBadge status={isVoided ? 'voided' : effStatus} />
+          {payment.payment_method && (
+            <div style={{ marginTop: 3 }}>
+              <MethodBadge method={payment.payment_method} recordedBy={payment.recorded_by} />
+            </div>
+          )}
         </div>
 
         {/* Days late (from paid_date, not today) */}
@@ -258,6 +302,19 @@ function PaymentRow({
             <button onClick={() => setOpen(false)} style={{ padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
               Cancel
             </button>
+
+            {/* Chase this one charge, without touching anyone else's. */}
+            {onRemind && (
+              <button
+                onClick={() => onRemind(payment)}
+                title={payment.reminder_sent_at
+                  ? `Last reminded ${new Date(payment.reminder_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                  : 'Email this tenant about this charge'}
+                style={{ marginLeft: 'auto', padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              >
+                ✉ {payment.reminder_sent_at ? `Remind again (${payment.reminder_count})` : 'Send reminder'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -268,12 +325,13 @@ function PaymentRow({
 // ─── MONTH GROUP ──────────────────────────────────────────────────────────────
 
 function MonthGroup({
-  month, payments, rule, onUpdate, defaultOpen,
+  month, payments, rule, onUpdate, onRemind, defaultOpen,
 }: {
   month: string
   payments: ScheduledPayment[]
   rule: PaymentPlan['late_fee_rule']
   onUpdate: (id: string, u: Parameters<typeof updateScheduledPayment>[1]) => void
+  onRemind?: (payment: ScheduledPayment) => void
   defaultOpen: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -315,7 +373,7 @@ function MonthGroup({
             ))}
           </div>
           {payments.map(p => (
-            <PaymentRow key={p.id} payment={p} rule={rule ?? undefined} onUpdate={onUpdate} />
+            <PaymentRow key={p.id} payment={p} rule={rule ?? undefined} onUpdate={onUpdate} onRemind={onRemind} />
           ))}
         </div>
       )}
@@ -1324,6 +1382,11 @@ export default function PlanWorkspace({
   const [loading,          setLoading]          = useState(true)
   const [tab,              setTab]              = useState<Tab>('schedule')
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
+  // Reminder confirmation — nothing emails a tenant without passing through it.
+  const [remindTarget, setRemindTarget] = useState<{ ids: string[]; label: string } | null>(null)
+  const [remindMsg, setRemindMsg] = useState('')
+  const [reminding, setReminding] = useState(false)
+  const [remindResult, setRemindResult] = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -1345,6 +1408,41 @@ export default function PlanWorkspace({
         sp.id === id ? { ...sp, ...updates } : sp
       ),
     } : prev)
+  }
+
+  /** Chase a single charge from its row. */
+  function remindOne(p: ScheduledPayment) {
+    const who = plan?.tenants.find(t => t.id === p.plan_tenant_id)?.name ?? 'this tenant'
+    setRemindTarget({ ids: [p.id], label: `${fmtMonth(p.due_date)} rent for ${who}` })
+  }
+
+  /** Email the tenants behind the selected charges. One email per person. */
+  async function sendReminders() {
+    if (!remindTarget) return
+    setReminding(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/payments/${planId}/remind`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ paymentIds: remindTarget.ids, message: remindMsg || undefined }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setReminding(false)
+
+    if (!res.ok) {
+      setRemindResult({ ok: false, text: json.error || 'Could not send reminders.' })
+      return
+    }
+    setRemindTarget(null)
+    setRemindMsg('')
+    const bits = [`Reminder sent to ${json.sent} tenant${json.sent !== 1 ? 's' : ''}`]
+    if (json.skipped?.length) bits.push(`${json.skipped.length} skipped (${json.skipped[0].reason})`)
+    setRemindResult({ ok: json.sent > 0, text: bits.join(' · ') })
+    setTimeout(() => setRemindResult(null), 6000)
+    load()
   }
 
   const handleUpdateSpecial = async (id: string, updates: Parameters<typeof updateSpecialPaymentFull>[1]) => {
@@ -1458,11 +1556,21 @@ export default function PlanWorkspace({
             </div>
           )}
 
-          {/* Warnings */}
+          {/* Warnings — and the action a landlord actually wants here */}
           {overdueSPs.length > 0 && (
-            <div style={{ marginTop: 14, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ marginTop: 14, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span>⚠️</span>
-              <span><strong>{overdueSPs.length} payment{overdueSPs.length !== 1 ? 's' : ''}</strong> past due — click any row to mark as paid or update status.</span>
+              <span style={{ flex: 1, minWidth: 200 }}>
+                <strong>{overdueSPs.length} payment{overdueSPs.length !== 1 ? 's' : ''}</strong> past due
+                {' '}({fmtCurrency(overdueSPs.reduce((s, p) => s + (p.amount - p.paid_amount), 0))})
+                {' '}— click any row to mark as paid, or send a reminder.
+              </span>
+              <button
+                onClick={() => setRemindTarget({ ids: overdueSPs.map(p => p.id), label: `${overdueSPs.length} overdue payment${overdueSPs.length !== 1 ? 's' : ''}` })}
+                style={{ background: '#991b1b', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              >
+                ✉ Send reminders
+              </button>
             </div>
           )}
 
@@ -1512,6 +1620,7 @@ export default function PlanWorkspace({
 
       {/* Content */}
       <div style={{ maxWidth: embedded ? 'none' : 1050, margin: '0 auto', padding: embedded ? '18px 0 0' : '24px 20px' }}>
+        <StripeModeBanner style={{ marginBottom: 16 }} />
 
         {/* ── SCHEDULE TAB ── */}
         {tab === 'schedule' && (
@@ -1529,7 +1638,7 @@ export default function PlanWorkspace({
                   return (
                     <>
                       {future.map(k => (
-                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} defaultOpen={k === currentMonthKey} />
+                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} defaultOpen={k === currentMonthKey} />
                       ))}
                       {past.length > 0 && (
                         <details style={{ marginTop: 12 }}>
@@ -1538,7 +1647,7 @@ export default function PlanWorkspace({
                           </summary>
                           <div style={{ marginTop: 8, opacity: 0.7 }}>
                             {past.slice().reverse().map(k => (
-                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} defaultOpen={false} />
+                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} defaultOpen={false} />
                             ))}
                           </div>
                         </details>
@@ -1708,6 +1817,113 @@ export default function PlanWorkspace({
           </div>
         )}
       </div>
+
+      {/* Result toast */}
+      {remindResult && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
+          background: remindResult.ok ? '#065f46' : '#991b1b', color: '#fff',
+          padding: '12px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+          fontFamily: "'DM Sans', sans-serif", boxShadow: '0 8px 30px rgba(15,23,42,0.25)',
+        }}>
+          {remindResult.text}
+        </div>
+      )}
+
+      {/* Reminder confirmation — who gets it, and what they'll be told */}
+      {remindTarget && (() => {
+        const rows = sps.filter(p => remindTarget.ids.includes(p.id))
+        const byTenant = new Map<string, { name: string; email: string | null; total: number; count: number }>()
+        for (const r of rows) {
+          const t = plan.tenants.find(x => x.id === r.plan_tenant_id)
+          if (!t) continue
+          const cur = byTenant.get(t.id) ?? { name: t.name, email: t.email, total: 0, count: 0 }
+          cur.total += r.amount - r.paid_amount
+          cur.count += 1
+          byTenant.set(t.id, cur)
+        }
+        const people = [...byTenant.values()]
+        const withEmail = people.filter(p => p.email)
+        const lastReminded = rows
+          .map(r => r.reminder_sent_at).filter(Boolean)
+          .sort().pop()
+
+        return (
+          <div
+            onClick={() => !reminding && setRemindTarget(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          >
+            <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 440, fontFamily: "'DM Sans', sans-serif", overflow: 'hidden' }}>
+              <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Send rent reminder</div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                  Covering {remindTarget.label} · one email per tenant
+                </div>
+              </div>
+
+              <div style={{ padding: '16px 20px' }}>
+                {lastReminded && (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#92400e', marginBottom: 14, lineHeight: 1.5 }}>
+                    Last reminded {new Date(lastReminded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
+                    Chasing too often tends to get filtered.
+                  </div>
+                )}
+
+                {people.map(p => (
+                  <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #f8fafc' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0f172a' }}>{p.name}</div>
+                      <div style={{ fontSize: 11.5, color: p.email ? '#94a3b8' : '#b45309' }}>
+                        {p.email ?? 'No email on file — will be skipped'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                      {fmtCurrency(p.total)}
+                      <span style={{ display: 'block', fontSize: 10, fontWeight: 500, color: '#94a3b8', textAlign: 'right' }}>
+                        {p.count} charge{p.count !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ marginTop: 14 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 5 }}>
+                    Add a note (optional)
+                  </label>
+                  <textarea
+                    value={remindMsg}
+                    onChange={e => setRemindMsg(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                    placeholder="Happy to set up a payment plan if that helps — just let me know."
+                    style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 11px', fontSize: 13, fontFamily: "'DM Sans', sans-serif", resize: 'vertical', outline: 'none', color: '#0f172a' }}
+                  />
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                    The email shows the amount, each charge, how late it is, and a button to pay online.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, padding: '14px 20px', borderTop: '1px solid #f1f5f9' }}>
+                <button
+                  onClick={() => setRemindTarget(null)}
+                  disabled={reminding}
+                  style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendReminders}
+                  disabled={reminding || withEmail.length === 0}
+                  style={{ background: '#0f172a', color: '#34d399', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: withEmail.length === 0 ? 'not-allowed' : 'pointer', opacity: withEmail.length === 0 ? 0.5 : 1, fontFamily: "'DM Sans', sans-serif" }}
+                >
+                  {reminding ? 'Sending…' : `Send to ${withEmail.length} tenant${withEmail.length !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

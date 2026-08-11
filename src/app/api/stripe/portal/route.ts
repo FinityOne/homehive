@@ -1,9 +1,10 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 import Stripe from 'stripe'
+import { stripeSecretKey } from '@/lib/stripeEnv'
 import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 
-function getStripe() { return new Stripe(process.env.STRIPE_SECRET_KEY!) }
+function getStripe() { return new Stripe(stripeSecretKey()) }
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -27,7 +27,8 @@ function useInitialFilters(): Filters {
   return {
     maxPrice: sp.get('price_max') ? Number(sp.get('price_max')) : DEFAULT_FILTERS.maxPrice,
     minBeds:  sp.get('beds')      ? Number(sp.get('beds'))      : DEFAULT_FILTERS.minBeds,
-    maxDistance: DEFAULT_FILTERS.maxDistance,
+    // Distance is linkable too, so "walk to campus" style links can be shared.
+    maxDistance: sp.get('distance_max') ? Number(sp.get('distance_max')) : DEFAULT_FILTERS.maxDistance,
     search: sp.get('q') || DEFAULT_FILTERS.search,
   }
 }

@@ -89,6 +89,11 @@ function DashboardInner() {
   const [properties, setProperties] = useState<Property[]>([])
   const [upcomingTourData, setUpcomingTourData] = useState<TourRecord | null>(null)
   const [loading, setLoading]       = useState(true)
+  // Active tenancy summary — a housed tenant's dashboard leads with their home.
+  const [tenancy, setTenancy] = useState<{
+    property: string; unit: string | null; end: string
+    rent: number; owed: number; nextDue: string | null
+  } | null>(null)
 
   useEffect(() => { document.title = 'Dashboard — My Portal | HomeHive' }, [])
 
@@ -123,6 +128,41 @@ function DashboardInner() {
       }
 
       setLoading(false)
+
+      // Lease + rent summary, resolved server-side so nothing about a
+      // housemate's balance ever reaches this page.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        try {
+          const res = await fetch('/api/tenant/lease', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          const json = await res.json()
+          const t = (json.tenancies ?? [])[0]
+          if (t?.lease) {
+            const settled = (s: string) => s === 'paid' || s === 'processing'
+            // Only charges that have reached their due date — a lease schedules
+            // every month up front, and the balance isn't the whole tenancy.
+            const today = new Date().toISOString().split('T')[0]
+            const owed =
+              (t.scheduled ?? [])
+                .filter((s: any) => !settled(s.status) && s.due_date <= today)
+                .reduce((sum: number, s: any) => sum + Math.max(0, s.amount - (s.paid_amount ?? 0)), 0) +
+              (t.specials ?? [])
+                .filter((s: any) => s.status === 'pending' && (!s.due_date || s.due_date <= today))
+                .reduce((sum: number, s: any) => sum + s.amount, 0)
+            const next = (t.scheduled ?? []).find((s: any) => !settled(s.status))
+            setTenancy({
+              property: t.lease.property?.name ?? 'Your home',
+              unit: t.lease.unit_number,
+              end: new Date(t.lease.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+              rent: t.me?.monthly_total ?? t.lease.rent_amount ?? 0,
+              owed: Math.round(owed * 100) / 100,
+              nextDue: next ? new Date(next.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null,
+            })
+          }
+        } catch { /* dashboard still works without it */ }
+      }
     }
     load()
   }, [router])
@@ -252,6 +292,19 @@ function DashboardInner() {
         .list-banner-sub   { font-size: 11px; color: rgba(255,255,255,0.5); }
         .list-banner-cta   { flex-shrink: 0; background: #FFC627; color: #1a1a1a; border: none; border-radius: 7px; padding: 7px 13px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; text-decoration: none; }
 
+        /* ── ACTIVE LEASE CARD ── */
+        .lease-card { display: block; background: #0f172a; border-radius: 14px; padding: 20px 22px; margin-bottom: 24px; text-decoration: none; color: #fff; }
+        .lease-card:hover { background: #1e293b; }
+        .lease-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+        .lease-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #34d399; }
+        .lease-card-title { font-size: 19px; font-weight: 700; margin-top: 4px; letter-spacing: -0.3px; }
+        .lease-card-sub { font-size: 12.5px; color: rgba(255,255,255,0.55); margin-top: 2px; }
+        .lease-card-arrow { color: rgba(255,255,255,0.4); font-size: 18px; }
+        .lease-card-figs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); }
+        .lcf-l { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.4); }
+        .lcf-v { font-size: 15px; font-weight: 700; margin-top: 3px; }
+        .lease-card-cta { margin-top: 16px; background: #34d399; color: #0f172a; border-radius: 9px; padding: 10px; text-align: center; font-size: 13.5px; font-weight: 700; }
+
         /* ── LANDLORD CONGRATS ── */
         .congrats-strip { display: flex; align-items: center; gap: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 14px; margin-bottom: 24px; }
         .congrats-link { flex-shrink: 0; background: #16a34a; color: #fff; border: none; border-radius: 7px; padding: 7px 13px; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
@@ -271,6 +324,39 @@ function DashboardInner() {
             ? `${leads.length} active ${leads.length === 1 ? 'inquiry' : 'inquiries'}`
             : 'Find your next place near ASU'}
         </div>
+
+        {/* ── ACTIVE LEASE — the first thing a housed tenant needs ── */}
+        {tenancy && (
+          <a href="/dashboard/lease" className="lease-card">
+            <div className="lease-card-top">
+              <div>
+                <div className="lease-card-label">Your home</div>
+                <div className="lease-card-title">{tenancy.property}</div>
+                <div className="lease-card-sub">
+                  {tenancy.unit ? `${tenancy.unit} · ` : ''}Lease to {tenancy.end}
+                </div>
+              </div>
+              <span className="lease-card-arrow">→</span>
+            </div>
+            <div className="lease-card-figs">
+              <div>
+                <div className="lcf-l">Balance due</div>
+                <div className="lcf-v" style={{ color: tenancy.owed > 0 ? '#fca5a5' : '#6ee7b7' }}>
+                  {tenancy.owed > 0 ? `$${tenancy.owed.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'Paid up'}
+                </div>
+              </div>
+              <div>
+                <div className="lcf-l">Your rent</div>
+                <div className="lcf-v">${tenancy.rent.toLocaleString()}/mo</div>
+              </div>
+              <div>
+                <div className="lcf-l">Next due</div>
+                <div className="lcf-v">{tenancy.nextDue ?? '—'}</div>
+              </div>
+            </div>
+            {tenancy.owed > 0 && <div className="lease-card-cta">Pay rent →</div>}
+          </a>
+        )}
 
         {/* ── TOUR CARD ── */}
         {upcomingTourLead && upcomingTourData && (() => {
