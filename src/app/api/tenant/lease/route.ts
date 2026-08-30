@@ -37,12 +37,20 @@ export async function GET(req: NextRequest) {
     .from('tenants').select('id, email').ilike('email', email)
   const tenantIds = (tenantRows ?? []).map(t => t.id)
 
-  const { data: leaseTenants } = await supabaseAdmin
-    .from('lease_tenants')
-    .select('id, lease_id, tenant_id, name, email')
-  const mine = (leaseTenants ?? []).filter(lt =>
-    norm(lt.email) === email || (lt.tenant_id && tenantIds.includes(lt.tenant_id))
-  )
+  // Filtered in Postgres rather than in memory: an unfiltered select tops out
+  // at 1000 rows, past which a tenant would simply stop finding their lease.
+  const leaseTenantCols = 'id, lease_id, tenant_id, name, email'
+  const { data: byEmail } = await supabaseAdmin
+    .from('lease_tenants').select(leaseTenantCols).ilike('email', email)
+  const { data: byTenantId } = tenantIds.length > 0
+    ? await supabaseAdmin.from('lease_tenants').select(leaseTenantCols).in('tenant_id', tenantIds)
+    : { data: [] }
+  const seen = new Set<string>()
+  const mine = [...(byEmail ?? []), ...(byTenantId ?? [])].filter(lt => {
+    if (seen.has(lt.id)) return false
+    seen.add(lt.id)
+    return true
+  })
   if (mine.length === 0) return Response.json({ tenancies: [] })
 
   const leaseIds = [...new Set(mine.map(lt => lt.lease_id))]

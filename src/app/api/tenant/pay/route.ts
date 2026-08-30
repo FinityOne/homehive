@@ -57,20 +57,22 @@ export async function POST(req: NextRequest) {
   if (!email) return Response.json({ error: 'No email on your account.' }, { status: 400 })
 
   // Establish which payer rows are this tenant's, by email then by lease name.
-  const { data: planTenants } = await supabaseAdmin
-    .from('payment_plan_tenants').select('id, name, email, plan_id')
+  // Match on the tenant's email first; a lease may also name them without an
+  // email on the payer row, so their names on this lease are the fallback.
+  // Both queries are filtered in Postgres — scanning the whole table would
+  // silently stop matching once it passed Supabase's 1000-row response cap.
   const { data: leaseTenants } = await supabaseAdmin
-    .from('lease_tenants').select('name, email')
+    .from('lease_tenants').select('name, email').ilike('email', email)
+  const myNames = [...new Set((leaseTenants ?? []).map(lt => norm(lt.name)).filter(Boolean))]
 
-  const myNames = (leaseTenants ?? [])
-    .filter(lt => norm(lt.email) === email)
-    .map(lt => norm(lt.name))
+  const { data: byEmail } = await supabaseAdmin
+    .from('payment_plan_tenants').select('id').ilike('email', email)
+  const byName = myNames.length > 0
+    ? (await supabaseAdmin
+        .from('payment_plan_tenants').select('id, name').in('name', myNames)).data ?? []
+    : []
 
-  const mine = new Set(
-    (planTenants ?? [])
-      .filter(pt => norm(pt.email) === email || myNames.includes(norm(pt.name)))
-      .map(pt => pt.id)
-  )
+  const mine = new Set([...(byEmail ?? []), ...byName].map(pt => pt.id))
   if (mine.size === 0) return Response.json({ error: 'No rent account found for you.' }, { status: 404 })
 
   // Load the rows and confirm every one belongs to this tenant.

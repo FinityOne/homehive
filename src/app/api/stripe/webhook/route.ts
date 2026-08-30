@@ -1,6 +1,7 @@
 import Stripe from 'stripe'
 import { stripeSecretKey, stripeWebhookSecret } from '@/lib/stripeEnv'
 import { createClient } from '@supabase/supabase-js'
+import { settleRentPayment, revertRentPayment } from '@/lib/rentSettlement'
 import { NextRequest } from 'next/server'
 
 function getStripe() { return new Stripe(stripeSecretKey()) }
@@ -9,73 +10,6 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-/**
- * Apply a tenant rent payment to the rows it covers.
- *
- * The surcharge is recorded on the first row only — it's a processing cost the
- * tenant paid, not rent received, and spreading it would distort every row's
- * paid amount. `paid_amount` always equals the rent itself so the landlord's
- * ledger stays true.
- */
-async function settleRentPayment(pi: Stripe.PaymentIntent, status: 'paid' | 'processing') {
-  const m = pi.metadata ?? {}
-  const scheduledIds = (m.scheduledIds ?? '').split(',').filter(Boolean)
-  const specialIds = (m.specialIds ?? '').split(',').filter(Boolean)
-  const feeDollars = Number(m.feeCents ?? 0) / 100
-  const method = m.method === 'ach' ? 'ach' : 'card'
-  const paidDate = new Date().toISOString().split('T')[0]
-
-  let feeApplied = false
-
-  for (const id of scheduledIds) {
-    const { data: row } = await supabaseAdmin
-      .from('scheduled_payments').select('amount, paid_amount').eq('id', id).maybeSingle()
-    if (!row) continue
-    await supabaseAdmin.from('scheduled_payments').update({
-      status,
-      paid_amount: status === 'paid' ? Number(row.amount) : Number(row.paid_amount ?? 0),
-      paid_date: status === 'paid' ? paidDate : null,
-      payment_method: method,
-      recorded_by: 'tenant',
-      processing_fee: feeApplied ? 0 : feeDollars,
-      stripe_payment_intent_id: pi.id,
-    }).eq('id', id)
-    feeApplied = true
-  }
-
-  for (const id of specialIds) {
-    await supabaseAdmin.from('special_payments').update({
-      status,
-      paid_date: status === 'paid' ? paidDate : null,
-      payment_method: method,
-      recorded_by: 'tenant',
-      processing_fee: feeApplied ? 0 : feeDollars,
-      stripe_payment_intent_id: pi.id,
-    }).eq('id', id)
-    feeApplied = true
-  }
-}
-
-/** An ACH debit that fails after the fact puts the charge back on the tenant. */
-async function revertRentPayment(pi: Stripe.PaymentIntent) {
-  const m = pi.metadata ?? {}
-  const scheduledIds = (m.scheduledIds ?? '').split(',').filter(Boolean)
-  const specialIds = (m.specialIds ?? '').split(',').filter(Boolean)
-
-  for (const id of scheduledIds) {
-    await supabaseAdmin.from('scheduled_payments').update({
-      status: 'pending', paid_amount: 0, paid_date: null,
-      payment_method: null, recorded_by: null, processing_fee: 0,
-    }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
-  }
-  for (const id of specialIds) {
-    await supabaseAdmin.from('special_payments').update({
-      status: 'pending', paid_date: null,
-      payment_method: null, recorded_by: null, processing_fee: 0,
-    }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
-  }
-}
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
@@ -127,7 +61,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (metadata.type === 'rent_payment') {
-          await settleRentPayment(pi, 'paid')
+          await settleRentPayment(supabaseAdmin, pi, 'paid')
         }
         break
       }
@@ -136,14 +70,14 @@ export async function POST(req: NextRequest) {
       // landlord shouldn't chase them — but it isn't money in the bank either.
       case 'payment_intent.processing': {
         const pi = event.data.object as Stripe.PaymentIntent
-        if (pi.metadata?.type === 'rent_payment') await settleRentPayment(pi, 'processing')
+        if (pi.metadata?.type === 'rent_payment') await settleRentPayment(supabaseAdmin, pi, 'processing')
         break
       }
 
       // A bounced ACH debit reverses the row so it shows as owing again.
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent
-        if (pi.metadata?.type === 'rent_payment') await revertRentPayment(pi)
+        if (pi.metadata?.type === 'rent_payment') await revertRentPayment(supabaseAdmin, pi)
         break
       }
 
