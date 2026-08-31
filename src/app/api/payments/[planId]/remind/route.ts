@@ -56,7 +56,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
     .from('scheduled_payments')
     .select('id, plan_tenant_id, due_date, amount, paid_amount, status')
     .eq('plan_id', planId)
-    .in('status', ['pending', 'late', 'partial'])
+    // Anything not settled and not written off — a whitelist of statuses would
+    // quietly drop rows a landlord had marked 'missed' and still wants to chase.
+    .not('status', 'in', '(paid,processing,voided)')
     .order('due_date')
 
   if (requestedIds && requestedIds.length > 0) q = q.in('id', requestedIds)

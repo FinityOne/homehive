@@ -78,6 +78,37 @@ export default function MyLeasePage() {
 
   useEffect(() => { load() }, [load])
 
+  /**
+   * A card that needed 3-D Secure leaves Stripe's page and comes back here with
+   * the intent in the URL. There's no in-memory payment state left at that
+   * point, so settle it on arrival and clear the query string — otherwise the
+   * tenant returns to a page that still says they owe the rent they just paid.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const secret = params.get('payment_intent_client_secret')
+    if (!secret) return
+    ;(async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const res = await fetch('/api/tenant/pay/confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ clientSecret: secret }),
+      })
+      const json = await res.json().catch(() => ({}))
+      window.history.replaceState({}, '', window.location.pathname)
+      if (json.status === 'paid') setFlash('Payment received. Thank you!')
+      else if (json.status === 'processing') setFlash('Payment submitted — it shows as clearing until it settles.')
+      else if (json.status === 'failed') setFlash('That payment didn\u2019t go through. Please try again.')
+      load()
+      setTimeout(() => setFlash(null), 8000)
+    })()
+  }, [load])
+
   const t = tenancies[active]
 
   /**

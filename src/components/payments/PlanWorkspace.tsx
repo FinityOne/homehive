@@ -1482,6 +1482,16 @@ export default function PlanWorkspace({
     return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
   })
   const overdueSPs    = sps.filter(p => isOverdue(p))
+  // What a landlord would ask for today: this month's rent plus anything still
+  // owed from before. Overdue on its own misses the common case — the 1st has
+  // arrived, nothing is late yet, and rent still needs requesting.
+  const unsettled     = (p: ScheduledPayment) =>
+    p.status !== 'paid' && p.status !== 'processing' && p.status !== 'voided' && p.amount - p.paid_amount > 0
+  const requestableSPs = [
+    ...thisMonthSPs.filter(unsettled),
+    ...overdueSPs.filter(p => unsettled(p) && !thisMonthSPs.some(m => m.id === p.id)),
+  ]
+  const requestableTotal = requestableSPs.reduce((s, p) => s + (p.amount - p.paid_amount), 0)
   const totalExpected = thisMonthSPs.reduce((s, p) => s + p.amount, 0)
   const totalPaid     = thisMonthSPs.filter(p => p.status === 'paid').reduce((s, p) => s + p.paid_amount, 0)
   const totalMonthly  = plan.tenants.reduce((s, t) => s + t.monthly_total, 0)
@@ -1553,6 +1563,27 @@ export default function PlanWorkspace({
                   <div style={{ fontSize: '11px', color: '#94a3b8' }}>this month</div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Collect this month's rent — the everyday action, not just chasing arrears */}
+          {requestableSPs.length > 0 && (
+            <div style={{ marginTop: 14, background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#065f46', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span>💸</span>
+              <span style={{ flex: 1, minWidth: 200 }}>
+                <strong>{fmtCurrency(requestableTotal)}</strong> outstanding across{' '}
+                {requestableSPs.length} payment{requestableSPs.length !== 1 ? 's' : ''}
+                {' '}— email everyone a request with a link to pay online.
+              </span>
+              <button
+                onClick={() => setRemindTarget({
+                  ids: requestableSPs.map(p => p.id),
+                  label: `${requestableSPs.length} outstanding payment${requestableSPs.length !== 1 ? 's' : ''} (${fmtCurrency(requestableTotal)})`,
+                })}
+                style={{ background: '#065f46', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              >
+                ✉ Send rent requests
+              </button>
             </div>
           )}
 

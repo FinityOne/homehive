@@ -132,15 +132,6 @@ export default function PayRentModal({
                 </div>
               )}
 
-              {/* Autopay — deliberately inert for now */}
-              <div className="autopay">
-                <div>
-                  <div className="autopay-title">Save this method &amp; turn on autopay</div>
-                  <div className="autopay-sub">Rent paid automatically each month, on the due date.</div>
-                </div>
-                <span className="soon">Coming soon</span>
-              </div>
-
               {error && <div className="err">{error}</div>}
 
               <button className="pay-btn" onClick={start} disabled={starting || !stripePromise}>
@@ -156,6 +147,7 @@ export default function PayRentModal({
             <Elements key={clientSecret} stripe={stripePromise} options={{ clientSecret, appearance: APPEARANCE }}>
               <PayForm
                 clientSecret={clientSecret}
+                authToken={authToken}
                 method={method}
                 total={quote.total}
                 onBack={() => setClientSecret(null)}
@@ -170,9 +162,10 @@ export default function PayRentModal({
 }
 
 function PayForm({
-  clientSecret, method, total, onBack, onPaid,
+  clientSecret, authToken, method, total, onBack, onPaid,
 }: {
   clientSecret: string
+  authToken: string | null
   method: PayMethod
   total: number
   onBack: () => void
@@ -191,13 +184,27 @@ function PayForm({
     const { error: submitErr } = await elements.submit()
     if (submitErr) { setError(submitErr.message ?? 'Check your details.'); setSubmitting(false); return }
 
-    const { error: confirmErr } = await stripe.confirmPayment({
+    const { error: confirmErr, paymentIntent } = await stripe.confirmPayment({
       elements,
       clientSecret,
       confirmParams: { return_url: window.location.href },
       redirect: 'if_required',
     })
     if (confirmErr) { setError(confirmErr.message ?? 'Payment failed.'); setSubmitting(false); return }
+
+    // Stripe has the money; the rent rows still say "owing" until something
+    // writes them. The webhook does that in production, but it is asynchronous
+    // — and on a local run without `stripe listen` it never arrives at all. So
+    // tell the server to check with Stripe now, and only then show success.
+    await fetch('/api/tenant/pay/confirm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
+      body: JSON.stringify({ paymentIntentId: paymentIntent?.id, clientSecret }),
+    }).catch(() => {})   // The webhook is still the backstop — never block on this.
+
     onPaid()
   }
 
@@ -256,11 +263,6 @@ const CSS = `
   .tot-row.grand { font-size: 16px; font-weight: 700; color: #0f172a; border-top: 1px solid #e2e8f0; margin-top: 6px; padding-top: 10px; }
 
   .tip { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
-
-  .autopay { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; opacity: 0.75; }
-  .autopay-title { font-size: 13px; font-weight: 600; color: #475569; }
-  .autopay-sub { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
-  .soon { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: #e2e8f0; color: #64748b; padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
 
   .err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
 
