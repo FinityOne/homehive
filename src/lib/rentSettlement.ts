@@ -39,13 +39,17 @@ export async function settleRentPayment(
   db: DB,
   pi: Stripe.PaymentIntent,
   status: 'paid' | 'processing'
-): Promise<{ scheduled: number; special: number }> {
+): Promise<{ scheduled: number; special: number; conflicts: string[] }> {
   const { scheduledIds, specialIds, feeDollars, method } = idsFromMetadata(pi)
   const paidDate = new Date().toISOString().split('T')[0]
 
   let feeApplied = false
   let scheduled = 0
   let special = 0
+  // Rows already settled by a *different* intent: the tenant has been charged
+  // twice for the same rent. We must not overwrite the first payment's record,
+  // and somebody needs to refund the second — so say so rather than swallow it.
+  const conflicts: string[] = []
 
   for (const id of scheduledIds) {
     const { data: row } = await db
@@ -54,8 +58,10 @@ export async function settleRentPayment(
       .eq('id', id)
       .maybeSingle()
     if (!row) continue
-    // Another intent already paid this row — don't overwrite its record.
-    if (row.stripe_payment_intent_id && row.stripe_payment_intent_id !== pi.id) continue
+    if (row.stripe_payment_intent_id && row.stripe_payment_intent_id !== pi.id) {
+      conflicts.push(`scheduled_payments:${id} already settled by ${row.stripe_payment_intent_id}`)
+      continue
+    }
 
     await db.from('scheduled_payments').update({
       status,
@@ -77,7 +83,10 @@ export async function settleRentPayment(
       .eq('id', id)
       .maybeSingle()
     if (!row) continue
-    if (row.stripe_payment_intent_id && row.stripe_payment_intent_id !== pi.id) continue
+    if (row.stripe_payment_intent_id && row.stripe_payment_intent_id !== pi.id) {
+      conflicts.push(`special_payments:${id} already settled by ${row.stripe_payment_intent_id}`)
+      continue
+    }
 
     await db.from('special_payments').update({
       status,
@@ -91,7 +100,11 @@ export async function settleRentPayment(
     special++
   }
 
-  return { scheduled, special }
+  if (conflicts.length > 0) {
+    console.error('[rent] DUPLICATE PAYMENT — intent', pi.id, 'covers rows already paid:', conflicts)
+  }
+
+  return { scheduled, special, conflicts }
 }
 
 /** An ACH debit that fails after the fact puts the charge back on the tenant. */

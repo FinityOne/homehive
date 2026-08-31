@@ -63,7 +63,17 @@ export async function POST(req: NextRequest) {
 
   if (status) {
     const applied = await settleRentPayment(supabaseAdmin, pi, status)
-    return Response.json({ status, applied })
+    // Every row was already paid by another intent — this is a second charge
+    // for rent that is settled. The tenant is owed a refund.
+    if (applied.conflicts.length > 0 && applied.scheduled === 0 && applied.special === 0) {
+      return Response.json({
+        status: 'duplicate',
+        // Logged as an error server-side; there is no landlord alert yet
+        // (MAH-40), so don't promise the tenant one.
+        message: 'This rent was already paid — this looks like a duplicate charge. Contact your landlord for a refund.',
+      })
+    }
+    return Response.json({ status, applied: { scheduled: applied.scheduled, special: applied.special } })
   }
 
   // `requires_payment_method` after an attempt means the charge was declined or

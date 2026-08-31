@@ -9,10 +9,12 @@
  * side so it can't be edited away in the browser.
  */
 import Stripe from 'stripe'
+import { createHash } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import { computeFee, amountDue, MIN_CHARGE_CENTS, type PayMethod } from '@/lib/rentPayments'
 import { stripeSecretKey, stripeMode } from '@/lib/stripeEnv'
+import { loadTenantIdentity, tenantNames, payerBelongsToTenant } from '@/lib/tenantIdentity'
 
 function getStripe() { return new Stripe(stripeSecretKey()) }
 
@@ -21,8 +23,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { auth: { persistSession: false } }
 )
-
-const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
 
 export async function POST(req: NextRequest) {
   // Resolve the key up front so a misconfigured environment fails as a clear
@@ -51,28 +51,27 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Nothing selected to pay.' }, { status: 400 })
   }
 
-  const { data: profile } = await supabaseAdmin
-    .from('profiles').select('email, full_name').eq('id', user.id).maybeSingle()
-  const email = norm(profile?.email || user.email)
-  if (!email) return Response.json({ error: 'No email on your account.' }, { status: 400 })
+  // Which payer rows are this tenant's? Resolved by the same rules the lease
+  // view uses (src/lib/tenantIdentity.ts) so the two can never disagree about
+  // who someone is.
+  const identity = await loadTenantIdentity(supabaseAdmin, user)
+  if (!identity) return Response.json({ error: 'No email on your account.' }, { status: 400 })
 
-  // Establish which payer rows are this tenant's, by email then by lease name.
-  // Match on the tenant's email first; a lease may also name them without an
-  // email on the payer row, so their names on this lease are the fallback.
-  // Both queries are filtered in Postgres — scanning the whole table would
-  // silently stop matching once it passed Supabase's 1000-row response cap.
-  const { data: leaseTenants } = await supabaseAdmin
-    .from('lease_tenants').select('name, email').ilike('email', email)
-  const myNames = [...new Set((leaseTenants ?? []).map(lt => norm(lt.name)).filter(Boolean))]
+  const email = identity.email
+  const myNames = tenantNames(identity)
 
   const { data: byEmail } = await supabaseAdmin
-    .from('payment_plan_tenants').select('id').ilike('email', email)
+    .from('payment_plan_tenants').select('id, name, email').ilike('email', email)
   const byName = myNames.length > 0
     ? (await supabaseAdmin
-        .from('payment_plan_tenants').select('id, name').in('name', myNames)).data ?? []
+        .from('payment_plan_tenants').select('id, name, email').in('name', myNames)).data ?? []
     : []
 
-  const mine = new Set([...(byEmail ?? []), ...byName].map(pt => pt.id))
+  const mine = new Set(
+    [...(byEmail ?? []), ...byName]
+      .filter(pt => payerBelongsToTenant(pt, identity, myNames))
+      .map(pt => pt.id)
+  )
   if (mine.size === 0) return Response.json({ error: 'No rent account found for you.' }, { status: 404 })
 
   // Load the rows and confirm every one belongs to this tenant.
@@ -135,7 +134,23 @@ export async function POST(req: NextRequest) {
   }
 
   const stripe = getStripe()
-  const intent = await stripe.paymentIntents.create({
+
+  // Two tabs, or a double-click on a slow connection, would otherwise create two
+  // intents for the same rent and charge the tenant twice. Keying on who is
+  // paying, what they selected and how means a repeat of the *same* request
+  // returns the *same* intent instead of a second charge. A genuinely different
+  // selection hashes differently and is unaffected.
+  //
+  // Reusing the key on a declined intent is the behaviour we want too: Stripe
+  // hands back that intent, and it can be confirmed again with another card.
+  const idempotencyKey = 'rent_' + createHash('sha256').update([
+    user.id,
+    method,
+    String(fee.totalCents),
+    ...rows.map(r => `${r.kind}:${r.id}:${r.due}`).sort(),
+  ].join('|')).digest('hex')
+
+  const params: Stripe.PaymentIntentCreateParams = {
     amount: fee.totalCents,
     currency: 'usd',
     // ACH debit settles in days; card is instant. Restricting the type keeps the
@@ -154,7 +169,21 @@ export async function POST(req: NextRequest) {
       scheduledIds: rows.filter(r => r.kind === 'scheduled').map(r => r.id).join(','),
       specialIds: rows.filter(r => r.kind === 'special').map(r => r.id).join(','),
     },
-  })
+  }
+
+  let intent: Stripe.PaymentIntent
+  try {
+    intent = await stripe.paymentIntents.create(params, { idempotencyKey })
+  } catch (e) {
+    // Stripe rejects a key replayed with different parameters. That means the
+    // amount moved between attempts — a partial payment landed, say — so the
+    // request is genuinely new and deserves its own intent.
+    if (e instanceof Stripe.errors.StripeIdempotencyError) {
+      intent = await stripe.paymentIntents.create(params)
+    } else {
+      throw e
+    }
+  }
 
   return Response.json({
     clientSecret: intent.client_secret,
