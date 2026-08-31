@@ -11,6 +11,7 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
+import { loadTenantIdentity, tenantNames, payerBelongsToTenant } from '@/lib/tenantIdentity'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,39 +19,16 @@ const supabaseAdmin = createClient(
   { auth: { persistSession: false } }
 )
 
-const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
-
 export async function GET(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '')
   if (!token) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token)
   if (authErr || !user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabaseAdmin
-    .from('profiles').select('email, full_name').eq('id', user.id).maybeSingle()
+  const identity = await loadTenantIdentity(supabaseAdmin, user)
+  if (!identity) return Response.json({ tenancies: [] })
 
-  const email = norm(profile?.email || user.email)
-  if (!email) return Response.json({ tenancies: [] })
-
-  // Identity: the tenant record, then every lease they're named on.
-  const { data: tenantRows } = await supabaseAdmin
-    .from('tenants').select('id, email').ilike('email', email)
-  const tenantIds = (tenantRows ?? []).map(t => t.id)
-
-  // Filtered in Postgres rather than in memory: an unfiltered select tops out
-  // at 1000 rows, past which a tenant would simply stop finding their lease.
-  const leaseTenantCols = 'id, lease_id, tenant_id, name, email'
-  const { data: byEmail } = await supabaseAdmin
-    .from('lease_tenants').select(leaseTenantCols).ilike('email', email)
-  const { data: byTenantId } = tenantIds.length > 0
-    ? await supabaseAdmin.from('lease_tenants').select(leaseTenantCols).in('tenant_id', tenantIds)
-    : { data: [] }
-  const seen = new Set<string>()
-  const mine = [...(byEmail ?? []), ...(byTenantId ?? [])].filter(lt => {
-    if (seen.has(lt.id)) return false
-    seen.add(lt.id)
-    return true
-  })
+  const mine = identity.leaseTenants
   if (mine.length === 0) return Response.json({ tenancies: [] })
 
   const leaseIds = [...new Set(mine.map(lt => lt.lease_id))]
@@ -70,14 +48,17 @@ export async function GET(req: NextRequest) {
   for (const lease of leases ?? []) {
     const plan = (plans ?? []).find((p: any) => p.lease_id === lease.id)
 
-    // Which payer on this plan is *me*? Match on email, then on name.
-    const myNames = mine.filter(m => m.lease_id === lease.id).map(m => norm(m.name))
+    // Which payer on this plan is *me*? Email, then an exact full-name match on
+    // this lease. Nothing looser — see src/lib/tenantIdentity.ts.
+    const myNames = tenantNames(identity, lease.id)
     const me = plan
-      ? (plan.tenants ?? []).find((t: any) => norm(t.email) === email)
-        ?? (plan.tenants ?? []).find((t: any) => myNames.includes(norm(t.name)))
-        ?? (plan.tenants ?? []).find((t: any) =>
-            myNames.some(n => n && norm(t.name).split(/\s+/)[0] === n.split(/\s+/)[0]))
+      ? (plan.tenants ?? []).find((t: any) => payerBelongsToTenant(t, identity, myNames)) ?? null
       : null
+
+    // A plan exists and names payers, but none of them is recognisably this
+    // tenant. Saying "no lease" would send them off to browse listings; the
+    // truth is their landlord has their details recorded differently.
+    const unmatchedPlan = !!plan && (plan.tenants ?? []).length > 0 && !me
 
     let lineItems: any[] = []
     let scheduled: any[] = []
@@ -112,6 +93,7 @@ export async function GET(req: NextRequest) {
       lateFeeRule: plan ? (Array.isArray(plan.rule) ? plan.rule[0] ?? null : plan.rule ?? null) : null,
       me: me ? { id: me.id, name: me.name, monthly_total: Number(me.monthly_total), status: me.status } : null,
       housemateCount: plan ? Math.max(0, (plan.tenants ?? []).length - 1) : 0,
+      unmatchedPlan,
       lineItems: lineItems.map(l => ({ ...l, amount: Number(l.amount) })),
       scheduled: scheduled.map(s => ({
         ...s,
@@ -128,5 +110,5 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return Response.json({ name: profile?.full_name ?? null, tenancies })
+  return Response.json({ name: identity.fullName, tenancies })
 }

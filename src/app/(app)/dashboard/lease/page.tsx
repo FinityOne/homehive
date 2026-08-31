@@ -34,6 +34,7 @@ type Tenancy = {
   lateFeeRule: { grace_period_days: number; fee_amount: number; frequency_days: number; max_total_fees: number | null } | null
   me: { id: string; name: string; monthly_total: number; status: string } | null
   housemateCount: number
+  unmatchedPlan?: boolean
   lineItems: { id: string; category: string; label: string; amount: number }[]
   scheduled: Scheduled[]
   specials: Special[]
@@ -101,7 +102,8 @@ export default function MyLeasePage() {
       })
       const json = await res.json().catch(() => ({}))
       window.history.replaceState({}, '', window.location.pathname)
-      if (json.status === 'paid') setFlash('Payment received. Thank you!')
+      if (json.status === 'duplicate') setFlash(json.message)
+      else if (json.status === 'paid') setFlash('Payment received. Thank you!')
       else if (json.status === 'processing') setFlash('Payment submitted — it shows as clearing until it settles.')
       else if (json.status === 'failed') setFlash('That payment didn\u2019t go through. Please try again.')
       load()
@@ -224,6 +226,19 @@ export default function MyLeasePage() {
         </div>
 
         <StripeModeBanner style={{ marginBottom: 16 }} />
+
+        {/* The lease exists and has payers on it, but none of them is
+            recognisably this tenant. Saying "no lease" would be a lie, and
+            silently showing zeros would be worse — name the problem and give
+            them the one action that fixes it. */}
+        {t.unmatchedPlan && (
+          <div className="warn">
+            <strong>We can&apos;t match your account to this lease.</strong> Your landlord has a rent
+            schedule for this home, but none of the payers on it is recorded under{' '}
+            <strong>your email address</strong>. Ask them to add it to your payer record and this
+            page will fill in.
+          </div>
+        )}
 
         {flash && <div className="ok">{flash}</div>}
 
@@ -454,6 +469,8 @@ function ord(n: number) {
 }
 
 const CSS = `
+  .warn { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; color: #92400e; border-radius: 9px; padding: 12px 15px; font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
+
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
