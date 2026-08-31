@@ -75,6 +75,21 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Ensure the account exists for the given mode ────────────────────────────
+  // On login, generateLink('magiclink') *creates* the account when the address
+  // is unknown, which would both mint accounts from typos and mail a code to
+  // whoever owns that address. Look the user up first and stay silent instead.
+  let recipient = email
+  if (mode === 'login') {
+    const existing = await findUserByEmail(email)
+    if (!existing) {
+      await supabaseAdmin.from('auth_code_sends').insert({ email, ip: clientIp(req), mode })
+      return Response.json({ ok: true })
+    }
+    // Address the email to the account's stored address, so the code can only
+    // ever reach the user it belongs to.
+    recipient = existing
+  }
+
   if (mode === 'signup') {
     // Create the user (passwordless, unconfirmed). The handle_new_user trigger
     // provisions the profiles row from this metadata.
@@ -138,9 +153,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  if (code.length !== EXPECTED_CODE_LENGTH) {
-    console.warn(
-      `[send-code] Supabase returned a ${code.length}-digit OTP; expected ${EXPECTED_CODE_LENGTH}. ` +
+  // The code must be exactly six digits. Supabase's "Email OTP Length" setting
+  // is the only thing that controls this, so a mismatch is a project
+  // misconfiguration we surface loudly rather than paper over.
+  if (!/^\d+$/.test(code) || code.length !== EXPECTED_CODE_LENGTH) {
+    console.error(
+      `[send-code] Supabase returned "${code.length} char" OTP (digits only: ${/^\d+$/.test(code)}); ` +
+      `expected ${EXPECTED_CODE_LENGTH} digits. ` +
       `Set Auth → Email → "Email OTP Length" to ${EXPECTED_CODE_LENGTH} in the Supabase dashboard.`
     )
   }
@@ -160,7 +179,7 @@ export async function POST(req: NextRequest) {
   try {
     sendResult = await resend.emails.send({
       from: EMAIL_FROM,
-      to: email,
+      to: recipient,
       subject: `${code} is your HomeHive sign-in code`,
       html: codeEmailHtml(code, mode),
     })
@@ -187,6 +206,34 @@ export async function POST(req: NextRequest) {
   await supabaseAdmin.from('auth_code_sends').insert({ email, ip: clientIp(req), mode })
 
   return Response.json({ ok: true, codeLength: code.length })
+}
+
+/**
+ * Return the account's stored email address, or null when no account exists.
+ * Uses the admin users endpoint's email filter — `listUsers` in supabase-js
+ * only paginates, and we need an exact-match answer per request.
+ */
+async function findUserByEmail(email: string): Promise<string | null> {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) return null
+  const url =
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users` +
+    `?filter=${encodeURIComponent(email)}&per_page=10`
+  try {
+    const res = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } })
+    if (!res.ok) {
+      console.error('[send-code] admin user lookup failed', res.status)
+      return null
+    }
+    const body = await res.json()
+    const match = (body.users || []).find(
+      (u: { email?: string }) => (u.email || '').toLowerCase() === email
+    )
+    return match?.email ?? null
+  } catch (err) {
+    console.error('[send-code] admin user lookup threw', err)
+    return null
+  }
 }
 
 /**
