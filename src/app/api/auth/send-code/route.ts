@@ -7,7 +7,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
-const resend = new Resend(process.env.RESEND_API_KEY!)
+const RESEND_API_KEY = process.env.RESEND_API_KEY
+const resend = new Resend(RESEND_API_KEY)
 
 // Throttle limits (anti inbox-bombing)
 const MIN_GAP_SECONDS = 30   // no more than one code every 30s per email
@@ -18,6 +19,9 @@ type Mode = 'login' | 'signup'
 // The code length we design for. Supabase's Auth "Email OTP Length" setting is
 // the source of truth for what generateLink actually returns.
 const EXPECTED_CODE_LENGTH = 6
+
+// Must be an address on a domain verified in Resend, or every send 403s.
+const EMAIL_FROM = 'HomeHive <hello@homehive.live>'
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -113,9 +117,25 @@ export async function POST(req: NextRequest) {
 
   // On login for a non-existent account we must not reveal that — record the
   // attempt and return ok without sending anything (mirrors forgot-password).
+  // Anything *else* going wrong is a real failure: it must be logged and
+  // surfaced, never disguised as a delivered code.
   if (linkErr || !code) {
-    await supabaseAdmin.from('auth_code_sends').insert({ email, ip: clientIp(req), mode })
-    return Response.json({ ok: true })
+    if (isUnknownUserError(linkErr)) {
+      // Record it so an unknown address is rate-limited exactly like a real one.
+      await supabaseAdmin.from('auth_code_sends').insert({ email, ip: clientIp(req), mode })
+      return Response.json({ ok: true })
+    }
+
+    console.error('[send-code] generateLink failed', {
+      mode,
+      status: linkErr?.status,
+      code: linkErr?.code,
+      message: linkErr?.message || 'no email_otp returned',
+    })
+    return Response.json(
+      { error: 'We could not send your code right now. Please try again in a moment.' },
+      { status: 502 }
+    )
   }
 
   if (code.length !== EXPECTED_CODE_LENGTH) {
@@ -126,16 +146,59 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Send the code ───────────────────────────────────────────────────────────
-  await resend.emails.send({
-    from: 'HomeHive <hello@homehive.live>',
-    to: email,
-    subject: `${code} is your HomeHive sign-in code`,
-    html: codeEmailHtml(code, mode),
-  })
+  // The Resend SDK resolves with `{ error }` instead of throwing, so an
+  // unchecked call silently drops the email while the UI says "code sent".
+  if (!RESEND_API_KEY) {
+    console.error('[send-code] RESEND_API_KEY is not set — no sign-in code can be delivered.')
+    return Response.json(
+      { error: 'Email delivery is not configured. Please contact support.' },
+      { status: 500 }
+    )
+  }
+
+  let sendResult
+  try {
+    sendResult = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: email,
+      subject: `${code} is your HomeHive sign-in code`,
+      html: codeEmailHtml(code, mode),
+    })
+  } catch (err) {
+    console.error('[send-code] Resend threw while sending the code', err)
+    return Response.json(
+      { error: 'We could not send your code right now. Please try again in a moment.' },
+      { status: 502 }
+    )
+  }
+
+  if (sendResult.error) {
+    console.error('[send-code] Resend rejected the sign-in code email', {
+      from: EMAIL_FROM,
+      name: sendResult.error.name,
+      message: sendResult.error.message,
+    })
+    return Response.json(
+      { error: 'We could not send your code right now. Please try again in a moment.' },
+      { status: 502 }
+    )
+  }
 
   await supabaseAdmin.from('auth_code_sends').insert({ email, ip: clientIp(req), mode })
 
   return Response.json({ ok: true, codeLength: code.length })
+}
+
+/**
+ * True only when Supabase is telling us the address has no account. That case
+ * stays silent so the endpoint never reveals which emails are registered; every
+ * other error is a delivery failure the caller deserves to hear about.
+ */
+function isUnknownUserError(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false
+  if (err.code === 'user_not_found') return true
+  const msg = (err.message || '').toLowerCase()
+  return msg.includes('user not found') || msg.includes('no user found')
 }
 
 function codeEmailHtml(code: string, mode: Mode): string {
