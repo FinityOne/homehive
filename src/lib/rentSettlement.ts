@@ -8,6 +8,7 @@
 
 import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { notifyRentPayment, rowsForIntent } from './rentPaymentNotify'
 
 /** Whichever service-role client the caller already has. */
 type DB = SupabaseClient
@@ -34,6 +35,11 @@ export function idsFromMetadata(pi: Stripe.PaymentIntent) {
  * Writes are keyed on the payment intent so a repeat run rewrites the same
  * values rather than double-counting, and a row already settled by a *different*
  * intent is left alone.
+ *
+ * Emails go out only on the *transition* into the new status — a second run
+ * finds every row already there and stays quiet — and even then the send is
+ * claimed in the database, because the webhook and the browser's confirm call
+ * can arrive at the same instant.
  */
 export async function settleRentPayment(
   db: DB,
@@ -50,6 +56,13 @@ export async function settleRentPayment(
   // twice for the same rent. We must not overwrite the first payment's record,
   // and somebody needs to refund the second — so say so rather than swallow it.
   const conflicts: string[] = []
+  // Rows this run actually moved into `status`. Empty on a repeat run, which is
+  // what keeps the landlord from being emailed twice for one payment.
+  const movedScheduled: string[] = []
+  const movedSpecial: string[] = []
+  // `paid` is worth announcing even from `processing` — the ACH debit cleared.
+  const isTransition = (prev: string | null) =>
+    status === 'paid' ? prev !== 'paid' : prev !== 'processing' && prev !== 'paid'
 
   for (const id of scheduledIds) {
     const { data: row } = await db
@@ -72,6 +85,7 @@ export async function settleRentPayment(
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
     }).eq('id', id)
+    if (isTransition(row.status)) movedScheduled.push(id)
     feeApplied = true
     scheduled++
   }
@@ -96,6 +110,7 @@ export async function settleRentPayment(
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
     }).eq('id', id)
+    if (isTransition(row.status)) movedSpecial.push(id)
     feeApplied = true
     special++
   }
@@ -104,24 +119,61 @@ export async function settleRentPayment(
     console.error('[rent] DUPLICATE PAYMENT — intent', pi.id, 'covers rows already paid:', conflicts)
   }
 
+  if (movedScheduled.length > 0 || movedSpecial.length > 0) {
+    await notifyRentPayment({
+      db,
+      pi,
+      event: status,
+      method,
+      fee: feeDollars,
+      rows: await rowsForIntent(db, movedScheduled, movedSpecial),
+    })
+  }
+
   return { scheduled, special, conflicts }
 }
 
-/** An ACH debit that fails after the fact puts the charge back on the tenant. */
+/**
+ * An ACH debit that fails after the fact puts the charge back on the tenant.
+ *
+ * A bounce is its own news: the landlord was told the money was on its way, so
+ * they need to hear that it isn't. Only rows that were actually showing as
+ * settled count — reverting an already-pending row is a no-op and says nothing.
+ */
 export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
-  const { scheduledIds, specialIds } = idsFromMetadata(pi)
+  const { scheduledIds, specialIds, feeDollars, method } = idsFromMetadata(pi)
+
+  const revertedScheduled: string[] = []
+  const revertedSpecial: string[] = []
 
   for (const id of scheduledIds) {
-    await db.from('scheduled_payments').update({
+    const { data } = await db.from('scheduled_payments').update({
       status: 'pending', paid_amount: 0, paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
+      .in('status', ['paid', 'processing'])
+      .select('id')
+    if (data && data.length > 0) revertedScheduled.push(id)
   }
   for (const id of specialIds) {
-    await db.from('special_payments').update({
+    const { data } = await db.from('special_payments').update({
       status: 'pending', paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
+      .in('status', ['paid', 'processing'])
+      .select('id')
+    if (data && data.length > 0) revertedSpecial.push(id)
+  }
+
+  if (revertedScheduled.length > 0 || revertedSpecial.length > 0) {
+    await notifyRentPayment({
+      db,
+      pi,
+      event: 'failed',
+      method,
+      fee: feeDollars,
+      rows: await rowsForIntent(db, revertedScheduled, revertedSpecial),
+    })
   }
 }
 

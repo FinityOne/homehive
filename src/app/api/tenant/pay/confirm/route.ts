@@ -68,8 +68,9 @@ export async function POST(req: NextRequest) {
     if (applied.conflicts.length > 0 && applied.scheduled === 0 && applied.special === 0) {
       return Response.json({
         status: 'duplicate',
-        // Logged as an error server-side; there is no landlord alert yet
-        // (MAH-40), so don't promise the tenant one.
+        // Logged as an error server-side. Settling a payment emails the
+        // landlord, but nothing settled here — a duplicate charge sends no
+        // alert of its own, so don't promise the tenant one.
         message: 'This rent was already paid — this looks like a duplicate charge. Contact your landlord for a refund.',
       })
     }
