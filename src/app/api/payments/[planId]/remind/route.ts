@@ -91,8 +91,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
   const landlordName = profile?.full_name || profile?.first_name || null
   const landlordEmail = profile?.email || user.email || null
 
-  // Tenants pay from their own portal; deep-link them straight to it.
-  const payUrl = `${getSiteUrl()}/dashboard/lease`
+  // Tenants pay from their own portal; deep-link them straight into the payment
+  // flow rather than the overview tab, and open the sheet on arrival. Signed
+  // out, the login page carries this destination through via `next`.
+  const payUrl = `${getSiteUrl()}/dashboard/lease?tab=payments&pay=1`
 
   const sent: { name: string; email: string; amount: number }[] = []
   const skipped: { name: string; reason: string }[] = []

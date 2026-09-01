@@ -199,7 +199,9 @@ export async function notifyRentPayment(input: {
         method,
         remaining: ctx.tenantOutstanding,
         paidOn,
-        payUrl: `${getSiteUrl()}/dashboard/lease`,
+        // A bounced debit needs a retry, not a read: send those straight into
+        // the payment flow. A receipt just wants the lease page.
+        payUrl: `${getSiteUrl()}/dashboard/lease${event === 'failed' ? '?tab=payments&pay=1' : ''}`,
         landlordName: ctx.landlordName,
         landlordEmail: ctx.landlordEmail,
         reference: pi.id,

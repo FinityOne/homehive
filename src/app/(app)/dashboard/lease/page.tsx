@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -62,12 +62,34 @@ export default function MyLeasePage() {
   const [paying, setPaying] = useState<Payable[] | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [flash, setFlash] = useState<string | null>(null)
+  // Set from the URL on mount, cleared once acted on — a ref, not state, so
+  // arriving with `pay=1` doesn't cost an extra render.
+  const autoPay = useRef(false)
 
   useEffect(() => { document.title = 'My Lease — HomeHive' }, [])
 
+  /**
+   * The "Pay rent" button in a reminder email links to `?tab=payments&pay=1`.
+   * Read on mount rather than in the initial state so the server-rendered
+   * markup and the first client render agree.
+   */
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const q = p.get('tab')
+    if (q === 'payments' || q === 'lease' || q === 'overview') setTab(q)
+    autoPay.current = p.get('pay') === '1'
+  }, [])
+
   const load = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { router.push('/login'); return }
+    if (!session) {
+      // A rent reminder deep-links here. Losing that destination at the login
+      // wall is how a tenant ends up on the generic dashboard wondering where
+      // the payment they clicked through to pay went.
+      const dest = window.location.pathname + window.location.search
+      router.push(`/login?next=${encodeURIComponent(dest)}`)
+      return
+    }
     setToken(session.access_token)
     const res = await fetch('/api/tenant/lease', {
       headers: { Authorization: `Bearer ${session.access_token}` },
@@ -140,6 +162,19 @@ export default function MyLeasePage() {
     }
     return { owed: owedRows, upcoming: futureRows }
   }, [t])
+
+  /**
+   * Arriving from a reminder with `pay=1`: open the sheet on what is actually
+   * owed, once that has loaded. If the rent turns out to be settled already we
+   * simply land on the Payments tab — never an empty payment sheet.
+   */
+  useEffect(() => {
+    if (!autoPay.current || loading) return
+    autoPay.current = false
+    if (owed.length === 0) return
+    setSelected(new Set(owed.map(r => `${r.kind}-${r.id}`)))
+    setPaying(owed)
+  }, [loading, owed])
 
   const totalOwed = owed.reduce((s, r) => s + r.amount, 0)
   const totalUpcoming = upcoming.reduce((s, r) => s + r.amount, 0)
@@ -311,6 +346,33 @@ export default function MyLeasePage() {
                 </div>
               </div>
             )}
+
+            {/* Upcoming rent belongs on the page a tenant actually lands on.
+                Hiding it behind the Payments tab is why "when is my next rent
+                due, and how much" read as unanswerable. */}
+            {upcoming.length > 0 && (
+              <div className="card">
+                <div className="card-hd">
+                  <span className="card-title">Upcoming ({upcoming.length})</span>
+                  <span className="card-note">{fmtMoney(totalUpcoming)}</span>
+                </div>
+                <div className="card-bd">
+                  {upcoming.slice(0, 4).map(r => (
+                    <div key={`${r.kind}-${r.id}`} className="row">
+                      <span>{r.label}</span>
+                      <span className="row-amt">{fmtMoney(r.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="hint" style={{ marginTop: 10 }}>
+                    {upcoming.length > 4 ? `And ${upcoming.length - 4} more. ` : ''}
+                    Not due yet — you don&apos;t need to pay these now.
+                  </div>
+                  <button className="btn-dark" style={{ marginTop: 12 }} onClick={() => setTab('payments')}>
+                    {owed.length > 0 ? 'See all payments' : 'Pay ahead'}
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -465,7 +527,7 @@ function Fig({ label, value, tone }: { label: string; value: string; tone?: 'goo
 function ord(n: number) {
   const v = n % 100
   if (v >= 11 && v <= 13) return 'th'
-  return ['th', 'st', 'nd', 'rd'][n % 4] ?? 'th'
+  return ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'
 }
 
 const CSS = `
