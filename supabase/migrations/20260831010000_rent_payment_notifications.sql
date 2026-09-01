@@ -1,3 +1,7 @@
+-- Applied to the hosted project on 2026-09-01 (was written 2026-08-31 but
+-- never applied; see below — the missing table silently disabled every rent
+-- payment email, because claim() treats any non-23505 error as "already sent").
+--
 -- One row per notification we have already sent about a payment intent.
 --
 -- settleRentPayment() is deliberately safe to run twice — the webhook and the

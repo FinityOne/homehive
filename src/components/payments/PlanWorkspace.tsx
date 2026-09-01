@@ -13,10 +13,11 @@ import {
   type PaymentPlanTenant, type PaymentLineItem,
 } from '@/lib/payments'
 import StripeModeBanner from '@/components/StripeModeBanner'
+import PaymentEmailHistory, { emailsForCharge, fmtWhen, type PlanEmail } from './PaymentEmailHistory'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
-type Tab = 'schedule' | 'tenants' | 'charges'
+type Tab = 'schedule' | 'tenants' | 'charges' | 'activity'
 
 // ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 
@@ -74,13 +75,18 @@ function StatusBadge({ status }: { status: string }) {
 const ROW_COLS = '1fr 88px 88px 110px 68px 96px'
 
 function PaymentRow({
-  payment, rule, onUpdate, onRemind,
+  payment, rule, onUpdate, onRemind, onResendReceipt, history = [],
 }: {
   payment: ScheduledPayment
   rule?: { grace_period_days: number; fee_amount: number; frequency_days: number; max_total_fees: number | null } | null
   onUpdate: (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => void
   /** Chase this one charge. Absent when the row is already settled. */
   onRemind?: (payment: ScheduledPayment) => void
+  emails?: PlanEmail[]
+  /** Re-send the confirmation for rent that has already settled. */
+  onResendReceipt?: (payment: ScheduledPayment) => void
+  /** Requests that mentioned this month's rent, newest first. */
+  history?: PlanEmail[]
 }) {
   const [open,      setOpen]      = useState(false)
   const [saving,    setSaving]    = useState(false)
@@ -322,6 +328,18 @@ function PaymentRow({
             <input style={iS} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Paid via Zelle" />
           </div>
 
+          {/* When was this month actually chased, and did it land? */}
+          <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: 8, letterSpacing: '0.02em' }}>
+              REQUEST HISTORY
+            </div>
+            <PaymentEmailHistory
+              emails={history}
+              priorCount={payment.reminder_count ?? 0}
+              empty="No requests sent for this month yet."
+            />
+          </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
               {saving ? 'Saving…' : 'Save'}
@@ -339,7 +357,23 @@ function PaymentRow({
                   : 'Email this tenant about this charge'}
                 style={{ marginLeft: 'auto', padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
               >
-                ✉ {payment.reminder_sent_at ? `Remind again (${payment.reminder_count})` : 'Send reminder'}
+                {(() => {
+                  // The charge's own counter covers sends made before the email
+                  // history existed, so it wins whenever it is the larger number.
+                  const n = Math.max(history.length, payment.reminder_count ?? 0)
+                  return n > 0 ? `Remind again (${n})` : 'Send reminder'
+                })()}
+              </button>
+            )}
+
+            {/* Settled rent gets a confirmation, not a chase. */}
+            {onResendReceipt && (payment.status === 'paid' || payment.status === 'processing') && (
+              <button
+                onClick={() => onResendReceipt(payment)}
+                title="Send the payment confirmation again"
+                style={{ marginLeft: onRemind ? 0 : 'auto', padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              >
+                Resend confirmation
               </button>
             )}
           </div>
@@ -352,14 +386,17 @@ function PaymentRow({
 // ─── MONTH GROUP ──────────────────────────────────────────────────────────────
 
 function MonthGroup({
-  month, payments, rule, onUpdate, onRemind, defaultOpen,
+  month, payments, rule, onUpdate, onRemind, onResendReceipt, defaultOpen, emails = [],
 }: {
   month: string
   payments: ScheduledPayment[]
   rule: PaymentPlan['late_fee_rule']
   onUpdate: (id: string, u: Parameters<typeof updateScheduledPayment>[1]) => void
   onRemind?: (payment: ScheduledPayment) => void
+  onResendReceipt?: (payment: ScheduledPayment) => void
   defaultOpen: boolean
+  /** Every request sent on this plan; each row filters to its own. */
+  emails?: PlanEmail[]
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const active   = payments.filter(p => p.status !== 'voided')
@@ -400,7 +437,15 @@ function MonthGroup({
             ))}
           </div>
           {payments.map(p => (
-            <PaymentRow key={p.id} payment={p} rule={rule ?? undefined} onUpdate={onUpdate} onRemind={onRemind} />
+            <PaymentRow
+              key={p.id}
+              payment={p}
+              rule={rule ?? undefined}
+              onUpdate={onUpdate}
+              onRemind={onRemind}
+              onResendReceipt={onResendReceipt}
+              history={emailsForCharge(emails, { scheduledId: p.id })}
+            />
           ))}
         </div>
       )}
@@ -765,13 +810,15 @@ function TenantRentEditor({
 type SpecialMode = 'view' | 'edit' | 'confirm'
 
 function SpecialChargeCard({
-  sp, multiTenant, onUpdate, onRemind,
+  sp, multiTenant, onUpdate, onRemind, onResendReceipt, history = [],
 }: {
   sp: SpecialPayment
   multiTenant: boolean
   onUpdate: (id: string, updates: Parameters<typeof updateSpecialPaymentFull>[1]) => Promise<void>
   /** Email the tenant about this charge. Absent once it's settled or waived. */
   onRemind?: (sp: SpecialPayment) => void
+  onResendReceipt?: (sp: SpecialPayment) => void
+  history?: PlanEmail[]
 }) {
   const [mode,     setMode]     = useState<SpecialMode>('view')
   const [saving,   setSaving]   = useState(false)
@@ -823,6 +870,9 @@ function SpecialChargeCard({
   }
 
   const isOverdueCharge = sp.status === 'pending' && new Date(sp.due_date + 'T00:00:00') < new Date()
+  const [showHistory, setShowHistory] = useState(false)
+  // Sends recorded on the charge itself cover the era before the email log.
+  const requestCount = Math.max(history.length, sp.reminder_count ?? 0)
 
   const iS: React.CSSProperties = {
     width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e2e8f0',
@@ -833,7 +883,8 @@ function SpecialChargeCard({
   // ── VIEW mode ──
   if (mode === 'view') {
     return (
-      <div style={{ background: '#fff', borderRadius: '11px', border: `1px solid ${isOverdueCharge ? '#fca5a5' : '#e2e8f0'}`, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+      <div style={{ background: '#fff', borderRadius: '11px', border: `1px solid ${isOverdueCharge ? '#fca5a5' : '#e2e8f0'}`, padding: '16px 20px' }}>
+       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
             <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{sp.label}</span>
@@ -866,7 +917,19 @@ function SpecialChargeCard({
                 : 'Email this tenant a request for this charge'}
               style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
             >
-              ✉ {sp.reminder_sent_at ? `Request again (${sp.reminder_count ?? 1})` : 'Send request'}
+              {(() => {
+                const n = Math.max(history.length, sp.reminder_count ?? 0)
+                return n > 0 ? `Request again (${n})` : 'Send request'
+              })()}
+            </button>
+          )}
+          {sp.status === 'paid' && onResendReceipt && (
+            <button
+              onClick={() => onResendReceipt(sp)}
+              title="Send the payment confirmation again"
+              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+            >
+              Resend confirmation
             </button>
           )}
           {sp.status !== 'paid' && (
@@ -886,6 +949,29 @@ function SpecialChargeCard({
             </>
           )}
         </div>
+       </div>
+
+        {/* When this charge was actually asked for — the deposit at move-in is
+            the one a landlord most often has to prove they chased. */}
+        {requestCount > 0 && (
+          <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 14, paddingTop: 12 }}>
+            <button
+              onClick={() => setShowHistory(v => !v)}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: '11.5px', fontWeight: 600, color: '#64748b' }}
+            >
+              {showHistory ? 'Hide' : 'Show'} request history ({requestCount})
+            </button>
+            {showHistory && (
+              <div style={{ marginTop: 10 }}>
+                <PaymentEmailHistory
+                  emails={history}
+                  priorCount={sp.reminder_count ?? 0}
+                  empty="No requests sent for this charge yet."
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -1649,6 +1735,14 @@ export default function PlanWorkspace({
   const [remindMsg, setRemindMsg] = useState('')
   const [reminding, setReminding] = useState(false)
   const [remindResult, setRemindResult] = useState<{ ok: boolean; text: string } | null>(null)
+  /** Every payment request sent on this plan — rows filter to their own. */
+  const [emails, setEmails] = useState<PlanEmail[]>([])
+  // Re-sending a confirmation for money that already arrived.
+  const [receiptTarget, setReceiptTarget] = useState<
+    { scheduledIds: string[]; specialIds: string[]; label: string; amount: number } | null
+  >(null)
+  const [receiptAudience, setReceiptAudience] = useState<'tenant' | 'landlord' | 'both'>('both')
+  const [sendingReceipt, setSendingReceipt] = useState(false)
   // Payer administration — adding and ending someone's obligation on this plan.
   const [showAddPayer, setShowAddPayer] = useState(false)
   const [terminateTarget, setTerminateTarget] = useState<string | null>(null)
@@ -1659,11 +1753,25 @@ export default function PlanWorkspace({
     getPlanById(planId).then(p => { setPlan(p); setLoading(false) })
   }
 
+  /** Request history is independent of the ledger, so a failure here must not
+   *  take the money view down with it — the rows just show no history. */
+  const loadEmails = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/payments/${planId}/emails`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      })
+      if (!res.ok) return
+      const json = await res.json()
+      setEmails(json.emails ?? [])
+    } catch { /* leave history empty */ }
+  }
+
   useEffect(() => {
     if (!embedded) document.title = 'Payment Plan — Landlord | HomeHive'
   }, [embedded])
 
-  useEffect(() => { load() }, [planId])
+  useEffect(() => { load(); loadEmails() }, [planId])
 
   const handleUpdateScheduled = async (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => {
     await updateScheduledPayment(id, updates)
@@ -1686,6 +1794,49 @@ export default function PlanWorkspace({
   function remindSpecial(sp: SpecialPayment) {
     const who = sp.tenant?.name ?? (plan?.tenants.length === 1 ? plan.tenants[0].name : 'the tenants')
     setRemindTarget({ ids: [], specialIds: [sp.id], label: `${sp.label} for ${who}` })
+  }
+
+  /** Confirm settled rent again — the receipt, not a chase. */
+  function resendReceiptFor(p: ScheduledPayment) {
+    setReceiptAudience('both')
+    setReceiptTarget({ scheduledIds: [p.id], specialIds: [], label: `${fmtMonth(p.due_date)} rent`, amount: p.amount })
+  }
+
+  function resendReceiptForSpecial(sp: SpecialPayment) {
+    setReceiptAudience('both')
+    setReceiptTarget({ scheduledIds: [], specialIds: [sp.id], label: sp.label, amount: sp.amount })
+  }
+
+  async function sendReceipt() {
+    if (!receiptTarget) return
+    setSendingReceipt(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`/api/payments/${planId}/resend-receipt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({
+        scheduledIds: receiptTarget.scheduledIds,
+        specialIds: receiptTarget.specialIds,
+        audience: receiptAudience,
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setSendingReceipt(false)
+    setReceiptTarget(null)
+
+    if (!res.ok || !json.ok) {
+      const why = json.error || (json.skipped ?? []).join(' · ') || 'Could not send the confirmation.'
+      setRemindResult({ ok: false, text: why })
+      setTimeout(() => setRemindResult(null), 7000)
+      return
+    }
+    const who = (json.sent ?? []).map((x: { role: string }) => x.role).join(' and ')
+    setRemindResult({ ok: true, text: `Confirmation sent to ${who || 'the recipients'}` })
+    setTimeout(() => setRemindResult(null), 6000)
+    loadEmails()
   }
 
   /** Email the tenants behind the selected charges. One email per person. */
@@ -1714,6 +1865,7 @@ export default function PlanWorkspace({
     }
     setRemindTarget(null)
     setRemindMsg('')
+    loadEmails()
     const bits = [`Reminder sent to ${json.sent} tenant${json.sent !== 1 ? 's' : ''}`]
     if (json.skipped?.length) bits.push(`${json.skipped.length} skipped (${json.skipped[0].reason})`)
     setRemindResult({ ok: json.sent > 0, text: bits.join(' · ') })
@@ -1903,7 +2055,7 @@ export default function PlanWorkspace({
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 0, paddingLeft: embedded ? 0 : 28, borderTop: embedded ? 'none' : '1px solid #f1f5f9', borderBottom: embedded ? '1px solid #e2e8f0' : 'none', marginTop: embedded ? 4 : 0 }}>
-          {(['schedule', 'tenants', 'charges'] as Tab[]).map(t => (
+          {(['schedule', 'tenants', 'charges', 'activity'] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -1916,7 +2068,11 @@ export default function PlanWorkspace({
                 textTransform: 'capitalize',
               }}
             >
-              {t === 'charges' ? `Special Charges${specials.length ? ` (${specials.length})` : ''}` : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'charges'
+                ? `Charges${specials.length ? ` (${specials.length})` : ''}`
+                : t === 'activity'
+                  ? `Activity${emails.length ? ` (${emails.length})` : ''}`
+                  : t.charAt(0).toUpperCase() + t.slice(1)}
               {t === 'schedule' && overdueSPs.length > 0 && (
                 <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px' }}>{overdueSPs.length}</span>
               )}
@@ -1945,7 +2101,7 @@ export default function PlanWorkspace({
                   return (
                     <>
                       {future.map(k => (
-                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} defaultOpen={k === currentMonthKey} />
+                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} onResendReceipt={resendReceiptFor} defaultOpen={k === currentMonthKey} emails={emails} />
                       ))}
                       {past.length > 0 && (
                         <details style={{ marginTop: 12 }}>
@@ -1954,7 +2110,7 @@ export default function PlanWorkspace({
                           </summary>
                           <div style={{ marginTop: 8, opacity: 0.7 }}>
                             {past.slice().reverse().map(k => (
-                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} defaultOpen={false} />
+                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} onResendReceipt={resendReceiptFor} defaultOpen={false} emails={emails} />
                             ))}
                           </div>
                         </details>
@@ -2201,8 +2357,78 @@ export default function PlanWorkspace({
                       multiTenant={plan.tenants.length > 1}
                       onUpdate={handleUpdateSpecial}
                       onRemind={sp.status === 'pending' ? remindSpecial : undefined}
+                      onResendReceipt={resendReceiptForSpecial}
+                      history={emailsForCharge(emails, { specialId: sp.id })}
                     />
                   ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── ACTIVITY ── every request sent on this lease, newest first ── */}
+        {tab === 'activity' && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>Payment requests</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                Every rent reminder and charge request sent on this lease — who it went to, what it
+                covered, and whether it was delivered.
+              </div>
+            </div>
+
+            {emails.length === 0 ? (
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '40px 24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+                  Nothing sent yet. Requests you send from the schedule or a charge show up here.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {emails.map(e => (
+                  <div key={e.id} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a' }}>
+                        {e.recipient_name || e.recipient_email}
+                        <span style={{
+                          marginLeft: 8, fontSize: '10.5px', fontWeight: 600, padding: '2px 8px', borderRadius: 980,
+                          background: e.status === 'failed' ? '#fdeceb' : '#e8f5ed',
+                          color:      e.status === 'failed' ? '#d13b30' : '#1d8a4e',
+                        }}>
+                          {e.status === 'failed' ? 'Not delivered' : 'Sent'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#8e8e93' }}>{fmtWhen(e.created_at)}</div>
+                    </div>
+
+                    <div style={{ fontSize: '12.5px', color: '#6e6e73', marginTop: 6 }}>
+                      {e.recipient_email}
+                    </div>
+
+                    {/* What the request actually asked for, month by month. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+                      {e.items.map(i => (
+                        <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '12.5px' }}>
+                          <span style={{ color: '#1d1d1f' }}>{i.label}</span>
+                          <span style={{ color: '#6e6e73', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(i.amount)}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '12.5px', fontWeight: 700, marginTop: 4 }}>
+                        <span>Total requested</span>
+                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(e.amount_total)}</span>
+                      </div>
+                    </div>
+
+                    {e.custom_message && (
+                      <div style={{ fontSize: '12px', color: '#6e6e73', marginTop: 10, fontStyle: 'italic' }}>
+                        &ldquo;{e.custom_message}&rdquo;
+                      </div>
+                    )}
+                    {e.status === 'failed' && e.error && (
+                      <div style={{ fontSize: '12px', color: '#d13b30', marginTop: 8 }}>{e.error}</div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -2218,6 +2444,66 @@ export default function PlanWorkspace({
           fontFamily: "'DM Sans', sans-serif", boxShadow: '0 8px 30px rgba(15,23,42,0.25)',
         }}>
           {remindResult.text}
+        </div>
+      )}
+
+      {/* Resend a confirmation — the landlord picks who hears about it again */}
+      {receiptTarget && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => !sendingReceipt && setReceiptTarget(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: 420, fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 60px rgba(15,23,42,0.3)' }}
+          >
+            <div style={{ fontSize: '17px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>
+              Resend confirmation
+            </div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginTop: 6, lineHeight: 1.55 }}>
+              {receiptTarget.label} · {fmtCurrency(receiptTarget.amount)}. This confirms money that
+              has already been received — it does not ask for anything.
+            </div>
+
+            <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {([
+                { id: 'both',     label: 'Tenant and landlord', hint: 'Receipt to the tenant, a copy to you' },
+                { id: 'tenant',   label: 'Tenant only',         hint: 'Just the receipt' },
+                { id: 'landlord', label: 'Landlord only',       hint: 'Just your own copy' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setReceiptAudience(opt.id)}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2,
+                    textAlign: 'left', padding: '11px 14px', borderRadius: '10px', cursor: 'pointer',
+                    fontFamily: 'inherit', background: receiptAudience === opt.id ? '#f0f7ff' : '#fff',
+                    border: `1.5px solid ${receiptAudience === opt.id ? '#0071e3' : '#e2e8f0'}`,
+                  }}
+                >
+                  <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a' }}>{opt.label}</span>
+                  <span style={{ fontSize: '11.5px', color: '#64748b' }}>{opt.hint}</span>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+              <button
+                onClick={sendReceipt}
+                disabled={sendingReceipt}
+                style={{ flex: 1, padding: '10px 0', borderRadius: '9px', border: 'none', background: sendingReceipt ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: sendingReceipt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+              >
+                {sendingReceipt ? 'Sending…' : 'Send confirmation'}
+              </button>
+              <button
+                onClick={() => setReceiptTarget(null)}
+                disabled={sendingReceipt}
+                style={{ padding: '10px 16px', borderRadius: '9px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

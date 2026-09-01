@@ -18,6 +18,16 @@ import { Resend } from 'resend'
 import { getSiteUrl } from './siteUrl'
 import { amountDue, type PayMethod } from './rentPayments'
 import { buildRentReceiptEmail, buildLandlordRentPaidEmail, type PayEvent, type PaidRow } from './rentPaymentEmails'
+import { logPaymentEmail, type PaymentEmailItem } from './paymentEmailLog'
+
+/**
+ * Just enough of a Stripe intent to build the emails. A manual resend has only
+ * the id on file, so the sender must not demand a whole PaymentIntent.
+ */
+type IntentLike = { id: string; receipt_email?: string | null }
+
+/** Who a send is for. A resend is often only wanted by one side. */
+export type Audience = 'tenant' | 'landlord' | 'both'
 
 const FROM = 'HomeHive <hello@homehive.live>'
 
@@ -171,11 +181,76 @@ export async function notifyRentPayment(input: {
   }
   if (!(await claim(db, pi.id, event))) return
 
+  const result = await deliverRentPaymentEmails({
+    db, intent: pi, event, method, fee, rows, audience: 'both', trigger: 'auto',
+  })
+
+  // The claim is taken before sending, because two callers can race. But if the
+  // send then failed outright, holding the claim would mean this payment is
+  // never announced again — the webhook's own retry would find the claim taken
+  // and go quiet. Release it so a retry can do the job properly.
+  if (result.sent.length === 0) {
+    const { error } = await db
+      .from('rent_payment_notifications')
+      .delete()
+      .eq('payment_intent_id', pi.id)
+      .eq('kind', event)
+    if (error) {
+      console.error('[rent] could not release notification claim for', pi.id, event, error.message)
+    } else {
+      console.warn('[rent] no payment email delivered for', pi.id, event, '— claim released for retry:', result.skipped.join(' · '))
+    }
+  }
+}
+
+/**
+ * Send the receipt and/or the landlord notification for a payment that already
+ * settled — no claim, because the landlord asked for this on purpose.
+ *
+ * The automatic path claims a (intent, event) row so the webhook and the
+ * browser cannot both send. That guard is exactly wrong for a manual resend:
+ * the landlord is asking *because* the first one never arrived, and a claim
+ * already taken would silently do nothing.
+ */
+export async function resendRentPaymentEmails(input: {
+  db: SupabaseClient
+  intent: IntentLike
+  event: PayEvent
+  method: PayMethod
+  fee: number
+  rows: SettledRow[]
+  audience: Audience
+  sentBy?: string | null
+}): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
+  return deliverRentPaymentEmails({ ...input, trigger: 'manual' })
+}
+
+async function deliverRentPaymentEmails(input: {
+  db: SupabaseClient
+  intent: IntentLike
+  event: PayEvent
+  method: PayMethod
+  fee: number
+  rows: SettledRow[]
+  audience: Audience
+  trigger: 'auto' | 'manual'
+  sentBy?: string | null
+}): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
+  const { db, intent: pi, event, method, fee, rows, audience, trigger, sentBy } = input
+  const sent: { to: string; role: 'tenant' | 'landlord' }[] = []
+  const skipped: string[] = []
+
+  if (rows.length === 0) return { sent, skipped: ['nothing to send about'] }
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[rent] RESEND_API_KEY missing — no payment emails sent for', pi.id)
+    return { sent, skipped: ['email is not configured'] }
+  }
+
   try {
     const ctx = await loadContext(db, rows)
     if (!ctx) {
       console.error('[rent] could not resolve plan for intent', pi.id, '— no emails sent')
-      return
+      return { sent, skipped: ['could not resolve the lease for this payment'] }
     }
 
     const rent = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100
@@ -187,7 +262,18 @@ export async function notifyRentPayment(input: {
     // signed in with, so it's the better fallback than nothing when the payer
     // row has no email on file.
     const to = ctx.tenantEmail || pi.receipt_email || null
-    if (to) {
+    // The same rows, in the shape the email history wants.
+    const logItems: PaymentEmailItem[] = rows.map(r => ({
+      scheduledPaymentId: r.kind === 'scheduled' ? r.id : null,
+      specialPaymentId:   r.kind === 'special'   ? r.id : null,
+      label: r.label,
+      dueDate: new Date().toISOString().slice(0, 10),
+      amount: r.amount,
+      kind: r.kind === 'special' ? 'charge' : 'rent',
+    }))
+
+    if (audience !== 'landlord' && !to) skipped.push('tenant has no email address on file')
+    if (audience !== 'landlord' && to) {
       const { subject, html, text } = buildRentReceiptEmail({
         tenantName: ctx.tenantName,
         propertyName: ctx.propertyName,
@@ -206,14 +292,32 @@ export async function notifyRentPayment(input: {
         landlordEmail: ctx.landlordEmail,
         reference: pi.id,
       })
-      await resend.emails.send({
+      // Resend reports a rejected send in `error` rather than throwing, so an
+      // unchecked call reports success for mail that never left.
+      const { data: sendData, error: sendErr } = await resend.emails.send({
         from: FROM, to, subject, html, text,
         ...(ctx.landlordEmail ? { replyTo: ctx.landlordEmail } : {}),
+      })
+      if (sendErr) {
+        skipped.push(`tenant receipt failed: ${sendErr.message}`)
+        console.error('[rent] tenant receipt failed for', pi.id, sendErr.message)
+      } else {
+        sent.push({ to, role: 'tenant' })
+      }
+      await logPaymentEmail({
+        planId: ctx.planId, planTenantId: null,
+        recipientEmail: to, recipientName: ctx.tenantName,
+        subject, kind: `receipt_tenant_${event}`, trigger,
+        status: sendErr ? 'failed' : 'sent',
+        error: sendErr?.message ?? null,
+        providerId: sendData?.id ?? null,
+        sentBy: sentBy ?? null, items: logItems,
       })
     }
 
     // Landlord notification.
-    if (ctx.landlordEmail) {
+    if (audience !== 'tenant' && !ctx.landlordEmail) skipped.push('no landlord email on file')
+    if (audience !== 'tenant' && ctx.landlordEmail) {
       const { subject, html, text } = buildLandlordRentPaidEmail({
         landlordName: ctx.landlordName,
         tenantName: ctx.tenantName,
@@ -228,15 +332,30 @@ export async function notifyRentPayment(input: {
         planUrl: `${getSiteUrl()}/landlord/financials?plan=${ctx.planId}`,
         reference: pi.id,
       })
-      await resend.emails.send({
+      const { data: sendData, error: sendErr } = await resend.emails.send({
         from: FROM, to: ctx.landlordEmail, subject, html, text,
         ...(to ? { replyTo: to } : {}),
       })
-    } else {
-      console.warn('[rent] landlord has no email on file — not notified about', pi.id)
+      if (sendErr) {
+        skipped.push(`landlord copy failed: ${sendErr.message}`)
+        console.error('[rent] landlord notification failed for', pi.id, sendErr.message)
+      } else {
+        sent.push({ to: ctx.landlordEmail, role: 'landlord' })
+      }
+      await logPaymentEmail({
+        planId: ctx.planId, planTenantId: null,
+        recipientEmail: ctx.landlordEmail, recipientName: ctx.landlordName,
+        subject, kind: `receipt_landlord_${event}`, trigger,
+        status: sendErr ? 'failed' : 'sent',
+        error: sendErr?.message ?? null,
+        providerId: sendData?.id ?? null,
+        sentBy: sentBy ?? null, items: logItems,
+      })
     }
   } catch (e) {
     // The rent rows are already correct; a failed email must never undo that.
     console.error('[rent] payment notification failed for', pi.id, e)
+    skipped.push(e instanceof Error ? e.message : String(e))
   }
+  return { sent, skipped }
 }

@@ -18,6 +18,7 @@ import { NextRequest } from 'next/server'
 import { getSiteUrl } from '@/lib/siteUrl'
 import { buildRentReminderEmail, type ReminderRow } from '@/lib/rentReminderEmails'
 import { fmtMoney } from '@/lib/rentPayments'
+import { logPaymentEmail, type PaymentEmailItem } from '@/lib/paymentEmailLog'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -189,8 +190,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
       customMessage,
     })
 
+    // What this email covered, recorded as the tenant was shown it — editing a
+    // charge later must not rewrite what we once asked for.
+    const logItems: PaymentEmailItem[] = rows.map(r => ({
+      scheduledPaymentId: r.table === 'scheduled' ? r.id : null,
+      specialPaymentId:   r.table === 'special'   ? r.id : null,
+      label:    r.label,
+      dueDate:  r.dueDate,
+      amount:   r.amount,
+      kind:     r.table === 'special' ? 'charge' : 'rent',
+    }))
+
     try {
-      await resend.emails.send({
+      const { data: sendData, error: sendErr } = await resend.emails.send({
         from: 'HomeHive <hello@homehive.live>',
         to,
         subject,
@@ -198,12 +210,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
         text,
         ...(landlordEmail ? { replyTo: landlordEmail } : {}),
       })
+      // Resend reports a rejected send in `error` rather than by throwing, so a
+      // bounced address would otherwise be logged and counted as delivered.
+      if (sendErr) throw new Error(sendErr.message || 'Resend rejected the send')
+
+      await logPaymentEmail({
+        planId, planTenantId: tenantId, recipientEmail: to, recipientName: tenant.name,
+        subject, status: 'sent', providerId: sendData?.id ?? null,
+        customMessage, sentBy: user.id, items: logItems,
+      })
       sent.push({ name: tenant.name, email: to, amount: total })
       for (const r of rows) {
         (r.table === 'special' ? remindedSpecialIds : remindedIds).push(r.id)
       }
     } catch (e) {
       console.error('rent reminder failed', tenantId, e)
+      // A failed request is history too — otherwise the ledger shows silence
+      // and the landlord reads it as "never chased" rather than "never arrived".
+      await logPaymentEmail({
+        planId, planTenantId: tenantId, recipientEmail: to, recipientName: tenant.name,
+        subject, status: 'failed', error: e instanceof Error ? e.message : String(e),
+        customMessage, sentBy: user.id, items: logItems,
+      })
       skipped.push({ name: tenant.name, reason: 'delivery failed' })
     }
   }
