@@ -2,16 +2,11 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, use } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
 import { getNextBestPlan, actionKindTag, type LeadActionContext, type ReservationState, type RecommendedAction } from '@/lib/leadActions'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // tour_scheduled is a legacy status — treated as qualified in the pipeline display
 const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'closed']
@@ -281,7 +276,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const { data: leadData, error } = await supabase.from('leads').select('*').eq('id', leadId).single()
@@ -2050,7 +2045,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       </div>
 
       {toast && <div className={`ld2-toast${toast.type === 'error' ? ' error' : ''}`}>{toast.msg}</div>}
-
 
       {/* ── MANUAL TOUR MODAL ── */}
       {manualTourModal && (

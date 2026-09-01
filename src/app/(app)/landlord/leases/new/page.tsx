@@ -1,18 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { createLease, addLeaseDocument } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
 import type { Property } from '@/lib/properties'
 import type { TenantInput } from '@/lib/leases'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default function NewLeasePage() {
   const router = useRouter()
@@ -40,7 +35,7 @@ export default function NewLeasePage() {
   useEffect(() => { document.title = 'New Lease — Landlord | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       userIdRef.current = user.id
       Promise.all([getPropertiesByOwner(user.id), getTenantsByOwner(user.id)]).then(([props, ts]) => {

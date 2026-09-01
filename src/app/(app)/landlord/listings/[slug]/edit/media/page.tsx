@@ -1,7 +1,7 @@
 'use client'
 
 import { use, useEffect, useRef, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   getPropertiesByOwner,
@@ -10,11 +10,6 @@ import {
   Property,
   PropertyRoom,
 } from '@/lib/properties'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default function EditMediaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
@@ -38,7 +33,7 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
 

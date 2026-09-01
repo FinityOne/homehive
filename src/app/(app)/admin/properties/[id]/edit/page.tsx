@@ -1,15 +1,10 @@
 'use client'
 
 import { use, useEffect, useRef, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertyByIdForAdmin } from '@/lib/properties'
 import type { Property } from '@/lib/properties'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type Owner = { id: string; email: string; name: string }
 type NearbyRow = { place: string; travel_time: string }
@@ -95,7 +90,7 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const [prop] = await Promise.all([

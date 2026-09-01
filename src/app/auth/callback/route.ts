@@ -32,9 +32,16 @@ export async function GET(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get:    (name)                => cookieStore.get(name)?.value,
-        set:    (name, value, opts)   => { try { cookieStore.set({ name, value, ...opts }) } catch (_) {} },
-        remove: (name, opts)          => { try { cookieStore.set({ name, value: '', ...opts }) } catch (_) {} },
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          // A Route Handler may write cookies, so this must NOT be swallowed —
+          // these are the cookies that establish the session after sign-in.
+          for (const { name, value, options } of cookiesToSet) {
+            cookieStore.set(name, value, options)
+          }
+        },
       },
     }
   )

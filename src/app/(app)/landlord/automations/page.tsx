@@ -2,12 +2,7 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase, getCurrentUser } from '@/lib/supabase'
 
 type AutomationLog = {
   id: string
@@ -39,7 +34,7 @@ export default function AutomationsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) return
 
       const { data } = await supabase

@@ -2,17 +2,12 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { use, useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertyByIdForAdmin, updatePropertyAdminStatus } from '@/lib/properties'
 import type { Property, AdminStatus } from '@/lib/properties'
 import { getAllLeads } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const STATUS_CFG: Record<AdminStatus, { label: string; color: string; bg: string; border: string; dot: string }> = {
   active:   { label: 'Active',   color: '#166534', bg: '#f0fdf4', border: '#bbf7d0', dot: '#16a34a' },
@@ -76,7 +71,7 @@ export default function AdminPropertyDetailPage({ params }: { params: Promise<{ 
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const [prop, allLeads] = await Promise.all([

@@ -1,15 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import PhoneInput from '@/components/ui/PhoneInput'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type ProfileData = {
   id: string
@@ -484,7 +479,7 @@ function ProfilePageInner() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (data) {

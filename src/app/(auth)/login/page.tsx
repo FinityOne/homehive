@@ -1,15 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { DEFAULT_CODE_LENGTH, normalizeCodeLength, sanitizeCode } from '@/lib/authCode'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const RESEND_COOLDOWN = 30
 

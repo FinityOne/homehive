@@ -1,14 +1,9 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, updatePropertyCore, replacePropertyRooms, Property } from '@/lib/properties'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type RoomRow = { id?: string; name: string; price: string; is_available: boolean; images?: string[] }
 
@@ -43,7 +38,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const props = await getPropertiesByOwner(user.id)

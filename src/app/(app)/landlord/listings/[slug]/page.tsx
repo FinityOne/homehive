@@ -1,7 +1,7 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -20,11 +20,6 @@ import { LISTING_STATUS_META, isPublicStatus, type ListingStatus } from '@/lib/l
 const ListingStatusControl = dynamic(() => import('@/components/listings/ListingStatusControl'), { ssr: false })
 const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
 const FaqManager = dynamic(() => import('@/components/listings/FaqManager'), { ssr: false })
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type Tab = 'overview' | 'basics' | 'type' | 'location' | 'offer' | 'faq' | 'calendar'
 const TABS: { id: Tab; label: string }[] = [
@@ -241,7 +236,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   // ── Load ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const [props, { data: unlocks }, { data: plan }] = await Promise.all([

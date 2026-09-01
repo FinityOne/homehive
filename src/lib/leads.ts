@@ -1,6 +1,6 @@
 // No 'use client' directive — this is a shared lib
 
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
 import { getPropertiesByOwner } from './properties'
 
 /*
@@ -28,11 +28,6 @@ import { getPropertiesByOwner } from './properties'
  *
  * ALTER TABLE leads ADD COLUMN IF NOT EXISTS closed_reason text;
  */
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export type Lead = {
   id: string

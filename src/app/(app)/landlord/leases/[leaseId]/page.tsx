@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, use, useCallback } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -16,11 +16,6 @@ import {
 } from '@/lib/inspections'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: string; border: string }> = {
   upcoming: { label: 'Upcoming', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
@@ -125,7 +120,7 @@ export default function LeaseHubPage({
   }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       getLeaseById(leaseId).then(data => {
         if (!data || data.owner_id !== user.id) { router.push('/landlord/leases'); return }
@@ -214,7 +209,7 @@ export default function LeaseHubPage({
   async function startInspection() {
     if (!lease) return
     setCreatingInspection(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     if (!user) { setCreatingInspection(false); return }
 
     const { id, error } = await createInspectionFromLease(

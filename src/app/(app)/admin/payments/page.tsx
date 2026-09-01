@@ -2,13 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import * as d3 from 'd3'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Stats = {
@@ -284,7 +279,7 @@ export default function AdminPaymentsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'admin_grant' | 'cancelled'>('all')
 
   const load = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     if (!user) { router.push('/login'); return }
     setLoading(true)
     const res = await fetch('/api/admin/payments')

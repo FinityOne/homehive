@@ -1,14 +1,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const LEAD_STATUS_CONFIG: Record<Lead['status'], { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',            color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
@@ -210,7 +205,7 @@ export default function AdminLeadsPage() {
   useEffect(() => { document.title = 'All Leads — Admin | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
+    getCurrentUser().then(user => { if (!user) router.push('/login') })
     fetchLeads()
     const ch = supabase.channel('admin-leads')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchLeads)

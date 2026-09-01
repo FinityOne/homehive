@@ -1,17 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, Property } from '@/lib/properties'
 import { getLeadsForOwner, Lead } from '@/lib/leads'
 import { getLeasesForOwner, getLeaseStatus, formatLeaseDate, Lease } from '@/lib/leases'
 import { getPlansForOwner, PaymentPlan } from '@/lib/payments'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 function getGreeting(name: string) {
   const h = new Date().getHours()
@@ -279,7 +274,7 @@ export default function LandlordDashboard() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
       setUserName(user.user_metadata?.full_name?.split(' ')[0] || 'there')
       const [props, lds, lss, pls] = await Promise.all([

@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { getCurrentUser } from '@/lib/supabase'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Profile = {
@@ -151,7 +146,7 @@ export default function AdminUserDetailPage() {
   useEffect(() => { document.title = 'User Details — Admin | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: d }) => { if (!d.user) router.push('/login') })
+    getCurrentUser().then(u => { if (!u) router.push('/login') })
   }, [router])
 
   useEffect(() => {

@@ -2,14 +2,9 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, use, Fragment } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { formatPhoneDisplay } from '@/components/ui/PhoneInput'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type Lead = {
   id: string; first_name: string | null; last_name: string | null

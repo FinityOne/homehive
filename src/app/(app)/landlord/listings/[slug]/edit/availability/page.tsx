@@ -1,15 +1,10 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, updatePropertyCore, Property } from '@/lib/properties'
 import ListingStatusControl from '@/components/listings/ListingStatusControl'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default function EditAvailabilityPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
@@ -30,7 +25,7 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const props = await getPropertiesByOwner(user.id)

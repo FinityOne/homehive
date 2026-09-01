@@ -1,13 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type PlanType = 'per_lead' | 'single_listing' | 'two_listing' | 'lifetime' | null
 
@@ -42,7 +37,7 @@ export default function BillingPage() {
   useEffect(() => { document.title = 'Billing — Landlord | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
       loadData(user.id)

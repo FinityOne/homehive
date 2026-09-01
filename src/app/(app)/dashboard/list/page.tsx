@@ -1,13 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type UpgradeStatus = 'pending' | 'approved' | 'rejected'
 type UpgradeRequest = { id: string; status: UpgradeStatus; admin_note: string | null }
@@ -27,7 +22,7 @@ export default function ListYourPlacePage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const [profileRes, upgradeRes] = await Promise.all([

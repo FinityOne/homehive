@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { amountDue, fmtMoney, METHOD_META, type SettledMethod } from '@/lib/rentPayments'
@@ -9,11 +9,6 @@ import type { Payable } from '@/components/tenant/PayRentModal'
 import StripeModeBanner from '@/components/StripeModeBanner'
 
 const PayRentModal = dynamic(() => import('@/components/tenant/PayRentModal'), { ssr: false })
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type Scheduled = {
   id: string; due_date: string; amount: number; status: string

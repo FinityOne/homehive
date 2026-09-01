@@ -1,12 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { supabase, getCurrentUser } from '@/lib/supabase'
 
 type LastMessage = {
   content: string
@@ -74,7 +69,7 @@ export default function MyGroupsPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) return
 
       const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'there'

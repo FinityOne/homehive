@@ -1,13 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -50,7 +45,7 @@ export default function ResetPasswordPage() {
     setDone(true)
 
     // Get role to redirect correctly
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user!.id).single()
     const role = profile?.role || 'tenant'
 

@@ -1,14 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { usePathname, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function getInitials(email: string, fullName?: string): string {
@@ -283,7 +278,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (user) loadUser(user.id, user.email || '', user.user_metadata?.full_name || '')
       else router.push('/login')
     })

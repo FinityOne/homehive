@@ -2,7 +2,7 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
@@ -11,11 +11,6 @@ import { usePostHog } from 'posthog-js/react'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 
 const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'tour_scheduled', 'closed']
 
@@ -437,7 +432,7 @@ export default function LandlordLeadsPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
     })

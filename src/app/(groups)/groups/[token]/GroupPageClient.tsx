@@ -1,13 +1,8 @@
 'use client'
 
 import { useState, useEffect, use, useCallback, useRef } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
@@ -191,7 +186,7 @@ export default function PublicGroupPage({ params }: { params: Promise<{ token: s
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setData(d); else setNotFound(true) })
       .finally(() => setLoading(false))
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
+    getCurrentUser().then(async user => {
       if (user) {
         setCurrentUser({ id: user.id, email: user.email! })
         const { data: { session } } = await supabase.auth.getSession()

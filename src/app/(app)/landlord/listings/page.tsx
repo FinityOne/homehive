@@ -1,15 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, setPropertyArchived, updateListingStatus, Property } from '@/lib/properties'
 import { LISTING_STATUS_META, LISTING_STATUS_ORDER, type ListingStatus } from '@/lib/listingStatus'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default function ListingsPage() {
   const router = useRouter()
@@ -21,7 +16,7 @@ export default function ListingsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
       const props = await getPropertiesByOwner(user.id)
       setProperties(props)
