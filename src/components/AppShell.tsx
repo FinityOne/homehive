@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
 import { usePathname, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
+import Icon, { type IconName } from '@/components/NavIcons'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function getInitials(email: string, fullName?: string): string {
@@ -19,7 +20,7 @@ function getInitials(email: string, fullName?: string): string {
 type NavItem = {
   href: string
   label: string
-  icon: string
+  icon: IconName
   exact?: boolean
   /** Shown in the mobile bottom bar. Everything else lives behind the menu. */
   primary?: boolean
@@ -50,30 +51,30 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
   tenant: [
     {
       items: [
-        { href: '/dashboard',      label: 'Overview',        icon: '⊞', exact: true, primary: true },
-        { href: '/dashboard/lease', label: 'My Lease & Rent', icon: '🏠', primary: true, short: 'Lease' },
-        { href: '/homes',          label: 'Browse Homes',    icon: '▣', primary: true, short: 'Browse' },
-        { href: '/groups',         label: 'My Groups',       icon: '🐝', primary: true, short: 'Groups' },
-        { href: '/dashboard/list', label: 'List your place', icon: '⊕', primary: true, short: 'List' },
+        { href: '/dashboard',       label: 'Overview',        icon: 'grid',       exact: true, primary: true },
+        { href: '/dashboard/lease', label: 'My Lease & Rent', icon: 'home',       primary: true, short: 'Lease' },
+        { href: '/homes',           label: 'Browse Homes',    icon: 'search',     primary: true, short: 'Browse' },
+        { href: '/groups',          label: 'My Groups',       icon: 'users',      primary: true, short: 'Groups' },
+        { href: '/dashboard/list',  label: 'List your place', icon: 'plusCircle', primary: true, short: 'List' },
       ],
     },
   ],
   landlord: [
     {
       items: [
-        { href: '/landlord/dashboard', label: 'Overview', icon: '⊞', exact: true, primary: true },
+        { href: '/landlord/dashboard', label: 'Overview', icon: 'grid', exact: true, primary: true },
       ],
     },
     {
       // Filling the property — ordered as the funnel runs.
       label: 'Leasing',
       items: [
-        { href: '/landlord/listings',          label: 'My Listings',       icon: '▣', primary: true, short: 'Listings' },
-        { href: '/landlord/comments',          label: 'Comments',          icon: '💬' },
-        { href: '/landlord/leads/list',        label: 'Leads',             icon: '◉', primary: true },
-        { href: '/landlord/calendar',          label: 'Tours & Calendar',  icon: '📅', short: 'Tours' },
-        { href: '/landlord/roommates',         label: 'Roommates',         icon: '👥' },
-        { href: '/landlord/background-checks', label: 'Screening',         icon: '🔍' },
+        { href: '/landlord/listings',          label: 'Listings',         icon: 'building',    primary: true },
+        { href: '/landlord/leads',             label: 'Leads',            icon: 'target',      primary: true },
+        { href: '/landlord/comments',          label: 'Comments',         icon: 'message' },
+        { href: '/landlord/calendar',          label: 'Tours & Calendar', icon: 'calendar',    short: 'Tours' },
+        { href: '/landlord/roommates',         label: 'Roommates',        icon: 'users' },
+        { href: '/landlord/background-checks', label: 'Screening',        icon: 'shieldCheck' },
       ],
     },
     {
@@ -81,49 +82,50 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
       // each one owns its own tenants, rent ledger, documents and move-out.
       label: 'Residents',
       items: [
-        { href: '/landlord/leases',      label: 'Leases',      icon: '📋', primary: true },
-        { href: '/landlord/tenants',     label: 'Tenants',     icon: '◎' },
-        { href: '/landlord/financials',  label: 'Financials',  icon: '💳', primary: true },
-        { href: '/landlord/maintenance', label: 'Maintenance', icon: '🔧' },
-        { href: '/landlord/inspections', label: 'Move-out',    icon: '🔎' },
+        { href: '/landlord/leases',      label: 'Leases',      icon: 'fileText',       primary: true },
+        { href: '/landlord/tenants',     label: 'Tenants',     icon: 'userCheck' },
+        { href: '/landlord/financials',  label: 'Financials',  icon: 'creditCard',     primary: true },
+        { href: '/landlord/maintenance', label: 'Maintenance', icon: 'wrench' },
+        { href: '/landlord/inspections', label: 'Move-out',    icon: 'clipboardCheck' },
       ],
     },
     {
-      label: 'Settings',
+      label: 'Account',
       items: [
-        { href: '/landlord/automations',    label: 'Automations',    icon: '⚡' },
-        { href: '/landlord/customizations', label: 'Customizations', icon: '✦' },
+        { href: '/landlord/automations',    label: 'Automations',    icon: 'zap' },
+        { href: '/landlord/customizations', label: 'Customizations', icon: 'sparkles' },
+        { href: '/landlord/billing',        label: 'Plan & Billing', icon: 'receipt' },
       ],
     },
   ],
   admin: [
     {
       items: [
-        { href: '/admin', label: 'Overview', icon: '⊞', exact: true, primary: true },
+        { href: '/admin', label: 'Overview', icon: 'grid', exact: true, primary: true },
       ],
     },
     {
       label: 'People',
       items: [
-        { href: '/admin/users/tenants',   label: 'Tenants',    icon: '◎', primary: true },
-        { href: '/admin/users/landlords', label: 'Landlords',  icon: '🏠', primary: true },
-        { href: '/admin/users/admins',    label: 'Admin Team', icon: '⚙' },
+        { href: '/admin/users/tenants',   label: 'Tenants',    icon: 'user',   primary: true },
+        { href: '/admin/users/landlords', label: 'Landlords',  icon: 'home',   primary: true },
+        { href: '/admin/users/admins',    label: 'Admin Team', icon: 'shield' },
       ],
     },
     {
       label: 'Operations',
       items: [
-        { href: '/admin/properties',       label: 'Properties',       icon: '▣', primary: true, short: 'Props' },
-        { href: '/admin/leads',            label: 'Leads',            icon: '◉' },
-        { href: '/admin/payments',         label: 'Payments & Revenue', icon: '💳', primary: true, short: 'Money' },
-        { href: '/admin/upgrade-requests', label: 'Upgrade Requests', icon: '⬆' },
+        { href: '/admin/properties',       label: 'Properties',       icon: 'building',      primary: true, short: 'Props' },
+        { href: '/admin/leads',            label: 'Leads',            icon: 'target' },
+        { href: '/admin/payments',         label: 'Payments',         icon: 'creditCard',    primary: true, short: 'Money' },
+        { href: '/admin/upgrade-requests', label: 'Upgrade Requests', icon: 'arrowUpCircle', short: 'Upgrades' },
       ],
     },
     {
       label: 'Growth',
       items: [
-        { href: '/admin/marketing', label: 'Marketing', icon: '📣' },
-        { href: '/admin/visitors',  label: 'Visitors',  icon: '👁' },
+        { href: '/admin/marketing', label: 'Marketing', icon: 'megaphone' },
+        { href: '/admin/visitors',  label: 'Visitors',  icon: 'eye' },
       ],
     },
   ],
@@ -224,6 +226,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     email: string; fullName: string; role: string; avatarUrl: string | null
   } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  /** Desktop: sidebar collapsed to an icon-only rail. Persisted per browser. */
+  const [railed, setRailed] = useState(false)
+  /** Collapsed nav groups, keyed as `${portal}:${groupLabel}`. Persisted too. */
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [pendingUpgradeCount, setPendingUpgradeCount] = useState(0)
@@ -233,6 +239,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0)
   const profileRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
+
+  // ── Restore sidebar shape (rail + collapsed groups) ──
+  useEffect(() => {
+    try {
+      setRailed(localStorage.getItem('hh.nav.railed') === '1')
+      const raw = localStorage.getItem('hh.nav.collapsedGroups')
+      if (raw) setCollapsedGroups(JSON.parse(raw) as Record<string, boolean>)
+    } catch { /* private mode / storage disabled — defaults are fine */ }
+  }, [])
+
+  const toggleRail = () => {
+    setRailed(r => {
+      const next = !r
+      try { localStorage.setItem('hh.nav.railed', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      try { localStorage.setItem('hh.nav.collapsedGroups', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
 
   // ── Auth ──
   useEffect(() => {
@@ -440,10 +471,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           display: flex; align-items: center; justify-content: center;
           width: 36px; height: 36px; border-radius: 8px;
           background: none; border: none; cursor: pointer;
-          font-size: 17px; position: relative;
-          transition: background 0.15s;
+          position: relative; color: var(--nav-color);
+          transition: background 0.15s, color 0.15s;
         }
-        .tb-notif-btn:hover { background: var(--nav-hover-bg); }
+        .tb-notif-btn:hover { background: var(--nav-hover-bg); color: var(--nav-hover-color); }
         .tb-notif-badge {
           position: absolute; top: 4px; right: 4px;
           background: #ef4444; color: #fff;
@@ -509,6 +540,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         .tb-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
         .tb-hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
+        /* Desktop sidebar collapse toggle — hidden on mobile, where the
+           hamburger already owns this job. */
+        .tb-rail-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 32px; height: 32px; border-radius: 8px; margin-right: 10px;
+          background: none; border: none; cursor: pointer;
+          color: var(--ham-color); flex-shrink: 0;
+          transition: background 0.15s, color 0.15s;
+        }
+        .tb-rail-btn:hover { background: var(--nav-hover-bg); color: var(--nav-hover-color); }
+
         /* ── PROFILE AREA (top-right) ── */
         .tb-profile { position: relative; flex-shrink: 0; }
 
@@ -531,7 +573,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           max-width: 140px; overflow: hidden; text-overflow: ellipsis;
         }
         .tb-chevron {
-          font-size: 10px; color: var(--user-sub); transition: transform 0.2s; flex-shrink: 0;
+          color: var(--user-sub); transition: transform 0.2s; flex-shrink: 0;
+          display: flex; align-items: center;
         }
         .tb-chevron.open { transform: rotate(180deg); }
 
@@ -558,7 +601,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           transition: background 0.15s, color 0.15s;
         }
         .tb-dd-item:hover { background: var(--nav-hover-bg); color: var(--nav-hover-color); }
-        .tb-dd-icon { width: 16px; text-align: center; flex-shrink: 0; font-size: 13px; }
+        .tb-dd-icon { display: flex; align-items: center; justify-content: center; width: 16px; flex-shrink: 0; }
         .tb-dd-divider { height: 1px; background: var(--divider); }
         .tb-dd-signout { color: var(--so-color); }
         .tb-dd-signout:hover { background: var(--so-hover-bg); color: var(--so-hover-color); }
@@ -572,52 +615,130 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         /* ── SIDEBAR ── */
         .app-sidebar {
-          width: 216px; flex-shrink: 0;
+          width: 232px; flex-shrink: 0;
           background: var(--sb-bg); border-right: 1px solid var(--sb-border);
           display: flex; flex-direction: column;
           position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto;
+          overflow-x: hidden;
+          transition: width 0.18s ease;
         }
+        /* Icon-only rail. Width is the only thing that animates; labels are
+           swapped out entirely so they never wrap mid-transition. */
+        .app-sidebar.railed { width: 64px; }
+        .app-sidebar::-webkit-scrollbar { width: 6px; }
+        .app-sidebar::-webkit-scrollbar-thumb { background: var(--divider); border-radius: 3px; }
+        .app-sidebar::-webkit-scrollbar-track { background: transparent; }
 
-        .sb-section-label {
+        .sb-nav { padding: 10px 10px 8px; }
+
+        /* Stage groupings. The heading is the collapse control — a whole-width
+           button so the hit target matches what the eye reads as one row. */
+        .sb-group { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--divider); }
+        .sb-group:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+        .sb-group-btn {
+          display: flex; align-items: center; gap: 6px; width: 100%;
+          background: none; border: none; cursor: pointer;
+          padding: 9px 8px 6px; border-radius: 7px;
           font-size: 10px; font-weight: 700; color: var(--user-sub);
-          text-transform: uppercase; letter-spacing: 0.8px;
-          padding: 16px 18px 6px;
-        }
-
-        .sb-nav { padding: 2px 8px 8px; }
-
-        /* Stage groupings — a hairline plus a quiet label, enough to chunk the
-           list without turning the sidebar into a stack of headings. */
-        .sb-group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider); }
-        .sb-group-label {
-          font-size: 9.5px; font-weight: 700; color: var(--user-sub);
           text-transform: uppercase; letter-spacing: 0.9px;
-          padding: 0 10px 6px; font-family: 'DM Sans', sans-serif;
+          font-family: 'DM Sans', sans-serif; text-align: left;
+          transition: color 0.15s;
         }
+        .sb-group-btn:hover { color: var(--nav-hover-color); }
+        .sb-group-btn .sb-group-chevron {
+          margin-left: auto; opacity: 0.65;
+          transition: transform 0.18s ease;
+        }
+        .sb-group-btn.collapsed .sb-group-chevron { transform: rotate(-90deg); }
+
+        /* Collapsing uses a grid-rows trick so it animates to the content's
+           real height without us having to measure anything in JS. */
+        .sb-group-items {
+          display: grid; grid-template-rows: 1fr;
+          transition: grid-template-rows 0.18s ease, opacity 0.18s ease;
+        }
+        .sb-group-items > div { overflow: hidden; min-height: 0; }
+        .sb-group-items.collapsed { grid-template-rows: 0fr; opacity: 0; }
+
         .sb-nav-item {
-          display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+          display: flex; align-items: center; gap: 10px; padding: 8px 9px;
           border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif;
           color: var(--nav-color); text-decoration: none;
           transition: background 0.15s, color 0.15s; margin-bottom: 1px;
+          position: relative; white-space: nowrap;
         }
         .sb-nav-item:hover  { background: var(--nav-hover-bg); color: var(--nav-hover-color); }
         .sb-nav-item.active { background: var(--nav-active-bg); color: var(--nav-active-color); font-weight: 600; }
-        .sb-nav-icon { width: 20px; text-align: center; font-size: 14px; flex-shrink: 0; }
+        /* A short bar on the active row — reads as "you are here" at a glance,
+           even in the rail where the label is gone. */
+        .sb-nav-item.active::before {
+          content: ''; position: absolute; left: -10px; top: 50%;
+          transform: translateY(-50%);
+          width: 3px; height: 18px; border-radius: 0 3px 3px 0;
+          background: var(--nav-active-color);
+        }
+        .sb-nav-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+        .sb-nav-badge {
+          margin-left: auto; color: #fff; font-size: 10px; font-weight: 700;
+          padding: 1px 6px; border-radius: 10px; flex-shrink: 0;
+          font-family: 'DM Sans', sans-serif; line-height: 1.5;
+        }
+
+        /* ── RAIL MODE ── */
+        .app-sidebar.railed .sb-nav { padding: 10px 8px 8px; }
+        .app-sidebar.railed .sb-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
+        .app-sidebar.railed .sb-nav-item.active::before { left: -8px; }
+        .app-sidebar.railed .sb-nav-label { display: none; }
+        .app-sidebar.railed .sb-group-btn { display: none; }
+        .app-sidebar.railed .sb-group-items { grid-template-rows: 1fr; opacity: 1; }
+        .app-sidebar.railed .sb-group { margin-top: 8px; padding-top: 8px; }
+        .app-sidebar.railed .sb-psw-label,
+        .app-sidebar.railed .sb-psw-arrow { display: none; }
+        .app-sidebar.railed .sb-psw-item { justify-content: center; }
+        .app-sidebar.railed .sb-portals-label { display: none; }
+        /* Count badges shrink to a dot in the rail — the number has nowhere to go. */
+        .app-sidebar.railed .sb-nav-badge {
+          position: absolute; top: 5px; right: 9px;
+          min-width: 8px; height: 8px; padding: 0; border-radius: 50%;
+          font-size: 0; border: 2px solid var(--sb-bg);
+        }
+
+        /* Tooltip for rail mode, so an icon is never an unlabelled guess. */
+        .sb-tip {
+          position: absolute; left: calc(100% + 10px); top: 50%;
+          transform: translateY(-50%) translateX(-4px);
+          background: var(--dd-bg); color: var(--user-text);
+          border: 1px solid var(--tb-border); box-shadow: var(--dd-shadow);
+          padding: 5px 9px; border-radius: 6px; font-size: 12px; font-weight: 500;
+          font-family: 'DM Sans', sans-serif; white-space: nowrap;
+          opacity: 0; pointer-events: none; z-index: 260;
+          transition: opacity 0.14s ease, transform 0.14s ease;
+        }
+        .app-sidebar.railed .sb-nav-item:hover .sb-tip,
+        .app-sidebar.railed .sb-psw-item:hover .sb-tip {
+          opacity: 1; transform: translateY(-50%) translateX(0);
+        }
 
         .sb-portals {
-          margin-top: auto; padding: 12px 8px 16px;
+          margin-top: auto; padding: 10px 10px 16px;
           border-top: 1px solid var(--divider);
         }
+        .sb-portals-label {
+          font-size: 10px; font-weight: 700; color: var(--user-sub);
+          text-transform: uppercase; letter-spacing: 0.9px;
+          padding: 2px 8px 6px; font-family: 'DM Sans', sans-serif;
+        }
         .sb-psw-item {
-          display: flex; align-items: center; gap: 8px; padding: 7px 10px;
-          border-radius: 8px; font-size: 12px; font-family: 'DM Sans', sans-serif;
+          display: flex; align-items: center; gap: 10px; padding: 7px 9px;
+          border-radius: 8px; font-size: 12.5px; font-family: 'DM Sans', sans-serif;
           color: var(--nav-color); text-decoration: none;
           transition: background 0.15s, color 0.15s; margin-bottom: 1px;
+          position: relative; white-space: nowrap;
         }
         .sb-psw-item:hover { background: var(--psw-hover-bg); color: var(--nav-hover-color); }
         .sb-psw-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
         .sb-psw-label { flex: 1; }
-        .sb-psw-arrow { font-size: 11px; opacity: 0.5; }
+        .sb-psw-arrow { opacity: 0.45; display: flex; }
 
         /* ── MAIN CONTENT ── */
         .app-main {
@@ -650,7 +771,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
           width: 20px; height: 2px; border-radius: 0 0 2px 2px; background: var(--nav-active-color);
         }
-        .mob-tab-icon  { font-size: 17px; line-height: 1; }
+        .mob-tab-icon  { display: flex; align-items: center; justify-content: center; height: 19px; }
         .mob-tab-label { font-size: 10px; font-weight: 600; letter-spacing: 0.2px; }
 
         /* ══════════════════════════════════════════
@@ -658,6 +779,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         ══════════════════════════════════════════ */
         @media (max-width: 768px) {
           .tb-hamburger   { display: flex; }
+          .tb-rail-btn    { display: none; }
           .tb-user-name   { display: none; }
           .tb-chevron     { display: none; }
           .mob-bottom-nav { display: block; }
@@ -668,7 +790,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             z-index: 200; width: 268px; height: auto;
             box-shadow: 4px 0 28px rgba(0,0,0,0.18);
           }
+          /* The mobile drawer is always full-width — the rail is desktop-only. */
           .app-sidebar.open { display: flex; flex-direction: column; }
+          .app-sidebar.railed { width: 268px; }
+          .app-sidebar.railed .sb-nav-label,
+          .app-sidebar.railed .sb-psw-label,
+          .app-sidebar.railed .sb-portals-label { display: block; }
+          .app-sidebar.railed .sb-group-btn,
+          .app-sidebar.railed .sb-psw-arrow { display: flex; }
+          .app-sidebar.railed .sb-nav { padding: 10px 10px 8px; }
+          .app-sidebar.railed .sb-nav-item { justify-content: flex-start; padding: 8px 9px; gap: 10px; }
+          .app-sidebar.railed .sb-nav-item.active::before { left: -10px; }
+          .app-sidebar.railed .sb-psw-item { justify-content: flex-start; }
+          /* Groups stay collapsible in the drawer, so undo the rail's force-open. */
+          .app-sidebar.railed .sb-group-items { grid-template-rows: 1fr; opacity: 1; }
+          .app-sidebar.railed .sb-group-items.collapsed { grid-template-rows: 0fr; opacity: 0; }
+          .app-sidebar.railed .sb-nav-badge {
+            position: static; min-width: 0; height: auto;
+            padding: 1px 6px; border-radius: 10px; font-size: 10px; border: none;
+          }
+          .sb-tip { display: none; }
           .tb-dd-name, .tb-dd-email { display: none; }
         }
         @media (min-width: 769px) {
@@ -693,6 +834,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span /><span /><span />
           </button>
 
+          {/* Desktop: collapse the sidebar to an icon rail */}
+          <button
+            className="tb-rail-btn"
+            onClick={toggleRail}
+            aria-label={railed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={railed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <Icon name="panelLeft" size={17} />
+          </button>
+
           {/* Logo */}
           <a href="/" className="tb-logo">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -710,7 +861,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {user && currentPortal === 'landlord' && (
             <div className="tb-notif" ref={notifRef}>
               <button className="tb-notif-btn" onClick={handleNotifOpen} aria-label="Notifications">
-                🔔
+                <Icon name="bell" size={18} />
                 {unreadCount > 0 && (
                   <span className="tb-notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
                 )}
@@ -722,7 +873,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="tb-notif-empty">No notifications yet</div>
                   ) : (
                     notifications.map(n => {
-                      const ICON: Record<string, string> = { lead_in: '◉', prescreen_filled: '📋', tour_booked: '📅' }
+                      const ICON: Record<string, IconName> = { lead_in: 'target', prescreen_filled: 'clipboardCheck', tour_booked: 'calendar' }
                       const DOT: Record<string, string> = { lead_in: '#10b981', prescreen_filled: '#3b82f6', tour_booked: '#f59e0b' }
                       const diff = Date.now() - new Date(n.created_at).getTime()
                       const mins = Math.floor(diff / 60000)
@@ -731,7 +882,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         <>
                           <span className="tb-notif-dot" style={{ background: DOT[n.type] || '#6b6b6b' }} />
                           <div className="tb-notif-content">
-                            <div className="tb-notif-title">{ICON[n.type] || '•'} {n.title}</div>
+                            <div className="tb-notif-title">
+                              <Icon name={ICON[n.type] ?? 'dot'} size={13} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 5 }} />
+                              {n.title}
+                            </div>
                             {n.body && <div className="tb-notif-body">{n.body}</div>}
                             <div className="tb-notif-time">{timeAgo}</div>
                           </div>
@@ -758,7 +912,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <div className="tb-avatar">{avatarEl}</div>
                 <span className="tb-user-name">{user.fullName || user.email.split('@')[0]}</span>
-                <span className={`tb-chevron${profileOpen ? ' open' : ''}`}>▾</span>
+                <span className={`tb-chevron${profileOpen ? ' open' : ''}`}><Icon name="chevronDown" size={14} strokeWidth={2} /></span>
               </button>
 
               {profileOpen && (
@@ -768,11 +922,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="tb-dd-email">{user.email}</div>
                   </div>
                   <a href="/profile" className="tb-dd-item" onClick={() => setProfileOpen(false)}>
-                    <span className="tb-dd-icon">⚙</span> Profile settings
+                    <span className="tb-dd-icon"><Icon name="settings" size={15} /></span> Profile settings
                   </a>
                   <div className="tb-dd-divider" />
                   <button className="tb-dd-item tb-dd-signout" onClick={handleSignOut}>
-                    <span className="tb-dd-icon">→</span> Sign out
+                    <span className="tb-dd-icon"><Icon name="logOut" size={15} /></span> Sign out
                   </button>
                 </div>
               )}
@@ -784,59 +938,74 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="app-body">
 
           {/* Sidebar — nav items only */}
-          <aside className={`app-sidebar${sidebarOpen ? ' open' : ''}`}>
-
-            <div className="sb-section-label">
-              {currentPortal === 'tenant' ? 'My Portal' : currentPortal === 'landlord' ? 'Landlord' : 'Admin'}
-            </div>
+          <aside className={`app-sidebar${sidebarOpen ? ' open' : ''}${railed ? ' railed' : ''}`}>
 
             <nav className="sb-nav">
-              {navGroups.map((group, gi) => (
-                <div key={group.label ?? `group-${gi}`} className={group.label ? 'sb-group' : undefined}>
-                  {group.label && <div className="sb-group-label">{group.label}</div>}
-                  {group.items.map(item => {
-                    const badge = badgeFor(item.href)
-                    return (
-                      <a
-                        key={item.href}
-                        href={item.href}
-                        className={`sb-nav-item${isActive(item) ? ' active' : ''}`}
+              {navGroups.map((group, gi) => {
+                const key = `${currentPortal}:${group.label ?? gi}`
+                const collapsed = !!group.label && !!collapsedGroups[key]
+                return (
+                  <div key={key} className="sb-group">
+                    {group.label && (
+                      <button
+                        type="button"
+                        className={`sb-group-btn${collapsed ? ' collapsed' : ''}`}
+                        onClick={() => toggleGroup(key)}
+                        aria-expanded={!collapsed}
                       >
-                        <span className="sb-nav-icon">{item.icon}</span>
-                        {item.label}
-                        {badge && (
-                          <span
-                            style={{
-                              marginLeft: 'auto', background: badge.color, color: '#fff',
-                              fontSize: '10px', fontWeight: 700, padding: '1px 6px',
-                              borderRadius: '10px', flexShrink: 0,
-                            }}
-                          >
-                            {badge.prefix ?? ''}{badge.count}
-                          </span>
-                        )}
-                      </a>
-                    )
-                  })}
-                </div>
-              ))}
+                        {group.label}
+                        <Icon name="chevronDown" size={13} strokeWidth={2.25} className="sb-group-chevron" />
+                      </button>
+                    )}
+                    <div className={`sb-group-items${collapsed ? ' collapsed' : ''}`}>
+                      <div>
+                        {group.items.map(item => {
+                          const badge = badgeFor(item.href)
+                          return (
+                            <a
+                              key={item.href}
+                              href={item.href}
+                              className={`sb-nav-item${isActive(item) ? ' active' : ''}`}
+                              aria-label={item.label}
+                              aria-current={isActive(item) ? 'page' : undefined}
+                            >
+                              <Icon name={item.icon} size={17} />
+                              <span className="sb-nav-label">{item.label}</span>
+                              {badge && (
+                                <span className="sb-nav-badge" style={{ background: badge.color }}>
+                                  {badge.prefix ?? ''}{badge.count}
+                                </span>
+                              )}
+                              <span className="sb-tip" aria-hidden="true">{item.label}</span>
+                            </a>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
               {/* Landlord portal link for tenants who've been upgraded */}
               {currentPortal === 'tenant' && (role === 'landlord' || role === 'admin') && (
                 <a href="/landlord/dashboard" className="sb-nav-item" style={{ borderTop: '1px solid var(--sb-border)', marginTop: '6px', paddingTop: '12px' }}>
-                  <span className="sb-nav-icon">→</span>
-                  Landlord Portal
+                  <Icon name="arrowRight" size={17} />
+                  <span className="sb-nav-label">Landlord Portal</span>
+                  <span className="sb-tip" aria-hidden="true">Landlord Portal</span>
                 </a>
               )}
             </nav>
 
             {otherPortals.length > 0 && (
               <div className="sb-portals">
-                <div className="sb-section-label" style={{ padding: '0 10px 6px' }}>Switch portal</div>
+                <div className="sb-portals-label">Switch portal</div>
                 {otherPortals.map(p => (
-                  <a key={p} href={PORTAL_HREF[p]} className="sb-psw-item">
+                  <a key={p} href={PORTAL_HREF[p]} className="sb-psw-item" aria-label={`${PSW_LABEL[p]} portal`}>
                     <span className="sb-psw-dot" style={{ background: PSW_DOT[p] }} />
                     <span className="sb-psw-label">{PSW_LABEL[p]}</span>
-                    <span className="sb-psw-arrow">{p === 'tenant' ? '←' : '→'}</span>
+                    <span className="sb-psw-arrow">
+                      <Icon name={p === 'tenant' ? 'arrowLeft' : 'arrowRight'} size={13} />
+                    </span>
+                    <span className="sb-tip" aria-hidden="true">{PSW_LABEL[p]} portal</span>
                   </a>
                 ))}
               </div>
@@ -863,7 +1032,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 className={`mob-tab${isActive(item) ? ' active' : ''}`}
                 style={{ position: 'relative' }}
               >
-                <span className="mob-tab-icon">{item.icon}</span>
+                <span className="mob-tab-icon"><Icon name={item.icon} size={19} /></span>
                 <span className="mob-tab-label">{item.short ?? item.label}</span>
                 {badge && (
                   <span style={{ position: 'absolute', top: 6, right: '50%', marginRight: -18, background: badge.color, color: '#fff', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', minWidth: 16, textAlign: 'center' }}>
@@ -878,7 +1047,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setSidebarOpen(o => !o)}
             style={{ background: 'none', border: 'none', cursor: 'pointer' }}
           >
-            <span className="mob-tab-icon">☰</span>
+            <span className="mob-tab-icon"><Icon name="menu" size={19} /></span>
             <span className="mob-tab-label">More</span>
           </button>
         </div>
