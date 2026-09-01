@@ -12,6 +12,12 @@ export type ReminderRow = {
   dueDate: string
   amount: number
   daysLate: number
+  /**
+   * 'charge' = a deposit, penalty or one-off. It borrows the same layout, but
+   * not the same voice: a deposit asked for before move-in is a request, and
+   * calling it overdue rent is both wrong and alarming.
+   */
+  kind?: 'rent' | 'charge'
 }
 
 export type BuiltEmail = { subject: string; html: string; text: string }
@@ -22,28 +28,47 @@ const esc = (s: string) =>
 const fmtDate = (d: string) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
+/** What the email is actually about — rent, one-off charges, or both. */
+type Subject = 'rent' | 'charge' | 'mixed'
+
+const PALETTE = {
+  upcoming: { accent: '#0f172a', bg: '#f8fafc', border: '#e2e8f0' },
+  due:      { accent: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  overdue:  { accent: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
+}
+
 /** Worst row drives the tone for the whole email. */
-function tone(maxDaysLate: number) {
+function tone(maxDaysLate: number, subject: Subject = 'rent') {
+  const noun = subject === 'rent' ? 'rent' : subject === 'charge' ? 'payment' : 'balance'
+
   if (maxDaysLate <= 0) return {
     key: 'upcoming' as const,
-    subject: 'Rent reminder',
-    heading: 'A quick reminder about your rent',
-    lead: 'This is a friendly heads-up — nothing is late.',
-    accent: '#0f172a', bg: '#f8fafc', border: '#e2e8f0',
+    subject: subject === 'rent' ? 'Rent reminder' : subject === 'charge' ? 'Payment request' : 'Payment reminder',
+    heading: subject === 'rent'
+      ? 'A quick reminder about your rent'
+      : subject === 'charge'
+        ? 'A payment request from your landlord'
+        : 'A quick reminder about your balance',
+    // Nothing is late, so nothing should sound like a demand — least of all a
+    // deposit, which is usually the first money a tenant is ever asked for.
+    lead: subject === 'rent'
+      ? 'This is a friendly heads-up — nothing is late.'
+      : 'Here\'s what\'s outstanding — nothing is late.',
+    ...PALETTE.upcoming,
   }
   if (maxDaysLate <= 5) return {
     key: 'due' as const,
-    subject: 'Rent is due',
-    heading: 'Your rent is now due',
+    subject: subject === 'rent' ? 'Rent is due' : `Your ${noun} is due`,
+    heading: subject === 'rent' ? 'Your rent is now due' : `Your ${noun} is now due`,
     lead: 'It looks like this hasn\'t come through yet.',
-    accent: '#b45309', bg: '#fffbeb', border: '#fde68a',
+    ...PALETTE.due,
   }
   return {
     key: 'overdue' as const,
-    subject: 'Rent is overdue',
-    heading: 'Your rent is overdue',
+    subject: subject === 'rent' ? 'Rent is overdue' : `Your ${noun} is overdue`,
+    heading: subject === 'rent' ? 'Your rent is overdue' : `Your ${noun} is overdue`,
     lead: 'This is now past due. Please settle it as soon as you can.',
-    accent: '#b91c1c', bg: '#fef2f2', border: '#fecaca',
+    ...PALETTE.overdue,
   }
 }
 
@@ -62,7 +87,9 @@ export function buildRentReminderEmail(input: {
 
   const total = rows.reduce((s, r) => s + r.amount, 0)
   const maxLate = Math.max(0, ...rows.map(r => r.daysLate))
-  const t = tone(maxLate)
+  const anyRent   = rows.some(r => (r.kind ?? 'rent') === 'rent')
+  const anyCharge = rows.some(r => r.kind === 'charge')
+  const t = tone(maxLate, anyRent && anyCharge ? 'mixed' : anyCharge ? 'charge' : 'rent')
   const firstName = tenantName.trim().split(/\s+/)[0] || 'there'
 
   const subject = `${t.subject} — ${fmtMoney(total)} for ${propertyName}`

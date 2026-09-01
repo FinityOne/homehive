@@ -92,6 +92,9 @@ function PaymentRow({
   const [paidDate,  setPaidDate]  = useState(payment.paid_date ?? new Date().toISOString().split('T')[0])
   const [notes,     setNotes]     = useState(payment.notes ?? '')
   const [newStatus, setNewStatus] = useState<PaymentStatus>(payment.status)
+  // Moving the due date is how a landlord grants an extension: every late-fee
+  // number in this panel is derived from it, so pushing it out calls the fee off.
+  const [dueDate,   setDueDate]   = useState(payment.due_date)
 
   const effStatus = getEffectiveStatus(payment)
   const isPaidOrPartial = ['paid', 'partial'].includes(newStatus)
@@ -108,14 +111,21 @@ function PaymentRow({
         : (dlRow > 0 ? computeLateFees(rule, payment.due_date) : 0))
     : 0
 
-  // Reactive late fee in the edit panel: use the paidDate input field when paid/partial
+  // Reactive late fee in the edit panel: keyed off the *edited* due date (so an
+  // extension shows its effect before saving) and the paidDate field when paid/partial.
   const editDl = isPaidOrPartial
-    ? daysLateByDate(payment.due_date, paidDate)
-    : daysLate(payment.due_date)
+    ? daysLateByDate(dueDate, paidDate)
+    : daysLate(dueDate)
   const editLateFee = rule && editDl > 0
     ? (isPaidOrPartial
-        ? computeLateFeesByDate(rule, payment.due_date, paidDate)
-        : computeLateFees(rule, payment.due_date))
+        ? computeLateFeesByDate(rule, dueDate, paidDate)
+        : computeLateFees(rule, dueDate))
+    : 0
+
+  const dueDateMoved = dueDate !== payment.due_date
+  // What the extension is worth: the fee that stood on the original date, gone.
+  const feeClearedByMove = dueDateMoved && lateFeeRow > 0 && editLateFee < lateFeeRow
+    ? lateFeeRow - editLateFee
     : 0
 
   const collectedAmt  = payment.paid_amount
@@ -131,7 +141,10 @@ function PaymentRow({
       paid_amount:        amt,
       paid_date:          isPaidOrPartial ? paidDate : null,
       notes:              notes || undefined,
-      ...(editLateFee > 0 ? { late_fees_applied: editLateFee } : {}),
+      ...(dueDateMoved ? { due_date: dueDate } : {}),
+      // Always written, never conditionally: an extension has to be able to
+      // clear a fee that was already applied, not just raise a new one.
+      late_fees_applied:  editLateFee,
     })
     setSaving(false)
     setOpen(false)
@@ -208,7 +221,7 @@ function PaymentRow({
       {/* Inline expand */}
       {open && (
         <div style={{ background: '#f8fafc', borderTop: '1px solid #f1f5f9', padding: '16px 16px 18px', borderLeft: '3px solid #0f172a' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>STATUS</label>
               <select style={iS} value={newStatus} onChange={e => setNewStatus(e.target.value as PaymentStatus)}>
@@ -232,7 +245,25 @@ function PaymentRow({
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>DATE PAID</label>
               <input style={iS} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} disabled={!isPaidOrPartial} />
             </div>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>DUE DATE</label>
+              <input style={iS} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              <div style={{ fontSize: '10.5px', color: dueDateMoved ? '#0f766e' : '#94a3b8', marginTop: 4, lineHeight: 1.4 }}>
+                {dueDateMoved
+                  ? `Extension — was ${fmtDate(payment.due_date)}`
+                  : 'Push this out to grant an extension'}
+              </div>
+            </div>
           </div>
+
+          {/* An extension is only worth granting if the landlord can see what it costs them. */}
+          {dueDateMoved && (
+            <div style={{ background: feeClearedByMove > 0 ? '#f0fdf4' : '#f8fafc', border: `1px solid ${feeClearedByMove > 0 ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: '9px', padding: '10px 13px', marginBottom: 12, fontSize: '12px', color: feeClearedByMove > 0 ? '#166534' : '#475569', lineHeight: 1.55, fontWeight: 600 }}>
+              {feeClearedByMove > 0
+                ? `Moving the due date to ${fmtDate(dueDate)} clears ${fmtCurrency(feeClearedByMove)} in late fees${editLateFee > 0 ? ` — ${fmtCurrency(editLateFee)} still stands` : ' — this charge will no longer show as late'}.`
+                : `Due date moves to ${fmtDate(dueDate)}. Save to apply.`}
+            </div>
+          )}
 
           {/* Late fee analysis — reactive */}
           {editLateFee > 0 && (
@@ -738,11 +769,13 @@ function TenantRentEditor({
 type SpecialMode = 'view' | 'edit' | 'confirm'
 
 function SpecialChargeCard({
-  sp, multiTenant, onUpdate,
+  sp, multiTenant, onUpdate, onRemind,
 }: {
   sp: SpecialPayment
   multiTenant: boolean
   onUpdate: (id: string, updates: Parameters<typeof updateSpecialPaymentFull>[1]) => Promise<void>
+  /** Email the tenant about this charge. Absent once it's settled or waived. */
+  onRemind?: (sp: SpecialPayment) => void
 }) {
   const [mode,     setMode]     = useState<SpecialMode>('view')
   const [saving,   setSaving]   = useState(false)
@@ -829,6 +862,17 @@ function SpecialChargeCard({
           >
             ✏ Edit
           </button>
+          {sp.status !== 'paid' && onRemind && (
+            <button
+              onClick={() => onRemind(sp)}
+              title={sp.reminder_sent_at
+                ? `Last requested ${new Date(sp.reminder_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                : 'Email this tenant a request for this charge'}
+              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+            >
+              ✉ {sp.reminder_sent_at ? `Request again (${sp.reminder_count ?? 1})` : 'Send request'}
+            </button>
+          )}
           {sp.status !== 'paid' && (
             <>
               <button
@@ -1383,7 +1427,7 @@ export default function PlanWorkspace({
   const [tab,              setTab]              = useState<Tab>('schedule')
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   // Reminder confirmation — nothing emails a tenant without passing through it.
-  const [remindTarget, setRemindTarget] = useState<{ ids: string[]; label: string } | null>(null)
+  const [remindTarget, setRemindTarget] = useState<{ ids: string[]; specialIds?: string[]; label: string } | null>(null)
   const [remindMsg, setRemindMsg] = useState('')
   const [reminding, setReminding] = useState(false)
   const [remindResult, setRemindResult] = useState<{ ok: boolean; text: string } | null>(null)
@@ -1416,6 +1460,12 @@ export default function PlanWorkspace({
     setRemindTarget({ ids: [p.id], label: `${fmtMonth(p.due_date)} rent for ${who}` })
   }
 
+  /** Ask for one deposit or one-off charge. */
+  function remindSpecial(sp: SpecialPayment) {
+    const who = sp.tenant?.name ?? (plan?.tenants.length === 1 ? plan.tenants[0].name : 'the tenants')
+    setRemindTarget({ ids: [], specialIds: [sp.id], label: `${sp.label} for ${who}` })
+  }
+
   /** Email the tenants behind the selected charges. One email per person. */
   async function sendReminders() {
     if (!remindTarget) return
@@ -1427,7 +1477,11 @@ export default function PlanWorkspace({
         'Content-Type': 'application/json',
         ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       },
-      body: JSON.stringify({ paymentIds: remindTarget.ids, message: remindMsg || undefined }),
+      body: JSON.stringify({
+        paymentIds: remindTarget.ids,
+        specialPaymentIds: remindTarget.specialIds ?? [],
+        message: remindMsg || undefined,
+      }),
     })
     const json = await res.json().catch(() => ({}))
     setReminding(false)
@@ -1841,6 +1895,7 @@ export default function PlanWorkspace({
                       sp={sp}
                       multiTenant={plan.tenants.length > 1}
                       onUpdate={handleUpdateSpecial}
+                      onRemind={sp.status === 'pending' ? remindSpecial : undefined}
                     />
                   ))}
               </div>
@@ -1864,18 +1919,29 @@ export default function PlanWorkspace({
       {/* Reminder confirmation — who gets it, and what they'll be told */}
       {remindTarget && (() => {
         const rows = sps.filter(p => remindTarget.ids.includes(p.id))
+        const chargeRows = specials.filter(sp => (remindTarget.specialIds ?? []).includes(sp.id))
+        // A charge with no tenant is the household's. That resolves to a person
+        // only when there is exactly one — otherwise the server skips it, and
+        // the landlord should see that here before they hit send.
+        const soleTenant = plan.tenants.length === 1 ? plan.tenants[0] : null
+        const unassignedCharges = chargeRows.filter(sp => !sp.plan_tenant_id && !soleTenant)
+
         const byTenant = new Map<string, { name: string; email: string | null; total: number; count: number }>()
-        for (const r of rows) {
-          const t = plan.tenants.find(x => x.id === r.plan_tenant_id)
-          if (!t) continue
+        const addFor = (tenantId: string | null, amount: number) => {
+          const t = plan.tenants.find(x => x.id === tenantId)
+          if (!t) return
           const cur = byTenant.get(t.id) ?? { name: t.name, email: t.email, total: 0, count: 0 }
-          cur.total += r.amount - r.paid_amount
+          cur.total += amount
           cur.count += 1
           byTenant.set(t.id, cur)
         }
+        for (const r of rows) addFor(r.plan_tenant_id, r.amount - r.paid_amount)
+        for (const sp of chargeRows) addFor(sp.plan_tenant_id ?? soleTenant?.id ?? null, sp.amount)
+
         const people = [...byTenant.values()]
         const withEmail = people.filter(p => p.email)
-        const lastReminded = rows
+        const onlyCharges = rows.length === 0 && chargeRows.length > 0
+        const lastReminded = [...rows, ...chargeRows]
           .map(r => r.reminder_sent_at).filter(Boolean)
           .sort().pop()
 
@@ -1886,7 +1952,9 @@ export default function PlanWorkspace({
           >
             <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 440, fontFamily: "'DM Sans', sans-serif", overflow: 'hidden' }}>
               <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid #f1f5f9' }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Send rent reminder</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
+                  {onlyCharges ? 'Send payment request' : 'Send rent reminder'}
+                </div>
                 <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
                   Covering {remindTarget.label} · one email per tenant
                 </div>
@@ -1895,8 +1963,15 @@ export default function PlanWorkspace({
               <div style={{ padding: '16px 20px' }}>
                 {lastReminded && (
                   <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#92400e', marginBottom: 14, lineHeight: 1.5 }}>
-                    Last reminded {new Date(lastReminded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
+                    Last {onlyCharges ? 'requested' : 'reminded'} {new Date(lastReminded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
                     Chasing too often tends to get filtered.
+                  </div>
+                )}
+
+                {unassignedCharges.length > 0 && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#991b1b', marginBottom: 14, lineHeight: 1.5 }}>
+                    {unassignedCharges.length === 1 ? 'One charge is' : `${unassignedCharges.length} charges are`} not assigned to a tenant
+                    and will be skipped — open the charge and pick who owes it.
                   </div>
                 )}
 
@@ -1930,7 +2005,7 @@ export default function PlanWorkspace({
                     style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 11px', fontSize: 13, fontFamily: "'DM Sans', sans-serif", resize: 'vertical', outline: 'none', color: '#0f172a' }}
                   />
                   <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                    The email shows the amount, each charge, how late it is, and a button to pay online.
+                    The email shows the amount, each {onlyCharges ? 'item' : 'charge'}, how late it is, and a button to pay online.
                   </div>
                 </div>
               </div>

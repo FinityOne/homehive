@@ -5,7 +5,12 @@
  * however many charges it covers — three separate nudges for three months of
  * arrears reads as harassment and gets filtered.
  *
- * Body: { paymentIds?: string[] }  — omit to remind on everything outstanding.
+ * Body: { paymentIds?: string[], specialPaymentIds?: string[] }
+ *   — omit both to remind on everything outstanding, rent and charges alike.
+ *
+ * Deposits and one-off charges live in `special_payments`, not
+ * `scheduled_payments`. At move-in the deposit is the largest single amount a
+ * landlord ever asks for, so it has to be requestable too.
  */
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
@@ -38,6 +43,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
 
   const body = await req.json().catch(() => ({}))
   const requestedIds: string[] | undefined = Array.isArray(body.paymentIds) ? body.paymentIds : undefined
+  const requestedSpecialIds: string[] | undefined = Array.isArray(body.specialPaymentIds) ? body.specialPaymentIds : undefined
+  // Naming nothing means "everything outstanding"; naming anything means only
+  // what was named — including naming charges but no rent.
+  const explicit = (requestedIds?.length ?? 0) > 0 || (requestedSpecialIds?.length ?? 0) > 0
   const customMessage: string | null = typeof body.message === 'string' && body.message.trim()
     ? body.message.trim().slice(0, 500)
     : null
@@ -63,19 +72,70 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
 
   if (requestedIds && requestedIds.length > 0) q = q.in('id', requestedIds)
 
-  const { data: payments } = await q
-  if (!payments || payments.length === 0) {
+  let sq = supabaseAdmin
+    .from('special_payments')
+    .select('id, plan_tenant_id, due_date, amount, label, category, status')
+    .eq('plan_id', planId)
+    // 'waived' is the landlord saying they no longer want it; 'paid' is settled.
+    .eq('status', 'pending')
+    .order('due_date')
+
+  if (requestedSpecialIds && requestedSpecialIds.length > 0) sq = sq.in('id', requestedSpecialIds)
+
+  // Naming charges but no rent must not drag every unpaid month in behind them,
+  // and vice versa — so a table nobody asked for isn't queried at all.
+  const wantScheduled = !explicit || (requestedIds?.length ?? 0) > 0
+  const wantSpecials  = !explicit || (requestedSpecialIds?.length ?? 0) > 0
+
+  const [payments, specials] = await Promise.all([
+    wantScheduled ? q.then(r => r.data) : Promise.resolve(null),
+    wantSpecials  ? sq.then(r => r.data) : Promise.resolve(null),
+  ])
+
+  const planTenants = (plan.tenants as any[]) ?? []
+  // A charge with no tenant is owed by the household. With one tenant that is
+  // unambiguous; with housemates, asking each of them for the full amount would
+  // be four demands for one debt, so it is skipped rather than guessed at.
+  const soleTenantId = planTenants.length === 1 ? planTenants[0].id : null
+
+  type Row = { id: string; table: 'scheduled' | 'special'; tenantId: string; label: string; dueDate: string; amount: number }
+  const rowsAll: Row[] = []
+  const skipped: { name: string; reason: string }[] = []
+
+  for (const p of payments ?? []) {
+    const due = Number(p.amount) - Number(p.paid_amount ?? 0)
+    if (due <= 0) continue
+    rowsAll.push({
+      id: p.id,
+      table: 'scheduled',
+      tenantId: p.plan_tenant_id,
+      label: `Rent — ${new Date(p.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
+      dueDate: p.due_date,
+      amount: due,
+    })
+  }
+
+  for (const sp of specials ?? []) {
+    const amount = Number(sp.amount)
+    if (amount <= 0) continue
+    const tenantId = sp.plan_tenant_id ?? soleTenantId
+    if (!tenantId) {
+      skipped.push({ name: sp.label, reason: 'charge is not assigned to a tenant' })
+      continue
+    }
+    rowsAll.push({ id: sp.id, table: 'special', tenantId, label: sp.label, dueDate: sp.due_date, amount })
+  }
+
+  if (rowsAll.length === 0) {
     return Response.json({ error: 'Nothing outstanding to remind about.' }, { status: 409 })
   }
 
   // Group by tenant — one email each.
-  const byTenant = new Map<string, typeof payments>()
-  for (const p of payments) {
-    const due = Number(p.amount) - Number(p.paid_amount ?? 0)
-    if (due <= 0) continue
-    const list = byTenant.get(p.plan_tenant_id) ?? []
-    list.push(p)
-    byTenant.set(p.plan_tenant_id, list)
+  const byTenant = new Map<string, Row[]>()
+  for (const r of rowsAll) {
+    const list = byTenant.get(r.tenantId) ?? []
+    list.push(r)
+    byTenant.set(r.tenantId, list)
   }
 
   const propertyName = (plan.property as any)?.name ?? 'your home'
@@ -97,20 +157,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
   const payUrl = `${getSiteUrl()}/dashboard/lease?tab=payments&pay=1`
 
   const sent: { name: string; email: string; amount: number }[] = []
-  const skipped: { name: string; reason: string }[] = []
   const remindedIds: string[] = []
+  const remindedSpecialIds: string[] = []
 
   for (const [tenantId, rows] of byTenant) {
-    const tenant = (plan.tenants as any[]).find(t => t.id === tenantId)
+    const tenant = planTenants.find(t => t.id === tenantId)
     if (!tenant) continue
     const to = tenant.email?.trim()
     if (!to) { skipped.push({ name: tenant.name, reason: 'no email address on file' }); continue }
 
     const reminderRows: ReminderRow[] = rows.map(r => ({
-      label: `Rent — ${new Date(r.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
-      dueDate: r.due_date,
-      amount: Number(r.amount) - Number(r.paid_amount ?? 0),
-      daysLate: daysLate(r.due_date),
+      label: r.label,
+      dueDate: r.dueDate,
+      amount: r.amount,
+      daysLate: daysLate(r.dueDate),
+      kind: r.table === 'special' ? 'charge' : 'rent',
     }))
     const total = reminderRows.reduce((s, r) => s + r.amount, 0)
 
@@ -122,7 +183,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
       landlordName,
       landlordEmail,
       // Only mention late fees when something is actually late.
-      lateFeeNote: reminderRows.some(r => r.daysLate > 0) ? lateFeeNote : null,
+      // Late fees are a rent rule — quoting them under a late deposit would
+      // threaten a charge they don't actually apply to.
+      lateFeeNote: reminderRows.some(r => r.daysLate > 0 && r.kind !== 'charge') ? lateFeeNote : null,
       customMessage,
     })
 
@@ -136,22 +199,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
         ...(landlordEmail ? { replyTo: landlordEmail } : {}),
       })
       sent.push({ name: tenant.name, email: to, amount: total })
-      remindedIds.push(...rows.map(r => r.id))
+      for (const r of rows) {
+        (r.table === 'special' ? remindedSpecialIds : remindedIds).push(r.id)
+      }
     } catch (e) {
       console.error('rent reminder failed', tenantId, e)
       skipped.push({ name: tenant.name, reason: 'delivery failed' })
     }
   }
 
-  if (remindedIds.length > 0) {
-    const stamp = new Date().toISOString()
-    // Bump each row's counter individually — a blanket update would reset the
-    // history of how often a given tenant has been chased.
-    for (const id of remindedIds) {
+  const stamp = new Date().toISOString()
+  // Bump each row's counter individually — a blanket update would reset the
+  // history of how often a given tenant has been chased.
+  for (const [table, ids] of [['scheduled_payments', remindedIds], ['special_payments', remindedSpecialIds]] as const) {
+    for (const id of ids) {
       const { data: row } = await supabaseAdmin
-        .from('scheduled_payments').select('reminder_count').eq('id', id).maybeSingle()
+        .from(table).select('reminder_count').eq('id', id).maybeSingle()
       await supabaseAdmin
-        .from('scheduled_payments')
+        .from(table)
         .update({ reminder_sent_at: stamp, reminder_count: (row?.reminder_count ?? 0) + 1 })
         .eq('id', id)
     }

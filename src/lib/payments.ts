@@ -104,6 +104,9 @@ export type SpecialPayment = {
   status: 'pending' | 'paid' | 'waived'
   paid_date: string | null
   notes: string | null
+  /** Requests the landlord has emailed about this charge — same history rent keeps. */
+  reminder_sent_at: string | null
+  reminder_count: number
   created_at: string
   updated_at: string
   tenant?: { name: string } | null
@@ -643,6 +646,8 @@ export async function updateScheduledPayment(
   id: string,
   updates: Partial<{
     status:             PaymentStatus
+    /** Moving this is how a landlord grants an extension — every late-fee number derives from it. */
+    due_date:           string
     paid_amount:        number
     paid_date:          string | null
     late_fees_applied:  number
