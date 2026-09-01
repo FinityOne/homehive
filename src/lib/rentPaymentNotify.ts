@@ -225,7 +225,7 @@ export async function notifyRentPayment(input: {
         paidOn,
         tenantOutstanding: ctx.tenantOutstanding,
         planOutstanding: ctx.planOutstanding,
-        planUrl: `${getSiteUrl()}/landlord/payments/${ctx.planId}`,
+        planUrl: `${getSiteUrl()}/landlord/financials?plan=${ctx.planId}`,
         reference: pi.id,
       })
       await resend.emails.send({

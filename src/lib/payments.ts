@@ -429,9 +429,10 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       *,
       property:properties(id, name, slug),
       lease:leases(id, start_date, end_date, rent_amount),
-      tenants:payment_plan_tenants(id, name, email, monthly_total),
+      tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id)
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id),
+      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date)
     `)
     .eq('owner_id', ownerId)
     .order('created_at', { ascending: false })
@@ -445,6 +446,9 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
     property:       row.property   ?? undefined,
     lease:          row.lease      ?? undefined,
     scheduled_payments: row.scheduled_payments || [],
+    // Deposits and one-off charges ride along so Financials can report on them
+    // portfolio-wide, not just inside a single plan.
+    special_payments: row.special_payments || [],
   })) as PaymentPlan[]
 }
 

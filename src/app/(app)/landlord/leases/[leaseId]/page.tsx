@@ -3,19 +3,16 @@
 import { useState, useEffect, use, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import {
   getLeaseById, getLeaseStatus, formatLeaseDate, getLeaseDocumentSignedUrl,
   addLeaseDocument, deleteLeaseDocument,
 } from '@/lib/leases'
 import type { Lease, LeaseStatus, LeaseDocument } from '@/lib/leases'
-import { computeProration, fmtCurrency, fmtDate, getPlanById, isOverdue, type PaymentPlan } from '@/lib/payments'
+import { fmtCurrency } from '@/lib/payments'
 import {
   getInspectionsForLease, createInspectionFromLease, computeTotals, fmtMoney,
   type Inspection,
 } from '@/lib/inspections'
-
-const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,24 +25,23 @@ const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: strin
   past:     { label: 'Past',     color: '#6b7280', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.25)' },
 }
 
-type Tab = 'overview' | 'tenants' | 'payments' | 'documents' | 'moveout'
+type Tab = 'overview' | 'tenants' | 'documents' | 'moveout'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',  label: 'Overview' },
   { id: 'tenants',   label: 'Tenants' },
-  { id: 'payments',  label: 'Payments' },
   { id: 'documents', label: 'Documents' },
   { id: 'moveout',   label: 'Move-out' },
 ]
 
 /**
- * The lease hub — everything tied to one tenancy in one place.
+ * The lease hub — the tenancy: who lives there, the paperwork, the move-out.
  *
- * A lease is the natural spine of property management: the people, the money,
- * the paperwork and the move-out all hang off it. Prior to this the landlord had
- * to bounce between /leases, /payments/[planId] and /inspections/[id] to answer
- * one question about one tenancy. Now the lease owns all of it and the top-level
- * nav keeps only the portfolio-wide rollups.
+ * Money deliberately isn't here. Rent, deposits and one-off charges all live in
+ * Financials, so there is exactly one place to answer "what is owed" and one
+ * place to record a payment; a landlord reconciling a month shouldn't have to
+ * remember which lease they were standing in. This page links straight into that
+ * lease's ledger, and Financials links back here.
  */
 export default function LeaseHubPage({
   params,
@@ -69,28 +65,12 @@ export default function LeaseHubPage({
   const [inspections, setInspections] = useState<Inspection[]>([])
   const [creatingInspection, setCreatingInspection] = useState(false)
 
-  // Full payment plan (schedule + charges) — powers the money numbers
-  const [plan, setPlan] = useState<PaymentPlan | null>(null)
+  // Whether rent is being tracked for this lease, and where its ledger lives.
+  // The numbers themselves belong to Financials — this page only points at them.
+  const [planId, setPlanId] = useState<string | null>(null)
+  const [planChecked, setPlanChecked] = useState(false)
 
-  // Add / terminate payment member
-  const [showAddMember, setShowAddMember] = useState(false)
-  const [showTerminate, setShowTerminate] = useState<string | null>(null)
-  const [memberSaving, setMemberSaving] = useState(false)
-  const [memberError, setMemberError] = useState('')
-  const [memberSuccess, setMemberSuccess] = useState('')
-
-  const [newName, setNewName] = useState('')
-  const [newEmail, setNewEmail] = useState('')
-  const [newMonthly, setNewMonthly] = useState('')
-  const [newStartDate, setNewStartDate] = useState('')
-  const [newEndDate, setNewEndDate] = useState('')
-  const [generateSchedule, setGenerateSchedule] = useState(true)
-  const [includeProration, setIncludeProration] = useState(true)
-
-  const [terminationDate, setTerminationDate] = useState('')
-  const [terminationReason, setTerminationReason] = useState('')
-  const [terminateSaving, setTerminateSaving] = useState(false)
-  const [terminatePreview, setTerminatePreview] = useState<number | null>(null)
+  const [pageError, setPageError] = useState('')
 
   // Documents
   const [docFile, setDocFile] = useState<File | null>(null)
@@ -120,8 +100,8 @@ export default function LeaseHubPage({
   const loadPlan = useCallback(async (id: string) => {
     const { data } = await supabase
       .from('payment_plans').select('id').eq('lease_id', id).maybeSingle()
-    if (data?.id) setPlan(await getPlanById(data.id))
-    else setPlan(null)
+    setPlanId(data?.id ?? null)
+    setPlanChecked(true)
   }, [])
 
   useEffect(() => {
@@ -143,74 +123,6 @@ export default function LeaseHubPage({
     if (data) { setLease(data); signDocs(data.documents || []) }
   }
 
-  const prorationPreview = (() => {
-    if (!plan || !newStartDate || !newMonthly || !includeProration) return null
-    const amt = parseFloat(newMonthly)
-    if (isNaN(amt) || amt <= 0) return null
-    return computeProration(amt, newStartDate, plan.due_day)
-  })()
-
-  async function handleAddMember() {
-    if (!plan || !newName || !newMonthly) return
-    setMemberSaving(true); setMemberError('')
-
-    const res = await fetch(`/api/payments/${plan.id}/members`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: newName,
-        email: newEmail || null,
-        monthly_total: parseFloat(newMonthly),
-        start_date: newStartDate || null,
-        end_date: newEndDate || null,
-        generate_schedule: generateSchedule,
-        include_proration: includeProration,
-      }),
-    })
-    const json = await res.json()
-    setMemberSaving(false)
-    if (!res.ok) { setMemberError(json.error || 'Failed to add member'); return }
-
-    await loadPlan(leaseId)
-    setMemberSuccess(
-      generateSchedule
-        ? `${newName} added with ${json.payments_created} payment${json.payments_created !== 1 ? 's' : ''} scheduled.`
-        : `${newName} added successfully.`
-    )
-    setNewName(''); setNewEmail(''); setNewMonthly(''); setNewStartDate(''); setNewEndDate('')
-    setShowAddMember(false)
-    setTimeout(() => setMemberSuccess(''), 4000)
-  }
-
-  async function handleTerminate() {
-    if (!plan || !showTerminate || !terminationDate) return
-    setTerminateSaving(true)
-    const res = await fetch(`/api/payments/${plan.id}/members/${showTerminate}/terminate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ termination_date: terminationDate, termination_reason: terminationReason }),
-    })
-    const json = await res.json()
-    setTerminateSaving(false)
-    if (!res.ok) { setMemberError(json.error || 'Failed to terminate'); return }
-
-    await loadPlan(leaseId)
-    setMemberSuccess(`Tenant terminated. ${json.voided} future payment${json.voided !== 1 ? 's' : ''} voided.`)
-    setShowTerminate(null); setTerminationDate(''); setTerminationReason(''); setTerminatePreview(null)
-    setTimeout(() => setMemberSuccess(''), 5000)
-  }
-
-  async function loadTerminatePreview(memberId: string, afterDate: string) {
-    if (!plan || !afterDate) { setTerminatePreview(null); return }
-    const { count } = await supabase
-      .from('scheduled_payments')
-      .select('*', { count: 'exact', head: true })
-      .eq('plan_tenant_id', memberId)
-      .in('status', ['pending', 'late'])
-      .gt('due_date', afterDate)
-    setTerminatePreview(count ?? 0)
-  }
-
   async function startInspection() {
     if (!lease) return
     setCreatingInspection(true)
@@ -230,7 +142,7 @@ export default function LeaseHubPage({
       lease.property?.name
     )
     setCreatingInspection(false)
-    if (error || !id) { setMemberError('Could not start the inspection. Please try again.'); return }
+    if (error || !id) { setPageError('Could not start the inspection. Please try again.'); return }
     router.push(`/landlord/inspections/${id}`)
   }
 
@@ -239,7 +151,7 @@ export default function LeaseHubPage({
     setDocUploading(true)
     const { error } = await addLeaseDocument(leaseId, docFile, docName || docFile.name)
     setDocUploading(false)
-    if (error) { setMemberError('Upload failed. Please try again.'); return }
+    if (error) { setPageError('Upload failed. Please try again.'); return }
     setDocFile(null); setDocName('')
     await refreshLease()
   }
@@ -247,7 +159,7 @@ export default function LeaseHubPage({
   async function removeDoc(doc: LeaseDocument) {
     if (!confirm(`Delete "${doc.name}"?`)) return
     const { error } = await deleteLeaseDocument(doc)
-    if (error) { setMemberError('Could not delete that document.'); return }
+    if (error) { setPageError('Could not delete that document.'); return }
     await refreshLease()
   }
 
@@ -263,21 +175,7 @@ export default function LeaseHubPage({
   const status = getLeaseStatus(lease.start_date, lease.end_date)
   const meta = STATUS_META[status]
 
-  // ── Money at a glance ──────────────────────────────────────────────────────
-  const sps = plan?.scheduled_payments ?? []
   const today = new Date()
-  const thisMonth = sps.filter(p => {
-    const d = new Date(p.due_date + 'T00:00:00')
-    return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
-  })
-  const monthExpected  = thisMonth.reduce((s, p) => s + p.amount, 0)
-  const monthCollected = thisMonth.reduce((s, p) => s + p.paid_amount, 0)
-  const overdue        = sps.filter(p => isOverdue(p))
-  const overdueAmount  = overdue.reduce((s, p) => s + (p.amount - p.paid_amount), 0)
-  const leaseCollected = sps.filter(p => p.status === 'paid').reduce((s, p) => s + p.paid_amount, 0)
-  const leaseTotal     = sps.reduce((s, p) => s + p.amount, 0)
-  const activeMembers  = (plan?.tenants ?? []).filter(t => t.status === 'active')
-  const monthlyTotal   = activeMembers.reduce((s, t) => s + t.monthly_total, 0)
 
   const daysToEnd = Math.ceil(
     (new Date(lease.end_date + 'T00:00:00').getTime() - today.setHours(0, 0, 0, 0)) / 86_400_000
@@ -289,10 +187,12 @@ export default function LeaseHubPage({
   const counts: Record<Tab, number | null> = {
     overview: null,
     tenants: lease.tenants.length || null,
-    payments: overdue.length || null,
     documents: lease.documents.length || null,
     moveout: inspections.length || null,
   }
+
+  // Where this lease's money lives. Everything monetary is one link away.
+  const financialsHref = planId ? `/landlord/financials?plan=${planId}` : '/landlord/financials'
 
   return (
     <>
@@ -322,20 +222,23 @@ export default function LeaseHubPage({
             </div>
           </div>
 
-          {/* Key figures — the answer to "how is this tenancy doing?" */}
+          {/* Key figures — the tenancy at a glance. Rent collection lives in
+              Financials, so the only money here is the term on the lease. */}
           <div className="lh-figs">
-            <Fig label="Monthly rent" value={fmtCurrency(monthlyTotal || lease.rent_amount || 0)} />
-            <Fig
-              label="Collected this month"
-              value={monthExpected > 0 ? `${fmtCurrency(monthCollected)} / ${fmtCurrency(monthExpected)}` : '—'}
-              tone={monthExpected > 0 && monthCollected >= monthExpected ? 'good' : undefined}
-            />
-            <Fig
-              label="Overdue"
-              value={overdue.length > 0 ? `${fmtCurrency(overdueAmount)} · ${overdue.length}` : 'None'}
-              tone={overdue.length > 0 ? 'bad' : 'good'}
-            />
+            <Fig label="Rent on lease" value={lease.rent_amount ? `${fmtCurrency(lease.rent_amount)}/mo` : '—'} />
             <Fig label="Tenants" value={String(lease.tenants.length)} />
+            <Fig label="Documents" value={String(lease.documents.length)} />
+            <Fig
+              label={status === 'past' ? 'Ended' : status === 'upcoming' ? 'Starts in' : 'Days remaining'}
+              value={
+                status === 'past'
+                  ? formatLeaseDate(lease.end_date)
+                  : status === 'upcoming'
+                    ? formatLeaseDate(lease.start_date)
+                    : `${Math.max(0, daysToEnd)}`
+              }
+              tone={endingSoon ? 'bad' : undefined}
+            />
           </div>
 
           {/* ── Tabs ── */}
@@ -348,35 +251,26 @@ export default function LeaseHubPage({
               >
                 {t.label}
                 {counts[t.id] !== null && (
-                  <span className={`lh-count${t.id === 'payments' && overdue.length > 0 ? ' bad' : ''}`}>
-                    {counts[t.id]}
-                  </span>
+                  <span className="lh-count">{counts[t.id]}</span>
                 )}
               </button>
             ))}
+            <a href={financialsHref} className="lh-tab lh-tab-out">
+              Financials ↗
+            </a>
           </div>
         </div>
 
-        {memberSuccess && <div className="alert-ok">{memberSuccess}</div>}
-        {memberError && <div className="alert-err">{memberError}</div>}
+        {pageError && <div className="alert-err">{pageError}</div>}
 
         {/* ══ OVERVIEW ══ */}
         {tab === 'overview' && (
           <>
             {/* What needs attention, if anything */}
-            {(overdue.length > 0 || endingSoon || openInspection) && (
+            {(endingSoon || openInspection) && (
               <div className="card">
                 <div className="card-hd"><span className="card-title">Needs attention</span></div>
                 <div className="card-bd">
-                  {overdue.length > 0 && (
-                    <Action
-                      tone="bad"
-                      title={`${overdue.length} payment${overdue.length !== 1 ? 's' : ''} overdue — ${fmtCurrency(overdueAmount)}`}
-                      body="Follow up with the tenant, then record the payment on the Payments tab."
-                      cta="Go to payments"
-                      onClick={() => selectTab('payments')}
-                    />
-                  )}
                   {endingSoon && (
                     <Action
                       tone="warn"
@@ -419,34 +313,32 @@ export default function LeaseHubPage({
                   <Row label="Unit / room" value={lease.unit_number || '—'} />
                   <Row label="Term" value={`${formatLeaseDate(lease.start_date)} – ${formatLeaseDate(lease.end_date)}`} />
                   <Row label="Rent on lease" value={lease.rent_amount ? `${fmtCurrency(lease.rent_amount)}/mo` : '—'} />
-                  {plan && <Row label="Rent due" value={`${plan.due_day}${ordinal(plan.due_day)} of the month`} />}
                   {lease.notes && <Row label="Notes" value={<span className="notes">{lease.notes}</span>} />}
                 </div>
               </div>
 
               <div className="card">
-                <div className="card-hd">
-                  <span className="card-title">Money</span>
-                  {plan && <button className="lnk-btn" onClick={() => selectTab('payments')}>Full ledger →</button>}
-                </div>
+                <div className="card-hd"><span className="card-title">Money</span></div>
                 <div className="card-bd">
-                  {!plan ? (
+                  {!planChecked ? (
+                    <div className="empty-inline">Checking rent setup…</div>
+                  ) : planId ? (
                     <div className="empty-inline">
-                      No payment plan yet — rent isn&apos;t being tracked for this lease.
-                      <a href={`/landlord/payments/new?lease=${leaseId}`} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
-                        Set up rent collection
+                      Rent, deposits and one-off charges for this tenancy are tracked in
+                      Financials — schedule, who has paid, reminders and receipts all in one
+                      ledger.
+                      <a href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                        Open the ledger →
                       </a>
                     </div>
                   ) : (
-                    <>
-                      <Row label="Collected to date" value={`${fmtCurrency(leaseCollected)} of ${fmtCurrency(leaseTotal)}`} />
-                      <div className="bar"><div className="bar-fill" style={{ width: `${leaseTotal > 0 ? Math.min(100, (leaseCollected / leaseTotal) * 100) : 0}%` }} /></div>
-                      <Row label="Payers" value={`${activeMembers.length} active`} />
-                      <Row label="Monthly total" value={fmtCurrency(monthlyTotal)} />
-                      {plan.special_payments && plan.special_payments.length > 0 && (
-                        <Row label="Deposits & charges" value={`${plan.special_payments.length} on file`} />
-                      )}
-                    </>
+                    <div className="empty-inline">
+                      Rent isn&apos;t being tracked for this lease yet. Set up a plan in Financials
+                      to schedule rent, see who has paid, and record deposits and one-off charges.
+                      <a href={`/landlord/financials/new?lease=${leaseId}`} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                        Set up rent collection
+                      </a>
+                    </div>
                   )}
                 </div>
               </div>
@@ -461,21 +353,15 @@ export default function LeaseHubPage({
                 <div className="card-bd">
                   {lease.tenants.length === 0 ? (
                     <div className="empty-inline">No tenants on this lease yet.</div>
-                  ) : lease.tenants.map(t => {
-                    const member = (plan?.tenants ?? []).find(
-                      m => m.email && t.email && m.email.toLowerCase() === t.email.toLowerCase()
-                    )
-                    return (
-                      <div key={t.id} className="person">
-                        <div className="avatar">{(t.name || t.email || '?').slice(0, 2).toUpperCase()}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="person-name">{t.name || '—'}</div>
-                          {t.email && <div className="person-sub">{t.email}</div>}
-                        </div>
-                        {member && <div className="person-amt">{fmtCurrency(member.monthly_total)}/mo</div>}
+                  ) : lease.tenants.map(t => (
+                    <div key={t.id} className="person">
+                      <div className="avatar">{(t.name || t.email || '?').slice(0, 2).toUpperCase()}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="person-name">{t.name || '—'}</div>
+                        {t.email && <div className="person-sub">{t.email}</div>}
                       </div>
-                    )
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -528,169 +414,18 @@ export default function LeaseHubPage({
             </div>
 
             <div className="card">
-              <div className="card-hd">
-                <span className="card-title">Who pays ({(plan?.tenants ?? []).length})</span>
-                {plan && (
-                  <button className="btn-dark-sm" onClick={() => { setShowAddMember(v => !v); setMemberError('') }}>
-                    {showAddMember ? 'Cancel' : '+ Add payer'}
-                  </button>
-                )}
-              </div>
+              <div className="card-hd"><span className="card-title">Who pays</span></div>
               <div className="card-bd">
-                {!plan ? (
-                  <div className="empty-inline">
-                    Rent isn&apos;t being tracked for this lease yet.
-                    <a href={`/landlord/payments/new?lease=${leaseId}`} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
-                      Set up rent collection
-                    </a>
-                  </div>
-                ) : (
-                  <>
-                    {plan.tenants.length === 0 && !showAddMember && (
-                      <div className="empty-inline">No payers on the plan yet.</div>
-                    )}
-                    {plan.tenants.map(m => (
-                      <div key={m.id}>
-                        <div className="person">
-                          <div className={`avatar${m.status !== 'active' ? ' off' : ''}`}>{m.name.slice(0, 2).toUpperCase()}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="person-name">
-                              {m.name}
-                              <span className={`chip chip-${m.status}`}>
-                                {m.status === 'active' ? 'Active' : m.status === 'terminated' ? 'Terminated' : 'Completed'}
-                              </span>
-                            </div>
-                            {m.email && <div className="person-sub">{m.email}</div>}
-                            <div className="person-sub">
-                              {fmtCurrency(m.monthly_total)}/mo
-                              {m.start_date && ` · from ${fmtDate(m.start_date)}`}
-                              {m.end_date && ` → ${fmtDate(m.end_date)}`}
-                              {m.termination_date && ` · terminated ${fmtDate(m.termination_date)}`}
-                              {m.termination_reason && ` (${m.termination_reason})`}
-                            </div>
-                          </div>
-                          {m.status === 'active' && (
-                            <button
-                              className="btn-danger-sm"
-                              onClick={() => {
-                                setShowTerminate(showTerminate === m.id ? null : m.id)
-                                setTerminationDate(''); setTerminationReason(''); setTerminatePreview(null)
-                              }}
-                            >
-                              Terminate
-                            </button>
-                          )}
-                        </div>
-
-                        {showTerminate === m.id && (
-                          <div className="panel-danger">
-                            <div className="panel-title">Early termination — {m.name}</div>
-                            <div className="grid2">
-                              <Field label="Termination date">
-                                <input className="inp" type="date" value={terminationDate}
-                                  onChange={e => { setTerminationDate(e.target.value); loadTerminatePreview(m.id, e.target.value) }} />
-                              </Field>
-                              <Field label="Reason (optional)">
-                                <input className="inp" type="text" value={terminationReason}
-                                  onChange={e => setTerminationReason(e.target.value)} placeholder="e.g. Moved out early" />
-                              </Field>
-                            </div>
-                            {terminatePreview !== null && terminationDate && (
-                              <div className="void-note">
-                                {terminatePreview === 0
-                                  ? 'No future pending payments to void.'
-                                  : `${terminatePreview} future payment${terminatePreview !== 1 ? 's' : ''} will be voided after ${fmtDate(terminationDate)}.`}
-                              </div>
-                            )}
-                            <div className="btn-row">
-                              <button className="btn-danger" disabled={!terminationDate || terminateSaving} onClick={handleTerminate}>
-                                {terminateSaving ? 'Terminating…' : 'Confirm termination'}
-                              </button>
-                              <button className="btn-ghost" onClick={() => setShowTerminate(null)}>Cancel</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {showAddMember && (
-                      <div className="panel">
-                        <div className="panel-title">Add payer</div>
-                        <div className="grid2">
-                          <Field label="Full name *">
-                            <input className="inp" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jane Doe" />
-                          </Field>
-                          <Field label="Email">
-                            <input className="inp" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jane@email.com" />
-                          </Field>
-                        </div>
-                        <div className="grid3">
-                          <Field label="Monthly amount *">
-                            <input className="inp" type="number" min="0" step="0.01" value={newMonthly} onChange={e => setNewMonthly(e.target.value)} placeholder="750" />
-                          </Field>
-                          <Field label="Start date">
-                            <input className="inp" type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} />
-                          </Field>
-                          <Field label="End date">
-                            <input className="inp" type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} />
-                          </Field>
-                        </div>
-                        <label className="switch-row">
-                          <input type="checkbox" checked={generateSchedule} onChange={e => setGenerateSchedule(e.target.checked)} />
-                          Generate payment schedule
-                        </label>
-                        {generateSchedule && (
-                          <label className="switch-row">
-                            <input type="checkbox" checked={includeProration} onChange={e => setIncludeProration(e.target.checked)} />
-                            Prorate first month
-                          </label>
-                        )}
-                        {prorationPreview && (
-                          <div className="proration">
-                            <strong>Proration preview:</strong> first payment on {fmtDate(newStartDate)} is{' '}
-                            <strong>{fmtCurrency(prorationPreview.proratedAmount)}</strong>{' '}
-                            ({prorationPreview.proratedDays} of {prorationPreview.totalDays} days).
-                            Full payments of <strong>{fmtCurrency(parseFloat(newMonthly))}</strong> start {fmtDate(prorationPreview.firstDueDate)}.
-                          </div>
-                        )}
-                        <div className="btn-row">
-                          <button className="btn-dark" disabled={!newName || !newMonthly || memberSaving} onClick={handleAddMember}>
-                            {memberSaving ? 'Adding…' : 'Add payer'}
-                          </button>
-                          <button className="btn-ghost" onClick={() => { setShowAddMember(false); setMemberError('') }}>Cancel</button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                <div className="empty-inline">
+                  Payers, what each one owes each month, and ending someone&apos;s obligation
+                  early are all handled in Financials, alongside the schedule they affect.
+                  <a href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                    {planId ? 'Open the ledger \u2192' : 'Go to Financials \u2192'}
+                  </a>
+                </div>
               </div>
             </div>
           </>
-        )}
-
-        {/* ══ PAYMENTS — the full rent ledger, in place ══ */}
-        {tab === 'payments' && (
-          <div className="card">
-            <div className="card-hd">
-              <span className="card-title">Rent ledger</span>
-              {plan && (
-                <a href={`/landlord/payments/${plan.id}`} className="lnk">Open full page ↗</a>
-              )}
-            </div>
-            <div className="card-bd">
-              {!plan ? (
-                <div className="empty-inline">
-                  No payment plan for this lease yet. Set one up to schedule rent, track who has
-                  paid, and record deposits and one-off charges.
-                  <a href={`/landlord/payments/new?lease=${leaseId}`} className="btn-dark" style={{ marginTop: 14, display: 'inline-block' }}>
-                    Set up rent collection
-                  </a>
-                </div>
-              ) : (
-                <PlanWorkspace planId={plan.id} embedded />
-              )}
-            </div>
-          </div>
         )}
 
         {/* ══ DOCUMENTS ══ */}
@@ -841,12 +576,6 @@ function Action({
   )
 }
 
-function ordinal(n: number) {
-  const v = n % 100
-  if (v >= 11 && v <= 13) return 'th'
-  return ['th', 'st', 'nd', 'rd'][n % 4] ?? 'th'
-}
-
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -877,6 +606,10 @@ const CSS = `
   .lh-tab.active { color: #0f172a; font-weight: 700; border-bottom-color: #0f172a; }
   .lh-count { background: #eef2f7; color: #64748b; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; }
   .lh-count.bad { background: #fee2e2; color: #991b1b; }
+  /* Money isn't a tab here — it's a link out to Financials, sitting where the
+     Payments tab used to be so the habit still lands somewhere sensible. */
+  .lh-tab-out { margin-left: auto; text-decoration: none; color: #0284c7; font-weight: 600; }
+  .lh-tab-out:hover { color: #0369a1; }
 
   .lh-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
@@ -891,16 +624,12 @@ const CSS = `
   .row-value { color: #0f172a; font-weight: 500; text-align: right; }
   .notes { white-space: pre-wrap; font-weight: 400; color: #475569; font-size: 13px; }
 
-  .bar { height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin: 6px 0 10px; }
-  .bar-fill { height: 100%; background: #10b981; border-radius: 99px; }
 
   .person { display: flex; align-items: center; gap: 11px; padding: 10px 0; border-bottom: 1px solid #f8fafc; }
   .person:last-child { border-bottom: none; }
   .avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(16,185,129,0.14); color: #10b981; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
-  .avatar.off { background: #f1f5f9; color: #94a3b8; }
   .person-name { font-size: 13.5px; font-weight: 600; color: #0f172a; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   .person-sub { font-size: 11.5px; color: #94a3b8; margin-top: 1px; }
-  .person-amt { font-size: 13px; font-weight: 600; color: #0f172a; white-space: nowrap; }
 
   .chip { font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.4px; }
   .chip-active { background: #dcfce7; color: #166534; }
@@ -929,35 +658,25 @@ const CSS = `
   .btn-dark-sm { background: #0f172a; color: #34d399; border: none; border-radius: 7px; padding: 6px 13px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .btn-ghost { background: #fff; color: #475569; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: none; white-space: nowrap; }
   .btn-ghost:hover { border-color: #94a3b8; }
-  .btn-danger { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
-  .btn-danger:disabled { opacity: .5; cursor: not-allowed; }
   .btn-danger-sm { background: none; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
   .btn-danger-sm:hover { background: #fef2f2; }
-  .btn-row { display: flex; gap: 9px; margin-top: 12px; flex-wrap: wrap; }
 
   .panel { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-top: 12px; }
-  .panel-danger { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 10px; padding: 15px; margin: 4px 0 12px; }
   .panel-title { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
-  .void-note { font-size: 12px; color: #b45309; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 7px; padding: 8px 12px; margin-top: 10px; }
-  .proration { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 11px 13px; font-size: 12px; color: #166534; margin-top: 10px; line-height: 1.5; }
 
   .field { margin-bottom: 12px; }
   .lbl { display: block; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; }
   .inp { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 11px; font-size: 13.5px; color: #0f172a; font-family: inherit; background: #fff; outline: none; }
   .inp:focus { border-color: #10b981; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .switch-row { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #334155; padding: 5px 0; cursor: pointer; }
-  .switch-row input { accent-color: #10b981; cursor: pointer; }
 
   .hint { font-size: 12px; color: #94a3b8; line-height: 1.55; }
   .empty-inline { font-size: 13px; color: #94a3b8; line-height: 1.6; }
 
-  .alert-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 9px; padding: 11px 15px; font-size: 13px; margin-bottom: 14px; }
   .alert-err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 9px; padding: 11px 15px; font-size: 13px; margin-bottom: 14px; }
 
   @media (max-width: 820px) {
-    .lh-cols, .grid2, .grid3 { grid-template-columns: 1fr; }
+    .lh-cols, .grid2 { grid-template-columns: 1fr; }
     .lh-figs { grid-template-columns: repeat(2, 1fr); }
   }
 `

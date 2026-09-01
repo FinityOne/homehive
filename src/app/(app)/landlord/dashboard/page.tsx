@@ -643,7 +643,7 @@ export default function LandlordDashboard() {
                             <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{item.propertyName}</div>
                             <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.count} payment{item.count !== 1 ? 's' : ''} past due</div>
                           </div>
-                          <a href={`/landlord/payments/${item.planId}`} style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', textDecoration: 'none', flexShrink: 0 }}>
+                          <a href={`/landlord/financials?plan=${item.planId}`} style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', textDecoration: 'none', flexShrink: 0 }}>
                             {fmtFull(item.owed)}
                           </a>
                         </div>
@@ -676,7 +676,7 @@ export default function LandlordDashboard() {
                                 {plan.tenants.map(t => t.name).join(', ')} · {planPaid}/{planTotal} paid
                               </div>
                             </div>
-                            <a href={`/landlord/payments/${plan.id}`} style={{ fontSize: 11, color: '#8C1D40', textDecoration: 'none', fontWeight: 500, flexShrink: 0 }}>
+                            <a href={`/landlord/financials?plan=${plan.id}`} style={{ fontSize: 11, color: '#8C1D40', textDecoration: 'none', fontWeight: 500, flexShrink: 0 }}>
                               View →
                             </a>
                           </div>

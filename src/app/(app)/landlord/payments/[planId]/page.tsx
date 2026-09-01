@@ -1,13 +1,15 @@
-'use client'
-
-import { use } from 'react'
-import PlanWorkspace from '@/components/payments/PlanWorkspace'
+import { redirect } from 'next/navigation'
 
 /**
- * Standalone rent ledger. The same workspace is embedded in the lease hub's
- * Payments tab — this route stays so existing links and bookmarks keep working.
+ * The rent ledger is no longer a page of its own — every monetary view lives in
+ * Financials, which opens the ledger inline at ?plan=. Kept as a redirect so
+ * older links (emails, bookmarks) still land on the right money.
  */
-export default function PlanDetailPage({ params }: { params: Promise<{ planId: string }> }) {
-  const { planId } = use(params)
-  return <PlanWorkspace planId={planId} />
+export default async function PlanDetailRedirect({
+  params,
+}: {
+  params: Promise<{ planId: string }>
+}) {
+  const { planId } = await params
+  redirect(`/landlord/financials?plan=${planId}`)
 }
