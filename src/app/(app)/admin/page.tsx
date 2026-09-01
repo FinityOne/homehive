@@ -2,16 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import * as d3 from 'd3'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getAllPropertiesForAdmin } from '@/lib/properties'
 import type { Property, AdminStatus } from '@/lib/properties'
 import type { Lead } from '@/lib/leads'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type OverviewData = {
@@ -276,7 +271,7 @@ export default function AdminOverview() {
   useEffect(() => { document.title = 'Overview — Admin | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
+    getCurrentUser().then(user => { if (!user) router.push('/login') })
     fetchData()
     const ch = supabase.channel('admin-overview')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchData)

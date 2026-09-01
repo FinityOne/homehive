@@ -1,14 +1,9 @@
 'use client'
 
 import { useRef, useState, useEffect } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { createProperty, replacePropertyRooms, uploadPropertyImage } from '@/lib/properties'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type ListingType = 'sublease' | 'lease_transfer' | 'standard_rental'
 type UnitType = 'room_in_house' | 'apartment' | 'condo' | 'studio'
@@ -180,7 +175,7 @@ export default function NewListingWizard() {
     setSubmitError('')
     setUploadStatus('')
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     if (!user) { router.push('/login'); return }
 
     const initialPrice = isByRoom

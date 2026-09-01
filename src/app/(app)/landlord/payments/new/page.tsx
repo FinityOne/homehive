@@ -1,17 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import {
   createPlan, generateScheduleDates, buildPaymentSchedule, previewProration,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   PRORATION_DAYS_PER_MONTH, LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES, type SpecialCategory,
 } from '@/lib/payments'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -130,7 +125,7 @@ export default function NewPaymentPlanPage() {
   useEffect(() => { document.title = 'New Payment — Landlord | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) return
       setUserId(user.id)
       supabase.from('properties').select('id, name, slug').eq('owner_id', user.id).eq('admin_status', 'active')

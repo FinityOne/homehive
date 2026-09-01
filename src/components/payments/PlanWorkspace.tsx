@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
 import {
   getPlanById, updateScheduledPayment, updateSpecialPayment, updateSpecialPaymentFull, addSpecialPayment,
   updateTenantScheduleAmount, updateLineItem, addLineItem, deleteLineItem, updateTenantMonthlyTotal,
@@ -12,11 +12,6 @@ import {
   type PaymentPlanTenant, type PaymentLineItem,
 } from '@/lib/payments'
 import StripeModeBanner from '@/components/StripeModeBanner'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 

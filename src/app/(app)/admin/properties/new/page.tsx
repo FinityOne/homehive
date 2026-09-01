@@ -2,13 +2,8 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useEffect, useRef, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type Owner = { id: string; email: string; name: string }
 type NearbyRow = { place: string; travel_time: string }
@@ -256,7 +251,7 @@ export default function AdminNewPropertyPage() {
   useEffect(() => { document.title = 'New Property — Admin | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => { if (!data.user) router.push('/login') })
+    getCurrentUser().then(user => { if (!user) router.push('/login') })
     fetch('/api/admin/owners')
       .then(r => r.json())
       .then((data: Owner[]) => { setOwners(data); setOwnersLoading(false) })
@@ -320,7 +315,7 @@ export default function AdminNewPropertyPage() {
     setError('')
     setUploadStatus('')
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     if (!user) { router.push('/login'); return }
 
     const imageUrls: string[] = []

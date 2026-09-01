@@ -3,7 +3,7 @@
 import '@/styles/brand-tokens.css'
 import { useState, use, useEffect, useRef, useCallback } from 'react'
 import { usePostHog } from 'posthog-js/react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
 import { getPropertyBySlug, Property } from '@/lib/properties'
 import { getFaqsByPropertyId, PropertyFaq } from '@/lib/faqs'
 import { acceptsInquiries, acceptsWaitlist } from '@/lib/listingStatus'
@@ -11,11 +11,6 @@ import { notFound } from 'next/navigation'
 import PhoneInput from '@/components/ui/PhoneInput'
 import SaveButton from '@/components/SaveButton'
 import { identifyVisitor } from '@/lib/visitorId'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // Platform-wide amenity icons mapped to common tag keywords
 const TAG_ICONS: Record<string, string> = {
@@ -1478,7 +1473,6 @@ export default function PropertyPageClient({
 
         </div>{/* /prop-split */}
       </div>{/* /prop-page */}
-
 
       {/* ── MOBILE STICKY BAR ─────────────────────────── */}
       <div className="mobile-sticky-bar" style={{ transform: showStickyBar || mobileFormOpen ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)' }}>

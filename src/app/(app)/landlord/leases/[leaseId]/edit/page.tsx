@@ -1,18 +1,13 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getLeaseById, updateLease, addLeaseDocument, deleteLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
 import { getPropertiesByOwner } from '@/lib/properties'
 import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
 import type { Lease, TenantInput, LeaseDocument } from '@/lib/leases'
 import type { Property } from '@/lib/properties'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default function EditLeasePage({ params }: { params: Promise<{ leaseId: string }> }) {
   const { leaseId } = use(params)
@@ -44,7 +39,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
   useEffect(() => { document.title = 'Edit Lease — Landlord | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       Promise.all([
         getLeaseById(leaseId),

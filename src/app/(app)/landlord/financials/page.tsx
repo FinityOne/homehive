@@ -1,16 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import {
   getPlansForOwner, fmtCurrency, isOverdue,
   type PaymentPlan, type ScheduledPayment,
 } from '@/lib/payments'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 /**
  * Portfolio financials.
@@ -39,7 +34,7 @@ export default function FinancialsPage() {
   useEffect(() => { document.title = 'Financials — Landlord | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) return
       getPlansForOwner(user.id).then(data => { setPlans(data); setLoading(false) })
     })

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   getTenantsByOwner,
@@ -14,11 +14,6 @@ import {
   type TenantFormData,
 } from '@/lib/tenants'
 import { getLeadsForOwner, type Lead } from '@/lib/leads'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const STATUS_LABEL: Record<TenantStatus, string> = {
   active: 'Active',
@@ -95,7 +90,7 @@ export default function TenantsPage() {
   useEffect(() => { document.title = 'Tenants — Landlord | HomeHive' }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
       Promise.all([

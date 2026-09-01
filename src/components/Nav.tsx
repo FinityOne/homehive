@@ -2,13 +2,8 @@
 
 import '@/styles/brand-tokens.css'
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { getShortlist, onShortlistChange } from '@/lib/shortlist'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 function getInitials(email: string, fullName?: string): string {
   if (fullName) {
@@ -69,7 +64,7 @@ export default function Nav() {
       const { data: p } = await supabase.from('profiles').select('role, avatar_url').eq('id', id).single()
       setUser({ email, fullName, role: p?.role || 'tenant', avatarUrl: p?.avatar_url || null })
     }
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (user) load(user.id, user.email || '', user.user_metadata?.full_name || '')
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {

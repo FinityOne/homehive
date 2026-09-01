@@ -1,14 +1,9 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, Property } from '@/lib/properties'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const TAG_ICONS: Record<string, string> = {
   wifi: '⚡', internet: '⚡',
@@ -47,7 +42,7 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
       const props = await getPropertiesByOwner(user.id)
       const found = props.find(p => p.slug === slug)

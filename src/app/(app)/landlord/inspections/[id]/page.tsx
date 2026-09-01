@@ -1,7 +1,7 @@
 'use client'
 
 import { use, useCallback, useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   getInspection, updateInspection, setInspectionStatus, deleteInspection,
@@ -19,11 +19,6 @@ import {
   type PartyTotal, type SettlementStatus,
 } from '@/lib/inspections'
 import { getLeasesForOwner, formatLeaseDate, type Lease } from '@/lib/leases'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const BLANK_ITEM: ItemInput = {
   area: '', title: '', description: '', notes: '', cost: 0,
@@ -79,7 +74,7 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
       const data = await getInspection(id)
@@ -1451,7 +1446,7 @@ function ItemCard({
    */
   async function upload(files: File[]) {
     if (files.length === 0) return
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     if (!user) { onFlash(false, 'Your session expired — sign in again to upload.'); return }
 
     setUploading(true)

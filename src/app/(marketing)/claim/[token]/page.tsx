@@ -1,15 +1,10 @@
 'use client'
 
 import { useEffect, use, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { getPropertyByClaimToken } from '@/lib/properties'
 import type { Property } from '@/lib/properties'
 import type { User } from '@supabase/supabase-js'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const TAG_ICONS: Record<string, string> = {
   wifi: '⚡', internet: '⚡', washer: '🧺', laundry: '🧺',
@@ -37,7 +32,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
 
   useEffect(() => {
     getPropertyByClaimToken(token).then(p => setProperty(p ?? null))
-    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null))
+    getCurrentUser().then(u => setUser(u))
   }, [token])
 
   const handleClaim = async () => {

@@ -2,7 +2,7 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
@@ -10,11 +10,6 @@ import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
 
 const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
@@ -101,7 +96,7 @@ export default function InsightsPage() {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
     })

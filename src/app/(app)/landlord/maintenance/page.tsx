@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   getWorkItems, createWorkItem, updateWorkItem, deleteWorkItem,
@@ -9,11 +9,6 @@ import {
   KIND_META, PRIORITY_META, STATUS_META, KIND_ORDER, PRIORITY_ORDER, STATUS_ORDER,
   type WorkItem, type WorkKind, type WorkPriority, type WorkStatus, type WorkItemInput,
 } from '@/lib/maintenance'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type Property = { id: string; name: string; slug: string }
 
@@ -70,7 +65,7 @@ export default function MaintenancePage() {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
+    getCurrentUser().then(async user => {
       if (!user) { router.push('/login'); return }
       const [{ data: props }] = await Promise.all([
         supabase.from('properties').select('id, name, slug').eq('owner_id', user.id).order('name'),
@@ -82,7 +77,7 @@ export default function MaintenancePage() {
   }, [router, load])
 
   const reload = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getCurrentUser()
     if (user) await load(user.id)
   }
 
