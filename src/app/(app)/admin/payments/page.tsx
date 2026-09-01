@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCurrentUser } from '@/lib/supabase'
 import * as d3 from 'd3'
+import FinancialsTab from './FinancialsTab'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Stats = {
@@ -268,7 +269,7 @@ function KpiCard({ label, value, sub, color = '#fafafa' }: { label: string; valu
 }
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
-type Tab = 'overview' | 'subscriptions' | 'products'
+type Tab = 'overview' | 'financials' | 'subscriptions' | 'products'
 
 export default function AdminPaymentsPage() {
   const router = useRouter()
@@ -288,6 +289,21 @@ export default function AdminPaymentsPage() {
   }, [router])
 
   useEffect(() => { document.title = 'Payments — Admin | HomeHive' }, [])
+
+  // Tabs live in the URL so ?tab=financials can be linked and bookmarked — the
+  // money view is the one an admin returns to daily. Read on mount rather than
+  // through useSearchParams, which would force this whole page into Suspense.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab')
+    if (wanted && ['overview', 'financials', 'subscriptions', 'products'].includes(wanted))
+      setTab(wanted as Tab)
+  }, [])
+
+  const openTab = (next: Tab) => {
+    setTab(next)
+    const url = next === 'overview' ? '/admin/payments' : `/admin/payments?tab=${next}`
+    window.history.replaceState(null, '', url)
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -414,13 +430,14 @@ export default function AdminPaymentsPage() {
           <div className="pa-tabs">
             {([
               { id: 'overview',      label: '⊞ Overview'          },
+              { id: 'financials',    label: '◈ Financials'        },
               { id: 'subscriptions', label: '◎ Subscriptions'     },
               { id: 'products',      label: '▣ Products & Pricing' },
             ] as { id: Tab; label: string }[]).map(t => (
               <button
                 key={t.id}
                 className={`pa-tab${tab === t.id ? ' active' : ''}`}
-                onClick={() => setTab(t.id)}
+                onClick={() => openTab(t.id)}
               >
                 {t.label}
               </button>
@@ -429,6 +446,13 @@ export default function AdminPaymentsPage() {
         </div>
 
         <div className="pa-content">
+
+          {/* ═══════════════════════════════════════════════════════════
+              FINANCIALS TAB — what the platform itself earns. Loads its
+              own data (/api/admin/financials) only when opened, so the
+              plan tables above stay fast.
+          ═══════════════════════════════════════════════════════════ */}
+          {tab === 'financials' && <FinancialsTab />}
 
           {/* ═══════════════════════════════════════════════════════════
               OVERVIEW TAB

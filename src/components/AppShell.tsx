@@ -115,7 +115,7 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
       items: [
         { href: '/admin/properties',       label: 'Properties',       icon: '▣', primary: true, short: 'Props' },
         { href: '/admin/leads',            label: 'Leads',            icon: '◉' },
-        { href: '/admin/payments',         label: 'Payments',         icon: '💳', primary: true },
+        { href: '/admin/payments',         label: 'Payments & Revenue', icon: '💳', primary: true, short: 'Money' },
         { href: '/admin/upgrade-requests', label: 'Upgrade Requests', icon: '⬆' },
       ],
     },
