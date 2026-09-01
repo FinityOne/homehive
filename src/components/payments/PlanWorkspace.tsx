@@ -6,6 +6,7 @@ import {
   getPlanById, updateScheduledPayment, updateSpecialPayment, updateSpecialPaymentFull, addSpecialPayment,
   updateTenantScheduleAmount, updateLineItem, addLineItem, deleteLineItem, updateTenantMonthlyTotal,
   getEffectiveStatus, isOverdue, computeLateFees, computeLateFeesByDate, daysLate, daysLateByDate,
+  computeProration,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES,
   type PaymentPlan, type ScheduledPayment, type SpecialPayment, type PaymentStatus, type SpecialCategory,
@@ -1400,15 +1401,237 @@ function TenantDetailView({
   )
 }
 
+// ─── PAYER ADMINISTRATION ─────────────────────────────────────────────────────
+
+const INP: React.CSSProperties = {
+  width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 11px',
+  fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: 'none', color: '#0f172a',
+}
+
+function FieldBox({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 5 }}>
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Add a payer to the plan. Putting someone on the money is a financial act — it
+ * generates a schedule and can prorate a first month — so it lives with the
+ * ledger, while the lease only records who lives there.
+ */
+function AddPayerForm({
+  plan, onDone, onCancel,
+}: {
+  plan: PaymentPlan
+  onDone: (msg: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName]           = useState('')
+  const [email, setEmail]         = useState('')
+  const [monthly, setMonthly]     = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate]     = useState('')
+  const [schedule, setSchedule]   = useState(true)
+  const [prorate, setProrate]     = useState(true)
+  const [saving, setSaving]       = useState(false)
+  const [error, setError]         = useState('')
+
+  const preview = (() => {
+    if (!startDate || !monthly || !prorate || !schedule) return null
+    const amt = parseFloat(monthly)
+    if (isNaN(amt) || amt <= 0) return null
+    return computeProration(amt, startDate, plan.due_day)
+  })()
+
+  const blocked = !name || !monthly || saving
+
+  async function submit() {
+    if (!name || !monthly) return
+    setSaving(true); setError('')
+    const res = await fetch(`/api/payments/${plan.id}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        email: email || null,
+        monthly_total: parseFloat(monthly),
+        start_date: startDate || null,
+        end_date: endDate || null,
+        generate_schedule: schedule,
+        include_proration: prorate,
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setSaving(false)
+    if (!res.ok) { setError(json.error || 'Failed to add payer'); return }
+    onDone(
+      schedule
+        ? `${name} added with ${json.payments_created} payment${json.payments_created !== 1 ? 's' : ''} scheduled.`
+        : `${name} added.`
+    )
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 13, padding: '18px 20px', marginBottom: 14 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>Add payer</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+        <FieldBox label="Full name *">
+          <input style={INP} value={name} onChange={e => setName(e.target.value)} placeholder="Jane Doe" />
+        </FieldBox>
+        <FieldBox label="Email">
+          <input style={INP} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@email.com" />
+        </FieldBox>
+        <FieldBox label="Monthly amount *">
+          <input style={INP} type="number" min="0" step="0.01" value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="750" />
+        </FieldBox>
+        <FieldBox label="Start date">
+          <input style={INP} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </FieldBox>
+        <FieldBox label="End date">
+          <input style={INP} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </FieldBox>
+      </div>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', marginBottom: 6, cursor: 'pointer' }}>
+        <input type="checkbox" checked={schedule} onChange={e => setSchedule(e.target.checked)} />
+        Generate payment schedule
+      </label>
+      {schedule && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', marginBottom: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={prorate} onChange={e => setProrate(e.target.checked)} />
+          Prorate first month
+        </label>
+      )}
+
+      {preview && (
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#475569', marginTop: 8, lineHeight: 1.55 }}>
+          <strong>Proration preview:</strong> first payment on {fmtDate(startDate)} is{' '}
+          <strong>{fmtCurrency(preview.proratedAmount)}</strong> ({preview.proratedDays} of {preview.totalDays} days).
+          Full payments of <strong>{fmtCurrency(parseFloat(monthly))}</strong> start {fmtDate(preview.firstDueDate)}.
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#991b1b', marginTop: 10 }}>{error}</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
+        <button
+          onClick={submit}
+          disabled={blocked}
+          style={{ background: '#0f172a', color: '#34d399', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.55 : 1, fontFamily: "'DM Sans', sans-serif" }}
+        >
+          {saving ? 'Adding…' : 'Add payer'}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * End a payer's obligation mid-term. Shows exactly how many future charges get
+ * voided before the landlord commits to it.
+ */
+function TerminatePayerPanel({
+  plan, tenant, onDone, onCancel,
+}: {
+  plan: PaymentPlan
+  tenant: PaymentPlanTenant
+  onDone: (msg: string) => void
+  onCancel: () => void
+}) {
+  const [date, setDate]       = useState('')
+  const [reason, setReason]   = useState('')
+  const [preview, setPreview] = useState<number | null>(null)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState('')
+
+  async function loadPreview(afterDate: string) {
+    if (!afterDate) { setPreview(null); return }
+    const { count } = await supabase
+      .from('scheduled_payments')
+      .select('*', { count: 'exact', head: true })
+      .eq('plan_tenant_id', tenant.id)
+      .in('status', ['pending', 'late'])
+      .gt('due_date', afterDate)
+    setPreview(count ?? 0)
+  }
+
+  async function submit() {
+    if (!date) return
+    setSaving(true); setError('')
+    const res = await fetch(`/api/payments/${plan.id}/members/${tenant.id}/terminate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ termination_date: date, termination_reason: reason }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setSaving(false)
+    if (!res.ok) { setError(json.error || 'Failed to terminate'); return }
+    onDone(`${tenant.name} terminated. ${json.voided} future payment${json.voided !== 1 ? 's' : ''} voided.`)
+  }
+
+  return (
+    <div style={{ background: '#fff7f7', border: '1.5px solid #fecaca', borderRadius: 12, padding: '16px 18px', marginBottom: 14 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#991b1b', marginBottom: 12 }}>
+        Early termination — {tenant.name}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+        <FieldBox label="Termination date">
+          <input style={INP} type="date" value={date} onChange={e => { setDate(e.target.value); loadPreview(e.target.value) }} />
+        </FieldBox>
+        <FieldBox label="Reason (optional)">
+          <input style={INP} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Moved out early" />
+        </FieldBox>
+      </div>
+
+      {preview !== null && date && (
+        <div style={{ fontSize: 12.5, color: '#991b1b', marginTop: 10 }}>
+          {preview === 0
+            ? 'No future pending payments to void.'
+            : `${preview} future payment${preview !== 1 ? 's' : ''} will be voided after ${fmtDate(date)}.`}
+        </div>
+      )}
+      {error && <div style={{ fontSize: 12.5, color: '#991b1b', marginTop: 10 }}>{error}</div>}
+
+      <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
+        <button
+          onClick={submit}
+          disabled={!date || saving}
+          style={{ background: '#991b1b', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: !date || saving ? 'not-allowed' : 'pointer', opacity: !date || saving ? 0.55 : 1, fontFamily: "'DM Sans', sans-serif" }}
+        >
+          {saving ? 'Terminating…' : 'Confirm termination'}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 /**
  * The rent ledger for one payment plan: schedule, payers and special charges.
  *
- * Rendered two ways — standalone at /landlord/payments/[planId], and embedded in
- * the Payments tab of a lease. When embedded the page chrome (breadcrumb, title
- * block, full-height background) is dropped, because the lease hub already
- * supplies all of it; only the money itself is shown.
+ * Rendered inside Financials, which supplies the breadcrumb, the property title
+ * and the link back to the lease — so in embedded mode this drops its own page
+ * chrome and shows only the money.
  */
 export default function PlanWorkspace({
   planId,
@@ -1426,6 +1649,10 @@ export default function PlanWorkspace({
   const [remindMsg, setRemindMsg] = useState('')
   const [reminding, setReminding] = useState(false)
   const [remindResult, setRemindResult] = useState<{ ok: boolean; text: string } | null>(null)
+  // Payer administration — adding and ending someone's obligation on this plan.
+  const [showAddPayer, setShowAddPayer] = useState(false)
+  const [terminateTarget, setTerminateTarget] = useState<string | null>(null)
+  const [payerMsg, setPayerMsg] = useState('')
 
   const load = () => {
     setLoading(true)
@@ -1756,6 +1983,61 @@ export default function PlanWorkspace({
           )
         })()}
         {tab === 'tenants' && !selectedTenantId && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>
+                  Who pays ({plan.tenants.length})
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  What each person owes each month, and what they have paid
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowAddPayer(v => !v); setTerminateTarget(null) }}
+                style={{ background: '#0f172a', color: '#34d399', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              >
+                {showAddPayer ? 'Cancel' : '+ Add payer'}
+              </button>
+            </div>
+
+            {payerMsg && (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: '#065f46', marginBottom: 14 }}>
+                {payerMsg}
+              </div>
+            )}
+
+            {showAddPayer && (
+              <AddPayerForm
+                plan={plan}
+                onCancel={() => setShowAddPayer(false)}
+                onDone={msg => {
+                  setShowAddPayer(false)
+                  setPayerMsg(msg)
+                  setTimeout(() => setPayerMsg(''), 5000)
+                  load()
+                }}
+              />
+            )}
+
+            {terminateTarget && (() => {
+              const target = plan.tenants.find(t => t.id === terminateTarget)
+              if (!target) return null
+              return (
+                <TerminatePayerPanel
+                  plan={plan}
+                  tenant={target}
+                  onCancel={() => setTerminateTarget(null)}
+                  onDone={msg => {
+                    setTerminateTarget(null)
+                    setPayerMsg(msg)
+                    setTimeout(() => setPayerMsg(''), 6000)
+                    load()
+                  }}
+                />
+              )
+            })()}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
             {plan.tenants.map(t => {
               const tenantSPs     = sps.filter(sp => sp.plan_tenant_id === t.id)
@@ -1772,10 +2054,37 @@ export default function PlanWorkspace({
                     <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
                       {t.name[0].toUpperCase()}
                     </div>
-                    <div>
-                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{t.name}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                        {t.name}
+                        {t.status !== 'active' && (
+                          <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px' }}>
+                            {t.status === 'terminated' ? 'Terminated' : 'Completed'}
+                          </span>
+                        )}
+                      </div>
                       {t.email && <div style={{ fontSize: '12px', color: '#64748b' }}>{t.email}</div>}
+                      {(t.start_date || t.end_date || t.termination_date) && (
+                        <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: 2 }}>
+                          {t.start_date && `from ${fmtDate(t.start_date)}`}
+                          {t.end_date && ` → ${fmtDate(t.end_date)}`}
+                          {t.termination_date && ` · terminated ${fmtDate(t.termination_date)}`}
+                          {t.termination_reason && ` (${t.termination_reason})`}
+                        </div>
+                      )}
                     </div>
+                    {t.status === 'active' && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          setShowAddPayer(false)
+                          setTerminateTarget(terminateTarget === t.id ? null : t.id)
+                        }}
+                        style={{ background: '#fff', border: '1.5px solid #fecaca', color: '#991b1b', borderRadius: 7, padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}
+                      >
+                        Terminate
+                      </button>
+                    )}
                   </div>
 
                   {/* Line items */}
@@ -1858,6 +2167,7 @@ export default function PlanWorkspace({
               )
             })}
           </div>
+          </>
         )}
 
         {/* ── SPECIAL CHARGES TAB ── */}

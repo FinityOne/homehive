@@ -5,7 +5,6 @@ import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getLeasesForOwner, getLeaseStatus, formatLeaseDate } from '@/lib/leases'
 import type { Lease, LeaseStatus } from '@/lib/leases'
-import { getPlansForOwner, isOverdue, fmtCurrency } from '@/lib/payments'
 
 const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: string; border: string }> = {
   upcoming: { label: 'Upcoming', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
@@ -19,7 +18,6 @@ export default function LandlordLeasesPage() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<LeaseStatus | 'all'>('all')
   const [hasListings, setHasListings] = useState(true)
-  const [rent, setRent] = useState<Record<string, { overdue: number; overdueAmount: number }>>({})
 
   useEffect(() => { document.title = 'Leases — Landlord | HomeHive' }, [])
 
@@ -29,22 +27,9 @@ export default function LandlordLeasesPage() {
       Promise.all([
         getLeasesForOwner(user.id),
         supabase.from('properties').select('id', { count: 'exact', head: true }).eq('owner_id', user.id),
-        // Rent health per lease, so the list shows what needs chasing without
-        // opening each one.
-        getPlansForOwner(user.id),
-      ]).then(([data, { count }, plans]) => {
+      ]).then(([data, { count }]) => {
         setLeases(data)
         setHasListings((count ?? 0) > 0)
-        const map: Record<string, { overdue: number; overdueAmount: number }> = {}
-        for (const plan of plans) {
-          if (!plan.lease_id) continue
-          const od = (plan.scheduled_payments ?? []).filter(p => isOverdue(p))
-          map[plan.lease_id] = {
-            overdue: od.length,
-            overdueAmount: od.reduce((s, p) => s + (p.amount - p.paid_amount), 0),
-          }
-        }
-        setRent(map)
         setLoading(false)
       })
     })
@@ -149,7 +134,6 @@ export default function LandlordLeasesPage() {
                 <th>Start</th>
                 <th>End</th>
                 <th>Rent/mo</th>
-                <th>Rent status</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -178,18 +162,6 @@ export default function LandlordLeasesPage() {
                         ? <span className="rent-text">${lease.rent_amount.toLocaleString()}</span>
                         : <span style={{ color: '#cbd5e1' }}>—</span>
                       }
-                    </td>
-                    <td>
-                      {(() => {
-                        const r = rent[lease.id]
-                        if (!r) return <span style={{ color: '#cbd5e1', fontSize: 12 }}>No plan</span>
-                        if (r.overdue === 0) return <span className="status-badge" style={{ color: '#166534', background: '#dcfce7', borderColor: '#bbf7d0' }}>Current</span>
-                        return (
-                          <span className="status-badge" style={{ color: '#991b1b', background: '#fee2e2', borderColor: '#fecaca' }}>
-                            {fmtCurrency(r.overdueAmount)} overdue
-                          </span>
-                        )
-                      })()}
                     </td>
                     <td>
                       <span
