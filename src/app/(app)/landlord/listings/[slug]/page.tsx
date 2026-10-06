@@ -427,6 +427,30 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       <div className="lp-wrap">
 
         {/* STATUS BANNERS */}
+        {/* The gate that actually applies now. Shown above the review banner
+            because an unpaid plan is the reason a finished listing is invisible
+            in almost every case, and it is the one the landlord can fix. */}
+        {property.owner_plan_active === false && (
+          <div className="status-banner" style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderLeft: '4px solid #f59e0b', marginBottom: '18px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
+              Ready to publish — add a plan to go live
+            </div>
+            <div style={{ fontSize: '13px', color: '#78350f', lineHeight: 1.5, marginBottom: 10 }}>
+              This listing is approved and set up. HomeHive only shows it to students while
+              your plan is active, so it publishes the moment you subscribe — there is no
+              review queue to wait on.
+            </div>
+            <a
+              href="/landlord/subscribe"
+              style={{
+                display: 'inline-block', background: '#8C1D40', color: '#fff', textDecoration: 'none',
+                fontSize: 13, fontWeight: 700, padding: '9px 18px', borderRadius: 8,
+              }}
+            >
+              Publish this listing →
+            </a>
+          </div>
+        )}
         {property.admin_status === 'pending' && (
           <div className="status-banner" style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderLeft: '4px solid #f59e0b', marginBottom: '18px' }}>
             <div style={{ fontSize: '14px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>In review — we&apos;ll email you within 24 hours</div>

@@ -24,6 +24,9 @@ export async function getHomeCardsServer(opts: { marketingOnly?: boolean } = {})
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
+    // Unpaid landlords' listings stay off the public feed — see
+    // PUBLIC_STATUS_FILTER in properties.ts for why this is a column.
+    .eq('owner_plan_active', true)
     .is('archived_at', null)
     .or(PUBLIC_STATUS_FILTER)
 

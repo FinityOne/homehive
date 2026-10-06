@@ -1,11 +1,19 @@
 // Landlord-controlled listing status.
 //
-// Two independent axes govern whether a listing is public:
-//   • admin_status / is_active — HomeHive's review state (landlord can't set it)
+// Three independent axes govern whether a listing is public:
+//   • admin_status / is_active — HomeHive's moderation state (landlord can't set it)
 //   • listing_status + flags   — the landlord's own market state (this file)
+//   • owner_plan_active        — is the landlord's plan paid? (set by trigger)
 //
-// A listing is only ever public when BOTH agree. Everything here is pure so the
-// landlord UI, the public queries and the API guards share one definition.
+// A listing is only ever public when ALL THREE agree. Everything here is pure
+// so the landlord UI, the public queries and the API guards share one
+// definition.
+//
+// The plan axis is the newest and the one most likely to surprise: a listing
+// can be perfectly valid, approved and set to Live, and still be invisible
+// because the card failed. The landlord UI has to say so plainly rather than
+// leaving them to wonder why nobody is inquiring, which is what
+// describeVisibility() is for.
 
 export type ListingStatus = 'active' | 'rented' | 'inactive'
 
@@ -17,6 +25,13 @@ export type StatusFields = {
   show_when_rented: boolean
   admin_status?: string
   archived_at?: string | null
+  /**
+   * Whether the owner's plan is paid. Optional so callers that genuinely do not
+   * know (and only care about the landlord's own axis) can omit it — when it is
+   * undefined the plan is assumed fine rather than assumed broken, so a missing
+   * field never shows a landlord a paywall warning that is not real.
+   */
+  owner_plan_active?: boolean
 }
 
 export type StatusMeta = {
@@ -101,10 +116,22 @@ export function canReceiveLeads(
   return acceptsInquiries(p) || acceptsWaitlist(p)
 }
 
+/** Is the owner's plan paid? Unknown (undefined) is treated as fine, not broken. */
+export function hasActivePlan(p: Pick<StatusFields, 'owner_plan_active'>): boolean {
+  return p.owner_plan_active === undefined || p.owner_plan_active === true
+}
+
 /**
  * `is_active` is the column the public RLS policy and every legacy query keys
- * off, so it must stay derived from both axes: approved by HomeHive AND live
- * per the landlord. Recomputed on every landlord status write.
+ * off, so it must stay derived from both of the axes a *write* can know about:
+ * approved by HomeHive AND live per the landlord. Recomputed on every landlord
+ * status write.
+ *
+ * The plan axis is deliberately NOT folded in here. A plan lapses without
+ * anybody writing to the property row, so a value computed at write time would
+ * be wrong the moment it mattered most. `owner_plan_active` is maintained by
+ * trigger and filtered separately by the public queries for exactly that
+ * reason — see PUBLIC_STATUS_FILTER in properties.ts.
  */
 export function computeIsActive(
   p: Pick<StatusFields, 'listing_status' | 'show_when_rented'> & { admin_status?: string }
@@ -121,10 +148,22 @@ export type VisibilityRow = { surface: string; visible: boolean; note: string }
 export function describeVisibility(p: StatusFields): VisibilityRow[] {
   const approved = p.admin_status === undefined || p.admin_status === 'active'
   const archived = !!p.archived_at
-  const gated = !approved || archived
-  const gateNote = archived
-    ? 'Archived for inactivity — re-activate to restore'
-    : 'Pending HomeHive review'
+  const unpaid = !hasActivePlan(p)
+  const gated = !approved || archived || unpaid
+
+  // Order matters: the plan is named last but checked first in the message,
+  // because it is the only one of the three the landlord can fix in a minute,
+  // and telling them "under review" when the real problem is an expired card
+  // sends them to wait for us instead of to their billing page.
+  const gateNote = unpaid
+    ? 'Add a plan to publish — your listing is ready'
+    : archived
+      ? 'Archived for inactivity — re-activate to restore'
+      : approved
+        ? ''
+        : p.admin_status === 'rejected'
+          ? 'Not approved — contact us to resolve'
+          : 'Under HomeHive review'
 
   const publicPage = isPublicStatus(p)
   const inSearch = p.listing_status === 'active' || (p.listing_status === 'rented' && p.show_when_rented)

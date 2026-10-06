@@ -1,6 +1,8 @@
-import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { loadPlanState } from '@/lib/landlordPlanServer'
+import { sendUpgradeApprovedEmail } from '@/lib/landlordAccessEmails'
+import { getPlatformStats } from '@/lib/platformStats'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,48 +51,25 @@ export async function POST(
   }
 
   // Send email to the user
-  const siteUrl = getSiteUrl()
   const firstName = (request.full_name || '').trim().split(' ')[0] || 'there'
 
   try {
     if (action === 'approve') {
-      await resend.emails.send({
-        from: 'HomeHive <hello@homehive.live>',
+      // Tell them the price here rather than letting them find the paywall
+      // after logging in. Being handed the key and then meeting a locked door
+      // is a worse first impression than simply being told what it costs, and
+      // this email is the one moment they are definitely reading.
+      const [planState, stats] = await Promise.all([
+        loadPlanState(supabaseAdmin, request.user_id),
+        getPlatformStats(supabaseAdmin),
+      ])
+
+      await sendUpgradeApprovedEmail({
         to: request.email,
-        subject: `You're approved as a landlord on HomeHive! 🎉`,
-        html: `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1.0" /></head>
-<body style="margin:0;padding:0;background:#f8f9fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-<div style="max-width:540px;margin:0 auto;padding:32px 16px;">
-
-  <div style="background:#1a1a1a;border-radius:14px 14px 0 0;padding:20px 28px;">
-    <div style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-0.3px;">Home<span style="color:#FFC627;font-style:italic;">Hive</span></div>
-  </div>
-
-  <div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:16px 28px;">
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#166534;margin-bottom:4px;">🎉 Landlord Access Approved</div>
-    <div style="font-size:16px;font-weight:700;color:#1a1a1a;">Welcome to the landlord side!</div>
-  </div>
-
-  <div style="background:#fff;border:1px solid #e8e4db;border-top:none;border-radius:0 0 14px 14px;padding:28px;">
-    <p style="font-size:16px;font-weight:700;color:#1a1a1a;margin:0 0 12px;">Hey ${firstName}, you're in! 🎉</p>
-    <p style="font-size:14px;color:#4a4a4a;line-height:1.7;margin:0 0 20px;">
-      Your request for landlord access has been approved. You can now create and manage listings, receive qualified leads from students, and track everything from your landlord dashboard.
-    </p>
-    <div style="background:#faf9f6;border:1px solid #e8e4db;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-      <div style="font-size:12px;font-weight:700;color:#9b9b9b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">What you can do now</div>
-      ${['Create and list your property for free', 'Receive pre-screened tenant inquiries', 'Manage leads and tours from your dashboard', 'Access your landlord portal anytime'].map(s => `<div style="display:flex;align-items:flex-start;gap:10px;font-size:13px;color:#3a3a3a;margin-bottom:8px;"><div style="width:18px;height:18px;border-radius:50%;background:#16a34a;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">✓</div>${s}</div>`).join('')}
-    </div>
-    <div style="text-align:center;margin-bottom:20px;">
-      <a href="${siteUrl}/landlord/dashboard" style="display:inline-block;background:linear-gradient(135deg,#0f766e,#10b981);color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 32px;border-radius:9px;">Go to Landlord Dashboard →</a>
-    </div>
-    ${note?.trim() ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#166534;line-height:1.5;"><strong>Note from our team:</strong> ${note.trim()}</div>` : ''}
-    <p style="margin:0;font-size:13px;color:#9b9b9b;">Questions? <a href="mailto:hello@homehive.live" style="color:#8C1D40;">hello@homehive.live</a></p>
-  </div>
-</div>
-</body>
-</html>`,
+        firstName,
+        note,
+        hasPlan: planState.hasAccess,
+        stats,
       })
     } else {
       await resend.emails.send({

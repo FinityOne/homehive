@@ -38,6 +38,13 @@ export type Property = {
   sublease_end_date: string | null
   is_test: boolean
   admin_status: 'pending' | 'active' | 'inactive' | 'test' | 'flagged' | 'rejected'
+  /**
+   * Derived in the database: does the owner have a plan we are being paid for?
+   * Gates every public query. Never written from application code — a trigger
+   * on `landlord_plans` owns it, so a lapsing plan hides listings without any
+   * property row being touched.
+   */
+  owner_plan_active: boolean
   review_note: string | null
   security_deposit: number | null
   claim_token: string | null
@@ -305,6 +312,14 @@ export async function getTotalPropertyCount(): Promise<number> {
 // PostgREST filter for the landlord's status axis: Live listings, plus Rented
 // ones the landlord chose to keep up for waitlist interest. Inactive listings
 // never match. Kept as a string so every public query applies the same rule.
+//
+// Every public query also carries `.eq('owner_plan_active', true)`, which is
+// the third axis: a listing is only shown to students while its landlord has a
+// plan we are being paid for. It is a trigger-maintained column rather than a
+// join because `properties` has no foreign key to `landlord_plans` — both
+// reference `auth.users` — so PostgREST has nothing to embed. Forgetting it on
+// a new public query silently publishes unpaid listings, so it belongs next to
+// this constant in anyone's mental model of "what makes a listing public".
 export const PUBLIC_STATUS_FILTER =
   'listing_status.eq.active,and(listing_status.eq.rented,show_when_rented.is.true)'
 
@@ -318,6 +333,7 @@ export async function getProperties(opts: { marketingOnly?: boolean } = {}): Pro
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
+    .eq('owner_plan_active', true)
     .is('archived_at', null)
     .or(PUBLIC_STATUS_FILTER)
 
@@ -346,6 +362,7 @@ export async function getPropertiesBySlugs(slugs: string[]): Promise<Property[]>
     .eq('is_active', true)
     .eq('admin_status', 'active')
     .eq('is_test', false)
+    .eq('owner_plan_active', true)
     .is('archived_at', null)
     .or(PUBLIC_STATUS_FILTER)
 
@@ -614,6 +631,7 @@ export async function getPropertyBySlug(slug: string): Promise<Property | null> 
     .eq('slug', slug)
     .eq('is_active', true)
     .eq('is_test', false)
+    .eq('owner_plan_active', true)
     .or(PUBLIC_STATUS_FILTER)
     .single()
 
