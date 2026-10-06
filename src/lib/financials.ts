@@ -101,6 +101,8 @@ export type Txn = {
   items: string[]
   payer: string | null
   payerEmail: string | null
+  /** The `payment_plans` row — the lease — this settled. Null for plans/unlocks. */
+  planId: string | null
   propertyId: string | null
   propertyName: string | null
   landlordId: string | null
@@ -225,6 +227,7 @@ export function buildFinancials(input: FinancialsInput) {
       items: g.rows.map(r => r.label),
       payer: payer?.name ?? null,
       payerEmail: payer?.email ?? null,
+      planId: g.planId,
       propertyId: property?.id ?? null,
       propertyName: property?.name ?? plan?.name ?? null,
       landlordId: plan?.owner_id ?? null,
@@ -254,7 +257,7 @@ export function buildFinancials(input: FinancialsInput) {
         id: `sub:${s.id}`, kind: 'lifetime', source: 'lifetime',
         date: start, month: monthKey(start), status: 'paid', method: 'card', onPlatform: true, ...e,
         items: ['Lifetime deal'], payer: landlordName(s.landlord_id), payerEmail: profileById.get(s.landlord_id)?.email ?? null,
-        propertyId: null, propertyName: null,
+        planId: null, propertyId: null, propertyName: null,
         landlordId: s.landlord_id, landlordName: landlordName(s.landlord_id), intentId: null,
       })
       continue
@@ -277,7 +280,7 @@ export function buildFinancials(input: FinancialsInput) {
         date: iso, month: m, status: 'paid', method: 'card', onPlatform: true, ...e,
         items: [PLAN_LINE_ITEM[s.plan_type] ?? `${s.plan_type} — monthly`],
         payer: landlordName(s.landlord_id), payerEmail: profileById.get(s.landlord_id)?.email ?? null,
-        propertyId: null, propertyName: null,
+        planId: null, propertyId: null, propertyName: null,
         landlordId: s.landlord_id, landlordName: landlordName(s.landlord_id), intentId: null,
       })
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate(), 12)
@@ -294,7 +297,7 @@ export function buildFinancials(input: FinancialsInput) {
       date, month: monthKey(date), status: 'paid', method: 'card', onPlatform: true, ...e,
       items: ['Lead unlock'], payer: landlordName(u.landlord_id),
       payerEmail: profileById.get(u.landlord_id)?.email ?? null,
-      propertyId: null, propertyName: null,
+      planId: null, propertyId: null, propertyName: null,
       landlordId: u.landlord_id, landlordName: landlordName(u.landlord_id),
       intentId: u.stripe_payment_intent_id ?? null,
     })
@@ -427,5 +430,12 @@ export function buildFinancials(input: FinancialsInput) {
     topProperties: groupBy('propertyId', 'propertyName'),
     transactions: txns.slice(0, 500),
     alerts,
+    /**
+     * Every grouped payment, uncapped — the input the per-landlord books are
+     * built from. The route drops this before serialising: `transactions` is
+     * the capped list the ledger renders, and shipping both would double the
+     * payload for no reader.
+     */
+    allTransactions: txns,
   }
 }
