@@ -1,41 +1,51 @@
 'use client'
 
-import { use, useCallback, useEffect, useRef, useState } from 'react'
+import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { getCurrentUser, supabase } from '@/lib/supabase'
+import { getPlansForOwner, fmtCurrency, fmtDate, type PaymentPlan } from '@/lib/payments'
 import {
-  getPlansForOwner, fmtCurrency, fmtDate, isOverdue, SPECIAL_CATEGORIES,
-  type PaymentPlan, type ScheduledPayment, type SpecialPayment,
-} from '@/lib/payments'
+  buildPortfolio, actionQueue, monthlyTrend, SCOPES, STAGE_LABEL, METHOD_META,
+  type Scope, type LeaseSummary, type PropertyGroup, type ActionItem, type MethodSlice,
+  type SettledPayment,
+} from '@/lib/financialsRollup'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
 
 /**
  * Financials — the one place money lives.
  *
- * Rent and one-off charges used to be split between here (a rollup) and the
- * Payments tab of each lease (the actual work), which meant two answers to
- * "what is owed" and no single page to reconcile a month. Now this page is both:
- * the portfolio view, and — at ?plan= — the full ledger for one lease, opened in
- * place. The lease itself stays a click away for the tenancy side of the story:
- * people, paperwork, move-out.
+ * The old page answered one question (this month's rent) as a flat list of
+ * payment plans. That list is why the page was confusing: a landlord with three
+ * leases against one building saw three unrelated rows, no sense of which
+ * address they belonged to, and no figure for a lease as a whole — only the
+ * current month. "How is this property doing" had no answer on the page at all.
  *
- * The rollup is organised around one question at a time. Six equal-weight KPIs
- * stacked above two long lists asked the landlord to decide what mattered before
- * they could read anything; now a single figure answers "how exposed am I right
- * now", and everything else sits behind a segmented control. Nothing was
- * removed — it is the same data, disclosed in the order it gets used.
+ * So the page is now a ledger you read at whatever altitude you need:
+ *
+ *   portfolio total → property subtotal → one lease → one payer → one charge
+ *
+ * Every level is the same columns (billed, collected, outstanding) summed over
+ * the same window, so a figure means the same thing wherever you read it, and
+ * the levels visibly add up. The window itself is a control — this month is the
+ * default, but "lease to date" and "full term" are the questions a manager
+ * actually asks when deciding whether a tenancy is working out.
+ *
+ * Everything expands in place. Opening a property does not navigate; opening a
+ * lease row does not navigate; only "Open ledger" does, because that is where
+ * money gets edited and it deserves the whole screen.
  */
 
-const MONTHS_BACK = 6
-
-type View = 'overview' | 'leases' | 'charges' | 'activity'
+type View = 'portfolio' | 'attention' | 'received' | 'charges' | 'activity'
 const VIEWS: { id: View; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'leases',   label: 'Leases' },
-  { id: 'charges',  label: 'Charges' },
-  { id: 'activity', label: 'Activity' },
+  { id: 'portfolio', label: 'Portfolio' },
+  { id: 'attention', label: 'Needs attention' },
+  { id: 'received',  label: 'Payments received' },
+  { id: 'charges',   label: 'Deposits & charges' },
+  { id: 'activity',  label: 'Requests sent' },
 ]
+
+const TREND_MONTHS = 12
 
 /** One payment request, as the portfolio log returns it. */
 type SentEmail = {
@@ -52,43 +62,48 @@ type SentEmail = {
   items: { label: string; due_date: string; amount: number; kind: 'rent' | 'charge' }[]
 }
 
-function monthKey(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function monthLabel(key: string) {
-  const [y, m] = key.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short' })
-}
-
-const catLabel = (c: string) =>
-  SPECIAL_CATEGORIES.find(s => s.value === c)?.label ?? 'Charge'
-
 /** "2 hours ago" / "Aug 12" — recent things get relative time, older get a date. */
 export function whenLabel(iso: string): string {
   const then = new Date(iso)
   const mins = Math.floor((Date.now() - then.getTime()) / 60000)
-  if (mins < 1)    return 'Just now'
-  if (mins < 60)   return `${mins}m ago`
-  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`
+  if (mins < 1)     return 'Just now'
+  if (mins < 60)    return `${mins}m ago`
+  if (mins < 1440)  return `${Math.floor(mins / 60)}h ago`
   if (mins < 10080) return `${Math.floor(mins / 1440)}d ago`
   return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+/** Aug 2026 – Jul 2027 — a term reads as months; the days are noise at this level. */
+function termLabel(start: string | null, end: string | null): string | null {
+  if (!start || !end) return null
+  const f = (d: string) =>
+    new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  return `${f(start)} – ${f(end)}`
 }
 
 export default function FinancialsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string; view?: string }>
+  searchParams: Promise<{ plan?: string; view?: string; scope?: string }>
 }) {
-  const { plan: planParam, view: viewParam } = use(searchParams)
+  const { plan: planParam, view: viewParam, scope: scopeParam } = use(searchParams)
 
   const [plans, setPlans] = useState<PaymentPlan[]>([])
   const [loading, setLoading] = useState(true)
   // Which lease's ledger is open. null = the portfolio rollup.
   const [openPlanId, setOpenPlanId] = useState<string | null>(planParam ?? null)
   const [view, setView] = useState<View>(
-    VIEWS.some(v => v.id === viewParam) ? (viewParam as View) : 'overview'
+    VIEWS.some(v => v.id === viewParam) ? (viewParam as View) : 'portfolio'
   )
+  const [scope, setScope] = useState<Scope>(
+    SCOPES.some(s => s.id === scopeParam) ? (scopeParam as Scope) : 'month'
+  )
+
+  // Which property sections and lease rows are expanded. Properties start open
+  // when there are few of them — with one or two buildings, a collapsed page is
+  // just an extra click before any information at all.
+  const [openProps, setOpenProps] = useState<Set<string> | null>(null)
+  const [openLeases, setOpenLeases] = useState<Set<string>>(new Set())
 
   const [emails, setEmails] = useState<SentEmail[] | null>(null)
   // A ref, not state: this only guards against a second fetch, and flipping
@@ -97,7 +112,7 @@ export default function FinancialsPage({
 
   useEffect(() => { document.title = 'Financials — Landlord | HomeHive' }, [])
 
-  // The portfolio log is only fetched once the landlord asks for it — it is the
+  // The request log is only fetched once the landlord asks for it — it is the
   // one section here that costs a round trip nobody else needs.
   const loadEmails = useCallback(async () => {
     if (emailsRequested.current) return
@@ -118,25 +133,72 @@ export default function FinancialsPage({
     getCurrentUser().then(user => {
       if (!user) return
       getPlansForOwner(user.id).then(data => { setPlans(data); setLoading(false) })
-      // Deep-linked straight to ?view=activity — nothing will click for us.
+      // Deep-linked straight to the log — nothing will click for us.
       if (viewParam === 'activity') loadEmails()
     })
   }, [viewParam, loadEmails])
 
-  // Keep the open ledger in the URL so it can be linked, refreshed and shared —
-  // and pushed, so Back returns to the rollup rather than leaving the page.
+  // ── Everything the page renders, derived in one place ────────────────────
+  const portfolio = useMemo(() => buildPortfolio(plans, scope), [plans, scope])
+  const queue     = useMemo(() => actionQueue(plans), [plans])
+  const trend     = useMemo(() => monthlyTrend(plans, TREND_MONTHS), [plans])
+
+  // Which properties are open before the landlord has touched anything. Derived
+  // rather than seeded into state by an effect: `openProps` stays null until the
+  // first real interaction, so "nobody has chosen yet" and "everything is shut"
+  // remain distinguishable, and no cascading render is needed to express it.
+  const defaultOpenProps = useMemo(() => new Set(
+    portfolio.groups.length <= 3
+      ? portfolio.groups.map(g => g.propertyId)
+      // Many buildings: open only the ones with money outstanding, so the page
+      // opens on the work rather than on everything at once.
+      : portfolio.groups.filter(g => g.total.outstanding > 0).map(g => g.propertyId)
+  ), [portfolio.groups])
+
+  const effectiveOpenProps = openProps ?? defaultOpenProps
+  const propOpen = (id: string) => effectiveOpenProps.has(id)
+  const toggleProp = (id: string) => setOpenProps(prev => {
+    const next = new Set(prev ?? defaultOpenProps)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const toggleLease = (id: string) => setOpenLeases(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  /** The URL carries the ledger, the section and the window, so any view of the
+   *  numbers can be linked, refreshed or sent to a bookkeeper as-is. */
+  const urlFor = (opts: { plan?: string | null; view?: View; scope?: Scope }) => {
+    const planId = opts.plan !== undefined ? opts.plan : openPlanId
+    if (planId) return `/landlord/financials?plan=${planId}`
+    const q = new URLSearchParams()
+    const v = opts.view ?? view
+    const s = opts.scope ?? scope
+    if (v !== 'portfolio') q.set('view', v)
+    if (s !== 'month') q.set('scope', s)
+    const qs = q.toString()
+    return qs ? `/landlord/financials?${qs}` : '/landlord/financials'
+  }
+
+  // Pushed, so Back returns to the rollup rather than leaving the page.
   const openPlan = (id: string | null) => {
     setOpenPlanId(id)
-    window.history.pushState(null, '', id ? `/landlord/financials?plan=${id}` : '/landlord/financials')
+    window.history.pushState(null, '', urlFor({ plan: id }))
     window.scrollTo({ top: 0 })
   }
 
-  // The section is a replace, not a push: flicking between tabs should not fill
+  // Sections and windows are replaces: flicking between them should not fill
   // the back stack with places the landlord never meant to go.
   const selectView = (v: View) => {
     setView(v)
     if (v === 'activity') loadEmails()
-    window.history.replaceState(null, '', v === 'overview' ? '/landlord/financials' : `/landlord/financials?view=${v}`)
+    window.history.replaceState(null, '', urlFor({ plan: null, view: v }))
+  }
+  const selectScope = (s: Scope) => {
+    setScope(s)
+    window.history.replaceState(null, '', urlFor({ plan: null, scope: s }))
   }
 
   useEffect(() => {
@@ -144,77 +206,26 @@ export default function FinancialsPage({
       const q = new URLSearchParams(window.location.search)
       setOpenPlanId(q.get('plan'))
       const v = q.get('view')
-      setView(VIEWS.some(x => x.id === v) ? (v as View) : 'overview')
+      setView(VIEWS.some(x => x.id === v) ? (v as View) : 'portfolio')
+      const s = q.get('scope')
+      setScope(SCOPES.some(x => x.id === s) ? (s as Scope) : 'month')
       if (v === 'activity') loadEmails()
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [loadEmails])
 
-  const today = new Date()
-  const thisKey = monthKey(today)
-  const allSPs: ScheduledPayment[] = plans.flatMap(p => p.scheduled_payments ?? [])
-  const allSpecials: { plan: PaymentPlan; sp: SpecialPayment }[] = plans.flatMap(
-    p => (p.special_payments ?? []).map(sp => ({ plan: p, sp }))
-  )
-
-  const inMonth = (sp: ScheduledPayment, key: string) => sp.due_date.slice(0, 7) === key
-  const thisMonth   = allSPs.filter(sp => inMonth(sp, thisKey))
-  const expected    = thisMonth.reduce((s, p) => s + p.amount, 0)
-  const collected   = thisMonth.reduce((s, p) => s + p.paid_amount, 0)
-  const outstanding = Math.max(0, expected - collected)
-  const overdueSPs  = allSPs.filter(p => isOverdue(p))
-  const overdueAmt  = overdueSPs.reduce((s, p) => s + (p.amount - p.paid_amount), 0)
-  const rate        = expected > 0 ? Math.round((collected / expected) * 100) : null
-
-  // One-off money: deposits, penalties and special charges, across every lease.
-  const openSpecials = allSpecials
-    .filter(x => x.sp.status === 'pending')
-    .sort((a, b) => a.sp.due_date.localeCompare(b.sp.due_date))
-  const openSpecialsAmt = openSpecials.reduce((s, x) => s + x.sp.amount, 0)
-  const depositsHeld = allSpecials
-    .filter(x => x.sp.category === 'security_deposit' && x.sp.status === 'paid')
-    .reduce((s, x) => s + x.sp.amount, 0)
-
-  // Six-month collection history — the trend that tells you if things are slipping.
-  const history = Array.from({ length: MONTHS_BACK }, (_, i) => {
-    const d = new Date(today.getFullYear(), today.getMonth() - (MONTHS_BACK - 1 - i), 1)
-    const key = monthKey(d)
-    const rows = allSPs.filter(sp => inMonth(sp, key))
-    return {
-      key,
-      label: monthLabel(key),
-      expected: rows.reduce((s, p) => s + p.amount, 0),
-      collected: rows.reduce((s, p) => s + p.paid_amount, 0),
-    }
-  })
-  const peak = Math.max(1, ...history.map(h => h.expected))
-
-  // One row per lease, worst first — the landlord's follow-up list.
-  const rows = plans.map(plan => {
-    const sps = plan.scheduled_payments ?? []
-    const month = sps.filter(sp => inMonth(sp, thisKey))
-    const od = sps.filter(p => isOverdue(p))
-    const active = plan.tenants.filter(t => t.status === 'active')
-    return {
-      plan,
-      monthExpected: month.reduce((s, p) => s + p.amount, 0),
-      monthCollected: month.reduce((s, p) => s + p.paid_amount, 0),
-      overdueCount: od.length,
-      overdueAmount: od.reduce((s, p) => s + (p.amount - p.paid_amount), 0),
-      payers: active.length,
-      monthlyTotal: active.reduce((s, t) => s + t.monthly_total, 0),
-      openCharges: (plan.special_payments ?? []).filter(s => s.status === 'pending').length,
-    }
-  }).sort((a, b) => b.overdueAmount - a.overdueAmount || b.monthExpected - a.monthExpected)
+  /** Jump to a lease's ledger from anywhere — the action queue, a charge, a row. */
+  const openLeaseLedger = (planId: string) => openPlan(planId)
 
   // ── Ledger for one lease, opened in place ────────────────────────────────
   if (openPlanId) {
     const current = plans.find(p => p.id === openPlanId)
+    const summary = portfolio.leases.find(l => l.planId === openPlanId)
     return (
       <>
         <style>{CSS}</style>
-        <div className="fin-wrap">
+        <div className="fin-wrap wide">
           <button className="back" onClick={() => openPlan(null)}>
             <span className="back-chev" aria-hidden="true" />
             Financials
@@ -233,6 +244,10 @@ export default function FinancialsPage({
             )}
           </header>
 
+          {/* The lease's whole financial life, above the month-by-month work.
+              Without it the ledger could only answer "what about this month". */}
+          {summary && <LeaseVitals lease={summary} />}
+
           {current?.lease_id && (
             <p className="led-note">
               Rent, deposits and one-off charges live here. The{' '}
@@ -248,16 +263,18 @@ export default function FinancialsPage({
   }
 
   // ── Portfolio rollup ─────────────────────────────────────────────────────
-  const heroTone = overdueAmt > 0 ? 'bad' : outstanding > 0 ? 'warn' : 'good'
+  const t = portfolio.total
+  const scopeMeta = SCOPES.find(s => s.id === scope)!
+  const overdueQueue = queue.filter(q => q.severity === 'overdue')
 
   return (
     <>
       <style>{CSS}</style>
-      <div className="fin-wrap">
+      <div className="fin-wrap wide">
         <header className="fin-head">
           <div>
             <h1 className="title">Financials</h1>
-            <p className="sub">Rent, deposits and one-off charges across every lease.</p>
+            <p className="sub">Every payment, grouped by property and lease agreement.</p>
           </div>
           <a href="/landlord/financials/new" className="btn-primary">New plan</a>
         </header>
@@ -275,42 +292,103 @@ export default function FinancialsPage({
           </div>
         ) : (
           <>
-            {/* The one figure worth leading with: what is still owed right now. */}
-            <section className="hero">
-              <div className="hero-label">
-                {outstanding > 0 ? 'Outstanding this month' : 'Collected this month'}
+            {/* The window every figure below is measured over. */}
+            <div className="scope-bar">
+              <div className="seg" role="tablist" aria-label="Reporting period">
+                {SCOPES.map(s => (
+                  <button
+                    key={s.id}
+                    role="tab"
+                    aria-selected={scope === s.id}
+                    title={s.hint}
+                    className={`seg-btn${scope === s.id ? ' on' : ''}`}
+                    onClick={() => selectScope(s.id)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
-              <div className={`hero-value ${heroTone}`}>
-                {fmtCurrency(outstanding > 0 ? outstanding : collected)}
-              </div>
-              <div className="hero-meta">
-                {expected > 0 ? (
-                  <>
-                    {fmtCurrency(collected)} of {fmtCurrency(expected)} collected
-                    {rate !== null && <> · {rate}%</>}
-                  </>
-                ) : 'Nothing scheduled this month'}
-              </div>
-              {expected > 0 && (
-                <div className="hero-bar">
-                  <div
-                    className="hero-bar-fill"
-                    style={{ width: `${Math.min(100, rate ?? 0)}%` }}
-                    data-tone={heroTone}
-                  />
-                </div>
-              )}
-              {overdueAmt > 0 && (
-                <button className="hero-alert" onClick={() => selectView('leases')}>
-                  {fmtCurrency(overdueAmt)} overdue across {overdueSPs.length} payment
-                  {overdueSPs.length !== 1 ? 's' : ''}
-                  <span className="hero-alert-chev" aria-hidden="true" />
-                </button>
-              )}
+              <span className="scope-hint">{scopeMeta.hint}</span>
+            </div>
+
+            {/* Summary — the four figures that add up, each a way into the detail. */}
+            <section className="summary" aria-label="Portfolio summary">
+              <SummaryCard
+                label="Billed"
+                value={fmtCurrency(t.billed)}
+                meta={`${t.count} charge${t.count !== 1 ? 's' : ''} across ${portfolio.leaseCount} lease${portfolio.leaseCount !== 1 ? 's' : ''}`}
+                onClick={() => selectView('portfolio')}
+              />
+              <SummaryCard
+                label="Collected"
+                value={fmtCurrency(t.collected)}
+                meta={
+                  // Collecting the money late is still a problem, and `overdue`
+                  // forgets it the instant a tenant pays. Say it here or the
+                  // page congratulates itself on rent that arrived three weeks
+                  // after it was owed.
+                  t.collectedLate > 0
+                    ? `${fmtCurrency(t.collectedLate)} of it arrived late`
+                    : t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'
+                }
+                tone="good"
+                bar={t.rate}
+                onClick={() => selectView('received')}
+              />
+              <SummaryCard
+                label="Outstanding"
+                value={fmtCurrency(t.outstanding)}
+                meta={
+                  t.outstanding === 0 ? 'All settled'
+                  // An ACH debit already sent is outstanding but not owed —
+                  // saying so is the difference between chasing a tenant who
+                  // has paid and one who hasn't.
+                  : t.inFlight > 0 ? `incl. ${fmtCurrency(t.inFlight)} clearing by bank transfer`
+                  : `${t.count - t.settledCount} charge${t.count - t.settledCount !== 1 ? 's' : ''} unsettled`
+                }
+                tone={t.outstanding > 0 ? 'warn' : 'good'}
+                onClick={() => selectView(t.outstanding > 0 ? 'attention' : 'portfolio')}
+              />
+              <SummaryCard
+                label="Overdue"
+                value={t.overdue > 0 ? fmtCurrency(t.overdue) : 'None'}
+                meta={t.overdue > 0
+                  ? `${t.overdueCount} payment${t.overdueCount !== 1 ? 's' : ''} past due`
+                  : 'Nothing past its due date'}
+                tone={t.overdue > 0 ? 'bad' : 'good'}
+                onClick={() => selectView('attention')}
+              />
             </section>
 
-            {/* Segmented control — one question on screen at a time. */}
-            <div className="seg" role="tablist" aria-label="Financials sections">
+            {/* Standing figures that do not move with the window. */}
+            <div className="facts">
+              <Fact label="Contracted rent" value={`${fmtCurrency(portfolio.monthly)}/mo`} />
+              <Fact label="Deposits held" value={fmtCurrency(portfolio.depositsHeld)} />
+              <Fact
+                label="Clearing now"
+                value={t.inFlight > 0 ? fmtCurrency(t.inFlight) : 'None'}
+                meta={t.inFlightCount > 0
+                  ? `${t.inFlightCount} bank transfer${t.inFlightCount !== 1 ? 's' : ''} in flight`
+                  : 'no transfers pending'}
+              />
+              <Fact
+                label="Active leases"
+                value={`${portfolio.activeLeaseCount} of ${portfolio.leaseCount}`}
+                meta={`${portfolio.propertyCount} propert${portfolio.propertyCount !== 1 ? 'ies' : 'y'}`}
+              />
+            </div>
+
+            {/* How the money actually arrived. Card and bank transfer cost the
+                tenant different surcharges and settle on different timescales,
+                so the split is a fact about the portfolio, not a detail. */}
+            {portfolio.methods.length > 0 && (
+              <section className="methods-bar">
+                <span className="methods-label">How it was paid</span>
+                <MethodChips slices={portfolio.methods} />
+              </section>
+            )}
+
+            <div className="seg full" role="tablist" aria-label="Financials sections">
               {VIEWS.map(v => (
                 <button
                   key={v.id}
@@ -320,151 +398,45 @@ export default function FinancialsPage({
                   onClick={() => selectView(v.id)}
                 >
                   {v.label}
+                  {v.id === 'attention' && queue.length > 0 && (
+                    <span className={`seg-badge${overdueQueue.length > 0 ? ' bad' : ''}`}>{queue.length}</span>
+                  )}
                 </button>
               ))}
             </div>
 
-            {view === 'overview' && (
+            {view === 'portfolio' && (
               <>
-                <div className="stat-row">
-                  <Stat label="Overdue" value={overdueSPs.length > 0 ? fmtCurrency(overdueAmt) : 'None'} tone={overdueSPs.length > 0 ? 'bad' : 'good'} />
-                  <Stat label="One-off charges" value={openSpecials.length > 0 ? fmtCurrency(openSpecialsAmt) : 'None'} tone={openSpecials.length > 0 ? 'warn' : 'good'} />
-                  <Stat label="Deposits held" value={fmtCurrency(depositsHeld)} />
-                </div>
-
-                <section className="panel">
-                  <div className="panel-hd">
-                    <h2 className="panel-title">Collected vs expected</h2>
-                    <span className="panel-note">Last {MONTHS_BACK} months</span>
-                  </div>
-                  <div className="panel-bd">
-                    <div className="chart">
-                      {history.map(h => {
-                        const pct = h.expected > 0 ? Math.round((h.collected / h.expected) * 100) : null
-                        return (
-                          <div key={h.key} className="col">
-                            <div className="col-stack" title={`${fmtCurrency(h.collected)} of ${fmtCurrency(h.expected)}`}>
-                              <div className="col-exp" style={{ height: `${(h.expected / peak) * 100}%` }}>
-                                <div className="col-col" style={{ height: `${h.expected > 0 ? (h.collected / h.expected) * 100 : 0}%` }} />
-                              </div>
-                            </div>
-                            <div className="col-pct">{pct === null ? '—' : `${pct}%`}</div>
-                            <div className="col-label">{h.label}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </section>
+                {portfolio.groups.map(g => (
+                  <PropertyBlock
+                    key={g.propertyId}
+                    group={g}
+                    scope={scope}
+                    open={propOpen(g.propertyId)}
+                    onToggle={() => toggleProp(g.propertyId)}
+                    openLeases={openLeases}
+                    onToggleLease={toggleLease}
+                    onOpenLedger={openLeaseLedger}
+                  />
+                ))}
+                <TrendPanel points={trend} />
               </>
             )}
 
-            {view === 'leases' && (
-              <section className="panel">
-                <div className="panel-hd">
-                  <h2 className="panel-title">By lease</h2>
-                  <span className="panel-note">{rows.length} · sorted by what needs chasing</span>
-                </div>
-                <div className="panel-bd flush">
-                  {rows.map(r => {
-                    const pct = r.monthExpected > 0 ? (r.monthCollected / r.monthExpected) * 100 : 0
-                    return (
-                      <div
-                        key={r.plan.id}
-                        className="row"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openPlan(r.plan.id)}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlan(r.plan.id) } }}
-                      >
-                        <div className="row-main">
-                          <div className="row-name">
-                            {r.plan.property?.name ?? r.plan.name}
-                            {r.overdueCount > 0 && <span className="pill bad">{r.overdueCount} overdue</span>}
-                            {r.overdueCount === 0 && r.monthExpected > 0 && r.monthCollected >= r.monthExpected && (
-                              <span className="pill good">Paid up</span>
-                            )}
-                            {r.openCharges > 0 && <span className="pill warn">{r.openCharges} one-off</span>}
-                          </div>
-                          <div className="row-sub">
-                            {r.plan.name} · {r.payers} payer{r.payers !== 1 ? 's' : ''} · {fmtCurrency(r.monthlyTotal)}/mo
-                            {r.plan.lease_id && (
-                              <>
-                                {' · '}
-                                <a href={`/landlord/leases/${r.plan.lease_id}`} className="lnk" onClick={e => e.stopPropagation()}>lease</a>
-                              </>
-                            )}
-                          </div>
-                          {r.monthExpected > 0 && (
-                            <div className="mini-bar">
-                              <div className="mini-fill" data-tone={r.overdueCount > 0 ? 'bad' : 'good'} style={{ width: `${Math.min(100, pct)}%` }} />
-                            </div>
-                          )}
-                        </div>
-                        <div className="row-fig">
-                          <div className="row-amt">
-                            {r.monthExpected > 0 ? `${fmtCurrency(r.monthCollected)} / ${fmtCurrency(r.monthExpected)}` : '—'}
-                          </div>
-                          <div className="row-amt-lbl">
-                            {r.overdueAmount > 0 ? `${fmtCurrency(r.overdueAmount)} overdue` : 'this month'}
-                          </div>
-                        </div>
-                        <span className="row-chev" aria-hidden="true" />
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
+            {view === 'attention' && (
+              <AttentionList items={queue} onOpen={openLeaseLedger} />
+            )}
+
+            {view === 'received' && (
+              <ReceivedPayments
+                groups={portfolio.groups}
+                total={t}
+                onOpen={openLeaseLedger}
+              />
             )}
 
             {view === 'charges' && (
-              <section className="panel">
-                <div className="panel-hd">
-                  <h2 className="panel-title">Deposits &amp; one-off charges</h2>
-                  <span className="panel-note">
-                    {openSpecials.length > 0 ? `${fmtCurrency(openSpecialsAmt)} outstanding` : 'Nothing outstanding'}
-                  </span>
-                </div>
-                <div className={`panel-bd${openSpecials.length ? ' flush' : ''}`}>
-                  {openSpecials.length === 0 ? (
-                    <p className="muted">
-                      Every deposit and one-off charge on file has been settled. New ones are added
-                      inside a lease&apos;s ledger, under Charges.
-                    </p>
-                  ) : openSpecials.slice(0, 12).map(({ plan, sp }) => {
-                    const late = sp.due_date < new Date().toISOString().slice(0, 10)
-                    return (
-                      <div
-                        key={sp.id}
-                        className="row"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openPlan(plan.id)}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlan(plan.id) } }}
-                      >
-                        <div className="row-main">
-                          <div className="row-name">
-                            {sp.label}
-                            <span className="pill plain">{catLabel(sp.category)}</span>
-                            {late && <span className="pill bad">past due</span>}
-                          </div>
-                          <div className="row-sub">
-                            {plan.property?.name ?? plan.name} · due {fmtDate(sp.due_date)}
-                          </div>
-                        </div>
-                        <div className="row-fig">
-                          <div className="row-amt">{fmtCurrency(sp.amount)}</div>
-                          <div className="row-amt-lbl">outstanding</div>
-                        </div>
-                        <span className="row-chev" aria-hidden="true" />
-                      </div>
-                    )
-                  })}
-                  {openSpecials.length > 12 && (
-                    <div className="row-more">+ {openSpecials.length - 12} more inside their leases</div>
-                  )}
-                </div>
-              </section>
+              <ChargesByProperty groups={portfolio.groups} onOpen={openLeaseLedger} />
             )}
 
             {view === 'activity' && (
@@ -484,7 +456,14 @@ export default function FinancialsPage({
                       ledger records it here, so you can see who was asked, for what, and when.
                     </p>
                   ) : emails.map(e => (
-                    <div key={e.id} className="row static">
+                    <div
+                      key={e.id}
+                      className="row"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openLeaseLedger(e.plan_id)}
+                      onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openLeaseLedger(e.plan_id) } }}
+                    >
                       <div className="row-main">
                         <div className="row-name">
                           {e.recipient_name || e.recipient_email}
@@ -503,6 +482,7 @@ export default function FinancialsPage({
                         <div className="row-amt">{fmtCurrency(e.amount_total)}</div>
                         <div className="row-amt-lbl">{whenLabel(e.created_at)}</div>
                       </div>
+                      <span className="row-chev" aria-hidden="true" />
                     </div>
                   ))}
                 </div>
@@ -515,13 +495,743 @@ export default function FinancialsPage({
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn' }) {
+// ─── PROPERTY → LEASE TABLE ──────────────────────────────────────────────────
+
+/**
+ * One building, with its leases as rows of a table that shares the property's
+ * own column grid — so the subtotal sits directly above the figures it sums and
+ * the arithmetic is visible rather than asserted.
+ */
+function PropertyBlock({
+  group, scope, open, onToggle, openLeases, onToggleLease, onOpenLedger,
+}: {
+  group: PropertyGroup
+  scope: Scope
+  open: boolean
+  onToggle: () => void
+  openLeases: Set<string>
+  onToggleLease: (id: string) => void
+  onOpenLedger: (planId: string) => void
+}) {
+  const t = group.total
+  const tone = t.overdue > 0 ? 'bad' : t.outstanding > 0 ? 'warn' : 'good'
+
   return (
-    <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div className={`stat-val${tone ? ` ${tone}` : ''}`}>{value}</div>
+    <section className="panel prop">
+      <button className="prop-hd" onClick={onToggle} aria-expanded={open}>
+        <span className={`disc${open ? ' open' : ''}`} aria-hidden="true" />
+        <span className="prop-id">
+          <span className="prop-name">{group.propertyName}</span>
+          <span className="prop-sub">
+            {group.leases.length} lease{group.leases.length !== 1 ? 's' : ''}
+            {group.activeLeases > 0 && ` · ${group.activeLeases} active`}
+            {group.monthly > 0 && ` · ${fmtCurrency(group.monthly)}/mo`}
+            {group.depositsHeld > 0 && ` · ${fmtCurrency(group.depositsHeld)} deposits held`}
+          </span>
+        </span>
+        <span className="prop-figs">
+          <Fig label="billed" value={fmtCurrency(t.billed)} />
+          <Fig label="collected" value={fmtCurrency(t.collected)} tone="good" />
+          <Fig
+            label={t.overdue > 0 ? 'overdue' : 'outstanding'}
+            value={fmtCurrency(t.overdue > 0 ? t.overdue : t.outstanding)}
+            tone={tone === 'good' ? undefined : tone}
+          />
+        </span>
+      </button>
+
+      {/* Always visible, open or shut: the one bar that says how this building
+          is doing, so a collapsed property is still readable at a glance. */}
+      <div className="prop-bar">
+        <div className="prop-bar-fill" data-tone={tone} style={{ width: `${Math.min(100, t.rate ?? 0)}%` }} />
+      </div>
+
+      {open && (
+        <div className="tbl">
+          <div className="tbl-hd" role="row">
+            <span>Lease agreement</span>
+            <span className="num">Payers</span>
+            <span className="num">Monthly</span>
+            <span className="num">Billed</span>
+            <span className="num">Collected</span>
+            <span className="num">Outstanding</span>
+            <span aria-hidden="true" />
+          </div>
+
+          {group.leases.map(l => (
+            <LeaseRow
+              key={l.planId}
+              lease={l}
+              scope={scope}
+              open={openLeases.has(l.planId)}
+              onToggle={() => onToggleLease(l.planId)}
+              onOpenLedger={() => onOpenLedger(l.planId)}
+            />
+          ))}
+
+          {group.leases.length > 1 && (
+            <div className="tbl-foot" role="row">
+              <span className="foot-label">{group.propertyName} total</span>
+              <span className="num dim">
+                {group.leases.reduce((s, l) => s + l.activePayers, 0)}
+              </span>
+              <span className="num">{fmtCurrency(group.monthly)}</span>
+              <span className="num">{fmtCurrency(t.billed)}</span>
+              <span className="num good">{fmtCurrency(t.collected)}</span>
+              <span className={`num${t.outstanding > 0 ? (t.overdue > 0 ? ' bad' : ' warn') : ''}`}>
+                {fmtCurrency(t.outstanding)}
+              </span>
+              <span aria-hidden="true" />
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * One lease agreement. Collapsed it is a row of figures; expanded it breaks
+ * into the people who owe them, which is the level a landlord acts at on a
+ * shared student lease where six payers sit behind one rent number.
+ */
+function LeaseRow({
+  lease, scope, open, onToggle, onOpenLedger,
+}: {
+  lease: LeaseSummary
+  scope: Scope
+  open: boolean
+  onToggle: () => void
+  onOpenLedger: () => void
+}) {
+  const t = lease.total
+  const term = termLabel(lease.termStart, lease.termEnd)
+  const ended = lease.stage === 'ended'
+
+  return (
+    <>
+      <div
+        className={`tbl-row${open ? ' open' : ''}${ended ? ' faded' : ''}`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+      >
+        <span className="cell-lease">
+          <span className="lease-name">
+            <span className={`disc sm${open ? ' open' : ''}`} aria-hidden="true" />
+            {lease.name}
+            <StagePill stage={lease.stage} />
+            {t.overdueCount > 0 && <span className="pill bad">{t.overdueCount} overdue</span>}
+            {t.inFlightCount > 0 && (
+              <span className="pill info">{fmtCurrency(t.inFlight)} clearing</span>
+            )}
+            {lease.openCharges.length > 0 && (
+              <span className="pill warn">{lease.openCharges.length} open charge{lease.openCharges.length !== 1 ? 's' : ''}</span>
+            )}
+          </span>
+          <span className="lease-sub">
+            {term ?? 'No term on file'}
+            {lease.termProgress !== null && !ended && ` · ${lease.termProgress}% through term`}
+            {lease.nextDue && ` · next ${fmtCurrency(lease.nextDue.amount)} on ${fmtDate(lease.nextDue.date)}`}
+          </span>
+        </span>
+        <span className="num dim">{lease.activePayers || '—'}</span>
+        <span className="num">{lease.monthly > 0 ? fmtCurrency(lease.monthly) : '—'}</span>
+        <span className="num">{t.billed > 0 ? fmtCurrency(t.billed) : '—'}</span>
+        <span className="num good">{t.collected > 0 ? fmtCurrency(t.collected) : '—'}</span>
+        <span className={`num${t.outstanding > 0 ? (t.overdue > 0 ? ' bad' : t.inFlight >= t.outstanding ? ' info' : ' warn') : ' dim'}`}>
+          {t.outstanding > 0 ? fmtCurrency(t.outstanding) : 'Settled'}
+        </span>
+        <span className="row-chev" aria-hidden="true" />
+      </div>
+
+      {open && (
+        <div className="drill">
+          {/* Where this lease stands over its whole life, not just the window. */}
+          <div className="drill-vitals">
+            <DrillFact label="Contract value" value={fmtCurrency(lease.contractValue)} meta="rent over the full term" />
+            <DrillFact label="Paid to date" value={fmtCurrency(lease.contractCollected)} meta={
+              lease.contractValue > 0
+                ? `${Math.round((lease.contractCollected / lease.contractValue) * 100)}% of the lease`
+                : '—'
+            } tone="good" />
+            <DrillFact label="Deposits held" value={fmtCurrency(lease.depositsHeld)} meta={lease.depositsHeld > 0 ? 'returnable at move-out' : 'none on file'} />
+            <DrillFact label="Last payment" value={lease.lastPaid ? fmtCurrency(lease.lastPaid.amount) : '—'} meta={lease.lastPaid ? fmtDate(lease.lastPaid.date) : 'nothing received yet'} />
+          </div>
+
+          {/* Who owes what, inside this one agreement. */}
+          <div className="drill-sec">
+            <div className="drill-hd">
+              Payers
+              <span className="drill-hd-note">{SCOPES.find(s => s.id === scope)!.label.toLowerCase()}</span>
+            </div>
+            {lease.payers.length === 0 ? (
+              <p className="muted sm">No payers on this plan.</p>
+            ) : (
+              <div className="payers">
+                {lease.payers.map(p => (
+                  <div key={p.id} className={`payer${p.status !== 'active' ? ' faded' : ''}`}>
+                    <span className="payer-who">
+                      <span className="avatar">{(p.name || '?')[0].toUpperCase()}</span>
+                      <span className="payer-id">
+                        <span className="payer-name">
+                          {p.name}
+                          {p.status !== 'active' && <span className="pill plain">{p.status}</span>}
+                        </span>
+                        {p.email && <span className="payer-mail">{p.email}</span>}
+                      </span>
+                    </span>
+                    <span className="num dim">{fmtCurrency(p.monthly)}/mo</span>
+                    <span className="num">{fmtCurrency(p.rent.billed)}</span>
+                    <span className="num good">{fmtCurrency(p.rent.collected)}</span>
+                    <span className={`num${p.rent.outstanding > 0 ? (p.rent.overdue > 0 ? ' bad' : ' warn') : ' dim'}`}>
+                      {p.rent.outstanding > 0 ? fmtCurrency(p.rent.outstanding) : 'Settled'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {lease.methods.length > 0 && (
+            <div className="drill-sec">
+              <div className="drill-hd">
+                How it was paid
+                {lease.total.inFlight > 0 && (
+                  <span className="drill-hd-note">
+                    {fmtCurrency(lease.total.inFlight)} still clearing
+                  </span>
+                )}
+              </div>
+              <MethodChips slices={lease.methods} />
+            </div>
+          )}
+
+          {lease.openCharges.length > 0 && (
+            <div className="drill-sec">
+              <div className="drill-hd">
+                Open deposits &amp; charges
+                <span className="drill-hd-note">
+                  {fmtCurrency(lease.openCharges.reduce((s, c) => s + c.amount, 0))} outstanding
+                </span>
+              </div>
+              <div className="chips">
+                {lease.openCharges.map(c => (
+                  <span key={c.id} className={`chip${c.overdue ? ' bad' : ''}`}>
+                    <strong>{fmtCurrency(c.amount)}</strong> {c.label}
+                    <span className="chip-meta">
+                      {c.categoryLabel}{c.who ? ` · ${c.who}` : ''} · due {fmtDate(c.dueDate)}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="drill-actions">
+            <button className="btn-primary sm" onClick={onOpenLedger}>
+              Open ledger &amp; adjust payments
+            </button>
+            {lease.leaseId && (
+              <a href={`/landlord/leases/${lease.leaseId}`} className="btn-quiet">View lease agreement</a>
+            )}
+            {lease.lateFeesDue > 0 && (
+              <span className="drill-note">{fmtCurrency(lease.lateFeesDue)} in late fees accrued</span>
+            )}
+            {lease.lateFeeRisk && (
+              <span className="drill-warn" title={lease.lateFeeRisk}>⚠ uncapped late-fee rule</span>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─── OTHER SECTIONS ──────────────────────────────────────────────────────────
+
+/** The lease's whole financial life, shown above its month-by-month ledger. */
+function LeaseVitals({ lease }: { lease: LeaseSummary }) {
+  const pct = lease.contractValue > 0
+    ? Math.round((lease.contractCollected / lease.contractValue) * 100)
+    : 0
+  return (
+    <section className="vitals">
+      <div className="vitals-row">
+        <DrillFact label="Contract value" value={fmtCurrency(lease.contractValue)} meta="rent over the full term" />
+        <DrillFact label="Paid to date" value={fmtCurrency(lease.contractCollected)} meta={`${pct}% of the lease`} tone="good" />
+        <DrillFact
+          label="Still to collect"
+          value={fmtCurrency(Math.max(0, lease.contractValue - lease.contractCollected))}
+          meta={lease.nextDue ? `next ${fmtCurrency(lease.nextDue.amount)} on ${fmtDate(lease.nextDue.date)}` : 'nothing scheduled'}
+        />
+        <DrillFact
+          label="Overdue"
+          value={lease.total.overdue > 0 ? fmtCurrency(lease.total.overdue) : 'None'}
+          meta={lease.total.overdueCount > 0 ? `${lease.total.overdueCount} payment${lease.total.overdueCount !== 1 ? 's' : ''}` : 'nothing past due'}
+          tone={lease.total.overdue > 0 ? 'bad' : 'good'}
+        />
+        <DrillFact label="Deposits held" value={fmtCurrency(lease.depositsHeld)} meta={lease.depositsHeld > 0 ? 'returnable at move-out' : 'none on file'} />
+      </div>
+      <div className="vitals-bar" title={`${pct}% of the contract collected`}>
+        <div className="vitals-fill" style={{ width: `${Math.min(100, pct)}%` }} />
+        {lease.termProgress !== null && (
+          <div className="vitals-mark" style={{ left: `${lease.termProgress}%` }} title={`${lease.termProgress}% through the term`} />
+        )}
+      </div>
+      <div className="vitals-key">
+        <span>{pct}% of contracted rent collected</span>
+        {lease.termProgress !== null && <span>marker = {lease.termProgress}% through the term</span>}
+      </div>
+    </section>
+  )
+}
+
+/** Everything owed right now, worst first, each one click from being settled. */
+function AttentionList({ items, onOpen }: { items: ActionItem[]; onOpen: (planId: string) => void }) {
+  const total = items.reduce((s, i) => s + i.amount, 0)
+  return (
+    <section className="panel">
+      <div className="panel-hd">
+        <h2 className="panel-title">Needs attention</h2>
+        <span className="panel-note">
+          {items.length === 0 ? 'Nothing owed right now' : `${fmtCurrency(total)} across ${items.length} charge${items.length !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+      <div className={`panel-bd${items.length ? ' flush' : ''}`}>
+        {items.length === 0 ? (
+          <p className="muted">
+            Every charge that has come due has been settled. Rent that is not due yet appears in the
+            portfolio, not here.
+          </p>
+        ) : items.map(i => (
+          <div
+            key={`${i.kind}-${i.id}`}
+            className="row"
+            role="button"
+            tabIndex={0}
+            onClick={() => onOpen(i.planId)}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(i.planId) } }}
+          >
+            <div className="row-main">
+              <div className="row-name">
+                {i.title}
+                {i.who && <span className="who">{i.who}</span>}
+                {i.severity === 'overdue'
+                  ? <span className="pill bad">{i.daysLate}d late</span>
+                  : <span className="pill warn">due today</span>}
+                {i.kind === 'charge' && <span className="pill plain">one-off</span>}
+              </div>
+              <div className="row-sub">
+                {i.propertyName} · {i.leaseName} · due {fmtDate(i.dueDate)}
+              </div>
+            </div>
+            <div className="row-fig">
+              <div className="row-amt">{fmtCurrency(i.amount)}</div>
+              <div className="row-amt-lbl">outstanding</div>
+            </div>
+            <span className="row-chev" aria-hidden="true" />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** Settlement time, to the minute when we have it and honestly vague when not.
+ *
+ *  `paid_date` is a DATE column, so most historical rows genuinely have no time
+ *  of day. Printing "12:00 AM" for those would be inventing precision, so a row
+ *  without a recorded instant simply shows its date and says so on hover. */
+function settledLabel(p: SettledPayment): { date: string; time: string | null } {
+  const date = new Date(p.paidDate + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  })
+  if (!p.settledAt) return { date, time: null }
+  const d = new Date(p.settledAt)
+  return {
+    date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }),
+  }
+}
+
+/**
+ * Every payment that actually arrived — the half of the ledger the page never
+ * showed.
+ *
+ * Two questions it exists to answer. "Did they pay late?" survives payment here,
+ * because days-late is computed from due date to paid date and does not vanish
+ * when the row settles. And "what did I actually get?" is spelled out per row:
+ * charged to the tenant, the surcharge they paid on top, and the net credited to
+ * the landlord — which is the full rent, because the surcharge is never taken
+ * out of it. That last point is stated rather than implied: a column called
+ * "fee" next to a column called "net" invites exactly the wrong subtraction.
+ */
+function ReceivedPayments({
+  groups, total, onOpen,
+}: {
+  groups: PropertyGroup[]
+  total: { collected: number; collectedLate: number; collectedLateCount: number; maxDaysLate: number; tenantFees: number }
+  onOpen: (planId: string) => void
+}) {
+  const [lateOnly, setLateOnly] = useState(false)
+
+  const rows = groups
+    .flatMap(g => g.leases.flatMap(l =>
+      (lateOnly ? l.settledLate : l.settled).map(p => ({ p, lease: l, group: g }))
+    ))
+    .sort((a, b) => b.p.paidDate.localeCompare(a.p.paidDate))
+
+  const shown = rows.slice(0, 60)
+  const net = rows.reduce((s, r) => s + r.p.net, 0)
+  const fees = rows.reduce((s, r) => s + r.p.tenantFee, 0)
+
+  return (
+    <>
+      <section className="netband">
+        <div className="netband-row">
+          <DrillFact label="Credited to you" value={fmtCurrency(net)} meta="rent and charges received" tone="good" />
+          <DrillFact
+            label="Tenant processing fees"
+            value={fmtCurrency(fees)}
+            meta="paid by tenants on top — not deducted"
+          />
+          <DrillFact
+            label="Arrived late"
+            value={total.collectedLate > 0 ? fmtCurrency(total.collectedLate) : 'None'}
+            meta={total.collectedLateCount > 0
+              ? `${total.collectedLateCount} payment${total.collectedLateCount !== 1 ? 's' : ''} · worst ${total.maxDaysLate}d`
+              : 'everything arrived on time'}
+            tone={total.collectedLate > 0 ? 'bad' : undefined}
+          />
+        </div>
+        <p className="netband-note">
+          You receive the <strong>full</strong> rent. The card or bank surcharge is charged to the
+          tenant on top of it and goes to the payment processor, so nothing above is taken out of
+          what you are owed.
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-hd">
+          <h2 className="panel-title">Payments received</h2>
+          <div className="recv-tools">
+            <button
+              className={`chipbtn${lateOnly ? ' on' : ''}`}
+              onClick={() => setLateOnly(v => !v)}
+            >
+              Late only
+            </button>
+            <span className="panel-note">{rows.length} payment{rows.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div className={`panel-bd${rows.length ? ' flush' : ''}`}>
+          {rows.length === 0 ? (
+            <p className="muted">
+              {lateOnly
+                ? 'Every payment in this window arrived on or before its due date.'
+                : 'No payments have been received in this window yet.'}
+            </p>
+          ) : (
+            <div className="rtbl">
+              <div className="rtbl-hd" role="row">
+                <span>Payment</span>
+                <span>Settled</span>
+                <span className="num">Charged</span>
+                <span className="num">Tenant fee</span>
+                <span className="num">Credited to you</span>
+                <span aria-hidden="true" />
+              </div>
+              {shown.map(({ p, lease, group }) => {
+                const when = settledLabel(p)
+                return (
+                  <div
+                    key={`${p.kind}-${p.id}`}
+                    className="rtbl-row"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onOpen(lease.planId)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(lease.planId) } }}
+                  >
+                    <span className="cell-lease">
+                      <span className="lease-name">
+                        {p.label}
+                        {p.daysLate > 0
+                          ? <span className="pill bad">{p.daysLate}d late</span>
+                          : <span className="pill good">on time</span>}
+                        {p.kind === 'charge' && <span className="pill plain">one-off</span>}
+                        {p.method && (
+                          <span
+                            className="pill"
+                            style={{ background: METHOD_META[p.method].bg, color: METHOD_META[p.method].color }}
+                          >{METHOD_META[p.method].short}</span>
+                        )}
+                      </span>
+                      <span className="lease-sub">
+                        {p.who ? `${p.who} · ` : ''}{group.propertyName} · {lease.name} · due {fmtDate(p.dueDate)}
+                      </span>
+                    </span>
+                    <span className="cell-when">
+                      <span className="when-date">{when.date}</span>
+                      <span className="when-time">
+                        {when.time ?? <em title="Recorded by hand — only the date is known">date only</em>}
+                      </span>
+                    </span>
+                    <span className="num">{fmtCurrency(p.chargedToTenant)}</span>
+                    <span className="num dim">
+                      {p.tenantFee > 0 ? fmtCurrency(p.tenantFee) : '—'}
+                    </span>
+                    <span className="num good strong">{fmtCurrency(p.net)}</span>
+                    <span className="row-chev" aria-hidden="true" />
+                  </div>
+                )
+              })}
+              {rows.length > shown.length && (
+                <div className="row-more">
+                  + {rows.length - shown.length} more — open a lease ledger for its full history
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    </>
+  )
+}
+
+/** Deposits and one-off money, kept under the property they belong to. */
+function ChargesByProperty({ groups, onOpen }: { groups: PropertyGroup[]; onOpen: (planId: string) => void }) {
+  const withCharges = groups
+    .map(g => ({ g, leases: g.leases.filter(l => l.openCharges.length > 0) }))
+    .filter(x => x.leases.length > 0)
+
+  const held = groups.reduce((s, g) => s + g.depositsHeld, 0)
+
+  return (
+    <>
+      <section className="panel">
+        <div className="panel-hd">
+          <h2 className="panel-title">Deposits held</h2>
+          <span className="panel-note">{fmtCurrency(held)} across the portfolio</span>
+        </div>
+        <div className="panel-bd flush">
+          {groups.filter(g => g.depositsHeld > 0).length === 0 ? (
+            <p className="muted" style={{ padding: '4px 22px 18px' }}>
+              No security deposits recorded as received yet.
+            </p>
+          ) : groups.filter(g => g.depositsHeld > 0).map(g => (
+            <div key={g.propertyId} className="row static">
+              <div className="row-main">
+                <div className="row-name">{g.propertyName}</div>
+                <div className="row-sub">
+                  {g.leases.filter(l => l.depositsHeld > 0).map(l => l.name).join(' · ')}
+                </div>
+              </div>
+              <div className="row-fig">
+                <div className="row-amt">{fmtCurrency(g.depositsHeld)}</div>
+                <div className="row-amt-lbl">returnable</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-hd">
+          <h2 className="panel-title">Open deposits &amp; one-off charges</h2>
+          <span className="panel-note">
+            {withCharges.length === 0
+              ? 'Nothing outstanding'
+              : fmtCurrency(withCharges.flatMap(x => x.leases).flatMap(l => l.openCharges).reduce((s, c) => s + c.amount, 0)) + ' outstanding'}
+          </span>
+        </div>
+        <div className={`panel-bd${withCharges.length ? ' flush' : ''}`}>
+          {withCharges.length === 0 ? (
+            <p className="muted">
+              Every deposit and one-off charge on file has been settled or waived. New ones are added
+              inside a lease&apos;s ledger, under Charges.
+            </p>
+          ) : withCharges.map(({ g, leases }) => (
+            <div key={g.propertyId} className="chg-group">
+              <div className="chg-group-hd">{g.propertyName}</div>
+              {leases.map(l => l.openCharges.map(c => (
+                <div
+                  key={c.id}
+                  className="row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpen(l.planId)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(l.planId) } }}
+                >
+                  <div className="row-main">
+                    <div className="row-name">
+                      {c.label}
+                      <span className="pill plain">{c.categoryLabel}</span>
+                      {c.overdue && <span className="pill bad">past due</span>}
+                    </div>
+                    <div className="row-sub">
+                      {l.name}{c.who ? ` · ${c.who}` : ''} · due {fmtDate(c.dueDate)}
+                    </div>
+                  </div>
+                  <div className="row-fig">
+                    <div className="row-amt">{fmtCurrency(c.amount)}</div>
+                    <div className="row-amt-lbl">outstanding</div>
+                  </div>
+                  <span className="row-chev" aria-hidden="true" />
+                </div>
+              )))}
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  )
+}
+
+/** Collected against billed, month by month — is this slipping or holding? */
+function TrendPanel({ points }: { points: { key: string; label: string; year: number; billed: number; collected: number; rate: number | null }[] }) {
+  const peak = Math.max(1, ...points.map(p => p.billed))
+  const live = points.filter(p => p.billed > 0)
+  const avg = live.length > 0
+    ? Math.round(live.reduce((s, p) => s + (p.rate ?? 0), 0) / live.length)
+    : null
+
+  return (
+    <section className="panel">
+      <div className="panel-hd">
+        <h2 className="panel-title">Collected vs billed</h2>
+        <span className="panel-note">
+          Last {points.length} months{avg !== null && ` · ${avg}% average`}
+        </span>
+      </div>
+      <div className="panel-bd">
+        <div className="chart">
+          {points.map(p => (
+            <div key={p.key} className="col">
+              <div
+                className="col-stack"
+                title={`${p.label} ${p.year}: ${fmtCurrency(p.collected)} of ${fmtCurrency(p.billed)}`}
+              >
+                <div className="col-exp" style={{ height: `${(p.billed / peak) * 100}%` }}>
+                  <div
+                    className="col-col"
+                    data-tone={p.rate !== null && p.rate < 90 ? 'low' : 'ok'}
+                    style={{ height: `${p.billed > 0 ? Math.min(100, (p.collected / p.billed) * 100) : 0}%` }}
+                  />
+                </div>
+              </div>
+              <div className="col-pct">{p.rate === null ? '—' : `${p.rate}%`}</div>
+              <div className="col-label">{p.label}</div>
+            </div>
+          ))}
+        </div>
+        <p className="chart-key">
+          The bar is what was billed that month; the filled part is what arrived. A month is counted
+          by when rent was <em>due</em>, so late money lands in the month it was owed.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+// ─── SMALL PIECES ────────────────────────────────────────────────────────────
+
+function SummaryCard({
+  label, value, meta, tone, bar, onClick,
+}: {
+  label: string
+  value: string
+  meta: string
+  tone?: 'good' | 'bad' | 'warn'
+  bar?: number | null
+  onClick: () => void
+}) {
+  return (
+    <button className="sum-card" onClick={onClick}>
+      <span className="sum-label">{label}</span>
+      <span className={`sum-value${tone ? ` ${tone}` : ''}`}>{value}</span>
+      <span className="sum-meta">{meta}</span>
+      {bar != null && (
+        <span className="sum-bar"><span className="sum-bar-fill" style={{ width: `${Math.min(100, bar)}%` }} /></span>
+      )}
+    </button>
+  )
+}
+
+/**
+ * How money arrived, one chip per method.
+ *
+ * Card and bank transfer are not interchangeable: the tenant pays a different
+ * surcharge for each, and only ACH has a days-long gap between "paid" and
+ * "landed". A chip therefore carries both the amount and, when some of it is
+ * still clearing, how much — so "ACH $2,400" and "ACH $2,400, $800 clearing"
+ * can never be read as the same thing.
+ */
+function MethodChips({ slices }: { slices: MethodSlice[] }) {
+  return (
+    <div className="mchips">
+      {slices.map(s => {
+        const meta = METHOD_META[s.method]
+        return (
+          <span
+            key={s.method}
+            className="mchip"
+            style={{ background: meta.bg, color: meta.color }}
+            title={`${s.count} payment${s.count !== 1 ? 's' : ''} by ${meta.label}`}
+          >
+            <span className="mchip-dot" style={{ background: meta.color }} aria-hidden="true" />
+            <span className="mchip-label">{meta.short}</span>
+            <strong className="mchip-amt">{fmtCurrency(s.amount)}</strong>
+            {s.clearing > 0 && (
+              <span className="mchip-clearing">{fmtCurrency(s.clearing)} clearing</span>
+            )}
+          </span>
+        )
+      })}
     </div>
   )
+}
+
+function Fact({ label, value, meta }: { label: string; value: string; meta?: string }) {
+  return (
+    <div className="fact">
+      <div className="fact-label">{label}</div>
+      <div className="fact-value">{value}</div>
+      {meta && <div className="fact-meta">{meta}</div>}
+    </div>
+  )
+}
+
+function Fig({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn' }) {
+  return (
+    <span className="fig">
+      <span className={`fig-val${tone ? ` ${tone}` : ''}`}>{value}</span>
+      <span className="fig-lbl">{label}</span>
+    </span>
+  )
+}
+
+function DrillFact({
+  label, value, meta, tone,
+}: { label: string; value: string; meta: string; tone?: 'good' | 'bad' }) {
+  return (
+    <div className="dfact">
+      <div className="dfact-label">{label}</div>
+      <div className={`dfact-value${tone ? ` ${tone}` : ''}`}>{value}</div>
+      <div className="dfact-meta">{meta}</div>
+    </div>
+  )
+}
+
+function StagePill({ stage }: { stage: LeaseSummary['stage'] }) {
+  const cls =
+    stage === 'ending' ? 'warn'
+    : stage === 'ended' ? 'plain'
+    : stage === 'upcoming' ? 'info'
+    : 'good'
+  return <span className={`pill ${cls}`}>{STAGE_LABEL[stage]}</span>
 }
 
 const CSS = `
@@ -529,12 +1239,14 @@ const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   /* A restrained palette and a lot of air: one accent, hairline separators,
-     and figures set in tabular numerals so columns of money line up. */
+     and every figure set in tabular numerals so columns of money line up
+     digit-for-digit down the page — the whole point of a grouped table. */
   .fin-wrap {
     --ink:      #1d1d1f;
     --ink-2:    #6e6e73;
     --ink-3:    #8e8e93;
     --line:     #e5e5ea;
+    --line-2:   #f0f0f2;
     --surface:  #ffffff;
     --accent:   #0071e3;
     --good:     #1d8a4e;
@@ -545,11 +1257,13 @@ const CSS = `
     color: var(--ink);
     -webkit-font-smoothing: antialiased;
   }
+  /* The grouped tables need the room; the ledger beneath them does too. */
+  .fin-wrap.wide { max-width: 1120px; }
 
   .title { font-size: 30px; font-weight: 600; letter-spacing: -0.022em; line-height: 1.15; }
   .sub   { font-size: 14px; color: var(--ink-2); margin-top: 5px; letter-spacing: -0.01em; }
 
-  .fin-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 26px; }
+  .fin-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 
   .btn-primary {
     background: var(--accent); color: #fff; border: none; border-radius: 980px;
@@ -558,6 +1272,7 @@ const CSS = `
     letter-spacing: -0.01em; transition: opacity 0.15s;
   }
   .btn-primary:hover { opacity: 0.85; }
+  .btn-primary.sm { padding: 7px 15px; font-size: 13px; }
   .btn-quiet {
     background: none; border: none; color: var(--accent); font-size: 14px;
     text-decoration: none; white-space: nowrap; letter-spacing: -0.01em; cursor: pointer;
@@ -577,104 +1292,299 @@ const CSS = `
   }
   .back:hover { text-decoration: underline; }
 
-  .led-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  .led-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
   .led-head-main { min-width: 0; }
-  .led-note {
-    font-size: 13px; color: var(--ink-2); line-height: 1.6; margin-bottom: 18px;
-    letter-spacing: -0.01em;
-  }
+  .led-note { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin: 18px 0; letter-spacing: -0.01em; }
 
-  /* ── Hero: the single number ── */
-  .hero {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
-    padding: 30px 28px 26px; margin-bottom: 22px;
-  }
-  .hero-label {
-    font-size: 13px; font-weight: 500; color: var(--ink-2);
-    letter-spacing: -0.01em; margin-bottom: 8px;
-  }
-  .hero-value {
-    font-size: 52px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.02;
-    font-variant-numeric: tabular-nums; color: var(--ink);
-  }
-  .hero-value.good { color: var(--good); }
-  .hero-value.warn { color: var(--ink); }
-  .hero-value.bad  { color: var(--bad); }
-  .hero-meta {
-    font-size: 14px; color: var(--ink-2); margin-top: 10px;
-    letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
-  }
-  .hero-bar { height: 4px; background: #f0f0f2; border-radius: 99px; overflow: hidden; margin-top: 18px; }
-  .hero-bar-fill { height: 100%; border-radius: 99px; background: var(--good); transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
-  .hero-bar-fill[data-tone="bad"]  { background: var(--bad); }
-  .hero-bar-fill[data-tone="warn"] { background: #e8a33d; }
+  /* ── Reporting window ── */
+  .scope-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .scope-hint { font-size: 12.5px; color: var(--ink-3); letter-spacing: -0.01em; }
 
-  .hero-alert {
-    display: flex; align-items: center; gap: 6px; margin-top: 18px;
-    background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
-    font-size: 13.5px; font-weight: 500; color: var(--bad); letter-spacing: -0.01em;
-  }
-  .hero-alert-chev {
-    width: 6px; height: 6px; border-top: 1.7px solid currentColor; border-right: 1.7px solid currentColor;
-    transform: rotate(45deg); display: inline-block;
-  }
-  .hero-alert:hover { text-decoration: underline; }
-
-  /* ── Segmented control ── */
   .seg {
-    display: inline-flex; background: #f0f0f2; border-radius: 10px; padding: 2px;
-    margin-bottom: 22px; gap: 2px; max-width: 100%; overflow-x: auto;
+    display: inline-flex; background: var(--line-2); border-radius: 10px; padding: 2px;
+    gap: 2px; max-width: 100%; overflow-x: auto;
   }
+  .seg.full { display: flex; margin-bottom: 20px; }
   .seg-btn {
     border: none; background: none; font-family: inherit; cursor: pointer;
     padding: 7px 16px; border-radius: 8px; font-size: 13.5px; font-weight: 500;
     color: var(--ink-2); letter-spacing: -0.01em; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 7px;
     transition: background 0.18s, color 0.18s, box-shadow 0.18s;
   }
+  .seg.full .seg-btn { flex: 1; justify-content: center; }
   .seg-btn:hover { color: var(--ink); }
   .seg-btn.on {
     background: var(--surface); color: var(--ink);
     box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
   }
+  .seg-badge {
+    background: #d8d8dc; color: #4a4a4f; font-size: 11px; font-weight: 600;
+    border-radius: 980px; padding: 1px 7px; font-variant-numeric: tabular-nums;
+  }
+  .seg-badge.bad { background: #fdeceb; color: var(--bad); }
 
-  /* ── Secondary stats ── */
-  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
-  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
-  .stat-label { font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.01em; margin-bottom: 6px; }
-  .stat-val { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .stat-val.good { color: var(--good); }
-  .stat-val.bad  { color: var(--bad); }
-  .stat-val.warn { color: var(--warn); }
+  /* ── Summary: the figures that add up ── */
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  .sum-card {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px 20px 16px; text-align: left; font-family: inherit; cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  }
+  .sum-card:hover { border-color: #d6d6db; box-shadow: 0 2px 10px rgba(0,0,0,0.045); }
+  .sum-card:active { transform: scale(0.995); }
+  .sum-label { font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.01em; }
+  .sum-value {
+    font-size: 27px; font-weight: 600; letter-spacing: -0.025em; margin-top: 5px;
+    font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .sum-value.good { color: var(--good); }
+  .sum-value.bad  { color: var(--bad); }
+  .sum-value.warn { color: var(--warn); }
+  .sum-meta { font-size: 12px; color: var(--ink-3); margin-top: 6px; letter-spacing: -0.01em; }
+  .sum-bar { display: block; width: 100%; height: 3px; background: var(--line-2); border-radius: 99px; margin-top: 12px; overflow: hidden; }
+  .sum-bar-fill { display: block; height: 100%; background: var(--good); border-radius: 99px; transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
+
+  /* ── Standing facts ── */
+  .facts {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 4px; margin-bottom: 22px;
+  }
+  .fact { padding: 12px 16px; border-left: 1px solid var(--line-2); }
+  .fact:first-child { border-left: none; }
+  .fact-label { font-size: 11.5px; color: var(--ink-3); letter-spacing: -0.005em; }
+  .fact-value { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .fact-meta { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+  /* ── How money arrived ── */
+  .methods-bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 13px 18px; margin-bottom: 22px;
+  }
+  .methods-label { font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.01em; }
+  .mchips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mchip {
+    display: inline-flex; align-items: center; gap: 7px;
+    border-radius: 980px; padding: 5px 13px 5px 10px; font-size: 12.5px;
+    letter-spacing: -0.01em; white-space: nowrap;
+  }
+  .mchip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .mchip-label { font-weight: 500; }
+  .mchip-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+  /* The clearing share rides inside the chip, not beside it: an ACH figure
+     without it reads as money the landlord already has. */
+  .mchip-clearing {
+    font-size: 11px; opacity: 0.85; padding-left: 7px;
+    border-left: 1px solid currentColor; font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Payments received ── */
+  .netband { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px 14px; margin-bottom: 16px; }
+  .netband-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .netband-note { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-2); letter-spacing: -0.01em; }
+
+  .recv-tools { display: flex; align-items: center; gap: 12px; }
+  .chipbtn {
+    border: 1px solid var(--line); background: var(--surface); border-radius: 980px;
+    padding: 5px 13px; font-size: 12.5px; font-family: inherit; cursor: pointer;
+    color: var(--ink-2); letter-spacing: -0.01em; transition: all 0.15s;
+  }
+  .chipbtn:hover { border-color: #d6d6db; color: var(--ink); }
+  .chipbtn.on { background: #fdeceb; border-color: #f3c6c2; color: var(--bad); font-weight: 500; }
+
+  .rtbl { border-top: 1px solid var(--line); }
+  .rtbl-hd, .rtbl-row {
+    display: grid;
+    grid-template-columns: minmax(240px, 2.4fr) 118px 104px 94px 128px 14px;
+    gap: 10px; align-items: center;
+  }
+  .rtbl-hd {
+    padding: 9px 20px; background: #fafafb; border-bottom: 1px solid var(--line);
+    font-size: 11px; font-weight: 600; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.045em;
+  }
+  .rtbl-row { padding: 12px 20px; border-bottom: 1px solid var(--line-2); cursor: pointer; transition: background 0.12s; }
+  .rtbl-row:hover { background: #fafafb; }
+  .cell-when { min-width: 0; }
+  .when-date { display: block; font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .when-time { display: block; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .when-time em { font-style: normal; opacity: 0.75; }
+  .num.strong { font-weight: 600; }
+  .drill-warn { font-size: 12px; color: var(--warn); cursor: help; }
 
   /* ── Panels ── */
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 20px; overflow: hidden; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 16px; overflow: hidden; }
   .panel-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; }
   .panel-title { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; }
-  .panel-note { font-size: 12.5px; color: var(--ink-3); letter-spacing: -0.01em; text-align: right; }
+  .panel-note { font-size: 12.5px; color: var(--ink-3); letter-spacing: -0.01em; text-align: right; font-variant-numeric: tabular-nums; }
   .panel-bd { padding: 4px 22px 20px; }
   .panel-bd.flush { padding: 0; }
 
+  /* ── Property block ── */
+  .prop { overflow: visible; }
+  .prop-hd {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    background: none; border: none; font-family: inherit; text-align: left;
+    padding: 16px 20px 14px; cursor: pointer; color: inherit;
+  }
+  .prop-hd:hover { background: #fcfcfd; }
+  .prop-id { flex: 1; min-width: 0; }
+  .prop-name { display: block; font-size: 17px; font-weight: 600; letter-spacing: -0.018em; }
+  .prop-sub { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 3px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .prop-figs { display: flex; gap: 26px; flex-shrink: 0; }
+  .fig { display: flex; flex-direction: column; align-items: flex-end; }
+  .fig-val { font-size: 15.5px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
+  .fig-val.good { color: var(--good); }
+  .fig-val.bad  { color: var(--bad); }
+  .fig-val.warn { color: var(--warn); }
+  .fig-lbl { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+
+  .prop-bar { height: 3px; background: var(--line-2); }
+  .prop-bar-fill { height: 100%; background: var(--good); transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
+  .prop-bar-fill[data-tone="bad"]  { background: var(--bad); }
+  .prop-bar-fill[data-tone="warn"] { background: #e8a33d; }
+
+  /* Disclosure triangle — the one affordance that says "this opens in place". */
+  .disc {
+    width: 0; height: 0; flex-shrink: 0;
+    border-left: 5.5px solid #b4b4b9; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent;
+    transition: transform 0.18s ease; transform-origin: 25% 50%;
+  }
+  .disc.open { transform: rotate(90deg); }
+  .disc.sm { border-left-width: 4.5px; border-top-width: 3.5px; border-bottom-width: 3.5px; }
+
+  /* ── The lease table ── */
+  .tbl { border-top: 1px solid var(--line); }
+  .tbl-hd, .tbl-row, .tbl-foot {
+    display: grid;
+    grid-template-columns: minmax(240px, 2.4fr) 68px 100px 108px 108px 118px 14px;
+    gap: 10px; align-items: center;
+  }
+  .tbl-hd {
+    padding: 9px 20px; background: #fafafb; border-bottom: 1px solid var(--line);
+    font-size: 11px; font-weight: 600; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.045em;
+  }
+  .tbl-row {
+    padding: 13px 20px; border-bottom: 1px solid var(--line-2);
+    cursor: pointer; transition: background 0.12s;
+  }
+  .tbl-row:hover { background: #fafafb; }
+  .tbl-row.open { background: #f7f9fc; }
+  .tbl-row.faded .cell-lease, .tbl-row.faded .num { opacity: 0.62; }
+  .cell-lease { min-width: 0; }
+  .lease-name {
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    font-size: 14px; font-weight: 500; letter-spacing: -0.01em;
+  }
+  .lease-sub { display: block; font-size: 12px; color: var(--ink-2); margin-top: 3px; margin-left: 12px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+
+  .num { text-align: right; font-size: 13.5px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
+  .num.good { color: var(--good); }
+  .num.bad  { color: var(--bad); font-weight: 600; }
+  .num.warn { color: var(--warn); }
+  .num.dim  { color: var(--ink-3); }
+  .num.info { color: #0057b8; }
+
+  .tbl-foot {
+    padding: 12px 20px; background: #fafafb; border-top: 1px solid var(--line);
+    font-weight: 600; font-size: 13.5px;
+  }
+  .foot-label { font-size: 12.5px; color: var(--ink-2); font-weight: 500; letter-spacing: -0.01em; }
+
+  /* ── Lease drill-down ── */
+  .drill { background: #f7f9fc; border-bottom: 1px solid var(--line); padding: 4px 20px 18px; }
+  .drill-vitals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 14px 0 4px; }
+  .dfact { padding: 0 16px; border-left: 1px solid #e3e8ef; }
+  .dfact:first-child { border-left: none; padding-left: 0; }
+  .dfact-label { font-size: 11.5px; color: var(--ink-3); letter-spacing: -0.005em; }
+  .dfact-value { font-size: 17px; font-weight: 600; letter-spacing: -0.018em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .dfact-value.good { color: var(--good); }
+  .dfact-value.bad  { color: var(--bad); }
+  .dfact-meta { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+  .drill-sec { margin-top: 18px; }
+  .drill-hd {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    font-size: 11px; font-weight: 600; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.045em; margin-bottom: 8px;
+  }
+  .drill-hd-note { text-transform: none; letter-spacing: -0.01em; font-weight: 500; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+  .payers { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .payer {
+    display: grid; grid-template-columns: minmax(180px, 2fr) 96px 100px 100px 112px;
+    gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line-2);
+  }
+  .payer:first-child { border-top: none; }
+  .payer.faded { opacity: 0.6; }
+  .payer-who { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%; background: #e8ecf1; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: #5b6676;
+  }
+  .payer-id { min-width: 0; }
+  .payer-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; letter-spacing: -0.01em; }
+  .payer-mail { display: block; font-size: 11.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: flex; flex-direction: column; gap: 2px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
+    padding: 9px 13px; font-size: 13px; letter-spacing: -0.01em;
+  }
+  .chip strong { font-variant-numeric: tabular-nums; }
+  .chip.bad { border-color: #f3c6c2; background: #fffafa; }
+  .chip-meta { font-size: 11.5px; color: var(--ink-3); }
+
+  .drill-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 18px; }
+  .drill-note { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* ── Lease vitals, above the ledger ── */
+  .vitals { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px 16px; }
+  .vitals-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; }
+  .vitals-bar { position: relative; height: 6px; background: var(--line-2); border-radius: 99px; margin-top: 18px; }
+  .vitals-fill { height: 100%; background: var(--good); border-radius: 99px; transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
+  /* Collection against term elapsed: if the marker is ahead of the fill, the
+     lease is behind where it should be — the fastest read of a tenancy. */
+  .vitals-mark { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink); border-radius: 2px; }
+  .vitals-key { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-3); margin-top: 8px; }
+
+  /* ── Charges grouped under their property ── */
+  .chg-group { border-top: 1px solid var(--line); }
+  .chg-group:first-child { border-top: none; }
+  .chg-group-hd {
+    padding: 11px 22px 8px; background: #fafafb; font-size: 11px; font-weight: 600;
+    color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.045em;
+  }
+
   /* ── Chart ── */
-  .chart { display: flex; align-items: flex-end; gap: 16px; height: 150px; }
-  .col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+  .chart { display: flex; align-items: flex-end; gap: 10px; height: 160px; }
+  .col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
   .col-stack { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
-  .col-exp { width: 100%; max-width: 46px; background: #f0f0f2; border-radius: 7px 7px 0 0; display: flex; align-items: flex-end; min-height: 3px; }
-  .col-col { width: 100%; background: var(--good); border-radius: 7px 7px 0 0; }
-  .col-pct { font-size: 11.5px; font-weight: 500; color: var(--ink-2); margin-top: 8px; font-variant-numeric: tabular-nums; }
-  .col-label { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+  .col-exp { width: 100%; max-width: 46px; background: var(--line-2); border-radius: 6px 6px 0 0; display: flex; align-items: flex-end; min-height: 3px; }
+  .col-col { width: 100%; background: var(--good); border-radius: 6px 6px 0 0; }
+  .col-col[data-tone="low"] { background: #e8a33d; }
+  .col-pct { font-size: 11px; font-weight: 500; color: var(--ink-2); margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .col-label { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+  .chart-key { font-size: 12px; color: var(--ink-3); margin-top: 16px; line-height: 1.55; letter-spacing: -0.01em; }
 
   /* ── Rows ── */
   .row {
-    display: flex; align-items: center; gap: 14px; padding: 15px 22px;
-    border-top: 1px solid var(--line); text-decoration: none; color: inherit; cursor: pointer;
+    display: flex; align-items: center; gap: 14px; padding: 14px 22px;
+    border-top: 1px solid var(--line-2); text-decoration: none; color: inherit; cursor: pointer;
     transition: background 0.12s;
   }
   .row:first-child { border-top: none; }
-  .row:hover { background: #fafafa; }
+  .row:hover { background: #fafafb; }
   .row.static { cursor: default; }
   .row.static:hover { background: none; }
   .row-main { flex: 1; min-width: 0; }
-  .row-name { font-size: 14.5px; font-weight: 500; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row-name { font-size: 14px; font-weight: 500; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .row-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; letter-spacing: -0.01em; }
   .row-err { font-size: 12px; color: var(--bad); margin-top: 3px; }
   .row-fig { text-align: right; white-space: nowrap; }
@@ -684,17 +1594,15 @@ const CSS = `
     width: 7px; height: 7px; border-top: 1.6px solid #c7c7cc; border-right: 1.6px solid #c7c7cc;
     transform: rotate(45deg); flex-shrink: 0;
   }
-  .row-more { padding: 14px 22px; font-size: 12.5px; color: var(--ink-3); border-top: 1px solid var(--line); }
-  .mini-bar { height: 3px; background: #f0f0f2; border-radius: 99px; overflow: hidden; margin-top: 8px; max-width: 240px; }
-  .mini-fill { height: 100%; border-radius: 99px; background: var(--good); }
-  .mini-fill[data-tone="bad"] { background: var(--bad); }
+  .who { font-size: 12.5px; color: var(--ink-2); font-weight: 400; }
 
   /* ── Pills ── */
-  .pill { font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 980px; letter-spacing: -0.005em; }
+  .pill { font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 980px; letter-spacing: -0.005em; white-space: nowrap; }
   .pill.bad   { background: #fdeceb; color: var(--bad); }
   .pill.good  { background: #e8f5ed; color: var(--good); }
   .pill.warn  { background: #fdf1e3; color: var(--warn); }
-  .pill.plain { background: #f0f0f2; color: var(--ink-2); }
+  .pill.info  { background: #e8f1fd; color: #0057b8; }
+  .pill.plain { background: var(--line-2); color: var(--ink-2); }
 
   /* ── Empty / loading ── */
   .empty { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 56px 36px; text-align: center; }
@@ -706,14 +1614,45 @@ const CSS = `
   .lnk { color: var(--accent); text-decoration: none; }
   .lnk:hover { text-decoration: underline; }
   .muted { font-size: 13.5px; color: var(--ink-2); line-height: 1.6; letter-spacing: -0.01em; }
+  .muted.sm { font-size: 12.5px; }
 
-  @media (max-width: 720px) {
+  /* ── Narrow screens ──
+     The money columns are the first thing to go: on a phone a lease is a name
+     and one number — what is still owed — and everything else lives one tap
+     deeper, where there is room to lay it out properly. */
+  @media (max-width: 1040px) {
+    .tbl-hd, .tbl-row, .tbl-foot { grid-template-columns: minmax(180px, 2.2fr) 96px 104px 112px 14px; }
+    .tbl-hd > :nth-child(2), .tbl-row > :nth-child(2), .tbl-foot > :nth-child(2),
+    .tbl-hd > :nth-child(3), .tbl-row > :nth-child(3), .tbl-foot > :nth-child(3) { display: none; }
+  }
+  @media (max-width: 1040px) {
+    .rtbl-hd, .rtbl-row { grid-template-columns: minmax(180px, 2.2fr) 110px 128px 14px; }
+    .rtbl-hd > :nth-child(3), .rtbl-row > :nth-child(3),
+    .rtbl-hd > :nth-child(4), .rtbl-row > :nth-child(4) { display: none; }
+  }
+  @media (max-width: 820px) {
+    .netband-row { grid-template-columns: 1fr; row-gap: 14px; }
+    .netband-row .dfact { border-left: none; padding-left: 0; }
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    .facts { grid-template-columns: repeat(2, 1fr); }
+    .fact:nth-child(3) { border-left: none; }
+    .fact:nth-child(odd) { border-left: none; }
+    .drill-vitals { grid-template-columns: repeat(2, 1fr); row-gap: 14px; }
+    .dfact:nth-child(odd) { border-left: none; padding-left: 0; }
+    .vitals-row { grid-template-columns: repeat(2, 1fr); row-gap: 14px; }
+    .prop-figs { gap: 16px; }
+    .prop-figs .fig:first-child { display: none; }
+  }
+  @media (max-width: 700px) {
     .fin-wrap { padding: 24px 16px 90px; }
     .title { font-size: 26px; }
-    .hero-value { font-size: 42px; }
-    .stat-row { grid-template-columns: 1fr; }
-    .row-fig { display: none; }
-    .seg { display: flex; width: 100%; }
-    .seg-btn { flex: 1; }
+    .sum-value { font-size: 23px; }
+    .tbl-hd, .tbl-row, .tbl-foot { grid-template-columns: 1fr 112px 14px; }
+    .tbl-hd > :nth-child(4), .tbl-row > :nth-child(4), .tbl-foot > :nth-child(4),
+    .tbl-hd > :nth-child(5), .tbl-row > :nth-child(5), .tbl-foot > :nth-child(5) { display: none; }
+    .payer { grid-template-columns: 1fr 112px; row-gap: 4px; }
+    .payer > :nth-child(2), .payer > :nth-child(3), .payer > :nth-child(4) { display: none; }
+    .row-fig { text-align: right; }
+    .prop-figs .fig:nth-child(2) { display: none; }
   }
 `

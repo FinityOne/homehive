@@ -12,7 +12,10 @@ import Stripe from 'stripe'
 import { createHash } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
-import { computeFee, amountDue, MIN_CHARGE_CENTS, type PayMethod } from '@/lib/rentPayments'
+import {
+  computeFee, amountDue, MIN_CHARGE_CENTS, lateFeeDue,
+  type PayMethod, type LateFeeRuleLike,
+} from '@/lib/rentPayments'
 import { stripeSecretKey, stripeMode } from '@/lib/stripeEnv'
 import { loadTenantIdentity, tenantNames, payerBelongsToTenant } from '@/lib/tenantIdentity'
 
@@ -75,20 +78,43 @@ export async function POST(req: NextRequest) {
   if (mine.size === 0) return Response.json({ error: 'No rent account found for you.' }, { status: 404 })
 
   // Load the rows and confirm every one belongs to this tenant.
-  const rows: { kind: 'scheduled' | 'special'; id: string; due: number; label: string; dueDate: string | null }[] = []
+  const rows: { kind: 'scheduled' | 'special'; id: string; due: number; lateFee: number; label: string; dueDate: string | null }[] = []
 
   if (scheduledIds.length > 0) {
     const { data } = await supabaseAdmin
       .from('scheduled_payments')
-      .select('id, plan_tenant_id, amount, paid_amount, status, due_date')
+      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date')
       .in('id', scheduledIds)
+
+    // Late fees are a property of the plan's rule, so fetch the rules for just
+    // the plans in play. Derived here and never read from `late_fees_applied`:
+    // that column is stale and has been observed holding fees on rows that were
+    // paid early, which would bill a tenant for being punctual.
+    const planIds = [...new Set((data ?? []).map(r => r.plan_id).filter(Boolean))]
+    const { data: ruleRows } = planIds.length
+      ? await supabaseAdmin
+          .from('late_fee_rules')
+          .select('plan_id, grace_period_days, fee_amount, frequency_days, max_total_fees')
+          .in('plan_id', planIds)
+      : { data: [] as (LateFeeRuleLike & { plan_id: string })[] }
+    const ruleByPlan = new Map<string, LateFeeRuleLike>(
+      (ruleRows ?? []).map(r => [r.plan_id, r as LateFeeRuleLike])
+    )
+
     for (const r of data ?? []) {
       if (!mine.has(r.plan_tenant_id)) {
         return Response.json({ error: 'That payment isn\'t yours.' }, { status: 403 })
       }
       if (r.status === 'paid' || r.status === 'processing') continue
       const due = amountDue({ amount: Number(r.amount), paid_amount: Number(r.paid_amount ?? 0) })
-      if (due > 0) rows.push({ kind: 'scheduled', id: r.id, due, label: `Rent due ${r.due_date}`, dueDate: r.due_date })
+      const lateFee = lateFeeDue(ruleByPlan.get(r.plan_id), {
+        status: r.status,
+        due_date: r.due_date,
+        paid_date: r.paid_date ?? null,
+        amount: Number(r.amount),
+        paid_amount: Number(r.paid_amount ?? 0),
+      })
+      if (due > 0) rows.push({ kind: 'scheduled', id: r.id, due, lateFee, label: `Rent due ${r.due_date}`, dueDate: r.due_date })
     }
   }
 
@@ -103,7 +129,8 @@ export async function POST(req: NextRequest) {
       }
       if (r.status !== 'pending') continue
       const due = Number(r.amount)
-      if (due > 0) rows.push({ kind: 'special', id: r.id, due, label: r.label, dueDate: r.due_date ?? null })
+      // One-off charges carry no late fee: the rule is written against rent.
+      if (due > 0) rows.push({ kind: 'special', id: r.id, due, lateFee: 0, label: r.label, dueDate: r.due_date ?? null })
     }
   }
 
@@ -127,7 +154,11 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Nothing is due right now.' }, { status: 409 })
   }
 
-  const base = rows.reduce((s, r) => s + r.due, 0)
+  // Late fees are part of what is owed, so they are inside the base the
+  // surcharge is computed on — the processor bills on the whole charge.
+  const rentBase = rows.reduce((s, r) => s + r.due, 0)
+  const lateFeeTotal = Math.round(rows.reduce((s, r) => s + r.lateFee, 0) * 100) / 100
+  const base = Math.round((rentBase + lateFeeTotal) * 100) / 100
   const fee = computeFee(base, method)
   if (fee.totalCents < MIN_CHARGE_CENTS) {
     return Response.json({ error: 'Amount is below the minimum card payment.' }, { status: 400 })
@@ -166,6 +197,10 @@ export async function POST(req: NextRequest) {
       stripeMode: stripeMode(),
       baseCents: String(fee.baseCents),
       feeCents: String(fee.feeCents),
+      // Split out so settlement can credit the late fee to the landlord rather
+      // than silently folding it into rent — and so the figure the tenant was
+      // actually charged is the one recorded, not a later recomputation.
+      lateFeeCents: String(Math.round(lateFeeTotal * 100)),
       scheduledIds: rows.filter(r => r.kind === 'scheduled').map(r => r.id).join(','),
       specialIds: rows.filter(r => r.kind === 'special').map(r => r.id).join(','),
     },
@@ -188,6 +223,10 @@ export async function POST(req: NextRequest) {
   return Response.json({
     clientSecret: intent.client_secret,
     base: fee.base,
+    // Itemised so the sheet can show rent and late fees as separate lines; a
+    // tenant asked for more than their rent is owed an explanation of why.
+    rent: rentBase,
+    lateFee: lateFeeTotal,
     fee: fee.fee,
     total: fee.total,
     ratePct: fee.ratePct,

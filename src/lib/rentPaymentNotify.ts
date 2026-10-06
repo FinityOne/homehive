@@ -16,9 +16,10 @@ import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getSiteUrl } from './siteUrl'
-import { amountDue, type PayMethod } from './rentPayments'
-import { buildRentReceiptEmail, buildLandlordRentPaidEmail, type PayEvent, type PaidRow } from './rentPaymentEmails'
+import { amountDue, fmtMoney as fmtUsd, type PayMethod } from './rentPayments'
+import { buildRentReceiptEmail, buildLandlordRentPaidEmail, buildAdminPaymentEmail, type PayEvent, type PaidRow } from './rentPaymentEmails'
 import { logPaymentEmail, type PaymentEmailItem } from './paymentEmailLog'
+import { economics, STRIPE_RATES } from './platformFees'
 
 /**
  * Just enough of a Stripe intent to build the emails. A manual resend has only
@@ -81,7 +82,7 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
 
   const { data: plan } = await db
     .from('payment_plans')
-    .select('id, owner_id, property:properties ( name )')
+    .select('id, name, owner_id, property:properties ( name )')
     .eq('id', planId)
     .maybeSingle()
   if (!plan) return null
@@ -125,6 +126,7 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
 
   return {
     planId,
+    planName: (plan as { name?: string }).name ?? null,
     propertyName: (property as { name?: string } | null)?.name ?? 'your home',
     tenantName: tenant?.name ?? 'Your tenant',
     tenantEmail: tenant?.email?.trim() || null,
@@ -351,6 +353,50 @@ async function deliverRentPaymentEmails(input: {
         providerId: sendData?.id ?? null,
         sentBy: sentBy ?? null, items: logItems,
       })
+    }
+
+    // Admin copy — the same payment, re-cut as platform economics.
+    //
+    // Only on the automatic path. A manual resend is the landlord asking for
+    // *their* copy because it never arrived; re-sending the business email
+    // would just add noise to the admin inbox for a payment already reported.
+    //
+    // Never logged to payment_email_log: that history is shown to landlords on
+    // the plan page, and what HomeHive earns is not theirs to read.
+    const adminEmail = process.env.ADMIN_EMAIL
+    if (trigger === 'auto' && adminEmail) {
+      // Stripe bills on the whole charge, rent included — not on our slice.
+      const econ = economics({
+        passThroughCents: Math.round(rent * 100),
+        feeCents: Math.round(fee * 100),
+        method,
+      })
+      const r = STRIPE_RATES[method]
+      const rateLabel = method === 'card'
+        ? `${(r.pct * 100).toFixed(1)}% + ${r.fixedCents}¢`
+        : `${(r.pct * 100).toFixed(1)}%${r.capCents != null ? `, capped at ${fmtUsd(r.capCents / 100)}` : ''}`
+
+      const { subject, html, text } = buildAdminPaymentEmail({
+        event,
+        tenantName: ctx.tenantName,
+        landlordName: ctx.landlordName,
+        landlordEmail: ctx.landlordEmail,
+        propertyName: ctx.propertyName,
+        planName: ctx.planName,
+        rows: emailRows,
+        rent,
+        fee: event === 'failed' ? 0 : fee,
+        method,
+        stripeCost: econ.costCents / 100,
+        rateLabel,
+        paidOn,
+        planUrl: `${getSiteUrl()}/landlord/financials?plan=${ctx.planId}`,
+        reference: pi.id,
+      })
+      const { error: adminErr } = await resend.emails.send({
+        from: FROM, to: adminEmail, subject, html, text,
+      })
+      if (adminErr) console.error('[rent] admin copy failed for', pi.id, adminErr.message)
     }
   } catch (e) {
     // The rent rows are already correct; a failed email must never undo that.

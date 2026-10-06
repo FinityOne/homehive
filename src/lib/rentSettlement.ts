@@ -19,6 +19,8 @@ export function idsFromMetadata(pi: Stripe.PaymentIntent) {
     scheduledIds: (m.scheduledIds ?? '').split(',').filter(Boolean),
     specialIds: (m.specialIds ?? '').split(',').filter(Boolean),
     feeDollars: Number(m.feeCents ?? 0) / 100,
+    /** Late fees the tenant was actually charged on this intent, in dollars. */
+    lateFeeDollars: Number(m.lateFeeCents ?? 0) / 100,
     method: m.method === 'ach' ? ('ach' as const) : ('card' as const),
     userId: (m.userId ?? '') as string,
   }
@@ -46,10 +48,19 @@ export async function settleRentPayment(
   pi: Stripe.PaymentIntent,
   status: 'paid' | 'processing'
 ): Promise<{ scheduled: number; special: number; conflicts: string[] }> {
-  const { scheduledIds, specialIds, feeDollars, method } = idsFromMetadata(pi)
+  const { scheduledIds, specialIds, feeDollars, lateFeeDollars, method } = idsFromMetadata(pi)
   const paidDate = new Date().toISOString().split('T')[0]
+  // `paid_date` is a DATE, so it loses the time of day. A landlord reconciling
+  // a bank statement needs the instant, so record it alongside — and only when
+  // the money actually landed, never for an ACH debit still in flight.
+  const settledAt = status === 'paid' ? new Date().toISOString() : null
 
   let feeApplied = false
+  // Late fees ride on the first rent row for the same reason the surcharge does:
+  // they belong to the payment, not to any one month, and splitting them would
+  // make every row's figures wrong. Writing it here also corrects the stale
+  // `late_fees_applied` value that row may be carrying.
+  let lateFeeApplied = false
   let scheduled = 0
   let special = 0
   // Rows already settled by a *different* intent: the tenant has been charged
@@ -84,9 +95,14 @@ export async function settleRentPayment(
       recorded_by: 'tenant',
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
+      settled_at: settledAt,
+      ...(status === 'paid'
+        ? { late_fees_applied: lateFeeApplied ? 0 : lateFeeDollars }
+        : {}),
     }).eq('id', id)
     if (isTransition(row.status)) movedScheduled.push(id)
     feeApplied = true
+    lateFeeApplied = true
     scheduled++
   }
 
@@ -109,6 +125,7 @@ export async function settleRentPayment(
       recorded_by: 'tenant',
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
+      settled_at: settledAt,
     }).eq('id', id)
     if (isTransition(row.status)) movedSpecial.push(id)
     feeApplied = true
@@ -150,6 +167,7 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
     const { data } = await db.from('scheduled_payments').update({
       status: 'pending', paid_amount: 0, paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
+      settled_at: null,
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
       .in('status', ['paid', 'processing'])
       .select('id')
@@ -159,6 +177,7 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
     const { data } = await db.from('special_payments').update({
       status: 'pending', paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
+      settled_at: null,
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
       .in('status', ['paid', 'processing'])
       .select('id')

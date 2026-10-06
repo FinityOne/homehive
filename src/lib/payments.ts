@@ -71,6 +71,10 @@ export type ScheduledPayment = {
   status: PaymentStatus
   paid_amount: number
   paid_date: string | null
+  /** Exact instant the money settled. `paid_date` is a DATE and loses the time
+   *  of day; this is null for rows a landlord ticked off by hand, where no
+   *  settlement instant was ever observed. */
+  settled_at: string | null
   late_fees_applied: number
   notes: string | null
   void_reason: string | null
@@ -96,8 +100,16 @@ export type SpecialPayment = {
   label: string
   amount: number
   due_date: string
-  status: 'pending' | 'paid' | 'waived'
+  /** `processing` = paid by ACH and still clearing. `settleRentPayment` writes
+   *  it here exactly as it does on rent, so it belongs in the type. */
+  status: 'pending' | 'paid' | 'waived' | 'processing'
   paid_date: string | null
+  /** Exact instant the charge settled; null when recorded by hand. */
+  settled_at: string | null
+  /** How it settled — matches `scheduled_payments.payment_method`. */
+  payment_method: 'card' | 'ach' | 'manual_zelle' | 'manual_other' | null
+  /** Surcharge the tenant paid on top — the platform's, never the landlord's. */
+  processing_fee: number
   notes: string | null
   /** Requests the landlord has emailed about this charge — same history rent keeps. */
   reminder_sent_at: string | null
@@ -429,25 +441,36 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       lease:leases(id, start_date, end_date, rent_amount),
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id),
-      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date)
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, payment_method, processing_fee),
+      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
     `)
     .eq('owner_id', ownerId)
     .order('created_at', { ascending: false })
 
   if (error || !data) { console.error('getPlansForOwner:', error); return [] }
 
-  return data.map((row: any) => ({
-    ...row,
-    tenants:        (row.tenants || []).map((t: any) => ({ ...t, line_items: [] })),
-    late_fee_rule:  Array.isArray(row.late_fee_rule) ? (row.late_fee_rule[0] ?? null) : (row.late_fee_rule ?? null),
-    property:       row.property   ?? undefined,
-    lease:          row.lease      ?? undefined,
-    scheduled_payments: row.scheduled_payments || [],
-    // Deposits and one-off charges ride along so Financials can report on them
-    // portfolio-wide, not just inside a single plan.
-    special_payments: row.special_payments || [],
-  })) as PaymentPlan[]
+  return data.map((row: any) => {
+    const tenants = (row.tenants || []).map((t: any) => ({ ...t, line_items: [] }))
+    // Who a charge belongs to, resolved here rather than with a second join:
+    // the rollup names the person on every open deposit and one-off charge.
+    const names = new Map<string, string>(tenants.map((t: any) => [t.id, t.name]))
+    return {
+      ...row,
+      tenants,
+      late_fee_rule:  Array.isArray(row.late_fee_rule) ? (row.late_fee_rule[0] ?? null) : (row.late_fee_rule ?? null),
+      property:       row.property   ?? undefined,
+      lease:          row.lease      ?? undefined,
+      scheduled_payments: row.scheduled_payments || [],
+      // Deposits and one-off charges ride along so Financials can report on them
+      // portfolio-wide, not just inside a single plan.
+      special_payments: (row.special_payments || []).map((sp: any) => ({
+        ...sp,
+        tenant: sp.plan_tenant_id && names.has(sp.plan_tenant_id)
+          ? { name: names.get(sp.plan_tenant_id) as string }
+          : null,
+      })),
+    }
+  }) as PaymentPlan[]
 }
 
 // Full detail for the plan detail page
@@ -663,7 +686,7 @@ export async function updateScheduledPayment(
 export async function updateSpecialPayment(
   id: string,
   updates: Partial<{
-    status:    'pending' | 'paid' | 'waived'
+    status:    'pending' | 'paid' | 'waived' | 'processing'
     paid_date: string | null
     notes:     string
   }>
@@ -682,7 +705,7 @@ export async function updateSpecialPaymentFull(
     label:     string
     amount:    number
     due_date:  string
-    status:    'pending' | 'paid' | 'waived'
+    status:    'pending' | 'paid' | 'waived' | 'processing'
     paid_date: string | null
     notes:     string | null
   }>
