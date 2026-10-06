@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { PLANS, PLAN_ORDER, formatUsd, formatPropertyLimit } from '@/lib/landlordPlans'
 
 type Tab = 'student' | 'landlord'
 
@@ -16,16 +17,18 @@ const STUDENT_FREE = [
   { icon: '📦', label: 'Move-in coordination & checklists' },
 ]
 
-const LANDLORD_FREE_2026 = [
-  { icon: '📸', label: 'Professional listing creation & copy' },
-  { icon: '🎯', label: 'Qualified lead generation' },
-  { icon: '✅', label: 'Tenant pre-screening & qualification' },
-  { icon: '📋', label: 'Digital lease templates' },
-  { icon: '💳', label: 'Rent collection & payment processing' },
+// Every plan includes all of this. The tiers differ only in how many
+// properties you may list, so the feature list is written once.
+const LANDLORD_INCLUDED = [
+  { icon: '📸', label: 'Listing creation & professional copy' },
+  { icon: '🎯', label: 'Unlimited inquiries — no per-lead fees' },
+  { icon: '✅', label: 'Tenant pre-screening & background checks' },
+  { icon: '📋', label: 'Digital leases & e-signature' },
+  { icon: '💳', label: 'Online rent collection' },
   { icon: '📊', label: 'Listing analytics & performance data' },
   { icon: '🔧', label: 'Maintenance request management' },
-  { icon: '💬', label: 'Tenant communication tools' },
-  { icon: '🏆', label: 'Priority placement in search results' },
+  { icon: '📅', label: 'Tours, calendar & messaging' },
+  { icon: '📦', label: 'Move-out inspections & deposits' },
 ]
 
 const FAQS_STUDENT = [
@@ -49,20 +52,24 @@ const FAQS_STUDENT = [
 
 const FAQS_LANDLORD = [
   {
-    q: 'Why is it free through 2026?',
-    a: "We're building our landlord community. We want you to experience the platform, fill rooms faster than you have before, and see the value before we ever talk about pricing. No risk on your end.",
+    q: 'What exactly am I paying for?',
+    a: "Access to the whole platform. Every plan includes the same tools — listings, leads, screening, tours, leases, rent collection, maintenance and move-out. The only difference between plans is how many properties you can have listed at once.",
   },
   {
-    q: 'What happens after 2026?',
-    a: "We'll introduce a simple success fee model — a small percentage per room filled, only when we deliver results. No monthly subscriptions, no listing fees. You pay when you win.",
+    q: 'Are there any other fees?',
+    a: "No. No per-lead charges, no commission on filled rooms, no listing fees, no setup fee. One monthly price, and that is the whole relationship. (Tenants paying rent by card or ACH see a processing surcharge, which goes to the card networks, not to us.)",
   },
   {
-    q: 'How do I get early access?',
-    a: "Email landlord@homehive.live. We review every application within 48 hours. Early landlords get locked-in favorable pricing when we transition to paid — a thank-you for helping us build the platform.",
+    q: 'What if I add a property mid-month?',
+    a: "If it fits your plan, just add it — nothing changes. If you have hit your limit, switching up a tier takes effect immediately and Stripe prorates the difference, so you are never charged twice for the same month.",
+  },
+  {
+    q: 'Can I cancel?',
+    a: "Any time, from your billing page, in two clicks. You keep full access until the end of the period you have already paid for. We do not ask you to email anyone or sit through a retention call.",
   },
   {
     q: 'What does the vetting process involve?',
-    a: "We verify property ownership, review listing accuracy, confirm pricing transparency, and do a quality check on photos. It usually takes less than 48 hours. This protects your reputation as much as it protects our students.",
+    a: "We verify property ownership, review listing accuracy, confirm pricing transparency, and do a quality check on photos — usually within 48 hours of your first listing. This protects your reputation as much as it protects our students.",
   },
 ]
 
@@ -140,6 +147,23 @@ export default function PricingPage() {
         .price-cta-ghost { display: inline-flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); padding: 13px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; border: 1px solid rgba(255,255,255,0.2); transition: all 0.2s; margin-left: 10px; }
         .price-cta-ghost:hover { border-color: rgba(255,255,255,0.5); color: #fff; }
 
+        /* TIER GRID */
+        .tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+        .tier { background: #fff; border: 1.5px solid #e8e4db; border-radius: 14px; padding: 26px 22px; position: relative; display: flex; flex-direction: column; transition: border-color 0.15s, box-shadow 0.15s; }
+        .tier:hover { border-color: #d4c9b0; box-shadow: 0 6px 24px rgba(0,0,0,0.05); }
+        .tier-featured { border-color: #1a1a1a; border-width: 2px; }
+        .tier-flag { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #FFC627; color: #1a1a1a; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 11px; border-radius: 20px; white-space: nowrap; }
+        .tier-name { font-family: 'Fraunces', serif; font-size: 21px; font-weight: 300; color: #1a1a1a; }
+        .tier-limit { font-size: 12px; color: #9b9b9b; margin-top: 2px; }
+        .tier-price { font-family: 'Fraunces', serif; font-size: 38px; font-weight: 300; color: #1a1a1a; letter-spacing: -1.6px; margin: 16px 0 0; }
+        .tier-price em { font-style: normal; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #9b9b9b; letter-spacing: 0; }
+        .tier-audience { font-size: 13px; color: #6b6b6b; line-height: 1.6; margin: 12px 0 20px; flex: 1; }
+        .tier-cta { display: block; text-align: center; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 11px; font-size: 13.5px; font-weight: 700; color: #1a1a1a; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+        .tier-cta:hover { border-color: #8C1D40; color: #8C1D40; }
+        .tier-cta-dark { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
+        .tier-cta-dark:hover { background: #8C1D40; border-color: #8C1D40; color: #fff; }
+        .tier-foot { text-align: center; font-size: 12.5px; color: #9b9b9b; line-height: 1.6; margin-bottom: 32px; }
+
         /* PROMISE STRIP */
         .promise-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 56px; }
         .promise-item { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 20px; text-align: center; }
@@ -181,6 +205,7 @@ export default function PricingPage() {
           .price-num { font-size: 56px; }
           .features-grid { grid-template-columns: 1fr; }
           .promise-strip { grid-template-columns: 1fr; }
+          .tier-grid { grid-template-columns: 1fr; }
           .future-box { grid-template-columns: 1fr; }
           .future-locked { min-width: auto; }
           .bottom-cta { padding: 36px 24px; }
@@ -275,19 +300,44 @@ export default function PricingPage() {
         {/* ── LANDLORD ── */}
         {tab === 'landlord' && (
           <>
-            {/* MAIN CARD */}
+            {/* THREE TIERS */}
+            <div className="tier-grid">
+              {PLAN_ORDER.map(t => {
+                const plan = PLANS[t]
+                return (
+                  <div key={t} className={`tier${plan.highlight ? ' tier-featured' : ''}`}>
+                    {plan.highlight && <div className="tier-flag">Most popular</div>}
+                    <div className="tier-name">{plan.name}</div>
+                    <div className="tier-limit">
+                      {formatPropertyLimit(plan.propertyLimit)}{' '}
+                      {plan.propertyLimit === 1 ? 'property' : 'properties'}
+                    </div>
+                    <div className="tier-price">{formatUsd(plan.priceCents)}<em>/month</em></div>
+                    <p className="tier-audience">{plan.audience}</p>
+                    <a href="/signup?role=landlord" className={`tier-cta${plan.highlight ? ' tier-cta-dark' : ''}`}>
+                      Get started &rarr;
+                    </a>
+                  </div>
+                )
+              })}
+            </div>
+
+            <p className="tier-foot">
+              Sign up, pay, and your portal opens immediately. Cancel any time — no contract,
+              no setup fee, and no commission when you fill a room.
+            </p>
+
+            {/* WHAT'S INCLUDED — same in every plan */}
             <div className="price-card free-landlord">
               <div className="price-glow" />
               <div className="price-badge">
-                <span style={{ fontSize: '12px' }}>🚀</span>
-                <span className="price-badge-text">Free through 2026 · Early access</span>
+                <span style={{ fontSize: '12px' }}>✓</span>
+                <span className="price-badge-text">Included in every plan</span>
               </div>
-              <div className="price-num">$0 <em>/ 2026</em></div>
-              <p className="price-label">Full platform access, completely free through end of 2026.</p>
-              <div className="price-title">Everything you need to fill<br /><em>your rooms faster.</em></div>
-              <p className="price-sub">List your property, receive qualified leads, screen tenants, sign leases, and collect rent — all free while we build our community. Early landlords lock in favorable pricing before we go paid.</p>
+              <div className="price-title">The whole platform,<br /><em>at every price.</em></div>
+              <p className="price-sub">Plans differ by how many properties you list — never by what you can do. Nothing here is behind an upsell, and no inquiry is ever locked.</p>
               <div className="features-grid">
-                {LANDLORD_FREE_2026.map(f => (
+                {LANDLORD_INCLUDED.map(f => (
                   <div className="feature-item" key={f.label}>
                     <span className="feature-icon">{f.icon}</span>
                     <span className="feature-label">{f.label}</span>
@@ -295,31 +345,17 @@ export default function PricingPage() {
                 ))}
               </div>
               <div style={{ marginTop: '8px' }}>
-                <a href="mailto:landlord@homehive.live" className="price-cta">Apply to list — landlord@homehive.live →</a>
-              </div>
-              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginTop: '14px' }}>We respond to every application within 48 hours.</p>
-            </div>
-
-            {/* FUTURE PRICING */}
-            <div className="future-box">
-              <div>
-                <div className="future-eyebrow">What comes after 2026</div>
-                <div className="future-title">Pay when you win.<br /><em>Not before.</em></div>
-                <p className="future-body">When we transition to paid in 2027, we're committing to a success-fee model — a small percentage only when a room is filled through HomeHive. No monthly subscriptions. No listing fees. No risk if you don't fill. Early access landlords get locked-in rates as a thank-you for helping us build the platform.</p>
-              </div>
-              <div className="future-locked">
-                <div className="future-locked-label">After 2026</div>
-                <div className="future-locked-price">~8%</div>
-                <div className="future-locked-sub">per room filled<br />only on success</div>
+                <a href="/signup?role=landlord" className="price-cta">Create your account &rarr;</a>
+                <a href="/how-it-works" className="price-cta-ghost">How it works</a>
               </div>
             </div>
 
             {/* PROMISE STRIP */}
             <div className="promise-strip">
               {[
-                { icon: '🔍', title: 'Thorough vetting', body: 'We verify every landlord before listing. This protects you and builds trust with quality tenants.' },
-                { icon: '🎯', title: 'Qualified leads only', body: 'We pre-screen every inquiry by budget, timeline, and seriousness. No tire-kickers.' },
-                { icon: '🔒', title: 'Early access pricing locked', body: 'Join now and lock in your rate before we go paid. First-mover advantage is real here.' },
+                { icon: '🚫', title: 'No per-lead charges', body: 'Every inquiry on your properties is yours to read and reply to. There is nothing to unlock.' },
+                { icon: '🎯', title: 'Qualified renters', body: 'We pre-screen inquiries by budget, timeline and seriousness before they reach you.' },
+                { icon: '🔓', title: 'Cancel in two clicks', body: 'Month to month from your billing page. No contract, no retention call, no exit fee.' },
               ].map(p => (
                 <div className="promise-item" key={p.title}>
                   <div className="promise-icon">{p.icon}</div>
@@ -338,10 +374,10 @@ export default function PricingPage() {
 
             {/* BOTTOM CTA */}
             <div className="bottom-cta">
-              <div className="bottom-cta-title">Ready to list your<br /><em>property on HomeHive?</em></div>
-              <p className="bottom-cta-sub">Free through 2026. Qualified leads. Less admin. Email us to apply and we'll have you live within 48 hours.</p>
+              <div className="bottom-cta-title">List your property<br /><em>this afternoon.</em></div>
+              <p className="bottom-cta-sub">Create an account, choose a plan, and your listing can be live today. Starting at {formatUsd(PLANS.starter.priceCents)} a month.</p>
               <div className="bottom-cta-btns">
-                <a href="mailto:landlord@homehive.live" className="btn-gold">Apply to list →</a>
+                <a href="/signup?role=landlord" className="btn-gold">Get started &rarr;</a>
                 <a href="/how-it-works" className="btn-outline">How it works</a>
               </div>
             </div>

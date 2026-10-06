@@ -4,12 +4,10 @@ import { getSiteUrl } from '@/lib/siteUrl'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
 
-const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   new:            { label: 'New',           color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',   border: 'rgba(59,130,246,0.25)' },
@@ -32,18 +30,6 @@ function insightNextStatus(current: Lead['status']): Lead['status'] | null {
 
 function staleDays(lead: Lead): number {
   return Math.floor((Date.now() - new Date(lead.created_at || 0).getTime()) / 86400000)
-}
-
-function computeFreeLeadIds(leads: Lead[]): Set<string> {
-  const oldestBySlug: Record<string, Lead> = {}
-  for (const lead of leads) {
-    if (!lead.property) continue
-    const prev = oldestBySlug[lead.property]
-    if (!prev || new Date(lead.created_at ?? 0) < new Date(prev.created_at ?? 0)) {
-      oldestBySlug[lead.property] = lead
-    }
-  }
-  return new Set(Object.values(oldestBySlug).map(l => l.id))
 }
 
 type Property = { slug: string; name: string; address: string }
@@ -69,9 +55,6 @@ export default function InsightsPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [emailPreview, setEmailPreview] = useState<{ lead: Lead; subject: string; html: string } | null>(null)
   const [remindingId, setRemindingId] = useState<string | null>(null)
-  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set())
-  const [freeLeadIds, setFreeLeadIds] = useState<Set<string>>(new Set())
-  const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
   const [lastContactedAt, setLastContactedAt] = useState<Record<string, string>>({})
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [selectedInsightIds, setSelectedInsightIds] = useState<Set<string>>(new Set())
@@ -79,7 +62,6 @@ export default function InsightsPage() {
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
-  const isLeadVisible = (lead: Lead) => freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
 
   useEffect(() => { document.title = 'Insights — Leads | HomeHive' }, [])
 
@@ -105,11 +87,8 @@ export default function InsightsPage() {
   const loadLeads = useCallback(async () => {
     if (!userId) return
     setLoading(true)
-    const [{ data: propertiesData }, { data: unlocks }, { data: plan }] = await Promise.all([
-      supabase.from('properties').select('slug, name, address').eq('owner_id', userId),
-      supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
-      supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', userId).eq('status', 'active').maybeSingle(),
-    ])
+    const { data: propertiesData } = await supabase
+      .from('properties').select('slug, name, address').eq('owner_id', userId)
     const props = (propertiesData || []) as Property[]
     setProperties(props)
     const slugs = props.map(p => p.slug).filter(Boolean) as string[]
@@ -125,30 +104,13 @@ export default function InsightsPage() {
     })
 
     setLeads(leadsData)
-    setFreeLeadIds(computeFreeLeadIds(leadsData))
 
     const lastContactMap: Record<string, string> = contactsRes.ok ? await contactsRes.json() : {}
     setLastContactedAt(lastContactMap)
-
-    const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
-    if (hasPlan) {
-      setUnlockedIds(new Set(leadsData.map(l => l.id)))
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
-    }
     setLoading(false)
   }, [userId])
 
   useEffect(() => { loadLeads() }, [loadLeads])
-
-  useEffect(() => {
-    if (!userId || freeLeadIds.size === 0) return
-    const toAutoUnlock = [...freeLeadIds].filter(id => !unlockedIds.has(id))
-    for (const leadId of toAutoUnlock) {
-      fetch(`/api/leads/${leadId}/unlock`, { method: 'POST' }).catch(() => {})
-    }
-  }, [userId, freeLeadIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismissSuggestion = (id: string) => {
     setDismissedIds(prev => new Set([...prev, id]))
@@ -160,17 +122,6 @@ export default function InsightsPage() {
       updated.push({ id, expires })
       localStorage.setItem('hh_dismissed_insights', JSON.stringify(updated))
     } catch {}
-  }
-
-  const handleUnlockSuccess = (unlockType: string) => {
-    if (unlockType === 'subscription') {
-      setUnlockedIds(new Set(leads.map(l => l.id)))
-      showToast('Plan activated! All leads now unlocked.')
-    } else if (unlockModalLeadId) {
-      setUnlockedIds(prev => new Set([...prev, unlockModalLeadId]))
-      showToast('Lead unlocked!')
-    }
-    setUnlockModalLeadId(null)
   }
 
   const sendReminderCore = async (lead: Lead) => {
@@ -237,7 +188,7 @@ export default function InsightsPage() {
   }
 
   // ── Suggestion engine ──
-  const visibleActiveLeads = leads.filter(l => l.status !== 'closed' && isLeadVisible(l))
+  const visibleActiveLeads = leads.filter(l => l.status !== 'closed')
   const suggestions: Suggestion[] = []
 
   for (const lead of visibleActiveLeads) {
@@ -511,9 +462,6 @@ export default function InsightsPage() {
         </div>
       )}
 
-      {unlockModalLeadId && (
-        <UnlockModal leadId={unlockModalLeadId} onSuccess={handleUnlockSuccess} onClose={() => setUnlockModalLeadId(null)} />
-      )}
     </>
   )
 }

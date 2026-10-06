@@ -91,6 +91,7 @@ export default function NewListingWizard() {
   const [submitting, setSubmitting] = useState(false)
   const [uploadStatus, setUploadStatus] = useState('')
   const [submitError, setSubmitError] = useState('')
+  const [submitBlockedByPlan, setSubmitBlockedByPlan] = useState(false)
 
   useEffect(() => { document.title = 'New Listing — Landlord | HomeHive' }, [])
 
@@ -173,6 +174,7 @@ export default function NewListingWizard() {
   const handlePublish = async () => {
     setSubmitting(true)
     setSubmitError('')
+    setSubmitBlockedByPlan(false)
     setUploadStatus('')
 
     const user = await getCurrentUser()
@@ -182,7 +184,7 @@ export default function NewListingWizard() {
       ? (roomMinPrice || 0)
       : Number(form.price)
 
-    const { slug, id, error } = await createProperty(user.id, {
+    const { slug, id, error, reason } = await createProperty(user.id, {
       name: form.name.trim(),
       address: form.address.trim(),
       description: form.description.trim(),
@@ -205,7 +207,10 @@ export default function NewListingWizard() {
 
     if (error || !slug || !id) {
       setSubmitting(false)
-      setSubmitError('Something went wrong. Please try again.')
+      setSubmitError(error || 'Something went wrong. Please try again.')
+      // Hitting the plan cap is the one failure with an obvious next step, so
+      // offer it as a link rather than leaving them re-reading the message.
+      setSubmitBlockedByPlan(reason === 'no_plan' || reason === 'limit_reached')
       return
     }
 
@@ -952,6 +957,13 @@ export default function NewListingWizard() {
             {submitError && (
               <div style={{ background: '#fdf2f5', border: '1px solid #f5c6d0', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#8C1D40', marginBottom: '16px' }}>
                 {submitError}
+                {submitBlockedByPlan && (
+                  <div style={{ marginTop: '8px' }}>
+                    <a href="/landlord/billing" style={{ color: '#8C1D40', fontWeight: 700, textDecoration: 'underline' }}>
+                      See plans &rarr;
+                    </a>
+                  </div>
+                )}
               </div>
             )}
             {uploadStatus && (

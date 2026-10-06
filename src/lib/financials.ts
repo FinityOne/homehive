@@ -12,12 +12,33 @@ import {
   type Economics, type SettleMethod, type RevenueSource,
 } from './platformFees'
 
-/** List price of each thing a landlord can buy, in cents. */
+/**
+ * List price of each thing a landlord can buy, in cents.
+ *
+ * The retired plans stay here: their rows are still in the database and a
+ * revenue report that silently prices them at zero is worse than no report.
+ */
 const PLAN_PRICE_CENTS: Record<string, number> = {
-  single_listing: 2999,
-  two_listing:    4999,
+  // Current tiers, priced by property count.
+  starter:         1999,
+  growth:          4999,
+  unlimited:      19999,
+  // Retired — historical rows only.
+  single_listing:  2999,
+  two_listing:     4999,
   lifetime:       29900,
-  per_lead:        199,
+  per_lead:         199,
+  legacy_free:        0,
+}
+
+/** What a subscription line should read as on the ledger. */
+const PLAN_LINE_ITEM: Record<string, string> = {
+  starter:        'Starter — 1 property, monthly',
+  growth:         'Growth — up to 5 properties, monthly',
+  unlimited:      'Unlimited properties, monthly',
+  single_listing: 'Legacy — 1 listing, monthly',
+  two_listing:    'Legacy — 2 listings, monthly',
+  legacy_free:    'Grandfathered — no charge',
 }
 
 const dollarsToCents = (v: unknown) => Math.round(Number(v ?? 0) * 100)
@@ -254,7 +275,7 @@ export function buildFinancials(input: FinancialsInput) {
       txns.push({
         id: `sub:${s.id}:${m}`, kind: 'subscription', source: 'subscription',
         date: iso, month: m, status: 'paid', method: 'card', onPlatform: true, ...e,
-        items: [s.plan_type === 'two_listing' ? 'Unlimited listings — monthly' : '1 listing — monthly'],
+        items: [PLAN_LINE_ITEM[s.plan_type] ?? `${s.plan_type} — monthly`],
         payer: landlordName(s.landlord_id), payerEmail: profileById.get(s.landlord_id)?.email ?? null,
         propertyId: null, propertyName: null,
         landlordId: s.landlord_id, landlordName: landlordName(s.landlord_id), intentId: null,

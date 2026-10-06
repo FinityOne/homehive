@@ -889,10 +889,10 @@ export default function AdminPaymentsPage() {
                 <div className="pa-card-body">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {[
-                      { icon: '🔓', name: 'Pay Per Lead', model: 'One-time charge per lead unlock', price: '$1.99', note: 'Low friction — captures price-sensitive landlords', color: '#3b82f6' },
-                      { icon: '▣', name: '1 Listing Plan', model: 'Monthly subscription — 1 listing, unlimited leads', price: '$29.99/mo', note: 'Entry subscription tier', color: '#8b5cf6' },
-                      { icon: '⊞', name: 'Unlimited Listings', model: 'Monthly subscription — all listings', price: '$49.99/mo', note: 'Best value — target active landlords with multiple properties', color: '#10b981' },
-                      { icon: '♾', name: 'Lifetime Deal', model: 'One-time payment, all listings forever', price: '$299', note: 'Founding member rate — high LTV, limited availability', color: '#f59e0b' },
+                      { icon: '▣', name: 'Starter', model: 'Monthly subscription — 1 property', price: '$19.99/mo', note: 'Entry tier — the single-door landlord', color: '#3b82f6' },
+                      { icon: '⊞', name: 'Growth', model: 'Monthly subscription — up to 5 properties', price: '$49.99/mo', note: 'Best value — small portfolios, highest conversion', color: '#10b981' },
+                      { icon: '♾', name: 'Unlimited', model: 'Monthly subscription — unlimited properties', price: '$199.99/mo', note: 'Portfolio operators — highest LTV', color: '#8b5cf6' },
+                      { icon: '🗄', name: 'Retired plans', model: 'Per-lead unlocks, legacy listing plans, lifetime deals', price: '—', note: 'No longer sold; existing rows still counted in revenue above', color: '#71717a' },
                     ].map(r => (
                       <div key={r.name} style={{ display: 'flex', gap: 14, alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #3f3f46' }}>
                         <div style={{ fontSize: 20, flexShrink: 0, marginTop: 1 }}>{r.icon}</div>

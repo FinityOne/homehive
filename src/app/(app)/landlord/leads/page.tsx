@@ -10,7 +10,6 @@ import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 
-const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
 
 const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'tour_scheduled', 'closed']
 
@@ -79,18 +78,6 @@ function initials(first: string | null, last: string | null): string {
 }
 
 type Property = { slug: string; name: string; address: string }
-
-function computeFreeLeadIds(leads: Lead[]): Set<string> {
-  const oldestBySlug: Record<string, Lead> = {}
-  for (const lead of leads) {
-    if (!lead.property) continue
-    const prev = oldestBySlug[lead.property]
-    if (!prev || new Date(lead.created_at ?? 0) < new Date(prev.created_at ?? 0)) {
-      oldestBySlug[lead.property] = lead
-    }
-  }
-  return new Set(Object.values(oldestBySlug).map(l => l.id))
-}
 
 // ─── Leads-over-time chart (dependency-free SVG; lowest-friction, no bundle bloat) ──
 function LeadsTrendChart({ leads }: { leads: Lead[] }) {
@@ -381,11 +368,6 @@ export default function LandlordLeadsPage() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
   const [closeModal, setCloseModal] = useState<{ leadId: string } | null>(null)
 
-  // Unlock state
-  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set())
-  const [freeLeadIds, setFreeLeadIds] = useState<Set<string>>(new Set())
-  const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
-  const [autoUnlockingId, setAutoUnlockingId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [collapsedProps, setCollapsedProps] = useState<Set<string>>(new Set())
 
@@ -426,8 +408,6 @@ export default function LandlordLeadsPage() {
     } catch {}
   }
 
-  const isLeadVisible = (lead: Lead) =>
-    freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -442,16 +422,8 @@ export default function LandlordLeadsPage() {
     if (!userId) return
     setLoading(true)
 
-    // Round 1: fetch properties, unlocks, and plan in parallel — no duplicate fetches
-    const [
-      { data: propertiesData },
-      { data: unlocks },
-      { data: plan },
-    ] = await Promise.all([
-      supabase.from('properties').select('slug, name, address').eq('owner_id', userId),
-      supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
-      supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', userId).eq('status', 'active').maybeSingle(),
-    ])
+    const { data: propertiesData } = await supabase
+      .from('properties').select('slug, name, address').eq('owner_id', userId)
 
     const props = (propertiesData || []) as Property[]
     setProperties(props)
@@ -477,18 +449,10 @@ export default function LandlordLeadsPage() {
     })
 
     setLeads(leadsData)
-    setFreeLeadIds(computeFreeLeadIds(leadsData))
 
     // Build last-contacted map from service-role API (bypasses RLS on email_logs)
     const lastContactMap: Record<string, string> = contactsRes.ok ? await contactsRes.json() : {}
     setLastContactedAt(lastContactMap)
-
-    const hasPlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
-    if (hasPlan) {
-      setUnlockedIds(new Set(leadsData.map(l => l.id)))
-    } else {
-      setUnlockedIds(new Set((unlocks || []).map((u: any) => u.lead_id)))
-    }
 
     setLoading(false)
   }, [userId])
@@ -497,15 +461,6 @@ export default function LandlordLeadsPage() {
 
   // Reset page when filters change
   useEffect(() => { setPage(1) }, [search, statusFilter, propertyFilter])
-
-  // Auto-record free unlocks silently
-  useEffect(() => {
-    if (!userId || freeLeadIds.size === 0) return
-    const toAutoUnlock = [...freeLeadIds].filter(id => !unlockedIds.has(id))
-    for (const leadId of toAutoUnlock) {
-      fetch(`/api/leads/${leadId}/unlock`, { method: 'POST' }).catch(() => {})
-    }
-  }, [userId, freeLeadIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Inline status change ─────────────────────────────────────────────────
   const handleStatusChange = async (lead: Lead, newStatus: Lead['status']) => {
@@ -545,36 +500,6 @@ export default function LandlordLeadsPage() {
     setUpdatingStatusId(null)
   }
 
-  // ── Unlock ────────────────────────────────────────────────────────────────
-  const handleUnlockClick = async (lead: Lead, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (freeLeadIds.has(lead.id)) {
-      setAutoUnlockingId(lead.id)
-      try {
-        const res = await fetch(`/api/leads/${lead.id}/unlock`, { method: 'POST' })
-        const data = await res.json()
-        if (data.isUnlocked) {
-          setUnlockedIds(prev => new Set([...prev, lead.id]))
-          showToast('Lead unlocked!')
-        }
-      } catch { showToast('Failed to unlock lead') }
-      setAutoUnlockingId(null)
-      return
-    }
-    setUnlockModalLeadId(lead.id)
-  }
-
-  const handleUnlockSuccess = (unlockType: string) => {
-    if (unlockType === 'subscription') {
-      setUnlockedIds(new Set(leads.map(l => l.id)))
-      showToast('Plan activated! All leads now unlocked.')
-    } else if (unlockModalLeadId) {
-      setUnlockedIds(prev => new Set([...prev, unlockModalLeadId]))
-      showToast('Lead unlocked!')
-    }
-    setUnlockModalLeadId(null)
-  }
-
   // ── Derived state ─────────────────────────────────────────────────────────
 
   // Deduplicate grouped leads: keep only the primary (oldest) per group+property
@@ -602,25 +527,19 @@ export default function LandlordLeadsPage() {
     return { displayLeads: display, groupCountById: countById }
   })()
 
-  const sortedLeads = [...displayLeads].sort((a, b) => {
-    const rank = (l: Lead) => isLeadVisible(l) ? 0 : freeLeadIds.has(l.id) ? 1 : 2
-    if (rank(a) !== rank(b)) return rank(a) - rank(b)
-    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  })
+  const sortedLeads = [...displayLeads].sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  )
 
   const filteredLeads = sortedLeads.filter(l => {
     if (statusFilter !== 'all' && l.status !== statusFilter) return false
     if (propertyFilter !== 'all' && l.property !== propertyFilter) return false
     if (search) {
       const q = search.toLowerCase()
-      if (isLeadVisible(l)) {
-        if (!((l.first_name || '').toLowerCase().includes(q) ||
-              (l.last_name || '').toLowerCase().includes(q) ||
-              (l.email || '').toLowerCase().includes(q) ||
-              (l.property || '').toLowerCase().includes(q))) return false
-      } else {
-        if (!(l.property || '').toLowerCase().includes(q)) return false
-      }
+      if (!((l.first_name || '').toLowerCase().includes(q) ||
+            (l.last_name || '').toLowerCase().includes(q) ||
+            (l.email || '').toLowerCase().includes(q) ||
+            (l.property || '').toLowerCase().includes(q))) return false
     }
     return true
   })
@@ -635,13 +554,10 @@ export default function LandlordLeadsPage() {
     return acc
   }, {})
   const needsPrescreen = displayLeads.filter(l => ['new', 'contacted', 'engaged'].includes(l.status)).length
-  const lockedCount = displayLeads.filter(l => !isLeadVisible(l)).length
 
   const PAGE_SIZE = 10
-  const visibleFiltered = filteredLeads.filter(l => isLeadVisible(l))
-  const lockedFiltered = filteredLeads.filter(l => !isLeadVisible(l))
-  const totalPages = Math.max(1, Math.ceil(visibleFiltered.length / PAGE_SIZE))
-  const pagedVisible = visibleFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE))
+  const pagedVisible = filteredLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const sendReminder = async (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -752,7 +668,7 @@ export default function LandlordLeadsPage() {
     const qualified = (byStatus.qualified || 0) + (byStatus.tour_scheduled || 0)
     const conversionRate = propLeads.length > 0 ? Math.round((qualified / propLeads.length) * 100) : 0
     const scored = active
-      .filter(l => isLeadVisible(l))
+      .filter(l => true)
       .map(l => ({ lead: l, score: leadScore(l), days: staleDays(l) }))
       .sort((a, b) => b.score - a.score)
     const hotLeads = scored.filter(l => l.score >= 50)
@@ -762,7 +678,7 @@ export default function LandlordLeadsPage() {
 
   // ─── Top leads by score (all properties) ────────────────────────────────────
   const topLeads = [...leads]
-    .filter(l => l.status !== 'closed' && isLeadVisible(l))
+    .filter(l => l.status !== 'closed' && true)
     .map(l => ({ lead: l, score: leadScore(l), days: staleDays(l) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 6)
@@ -790,7 +706,7 @@ export default function LandlordLeadsPage() {
   }
 
   const suggestions: Suggestion[] = []
-  const visibleActiveLeads = leads.filter(l => l.status !== 'closed' && isLeadVisible(l))
+  const visibleActiveLeads = leads.filter(l => l.status !== 'closed' && true)
 
   for (const lead of visibleActiveLeads) {
     // Suppress if an email was sent in the last 24h, unless the lead is now hot (submitted pre-screen)
@@ -988,79 +904,6 @@ export default function LandlordLeadsPage() {
     )
   }
 
-  const renderLockedRows = (lockedLeads: Lead[], showPropName: boolean) => {
-    const colCount = showPropName ? 8 : 7
-    return (
-      <>
-        <tr>
-          <td colSpan={colCount} style={{ padding: 0 }}>
-            <div style={{
-              background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)',
-              padding: '12px 18px',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
-              borderTop: '2px solid #e8e5de',
-            }}>
-              <div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginBottom: 3, fontFamily: "'DM Sans', sans-serif" }}>🔒 {lockedLeads.length} lead{lockedLeads.length !== 1 ? 's' : ''} locked</div>
-                <div style={{ color: '#9b9b9b', fontSize: 11, lineHeight: 1.6, fontFamily: "'DM Sans', sans-serif" }}>
-                  Unlock to see name, email & phone ·{' '}
-                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> 1 listing ·{' '}
-                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$49.99/mo</span> unlimited ·{' '}
-                  <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
-                </div>
-              </div>
-              <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
-                style={{ background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}>
-                Unlock Leads →
-              </button>
-            </div>
-          </td>
-        </tr>
-        {lockedLeads.slice(0, 3).map(lead => {
-          const meta = STATUS_META[lead.status]
-          return (
-            <tr key={lead.id} style={{ background: '#fafaf8', borderLeft: '3px solid #e0ddd7', cursor: 'pointer' }} onClick={() => setUnlockModalLeadId(lead.id)}>
-              <td>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#d4d0c8', filter: 'blur(3px)' }} />
-              </td>
-              <td>
-                <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
-                  <div className="blur-line" style={{ width: 90, height: 12, marginBottom: 4 }} />
-                  <div className="blur-line" style={{ width: 140, height: 10 }} />
-                </div>
-              </td>
-              <td>
-                <span className="ll-badge" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>{meta.label}</span>
-              </td>
-              {showPropName && <td />}
-              <td style={{ fontSize: 12, color: '#b0a898' }}>{lead.move_in_date || '—'}</td>
-              <td style={{ fontSize: 11, color: '#b0a898', whiteSpace: 'nowrap' }}>{timeAgo(lead.created_at)}</td>
-              <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                <button
-                  style={{ padding: '5px 10px', borderRadius: 6, border: '1.5px solid #FFC627', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", background: 'rgba(255,198,39,0.08)', color: '#b07a00', whiteSpace: 'nowrap' }}
-                  onClick={() => setUnlockModalLeadId(lead.id)}
-                >
-                  🔒 Unlock
-                </button>
-              </td>
-            </tr>
-          )
-        })}
-        {lockedLeads.length > 3 && (
-          <tr>
-            <td colSpan={colCount} style={{ padding: '9px 16px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
-              <span style={{ fontSize: 12, color: '#9b9b9b', fontFamily: "'DM Sans', sans-serif" }}>+{lockedLeads.length - 3} more — </span>
-              <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
-                style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}>
-                unlock all →
-              </button>
-            </td>
-          </tr>
-        )}
-      </>
-    )
-  }
-
   if (!loading && properties.length === 0) {
     return (
       <div style={{ maxWidth: '560px', margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
@@ -1215,11 +1058,6 @@ export default function LandlordLeadsPage() {
             <div className="ll-subtitle">{leads.length} total · sorted by most recent</div>
           </div>
           <div className="ll-header-right">
-            {lockedCount > 0 && (
-              <span style={{ fontSize: '12px', color: '#FFC627', fontWeight: 600, background: 'rgba(255,198,39,0.12)', border: '1px solid rgba(255,198,39,0.3)', borderRadius: '20px', padding: '4px 12px' }}>
-                🔒 {lockedCount} lead{lockedCount !== 1 ? 's' : ''} locked
-              </span>
-            )}
             <a href="/landlord/leads/pipeline" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}>Pipeline guide →</a>
             <button className="btn-gold" onClick={() => setShowAddModal(true)}>+ Add Lead</button>
           </div>
@@ -1534,14 +1372,6 @@ export default function LandlordLeadsPage() {
         </div>
       )}
 
-      {/* ── UNLOCK MODAL ── */}
-      {unlockModalLeadId && (
-        <UnlockModal
-          leadId={unlockModalLeadId}
-          onSuccess={handleUnlockSuccess}
-          onClose={() => setUnlockModalLeadId(null)}
-        />
-      )}
       </div>
     </>
   )

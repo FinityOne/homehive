@@ -2,6 +2,7 @@ import Stripe from 'stripe'
 import { stripeSecretKey, stripeWebhookSecret } from '@/lib/stripeEnv'
 import { createClient } from '@supabase/supabase-js'
 import { settleRentPayment, revertRentPayment } from '@/lib/rentSettlement'
+import { syncSubscription } from '@/lib/landlordPlanServer'
 import { NextRequest } from 'next/server'
 
 function getStripe() { return new Stripe(stripeSecretKey()) }
@@ -34,32 +35,6 @@ export async function POST(req: NextRequest) {
         const pi = event.data.object as Stripe.PaymentIntent
         const { metadata } = pi
 
-        if (metadata.type === 'per_lead') {
-          const { leadId, landlordId } = metadata
-          const { data: lead } = await supabaseAdmin
-            .from('leads').select('id, property').eq('id', leadId).single()
-          if (lead) {
-            const { data: property } = await supabaseAdmin
-              .from('properties').select('id').eq('slug', lead.property).single()
-            if (property) {
-              await supabaseAdmin.from('lead_unlocks').upsert({
-                lead_id: leadId, listing_id: property.id,
-                landlord_id: landlordId, unlock_type: 'per_lead',
-                stripe_payment_intent_id: pi.id,
-              }, { onConflict: 'lead_id,landlord_id' })
-            }
-          }
-        }
-
-        if (metadata.type === 'lifetime') {
-          const { landlordId } = metadata
-          const customerId = typeof pi.customer === 'string' ? pi.customer : (pi.customer as any)?.id ?? ''
-          await supabaseAdmin.from('landlord_plans').upsert({
-            landlord_id: landlordId, plan_type: 'lifetime',
-            stripe_customer_id: customerId, status: 'active',
-          }, { onConflict: 'landlord_id' })
-        }
-
         if (metadata.type === 'rent_payment') {
           await settleRentPayment(supabaseAdmin, pi, 'paid')
         }
@@ -81,20 +56,36 @@ export async function POST(req: NextRequest) {
         break
       }
 
+      // Checkout is how a landlord first pays. The success redirect confirms
+      // the same session synchronously so the portal unlocks immediately; this
+      // is the backstop for the landlord who closes the tab on the Stripe page
+      // after paying.
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session
+        if (session.mode !== 'subscription') break
+        const landlordId = session.client_reference_id ?? session.metadata?.landlordId
+        const plan = session.metadata?.plan
+        const subId = typeof session.subscription === 'string'
+          ? session.subscription
+          : session.subscription?.id
+        if (!landlordId || !plan || !subId) break
+        const sub = await stripe.subscriptions.retrieve(subId)
+        await syncSubscription(supabaseAdmin, landlordId, plan, sub)
+        break
+      }
+
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription
         const landlordId = sub.metadata?.landlordId
         if (!landlordId) break
-        const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : 'cancelled'
-        await supabaseAdmin.from('landlord_plans').upsert({
-          landlord_id: landlordId,
-          plan_type: sub.metadata?.plan ?? 'single_listing',
-          stripe_customer_id: typeof sub.customer === 'string' ? sub.customer : (sub.customer as any).id,
-          stripe_subscription_id: sub.id,
-          status,
-          current_period_end: new Date((sub as any).current_period_end * 1000).toISOString(),
-        }, { onConflict: 'landlord_id' })
+        // The tier lives on the subscription, set when it was created or last
+        // changed. Falling back to what is already on the row keeps a renewal
+        // from quietly demoting somebody.
+        const { data: current } = await supabaseAdmin
+          .from('landlord_plans').select('plan_type').eq('landlord_id', landlordId).maybeSingle()
+        const plan = sub.metadata?.plan ?? current?.plan_type ?? 'starter'
+        await syncSubscription(supabaseAdmin, landlordId, plan, sub)
         break
       }
 
@@ -105,7 +96,6 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin
           .from('landlord_plans').update({ status: 'cancelled' })
           .eq('landlord_id', landlordId).eq('stripe_subscription_id', sub.id)
-        // lead_unlock records are permanent — never removed on cancellation
         break
       }
     }
