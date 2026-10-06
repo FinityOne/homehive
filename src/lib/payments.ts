@@ -96,8 +96,12 @@ export type SpecialPayment = {
   label: string
   amount: number
   due_date: string
-  status: 'pending' | 'paid' | 'waived'
+  /** `processing` = paid by ACH and still clearing. `settleRentPayment` writes
+   *  it here exactly as it does on rent, so it belongs in the type. */
+  status: 'pending' | 'paid' | 'waived' | 'processing'
   paid_date: string | null
+  /** How it settled — matches `scheduled_payments.payment_method`. */
+  payment_method: 'card' | 'ach' | 'manual_zelle' | 'manual_other' | null
   notes: string | null
   /** Requests the landlord has emailed about this charge — same history rent keeps. */
   reminder_sent_at: string | null
@@ -430,7 +434,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
       scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, late_fees_applied, payment_method),
-      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date)
+      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, payment_method)
     `)
     .eq('owner_id', ownerId)
     .order('created_at', { ascending: false })
@@ -674,7 +678,7 @@ export async function updateScheduledPayment(
 export async function updateSpecialPayment(
   id: string,
   updates: Partial<{
-    status:    'pending' | 'paid' | 'waived'
+    status:    'pending' | 'paid' | 'waived' | 'processing'
     paid_date: string | null
     notes:     string
   }>
@@ -693,7 +697,7 @@ export async function updateSpecialPaymentFull(
     label:     string
     amount:    number
     due_date:  string
-    status:    'pending' | 'paid' | 'waived'
+    status:    'pending' | 'paid' | 'waived' | 'processing'
     paid_date: string | null
     notes:     string | null
   }>

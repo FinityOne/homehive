@@ -5,8 +5,8 @@ import dynamic from 'next/dynamic'
 import { getCurrentUser, supabase } from '@/lib/supabase'
 import { getPlansForOwner, fmtCurrency, fmtDate, type PaymentPlan } from '@/lib/payments'
 import {
-  buildPortfolio, actionQueue, monthlyTrend, SCOPES, STAGE_LABEL,
-  type Scope, type LeaseSummary, type PropertyGroup, type ActionItem,
+  buildPortfolio, actionQueue, monthlyTrend, SCOPES, STAGE_LABEL, METHOD_META,
+  type Scope, type LeaseSummary, type PropertyGroup, type ActionItem, type MethodSlice,
 } from '@/lib/financialsRollup'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
@@ -328,7 +328,14 @@ export default function FinancialsPage({
               <SummaryCard
                 label="Outstanding"
                 value={fmtCurrency(t.outstanding)}
-                meta={t.outstanding > 0 ? `${t.count - t.settledCount} charge${t.count - t.settledCount !== 1 ? 's' : ''} unsettled` : 'All settled'}
+                meta={
+                  t.outstanding === 0 ? 'All settled'
+                  // An ACH debit already sent is outstanding but not owed —
+                  // saying so is the difference between chasing a tenant who
+                  // has paid and one who hasn't.
+                  : t.inFlight > 0 ? `incl. ${fmtCurrency(t.inFlight)} clearing by bank transfer`
+                  : `${t.count - t.settledCount} charge${t.count - t.settledCount !== 1 ? 's' : ''} unsettled`
+                }
                 tone={t.outstanding > 0 ? 'warn' : 'good'}
                 onClick={() => selectView(t.outstanding > 0 ? 'attention' : 'portfolio')}
               />
@@ -347,13 +354,29 @@ export default function FinancialsPage({
             <div className="facts">
               <Fact label="Contracted rent" value={`${fmtCurrency(portfolio.monthly)}/mo`} />
               <Fact label="Deposits held" value={fmtCurrency(portfolio.depositsHeld)} />
-              <Fact label="Late fees applied" value={fmtCurrency(portfolio.lateFees)} />
+              <Fact
+                label="Clearing now"
+                value={t.inFlight > 0 ? fmtCurrency(t.inFlight) : 'None'}
+                meta={t.inFlightCount > 0
+                  ? `${t.inFlightCount} bank transfer${t.inFlightCount !== 1 ? 's' : ''} in flight`
+                  : 'no transfers pending'}
+              />
               <Fact
                 label="Active leases"
                 value={`${portfolio.activeLeaseCount} of ${portfolio.leaseCount}`}
                 meta={`${portfolio.propertyCount} propert${portfolio.propertyCount !== 1 ? 'ies' : 'y'}`}
               />
             </div>
+
+            {/* How the money actually arrived. Card and bank transfer cost the
+                tenant different surcharges and settle on different timescales,
+                so the split is a fact about the portfolio, not a detail. */}
+            {portfolio.methods.length > 0 && (
+              <section className="methods-bar">
+                <span className="methods-label">How it was paid</span>
+                <MethodChips slices={portfolio.methods} />
+              </section>
+            )}
 
             <div className="seg full" role="tablist" aria-label="Financials sections">
               {VIEWS.map(v => (
@@ -583,6 +606,9 @@ function LeaseRow({
             {lease.name}
             <StagePill stage={lease.stage} />
             {t.overdueCount > 0 && <span className="pill bad">{t.overdueCount} overdue</span>}
+            {t.inFlightCount > 0 && (
+              <span className="pill info">{fmtCurrency(t.inFlight)} clearing</span>
+            )}
             {lease.openCharges.length > 0 && (
               <span className="pill warn">{lease.openCharges.length} open charge{lease.openCharges.length !== 1 ? 's' : ''}</span>
             )}
@@ -597,7 +623,7 @@ function LeaseRow({
         <span className="num">{lease.monthly > 0 ? fmtCurrency(lease.monthly) : '—'}</span>
         <span className="num">{t.billed > 0 ? fmtCurrency(t.billed) : '—'}</span>
         <span className="num good">{t.collected > 0 ? fmtCurrency(t.collected) : '—'}</span>
-        <span className={`num${t.outstanding > 0 ? (t.overdue > 0 ? ' bad' : ' warn') : ' dim'}`}>
+        <span className={`num${t.outstanding > 0 ? (t.overdue > 0 ? ' bad' : t.inFlight >= t.outstanding ? ' info' : ' warn') : ' dim'}`}>
           {t.outstanding > 0 ? fmtCurrency(t.outstanding) : 'Settled'}
         </span>
         <span className="row-chev" aria-hidden="true" />
@@ -650,6 +676,20 @@ function LeaseRow({
               </div>
             )}
           </div>
+
+          {lease.methods.length > 0 && (
+            <div className="drill-sec">
+              <div className="drill-hd">
+                How it was paid
+                {lease.total.inFlight > 0 && (
+                  <span className="drill-hd-note">
+                    {fmtCurrency(lease.total.inFlight)} still clearing
+                  </span>
+                )}
+              </div>
+              <MethodChips slices={lease.methods} />
+            </div>
+          )}
 
           {lease.openCharges.length > 0 && (
             <div className="drill-sec">
@@ -938,6 +978,40 @@ function SummaryCard({
   )
 }
 
+/**
+ * How money arrived, one chip per method.
+ *
+ * Card and bank transfer are not interchangeable: the tenant pays a different
+ * surcharge for each, and only ACH has a days-long gap between "paid" and
+ * "landed". A chip therefore carries both the amount and, when some of it is
+ * still clearing, how much — so "ACH $2,400" and "ACH $2,400, $800 clearing"
+ * can never be read as the same thing.
+ */
+function MethodChips({ slices }: { slices: MethodSlice[] }) {
+  return (
+    <div className="mchips">
+      {slices.map(s => {
+        const meta = METHOD_META[s.method]
+        return (
+          <span
+            key={s.method}
+            className="mchip"
+            style={{ background: meta.bg, color: meta.color }}
+            title={`${s.count} payment${s.count !== 1 ? 's' : ''} by ${meta.label}`}
+          >
+            <span className="mchip-dot" style={{ background: meta.color }} aria-hidden="true" />
+            <span className="mchip-label">{meta.short}</span>
+            <strong className="mchip-amt">{fmtCurrency(s.amount)}</strong>
+            {s.clearing > 0 && (
+              <span className="mchip-clearing">{fmtCurrency(s.clearing)} clearing</span>
+            )}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 function Fact({ label, value, meta }: { label: string; value: string; meta?: string }) {
   return (
     <div className="fact">
@@ -1102,6 +1176,29 @@ const CSS = `
   .fact-value { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .fact-meta { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
 
+  /* ── How money arrived ── */
+  .methods-bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 13px 18px; margin-bottom: 22px;
+  }
+  .methods-label { font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.01em; }
+  .mchips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mchip {
+    display: inline-flex; align-items: center; gap: 7px;
+    border-radius: 980px; padding: 5px 13px 5px 10px; font-size: 12.5px;
+    letter-spacing: -0.01em; white-space: nowrap;
+  }
+  .mchip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .mchip-label { font-weight: 500; }
+  .mchip-amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+  /* The clearing share rides inside the chip, not beside it: an ACH figure
+     without it reads as money the landlord already has. */
+  .mchip-clearing {
+    font-size: 11px; opacity: 0.85; padding-left: 7px;
+    border-left: 1px solid currentColor; font-variant-numeric: tabular-nums;
+  }
+
   /* ── Panels ── */
   .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 16px; overflow: hidden; }
   .panel-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; }
@@ -1174,6 +1271,7 @@ const CSS = `
   .num.bad  { color: var(--bad); font-weight: 600; }
   .num.warn { color: var(--warn); }
   .num.dim  { color: var(--ink-3); }
+  .num.info { color: #0057b8; }
 
   .tbl-foot {
     padding: 12px 20px; background: #fafafb; border-top: 1px solid var(--line);

@@ -850,7 +850,7 @@ function SpecialChargeCard({
   const [label,    setLabel]    = useState(sp.label)
   const [amount,   setAmount]   = useState(String(sp.amount))
   const [dueDate,  setDueDate]  = useState(sp.due_date)
-  const [status,   setStatus]   = useState<'pending' | 'paid' | 'waived'>(sp.status)
+  const [status,   setStatus]   = useState<SpecialPayment['status']>(sp.status)
   const [paidDate, setPaidDate] = useState(sp.paid_date ?? '')
   const [notes,    setNotes]    = useState(sp.notes ?? '')
 
@@ -1032,6 +1032,9 @@ function SpecialChargeCard({
               <option value="pending">Pending</option>
               <option value="paid">Paid</option>
               <option value="waived">Waived</option>
+              {/* Only offered while the debit is actually in flight: it is a
+                  state Stripe owns, not one a landlord should be able to pick. */}
+              {sp.status === 'processing' && <option value="processing">Clearing (ACH)</option>}
             </select>
           </div>
           <div>

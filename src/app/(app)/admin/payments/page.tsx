@@ -430,7 +430,12 @@ export default function AdminPaymentsPage() {
           <div className="pa-tabs">
             {([
               { id: 'overview',      label: '⊞ Overview'          },
-              { id: 'financials',    label: '◈ Financials'        },
+              // Labelled "Revenue", but the tab id stays `financials` so every
+              // existing ?tab=financials link and bookmark still lands here.
+              // "Financials" now means the landlord's own rent page; this one
+              // is the platform's P&L, and two different things sharing a name
+              // is how people end up on the wrong screen.
+              { id: 'financials',    label: '◈ Revenue'           },
               { id: 'subscriptions', label: '◎ Subscriptions'     },
               { id: 'products',      label: '▣ Products & Pricing' },
             ] as { id: Tab; label: string }[]).map(t => (

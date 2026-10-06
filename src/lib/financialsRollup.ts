@@ -80,13 +80,23 @@ export type Totals = {
   count: number
   /** Charges fully settled. */
   settledCount: number
+  /**
+   * Money the tenant has already sent that has not landed yet — an ACH debit
+   * in `processing`. It is a slice of `outstanding`, not a separate bucket:
+   * the landlord does not have it, so it cannot count as collected, but they
+   * must not chase it either. Showing it is the whole point — otherwise an
+   * ACH payment looks identical to a tenant who simply hasn't paid.
+   */
+  inFlight: number
+  /** How many charges are clearing. */
+  inFlightCount: number
   /** collected ÷ billed as 0–100. `null` when nothing was billed. */
   rate: number | null
 }
 
 export const EMPTY_TOTALS: Totals = {
   billed: 0, collected: 0, outstanding: 0, overdue: 0,
-  overdueCount: 0, count: 0, settledCount: 0, rate: null,
+  overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, rate: null,
 }
 
 function finish(t: Omit<Totals, 'outstanding' | 'rate'>): Totals {
@@ -100,13 +110,15 @@ function finish(t: Omit<Totals, 'outstanding' | 'rate'>): Totals {
 export function sumTotals(parts: Totals[]): Totals {
   if (parts.length === 0) return EMPTY_TOTALS
   return finish(parts.reduce((a, b) => ({
-    billed:       a.billed + b.billed,
-    collected:    a.collected + b.collected,
-    overdue:      a.overdue + b.overdue,
-    overdueCount: a.overdueCount + b.overdueCount,
-    count:        a.count + b.count,
-    settledCount: a.settledCount + b.settledCount,
-  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0 }))
+    billed:        a.billed + b.billed,
+    collected:     a.collected + b.collected,
+    overdue:       a.overdue + b.overdue,
+    overdueCount:  a.overdueCount + b.overdueCount,
+    count:         a.count + b.count,
+    settledCount:  a.settledCount + b.settledCount,
+    inFlight:      a.inFlight + b.inFlight,
+    inFlightCount: a.inFlightCount + b.inFlightCount,
+  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0 }))
 }
 
 /** Rent that is still live money — a voided row was cancelled, not collected. */
@@ -134,33 +146,110 @@ function pastDue(sp: ScheduledPayment, todayStr: string): boolean {
 export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date()): Totals {
   const todayStr = iso(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
+  let inFlight = 0, inFlightCount = 0
   for (const sp of sps) {
     if (!liveRent(sp) || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
     collected += sp.paid_amount
     if (sp.paid_amount >= sp.amount) settledCount++
+    if (sp.status === 'processing') {
+      inFlight += Math.max(0, sp.amount - sp.paid_amount)
+      inFlightCount++
+    }
     if (pastDue(sp, todayStr)) {
       overdue += sp.amount - sp.paid_amount
       overdueCount++
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount })
 }
 
 /** A one-off charge has no partial state on `special_payments` — paid means the
- *  whole amount landed. A waived charge is written off and leaves the ledger. */
+ *  whole amount landed. A waived charge is written off and leaves the ledger.
+ *  `processing` is an ACH debit still clearing: not collected, but not overdue
+ *  either, so it must be carved out before the past-due test or a tenant who
+ *  paid by bank transfer gets chased for money already on its way. */
 export function chargeTotals(specials: SpecialPayment[], range: Range, now = new Date()): Totals {
   const todayStr = iso(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
+  let inFlight = 0, inFlightCount = 0
   for (const sp of specials) {
     if (sp.status === 'waived' || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
     if (sp.status === 'paid') { collected += sp.amount; settledCount++ }
+    else if (sp.status === 'processing') { inFlight += sp.amount; inFlightCount++ }
     else if (sp.due_date < todayStr) { overdue += sp.amount; overdueCount++ }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount })
+}
+
+// ─── HOW MONEY ARRIVED ───────────────────────────────────────────────────────
+
+/** The ways a settled payment can have reached the landlord. */
+export type SettleMethod = 'card' | 'ach' | 'manual_zelle' | 'manual_other'
+
+export const METHOD_META: Record<SettleMethod, { label: string; short: string; color: string; bg: string }> = {
+  card:         { label: 'Card',          short: 'Card',   color: '#6d28d9', bg: '#f5f3ff' },
+  ach:          { label: 'Bank transfer', short: 'ACH',    color: '#1d4ed8', bg: '#eff6ff' },
+  manual_zelle: { label: 'Zelle',         short: 'Zelle',  color: '#0e7490', bg: '#ecfeff' },
+  manual_other: { label: 'Recorded by hand', short: 'Manual', color: '#64748b', bg: '#f1f5f9' },
+}
+
+export type MethodSlice = { method: SettleMethod; amount: number; count: number; clearing: number }
+
+/**
+ * How the collected money actually arrived, biggest first.
+ *
+ * Only money that moved counts — a row with no `payment_method` was never
+ * settled, so it belongs in outstanding, not in a method bucket. `clearing`
+ * is the ACH subset still in flight, which is why this is reported per method
+ * rather than as one number: "pending" means something different on a card
+ * (it doesn't happen) than on a bank debit (it takes days).
+ */
+export function methodMix(
+  sps: ScheduledPayment[],
+  specials: SpecialPayment[],
+  range: Range,
+): MethodSlice[] {
+  const acc = new Map<SettleMethod, MethodSlice>()
+  const add = (m: string | null, amount: number, clearing: boolean) => {
+    if (!m || !(m in METHOD_META) || amount <= 0) return
+    const key = m as SettleMethod
+    const cur = acc.get(key) ?? { method: key, amount: 0, count: 0, clearing: 0 }
+    cur.amount += amount
+    cur.count += 1
+    if (clearing) cur.clearing += amount
+    acc.set(key, cur)
+  }
+
+  for (const sp of sps) {
+    if (!liveRent(sp) || !inRange(sp.due_date, range)) continue
+    if (sp.status === 'processing') add(sp.payment_method, sp.amount - sp.paid_amount, true)
+    else add(sp.payment_method, sp.paid_amount, false)
+  }
+  for (const sp of specials) {
+    if (sp.status === 'waived' || !inRange(sp.due_date, range)) continue
+    if (sp.status === 'processing') add(sp.payment_method, sp.amount, true)
+    else if (sp.status === 'paid') add(sp.payment_method, sp.amount, false)
+  }
+
+  return [...acc.values()].sort((a, b) => b.amount - a.amount)
+}
+
+export function sumMethodMix(parts: MethodSlice[][]): MethodSlice[] {
+  const acc = new Map<SettleMethod, MethodSlice>()
+  for (const slices of parts) {
+    for (const s of slices) {
+      const cur = acc.get(s.method) ?? { method: s.method, amount: 0, count: 0, clearing: 0 }
+      cur.amount += s.amount
+      cur.count += s.count
+      cur.clearing += s.clearing
+      acc.set(s.method, cur)
+    }
+  }
+  return [...acc.values()].sort((a, b) => b.amount - a.amount)
 }
 
 // ─── LEASE ───────────────────────────────────────────────────────────────────
@@ -223,6 +312,8 @@ export type LeaseSummary = {
   charges: Totals
   /** Rent + charges — the line a landlord reads first. */
   total: Totals
+  /** How the money that did arrive was paid, within the scope. */
+  methods: MethodSlice[]
 
   /** Every scheduled rent payment across the whole term, ignoring scope. */
   contractValue: number
@@ -266,6 +357,7 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
   const rent = rentTotals(sps, range, now)
   const charges = chargeTotals(specials, range, now)
   const total = sumTotals([rent, charges])
+  const methods = methodMix(sps, specials, range)
   const contract = rentTotals(sps, ALL_TIME, now)
 
   const termStart = plan.lease?.start_date ?? null
@@ -363,7 +455,7 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     monthly: plan.tenants.filter(t => t.status === 'active').reduce((s, t) => s + t.monthly_total, 0),
     payers,
     activePayers: plan.tenants.filter(t => t.status === 'active').length,
-    rent, charges, total,
+    rent, charges, total, methods,
     contractValue: contract.billed,
     contractCollected: contract.collected,
     depositsHeld,
@@ -387,6 +479,7 @@ export type PropertyGroup = {
   rent: Totals
   charges: Totals
   total: Totals
+  methods: MethodSlice[]
   monthly: number
   depositsHeld: number
   activeLeases: number
@@ -418,6 +511,7 @@ export function groupByProperty(leases: LeaseSummary[]): PropertyGroup[] {
       rent:    sumTotals(sorted.map(l => l.rent)),
       charges: sumTotals(sorted.map(l => l.charges)),
       total:   sumTotals(sorted.map(l => l.total)),
+      methods: sumMethodMix(sorted.map(l => l.methods)),
       monthly: sorted.reduce((s, l) => s + l.monthly, 0),
       depositsHeld: sorted.reduce((s, l) => s + l.depositsHeld, 0),
       activeLeases: sorted.filter(l => l.stage === 'active' || l.stage === 'ending').length,
@@ -441,6 +535,8 @@ export type Portfolio = {
   rent: Totals
   charges: Totals
   total: Totals
+  /** How the collected money arrived, across the whole portfolio. */
+  methods: MethodSlice[]
   /** Rent contracted every month across every active lease. */
   monthly: number
   depositsHeld: number
@@ -460,6 +556,7 @@ export function buildPortfolio(plans: PaymentPlan[], scope: Scope, now = new Dat
     rent:    sumTotals(leases.map(l => l.rent)),
     charges: sumTotals(leases.map(l => l.charges)),
     total:   sumTotals(leases.map(l => l.total)),
+    methods: sumMethodMix(leases.map(l => l.methods)),
     monthly: leases.reduce((s, l) => s + l.monthly, 0),
     depositsHeld: leases.reduce((s, l) => s + l.depositsHeld, 0),
     lateFees: leases.reduce((s, l) => s + l.lateFees, 0),
