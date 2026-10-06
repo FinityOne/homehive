@@ -2,6 +2,10 @@ import {
   SPECIAL_CATEGORIES,
   type PaymentPlan, type ScheduledPayment, type SpecialPayment,
 } from '@/lib/payments'
+import { lateFeeDue, lateFeeRuleRisk } from '@/lib/rentPayments'
+
+export { lateFeeDue, lateFeeRuleRisk, lateFeeCappedByCharge } from '@/lib/rentPayments'
+export type { LateFeeRuleLike } from '@/lib/rentPayments'
 
 /**
  * The money model behind the landlord Financials tab.
@@ -90,13 +94,34 @@ export type Totals = {
   inFlight: number
   /** How many charges are clearing. */
   inFlightCount: number
+  /**
+   * Money that did arrive, but after its due date.
+   *
+   * `overdue` only ever describes what is *still* unpaid, so a tenant who pays
+   * three weeks late vanishes from every figure the moment they pay — the page
+   * forgets the whole problem. On this portfolio that is 31 of 68 settled
+   * payments. Collecting late is a different fact from collecting on time, and
+   * it is the one that predicts next month.
+   */
+  collectedLate: number
+  /** How many settled charges arrived after their due date. */
+  collectedLateCount: number
+  /** The worst lateness among them, in days. */
+  maxDaysLate: number
+  /**
+   * Surcharge the *tenant* paid on top (5% card / 2% ACH). Never deducted from
+   * the landlord — it is tracked here only so the page can say so explicitly,
+   * because "fees" is otherwise assumed to come out of rent.
+   */
+  tenantFees: number
   /** collected ÷ billed as 0–100. `null` when nothing was billed. */
   rate: number | null
 }
 
 export const EMPTY_TOTALS: Totals = {
   billed: 0, collected: 0, outstanding: 0, overdue: 0,
-  overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, rate: null,
+  overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0,
+  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0, rate: null,
 }
 
 function finish(t: Omit<Totals, 'outstanding' | 'rate'>): Totals {
@@ -118,7 +143,18 @@ export function sumTotals(parts: Totals[]): Totals {
     settledCount:  a.settledCount + b.settledCount,
     inFlight:      a.inFlight + b.inFlight,
     inFlightCount: a.inFlightCount + b.inFlightCount,
-  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0 }))
+    collectedLate: a.collectedLate + b.collectedLate,
+    collectedLateCount: a.collectedLateCount + b.collectedLateCount,
+    maxDaysLate:   Math.max(a.maxDaysLate, b.maxDaysLate),
+    tenantFees:    a.tenantFees + b.tenantFees,
+  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0 }))
+}
+
+/** Whole days from one ISO date to another. */
+function daysBetweenDates(from: string, to: string): number {
+  return Math.round(
+    (new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86_400_000
+  )
 }
 
 /** Rent that is still live money — a voided row was cancelled, not collected. */
@@ -147,22 +183,31 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
   const todayStr = iso(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
+  let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
   for (const sp of sps) {
     if (!liveRent(sp) || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
     collected += sp.paid_amount
+    tenantFees += sp.processing_fee ?? 0
     if (sp.paid_amount >= sp.amount) settledCount++
     if (sp.status === 'processing') {
       inFlight += Math.max(0, sp.amount - sp.paid_amount)
       inFlightCount++
+    }
+    // Arrived, but after the due date. Measured from paid_date because that is
+    // when the money actually came in, not from today.
+    if (sp.paid_amount > 0 && sp.paid_date && sp.paid_date > sp.due_date) {
+      collectedLate += sp.paid_amount
+      collectedLateCount++
+      maxDaysLate = Math.max(maxDaysLate, daysBetweenDates(sp.due_date, sp.paid_date))
     }
     if (pastDue(sp, todayStr)) {
       overdue += sp.amount - sp.paid_amount
       overdueCount++
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees })
 }
 
 /** A one-off charge has no partial state on `special_payments` — paid means the
@@ -174,15 +219,22 @@ export function chargeTotals(specials: SpecialPayment[], range: Range, now = new
   const todayStr = iso(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
+  let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
   for (const sp of specials) {
     if (sp.status === 'waived' || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
+    tenantFees += sp.processing_fee ?? 0
     if (sp.status === 'paid') { collected += sp.amount; settledCount++ }
     else if (sp.status === 'processing') { inFlight += sp.amount; inFlightCount++ }
     else if (sp.due_date < todayStr) { overdue += sp.amount; overdueCount++ }
+    if (sp.status === 'paid' && sp.paid_date && sp.paid_date > sp.due_date) {
+      collectedLate += sp.amount
+      collectedLateCount++
+      maxDaysLate = Math.max(maxDaysLate, daysBetweenDates(sp.due_date, sp.paid_date))
+    }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees })
 }
 
 // ─── HOW MONEY ARRIVED ───────────────────────────────────────────────────────
@@ -276,6 +328,37 @@ export type PayerSummary = {
   share: number | null
 }
 
+/**
+ * One payment that actually arrived, as a landlord needs to read it.
+ *
+ * Carries both halves of the "how much did I really get" question: what the
+ * tenant was charged, the surcharge they paid on top, and the net credited to
+ * the landlord. The surcharge is *not* subtracted — the tenant pays it over and
+ * above rent — and saying so on every row is the only way to stop the figure
+ * being read as a deduction.
+ */
+export type SettledPayment = {
+  id: string
+  kind: 'rent' | 'charge'
+  label: string
+  who: string | null
+  dueDate: string
+  /** Date the money arrived. Always known for a settled row. */
+  paidDate: string
+  /** Exact instant, when one was recorded. Null for rows entered by hand. */
+  settledAt: string | null
+  daysLate: number
+  /** Rent (or charge) credited to the landlord. */
+  net: number
+  /** Surcharge the tenant paid on top, to the processor — not a deduction. */
+  tenantFee: number
+  /** What left the tenant's account: net + tenantFee. */
+  chargedToTenant: number
+  /** Late fee this row genuinely accrued, derived from the rule. */
+  lateFee: number
+  method: SettleMethod | null
+}
+
 export type OpenCharge = {
   id: string
   label: string
@@ -321,8 +404,19 @@ export type LeaseSummary = {
   contractCollected: number
   /** Security deposits received and not yet returned. */
   depositsHeld: number
-  /** Late fees applied across the lease, all time. */
-  lateFees: number
+  /**
+   * Late fees genuinely accrued across the lease, derived from the rule — see
+   * `lateFeeDue`. Not the `late_fees_applied` column, which is corrupt.
+   */
+  lateFeesDue: number
+  /** What the database currently *claims*, for comparison only. */
+  lateFeesRecorded: number
+  /** Set when the late-fee rule would accrue without limit. */
+  lateFeeRisk: string | null
+  /** Every payment that arrived, newest first — with net, fee and timestamp. */
+  settled: SettledPayment[]
+  /** The subset that arrived after its due date. */
+  settledLate: SettledPayment[]
   /** Open deposits and one-off charges — these do not expire with the scope. */
   openCharges: OpenCharge[]
 
@@ -394,7 +488,55 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     .filter(sp => sp.category === 'security_deposit' && sp.status === 'paid')
     .reduce((s, sp) => s + sp.amount, 0)
 
-  const lateFees = sps.reduce((s, sp) => s + (sp.late_fees_applied ?? 0), 0)
+  const rule = plan.late_fee_rule ?? null
+  // Derived from the rule, never read from the corrupt column — see lateFeeDue.
+  const lateFeesDue = sps.reduce((s, sp) => s + lateFeeDue(rule, sp, now), 0)
+  const lateFeesRecorded = sps.reduce((s, sp) => s + (sp.late_fees_applied ?? 0), 0)
+
+  // Everything that actually arrived, newest first, with the net/fee split and
+  // whatever timestamp precision the row has.
+  const rentByTenant = new Map(plan.tenants.map(t => [t.id, t.name]))
+  const settled: SettledPayment[] = [
+    ...sps
+      .filter(sp => liveRent(sp) && sp.paid_amount > 0 && sp.paid_date)
+      .map((sp): SettledPayment => {
+        const fee = sp.processing_fee ?? 0
+        return {
+          id: sp.id, kind: 'rent',
+          label: new Date(sp.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' rent',
+          who: rentByTenant.get(sp.plan_tenant_id) ?? null,
+          dueDate: sp.due_date,
+          paidDate: sp.paid_date as string,
+          settledAt: sp.settled_at ?? null,
+          daysLate: Math.max(0, daysBetweenDates(sp.due_date, sp.paid_date as string)),
+          net: sp.paid_amount,
+          tenantFee: fee,
+          chargedToTenant: Math.round((sp.paid_amount + fee) * 100) / 100,
+          lateFee: lateFeeDue(rule, sp, now),
+          method: (sp.payment_method as SettleMethod | null) ?? null,
+        }
+      }),
+    ...specials
+      .filter(sp => sp.status === 'paid' && sp.paid_date)
+      .map((sp): SettledPayment => {
+        const fee = sp.processing_fee ?? 0
+        return {
+          id: sp.id, kind: 'charge',
+          label: sp.label,
+          who: sp.tenant?.name ?? null,
+          dueDate: sp.due_date,
+          paidDate: sp.paid_date as string,
+          settledAt: sp.settled_at ?? null,
+          daysLate: Math.max(0, daysBetweenDates(sp.due_date, sp.paid_date as string)),
+          net: sp.amount,
+          tenantFee: fee,
+          chargedToTenant: Math.round((sp.amount + fee) * 100) / 100,
+          lateFee: 0,
+          method: (sp.payment_method as SettleMethod | null) ?? null,
+        }
+      }),
+  ].sort((a, b) => b.paidDate.localeCompare(a.paidDate) || b.daysLate - a.daysLate)
+  const settledLate = settled.filter(p => p.daysLate > 0)
 
   const openCharges: OpenCharge[] = specials
     .filter(sp => sp.status === 'pending')
@@ -459,7 +601,11 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     contractValue: contract.billed,
     contractCollected: contract.collected,
     depositsHeld,
-    lateFees,
+    lateFeesDue,
+    lateFeesRecorded,
+    lateFeeRisk: lateFeeRuleRisk(rule),
+    settled,
+    settledLate,
     openCharges,
     nextDue, lastPaid,
     urgency,
@@ -540,7 +686,7 @@ export type Portfolio = {
   /** Rent contracted every month across every active lease. */
   monthly: number
   depositsHeld: number
-  lateFees: number
+  lateFeesDue: number
   propertyCount: number
   leaseCount: number
   activeLeaseCount: number
@@ -559,7 +705,7 @@ export function buildPortfolio(plans: PaymentPlan[], scope: Scope, now = new Dat
     methods: sumMethodMix(leases.map(l => l.methods)),
     monthly: leases.reduce((s, l) => s + l.monthly, 0),
     depositsHeld: leases.reduce((s, l) => s + l.depositsHeld, 0),
-    lateFees: leases.reduce((s, l) => s + l.lateFees, 0),
+    lateFeesDue: leases.reduce((s, l) => s + l.lateFeesDue, 0),
     propertyCount: groups.length,
     leaseCount: leases.length,
     activeLeaseCount: leases.filter(l => l.stage === 'active' || l.stage === 'ending').length,

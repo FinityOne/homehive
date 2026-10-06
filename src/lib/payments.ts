@@ -71,6 +71,10 @@ export type ScheduledPayment = {
   status: PaymentStatus
   paid_amount: number
   paid_date: string | null
+  /** Exact instant the money settled. `paid_date` is a DATE and loses the time
+   *  of day; this is null for rows a landlord ticked off by hand, where no
+   *  settlement instant was ever observed. */
+  settled_at: string | null
   late_fees_applied: number
   notes: string | null
   void_reason: string | null
@@ -100,8 +104,12 @@ export type SpecialPayment = {
    *  it here exactly as it does on rent, so it belongs in the type. */
   status: 'pending' | 'paid' | 'waived' | 'processing'
   paid_date: string | null
+  /** Exact instant the charge settled; null when recorded by hand. */
+  settled_at: string | null
   /** How it settled — matches `scheduled_payments.payment_method`. */
   payment_method: 'card' | 'ach' | 'manual_zelle' | 'manual_other' | null
+  /** Surcharge the tenant paid on top — the platform's, never the landlord's. */
+  processing_fee: number
   notes: string | null
   /** Requests the landlord has emailed about this charge — same history rent keeps. */
   reminder_sent_at: string | null
@@ -433,8 +441,8 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       lease:leases(id, start_date, end_date, rent_amount),
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, late_fees_applied, payment_method),
-      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, payment_method)
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, payment_method, processing_fee),
+      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
     `)
     .eq('owner_id', ownerId)
     .order('created_at', { ascending: false })

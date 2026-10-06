@@ -16,7 +16,23 @@ const APPEARANCE = {
   variables: { colorPrimary: '#0f172a', borderRadius: '9px', fontFamily: "'DM Sans', sans-serif" },
 }
 
-export type Payable = { kind: 'scheduled' | 'special'; id: string; label: string; amount: number }
+export type Payable = {
+  kind: 'scheduled' | 'special'
+  id: string
+  label: string
+  /** Rent or charge owed, excluding any late fee. */
+  amount: number
+  /**
+   * Late fee this charge has accrued, as its own figure.
+   *
+   * Kept separate from `amount` all the way to the total so the tenant can see
+   * why they are being asked for more than their rent. A late fee folded into
+   * the rent line is indistinguishable from a rent increase.
+   */
+  lateFee?: number
+  /** How many days past due, for the row's own explanation. */
+  daysLate?: number
+}
 
 /**
  * Pay rent — method first, then card details.
@@ -39,7 +55,11 @@ export default function PayRentModal({
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const base = payables.reduce((s, p) => s + p.amount, 0)
+  const rent = payables.reduce((s, p) => s + p.amount, 0)
+  const lateFees = Math.round(payables.reduce((s, p) => s + (p.lateFee ?? 0), 0) * 100) / 100
+  // The surcharge applies to everything being charged, late fees included —
+  // the same base the server recomputes, so the two figures always agree.
+  const base = Math.round((rent + lateFees) * 100) / 100
   const quote = computeFee(base, method)
 
   async function start() {
@@ -117,7 +137,18 @@ export default function PayRentModal({
               </div>
 
               <div className="totals">
-                <div className="tot-row"><span>Rent &amp; charges</span><span>{fmtMoney(quote.base)}</span></div>
+                <div className="tot-row"><span>Rent &amp; charges</span><span>{fmtMoney(rent)}</span></div>
+                {lateFees > 0 && (
+                  <div className="tot-row late">
+                    <span>
+                      Late fees
+                      {payables.some(p => (p.daysLate ?? 0) > 0) && (
+                        <em> · {Math.max(...payables.map(p => p.daysLate ?? 0))} days past due</em>
+                      )}
+                    </span>
+                    <span>{fmtMoney(lateFees)}</span>
+                  </div>
+                )}
                 <div className="tot-row">
                   <span>Processing fee ({quote.ratePct}%)</span>
                   <span>{fmtMoney(quote.fee)}</span>
@@ -259,6 +290,8 @@ const CSS = `
   .method-total span { font-size: 11px; font-weight: 500; color: #94a3b8; }
 
   .totals { border-top: 1px solid #f1f5f9; padding-top: 12px; margin-bottom: 14px; }
+  .tot-row.late { color: #b45309; }
+  .tot-row.late em { font-style: normal; font-size: 11.5px; opacity: 0.85; }
   .tot-row { display: flex; justify-content: space-between; font-size: 13px; color: #475569; padding: 4px 0; }
   .tot-row.grand { font-size: 16px; font-weight: 700; color: #0f172a; border-top: 1px solid #e2e8f0; margin-top: 6px; padding-top: 10px; }
 

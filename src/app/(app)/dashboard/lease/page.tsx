@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { amountDue, fmtMoney, METHOD_META, type SettledMethod } from '@/lib/rentPayments'
+import {
+  amountDue, fmtMoney, METHOD_META, lateFeeDue,
+  type SettledMethod,
+} from '@/lib/rentPayments'
 import type { Payable } from '@/components/tenant/PayRentModal'
 import StripeModeBanner from '@/components/StripeModeBanner'
 
@@ -147,7 +150,23 @@ export default function MyLeasePage() {
       if (isSettled(s.status)) continue
       const due = amountDue(s)
       if (due <= 0) continue
-      const row: Payable = { kind: 'scheduled', id: s.id, label: `Rent — ${fmtDate(s.due_date)}`, amount: due }
+      // Derived from the rule, not read from `late_fees_applied` — that column
+      // is stale and has been seen carrying fees on rent that was paid early.
+      // The server recomputes this identically before charging anything.
+      const lateFee = lateFeeDue(t.lateFeeRule, {
+        status: s.status,
+        due_date: s.due_date,
+        paid_date: s.paid_date,
+        amount: s.amount,
+        paid_amount: s.paid_amount,
+      })
+      const daysLate = s.due_date < today
+        ? Math.round((new Date(today + 'T00:00:00').getTime() - new Date(s.due_date + 'T00:00:00').getTime()) / 86_400_000)
+        : 0
+      const row: Payable = {
+        kind: 'scheduled', id: s.id, label: `Rent — ${fmtDate(s.due_date)}`,
+        amount: due, lateFee, daysLate,
+      }
       ;(s.due_date <= today ? owedRows : futureRows).push(row)
     }
     for (const s of t.specials) {

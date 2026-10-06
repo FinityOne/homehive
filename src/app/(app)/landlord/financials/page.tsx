@@ -7,6 +7,7 @@ import { getPlansForOwner, fmtCurrency, fmtDate, type PaymentPlan } from '@/lib/
 import {
   buildPortfolio, actionQueue, monthlyTrend, SCOPES, STAGE_LABEL, METHOD_META,
   type Scope, type LeaseSummary, type PropertyGroup, type ActionItem, type MethodSlice,
+  type SettledPayment,
 } from '@/lib/financialsRollup'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
@@ -35,10 +36,11 @@ const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'
  * money gets edited and it deserves the whole screen.
  */
 
-type View = 'portfolio' | 'attention' | 'charges' | 'activity'
+type View = 'portfolio' | 'attention' | 'received' | 'charges' | 'activity'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'portfolio', label: 'Portfolio' },
   { id: 'attention', label: 'Needs attention' },
+  { id: 'received',  label: 'Payments received' },
   { id: 'charges',   label: 'Deposits & charges' },
   { id: 'activity',  label: 'Requests sent' },
 ]
@@ -320,10 +322,18 @@ export default function FinancialsPage({
               <SummaryCard
                 label="Collected"
                 value={fmtCurrency(t.collected)}
-                meta={t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'}
+                meta={
+                  // Collecting the money late is still a problem, and `overdue`
+                  // forgets it the instant a tenant pays. Say it here or the
+                  // page congratulates itself on rent that arrived three weeks
+                  // after it was owed.
+                  t.collectedLate > 0
+                    ? `${fmtCurrency(t.collectedLate)} of it arrived late`
+                    : t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'
+                }
                 tone="good"
                 bar={t.rate}
-                onClick={() => selectView('portfolio')}
+                onClick={() => selectView('received')}
               />
               <SummaryCard
                 label="Outstanding"
@@ -415,6 +425,14 @@ export default function FinancialsPage({
 
             {view === 'attention' && (
               <AttentionList items={queue} onOpen={openLeaseLedger} />
+            )}
+
+            {view === 'received' && (
+              <ReceivedPayments
+                groups={portfolio.groups}
+                total={t}
+                onOpen={openLeaseLedger}
+              />
             )}
 
             {view === 'charges' && (
@@ -719,8 +737,11 @@ function LeaseRow({
             {lease.leaseId && (
               <a href={`/landlord/leases/${lease.leaseId}`} className="btn-quiet">View lease agreement</a>
             )}
-            {lease.lateFees > 0 && (
-              <span className="drill-note">{fmtCurrency(lease.lateFees)} in late fees applied</span>
+            {lease.lateFeesDue > 0 && (
+              <span className="drill-note">{fmtCurrency(lease.lateFeesDue)} in late fees accrued</span>
+            )}
+            {lease.lateFeeRisk && (
+              <span className="drill-warn" title={lease.lateFeeRisk}>⚠ uncapped late-fee rule</span>
             )}
           </div>
         </div>
@@ -816,6 +837,167 @@ function AttentionList({ items, onOpen }: { items: ActionItem[]; onOpen: (planId
         ))}
       </div>
     </section>
+  )
+}
+
+/** Settlement time, to the minute when we have it and honestly vague when not.
+ *
+ *  `paid_date` is a DATE column, so most historical rows genuinely have no time
+ *  of day. Printing "12:00 AM" for those would be inventing precision, so a row
+ *  without a recorded instant simply shows its date and says so on hover. */
+function settledLabel(p: SettledPayment): { date: string; time: string | null } {
+  const date = new Date(p.paidDate + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  })
+  if (!p.settledAt) return { date, time: null }
+  const d = new Date(p.settledAt)
+  return {
+    date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }),
+  }
+}
+
+/**
+ * Every payment that actually arrived — the half of the ledger the page never
+ * showed.
+ *
+ * Two questions it exists to answer. "Did they pay late?" survives payment here,
+ * because days-late is computed from due date to paid date and does not vanish
+ * when the row settles. And "what did I actually get?" is spelled out per row:
+ * charged to the tenant, the surcharge they paid on top, and the net credited to
+ * the landlord — which is the full rent, because the surcharge is never taken
+ * out of it. That last point is stated rather than implied: a column called
+ * "fee" next to a column called "net" invites exactly the wrong subtraction.
+ */
+function ReceivedPayments({
+  groups, total, onOpen,
+}: {
+  groups: PropertyGroup[]
+  total: { collected: number; collectedLate: number; collectedLateCount: number; maxDaysLate: number; tenantFees: number }
+  onOpen: (planId: string) => void
+}) {
+  const [lateOnly, setLateOnly] = useState(false)
+
+  const rows = groups
+    .flatMap(g => g.leases.flatMap(l =>
+      (lateOnly ? l.settledLate : l.settled).map(p => ({ p, lease: l, group: g }))
+    ))
+    .sort((a, b) => b.p.paidDate.localeCompare(a.p.paidDate))
+
+  const shown = rows.slice(0, 60)
+  const net = rows.reduce((s, r) => s + r.p.net, 0)
+  const fees = rows.reduce((s, r) => s + r.p.tenantFee, 0)
+
+  return (
+    <>
+      <section className="netband">
+        <div className="netband-row">
+          <DrillFact label="Credited to you" value={fmtCurrency(net)} meta="rent and charges received" tone="good" />
+          <DrillFact
+            label="Tenant processing fees"
+            value={fmtCurrency(fees)}
+            meta="paid by tenants on top — not deducted"
+          />
+          <DrillFact
+            label="Arrived late"
+            value={total.collectedLate > 0 ? fmtCurrency(total.collectedLate) : 'None'}
+            meta={total.collectedLateCount > 0
+              ? `${total.collectedLateCount} payment${total.collectedLateCount !== 1 ? 's' : ''} · worst ${total.maxDaysLate}d`
+              : 'everything arrived on time'}
+            tone={total.collectedLate > 0 ? 'bad' : undefined}
+          />
+        </div>
+        <p className="netband-note">
+          You receive the <strong>full</strong> rent. The card or bank surcharge is charged to the
+          tenant on top of it and goes to the payment processor, so nothing above is taken out of
+          what you are owed.
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-hd">
+          <h2 className="panel-title">Payments received</h2>
+          <div className="recv-tools">
+            <button
+              className={`chipbtn${lateOnly ? ' on' : ''}`}
+              onClick={() => setLateOnly(v => !v)}
+            >
+              Late only
+            </button>
+            <span className="panel-note">{rows.length} payment{rows.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div className={`panel-bd${rows.length ? ' flush' : ''}`}>
+          {rows.length === 0 ? (
+            <p className="muted">
+              {lateOnly
+                ? 'Every payment in this window arrived on or before its due date.'
+                : 'No payments have been received in this window yet.'}
+            </p>
+          ) : (
+            <div className="rtbl">
+              <div className="rtbl-hd" role="row">
+                <span>Payment</span>
+                <span>Settled</span>
+                <span className="num">Charged</span>
+                <span className="num">Tenant fee</span>
+                <span className="num">Credited to you</span>
+                <span aria-hidden="true" />
+              </div>
+              {shown.map(({ p, lease, group }) => {
+                const when = settledLabel(p)
+                return (
+                  <div
+                    key={`${p.kind}-${p.id}`}
+                    className="rtbl-row"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onOpen(lease.planId)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(lease.planId) } }}
+                  >
+                    <span className="cell-lease">
+                      <span className="lease-name">
+                        {p.label}
+                        {p.daysLate > 0
+                          ? <span className="pill bad">{p.daysLate}d late</span>
+                          : <span className="pill good">on time</span>}
+                        {p.kind === 'charge' && <span className="pill plain">one-off</span>}
+                        {p.method && (
+                          <span
+                            className="pill"
+                            style={{ background: METHOD_META[p.method].bg, color: METHOD_META[p.method].color }}
+                          >{METHOD_META[p.method].short}</span>
+                        )}
+                      </span>
+                      <span className="lease-sub">
+                        {p.who ? `${p.who} · ` : ''}{group.propertyName} · {lease.name} · due {fmtDate(p.dueDate)}
+                      </span>
+                    </span>
+                    <span className="cell-when">
+                      <span className="when-date">{when.date}</span>
+                      <span className="when-time">
+                        {when.time ?? <em title="Recorded by hand — only the date is known">date only</em>}
+                      </span>
+                    </span>
+                    <span className="num">{fmtCurrency(p.chargedToTenant)}</span>
+                    <span className="num dim">
+                      {p.tenantFee > 0 ? fmtCurrency(p.tenantFee) : '—'}
+                    </span>
+                    <span className="num good strong">{fmtCurrency(p.net)}</span>
+                    <span className="row-chev" aria-hidden="true" />
+                  </div>
+                )
+              })}
+              {rows.length > shown.length && (
+                <div className="row-more">
+                  + {rows.length - shown.length} more — open a lease ledger for its full history
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    </>
   )
 }
 
@@ -1199,6 +1381,40 @@ const CSS = `
     border-left: 1px solid currentColor; font-variant-numeric: tabular-nums;
   }
 
+  /* ── Payments received ── */
+  .netband { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px 14px; margin-bottom: 16px; }
+  .netband-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .netband-note { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-2); letter-spacing: -0.01em; }
+
+  .recv-tools { display: flex; align-items: center; gap: 12px; }
+  .chipbtn {
+    border: 1px solid var(--line); background: var(--surface); border-radius: 980px;
+    padding: 5px 13px; font-size: 12.5px; font-family: inherit; cursor: pointer;
+    color: var(--ink-2); letter-spacing: -0.01em; transition: all 0.15s;
+  }
+  .chipbtn:hover { border-color: #d6d6db; color: var(--ink); }
+  .chipbtn.on { background: #fdeceb; border-color: #f3c6c2; color: var(--bad); font-weight: 500; }
+
+  .rtbl { border-top: 1px solid var(--line); }
+  .rtbl-hd, .rtbl-row {
+    display: grid;
+    grid-template-columns: minmax(240px, 2.4fr) 118px 104px 94px 128px 14px;
+    gap: 10px; align-items: center;
+  }
+  .rtbl-hd {
+    padding: 9px 20px; background: #fafafb; border-bottom: 1px solid var(--line);
+    font-size: 11px; font-weight: 600; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.045em;
+  }
+  .rtbl-row { padding: 12px 20px; border-bottom: 1px solid var(--line-2); cursor: pointer; transition: background 0.12s; }
+  .rtbl-row:hover { background: #fafafb; }
+  .cell-when { min-width: 0; }
+  .when-date { display: block; font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .when-time { display: block; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .when-time em { font-style: normal; opacity: 0.75; }
+  .num.strong { font-weight: 600; }
+  .drill-warn { font-size: 12px; color: var(--warn); cursor: help; }
+
   /* ── Panels ── */
   .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 16px; overflow: hidden; }
   .panel-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; }
@@ -1409,7 +1625,14 @@ const CSS = `
     .tbl-hd > :nth-child(2), .tbl-row > :nth-child(2), .tbl-foot > :nth-child(2),
     .tbl-hd > :nth-child(3), .tbl-row > :nth-child(3), .tbl-foot > :nth-child(3) { display: none; }
   }
+  @media (max-width: 1040px) {
+    .rtbl-hd, .rtbl-row { grid-template-columns: minmax(180px, 2.2fr) 110px 128px 14px; }
+    .rtbl-hd > :nth-child(3), .rtbl-row > :nth-child(3),
+    .rtbl-hd > :nth-child(4), .rtbl-row > :nth-child(4) { display: none; }
+  }
   @media (max-width: 820px) {
+    .netband-row { grid-template-columns: 1fr; row-gap: 14px; }
+    .netband-row .dfact { border-left: none; padding-left: 0; }
     .summary { grid-template-columns: repeat(2, 1fr); }
     .facts { grid-template-columns: repeat(2, 1fr); }
     .fact:nth-child(3) { border-left: none; }
