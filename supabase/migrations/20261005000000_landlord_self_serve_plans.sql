@@ -4,10 +4,13 @@
 -- to PostgREST directly with their own JWT, so the cap has to hold at the row
 -- level too — otherwise "upgrade to add another property" is a suggestion.
 --
--- Nobody loses anything they already had: every landlord who was on the
--- platform before it went paid is grandfathered onto a `legacy_free` row whose
--- limit is exactly the number of properties they already own. They keep what
--- they built; adding the next one is what costs money.
+-- Nobody loses a listing students could already see: a landlord who had a live
+-- listing before the platform went paid is grandfathered onto a `legacy_free`
+-- row whose limit is exactly the number of live properties they owned. They
+-- keep what they built; adding the next one is what costs money.
+--
+-- Landlords with nothing live — including anyone whose listing was still
+-- sitting in the old review queue — are not grandfathered. See section 3.
 --
 -- DEPLOY ORDER — this migration and the application code ship together:
 --
@@ -92,8 +95,21 @@ grant execute on function public.landlord_property_limit(uuid) to authenticated;
 grant execute on function public.landlord_property_count(uuid) to authenticated;
 grant execute on function public.landlord_can_add_property(uuid) to authenticated;
 
--- ── 3. Grandfather everyone who was here first ───────────────────────────────
+-- ── 3. Grandfather the landlords who already had something live ──────────────
 -- Runs before the new INSERT policy so nobody is ever momentarily locked out.
+--
+-- The promise being kept is narrow and deliberate: *nobody loses a listing
+-- students could already see*. It is not "everyone who ever opened an account
+-- gets the platform free forever". A landlord whose only listing sat unapproved
+-- in the review queue never had an audience to lose, so they are not
+-- grandfathered — they pick a plan like any new signup. Widening this to every
+-- owner would hand free lifetime access to people who had never been live, and
+-- would contradict the rule that a listing stays off the public site until its
+-- landlord is paying.
+--
+-- `is_active and admin_status = 'active'` is exactly the pair the public
+-- queries key off, so "was it live" here means the same thing it means to a
+-- student browsing the site. Test rows are not an audience either.
 insert into public.landlord_plans (landlord_id, plan_type, status, property_limit)
 select
   pr.owner_id,
@@ -103,6 +119,9 @@ select
 from public.properties pr
 where pr.owner_id is not null
   and pr.archived_at is null
+  and pr.is_active
+  and pr.admin_status = 'active'
+  and not pr.is_test
 group by pr.owner_id
 on conflict (landlord_id) do nothing;
 

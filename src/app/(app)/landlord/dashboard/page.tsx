@@ -319,8 +319,15 @@ export default function LandlordDashboard() {
   const occupancyPct = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
   // "Live" means approved by HomeHive *and* switched on by the landlord —
   // a listing marked Rented or Inactive isn't out there working for them.
-  const liveProps    = properties.filter(p => p.admin_status === 'active' && (p.listing_status ?? 'active') === 'active').length
-  const pendingProps = properties.filter(p => p.admin_status === 'pending')
+  // "Live" needs all three axes to agree: approved by HomeHive, switched on by
+  // the landlord, and a plan we are being paid for. A listing missing the last
+  // one is finished and invisible, which is the case worth surfacing loudly.
+  const liveProps    = properties.filter(p =>
+    p.admin_status === 'active'
+    && (p.listing_status ?? 'active') === 'active'
+    && p.owner_plan_active !== false
+  ).length
+  const unpaidProps  = properties.filter(p => p.owner_plan_active === false)
 
   // ─── Payment metrics ─────────────────────────────────────────────────────────
   const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -453,27 +460,30 @@ export default function LandlordDashboard() {
           }
         </div>
 
-        {/* Pending review banner */}
-        {pendingProps.length > 0 && (
+        {/* Nothing waits on a human any more — payment is the only gate left.
+            A landlord with finished, invisible listings needs to be told that
+            in the first thing they see, not left to wonder why it went quiet. */}
+        {unpaidProps.length > 0 && (
           <div className="pending-banner">
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#92400e', marginBottom: 3 }}>
-                  {pendingProps.length === 1 ? 'Your listing is under review' : `${pendingProps.length} listings are under review`}
+                  {unpaidProps.length === 1
+                    ? 'Your listing is ready — add a plan to publish it'
+                    : `${unpaidProps.length} listings are ready — add a plan to publish them`}
                 </div>
                 <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.6 }}>
-                  HomeHive reviews every listing within 24 hours. Most listings go live the same day.
+                  Students only see a listing while your plan is active. There is no review
+                  queue — {unpaidProps.length === 1 ? 'it goes' : 'they go'} live the moment you subscribe.
                 </div>
               </div>
               <span style={{ background: '#f59e0b', color: '#fff', borderRadius: 20, padding: '3px 11px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                {pendingProps.length} in review
+                not published
               </span>
             </div>
-            {pendingProps.length === 1 && (
-              <a href={`/landlord/listings/${pendingProps[0].slug}`} style={{ fontSize: 13, fontWeight: 600, color: '#92400e', textDecoration: 'none', borderBottom: '1px solid #f59e0b' }}>
-                Complete your listing →
-              </a>
-            )}
+            <a href="/landlord/subscribe" style={{ fontSize: 13, fontWeight: 600, color: '#92400e', textDecoration: 'none', borderBottom: '1px solid #f59e0b' }}>
+              Publish {unpaidProps.length === 1 ? 'my listing' : 'my listings'} →
+            </a>
           </div>
         )}
 
@@ -856,6 +866,7 @@ export default function LandlordDashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
                           <span style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
                           {p.admin_status === 'active'   && <span className="pill" style={{ color: '#065f46', background: '#d1fae5', borderColor: '#a7f3d0' }}>Live</span>}
+                          {p.owner_plan_active === false && <span className="pill" style={{ color: '#92400e', background: '#fef3c7', borderColor: '#fde68a' }}>Not published</span>}
                           {p.admin_status === 'pending'  && <span className="pill" style={{ color: '#92400e', background: '#fef3c7', borderColor: '#fde68a' }}>Review</span>}
                           {p.admin_status === 'inactive' && <span className="pill" style={{ color: '#6b7280', background: '#f9fafb', borderColor: '#e5e7eb' }}>Inactive</span>}
                           {p.admin_status === 'rejected' && <span className="pill" style={{ color: '#9f1239', background: '#fff1f2', borderColor: '#fecdd3' }}>Rejected</span>}

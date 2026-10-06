@@ -1,7 +1,9 @@
-import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
+import { sendListingLiveEmail } from '@/lib/listingEmails'
+import { getPlatformStats } from '@/lib/platformStats'
+import { computeIsActive, type ListingStatus } from '@/lib/listingStatus'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +22,7 @@ export async function POST(
   // Fetch the property
   const { data: property, error: propErr } = await supabase
     .from('properties')
-    .select('id, name, slug, owner_id')
+    .select('id, name, slug, owner_id, listing_status, show_when_rented, owner_plan_active')
     .eq('id', propertyId)
     .single()
 
@@ -30,11 +32,19 @@ export async function POST(
 
   // Update status
   const adminStatus = action === 'approve' ? 'active' : 'rejected'
+  // Approving must not override the landlord's own status. Forcing `is_active`
+  // true here used to republish a home the landlord had marked Rented or
+  // Inactive, so it is derived from both axes instead — the same rule
+  // computeIsActive applies everywhere else.
   const { error: updateErr } = await supabase
     .from('properties')
     .update({
       admin_status: adminStatus,
-      is_active: adminStatus === 'active',
+      is_active: computeIsActive({
+        listing_status: (property.listing_status ?? 'active') as ListingStatus,
+        show_when_rented: property.show_when_rented ?? false,
+        admin_status: adminStatus,
+      }),
       is_test: false,
       ...(note !== undefined ? { review_note: note || null } : { review_note: null }),
     })
@@ -51,51 +61,20 @@ export async function POST(
     landlordEmail = user?.email || ''
   } catch (_) {}
 
-  const siteUrl = getSiteUrl()
-  const listingUrl = `${siteUrl}/landlord/listings/${property.slug}`
-
   if (landlordEmail) {
     if (action === 'approve') {
-      try {
-        await resend.emails.send({
-          from: 'HomeHive <hello@homehive.live>',
-          to: landlordEmail,
-          subject: `Your listing "${property.name}" is approved and live! 🎉`,
-          html: `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1.0" /></head>
-<body style="margin:0;padding:0;background:#f8f9fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-<div style="max-width:540px;margin:0 auto;padding:32px 16px;">
-
-  <div style="background:#1a1a1a;border-radius:14px 14px 0 0;padding:20px 28px;">
-    <div style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-0.3px;">
-      Home<span style="color:#FFC627;font-style:italic;">Hive</span>
-    </div>
-  </div>
-
-  <div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:16px 28px;">
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#166534;margin-bottom:4px;">✓ Approved &amp; Live</div>
-    <div style="font-size:16px;font-weight:700;color:#1a1a1a;">${property.name}</div>
-  </div>
-
-  <div style="background:#fff;border:1px solid #e8e4db;border-top:none;border-radius:0 0 14px 14px;padding:28px;">
-    <p style="font-size:16px;font-weight:700;color:#1a1a1a;margin:0 0 12px;">Your listing is live! 🎉</p>
-    <p style="font-size:14px;color:#4a4a4a;line-height:1.7;margin:0 0 24px;">
-      <strong>${property.name}</strong> has been approved and is now visible to students on HomeHive. Leads will start coming in as students discover your listing.
-    </p>
-    <div style="text-align:center;margin-bottom:24px;">
-      <a href="${listingUrl}" style="display:inline-block;background:linear-gradient(135deg,#6c002a,#8c1d40);color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 32px;border-radius:9px;">View Your Listing →</a>
-    </div>
-    <p style="margin:0;font-size:13px;color:#9b9b9b;">
-      Questions? <a href="mailto:hello@homehive.live" style="color:#8C1D40;">hello@homehive.live</a>
-    </p>
-  </div>
-</div>
-</body>
-</html>`,
-        })
-        await logEmail('', 'listing_approved', `Your listing "${property.name}" is approved and live!`, landlordEmail, { propertySlug: property.slug })
-      } catch (_) {}
+      // One shared template, two truths. A listing only reaches students while
+      // its landlord is paying, so an approved listing whose owner has no plan
+      // is not "live" and must not be described that way — the needs_plan
+      // version tells them it is ready and what publishing it takes.
+      const stats = await getPlatformStats(supabase)
+      await sendListingLiveEmail({
+        to: landlordEmail,
+        propertyName: property.name,
+        propertySlug: property.slug,
+        state: property.owner_plan_active ? 'live' : 'needs_plan',
+        stats,
+      })
     } else {
       try {
         await resend.emails.send({

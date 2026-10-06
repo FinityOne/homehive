@@ -149,20 +149,35 @@ export default function ListingsPage() {
         </div>
 
         <div className="prop-grid">
-          {properties.some(p => p.admin_status === 'pending') && (
+          {/* Listings no longer wait on a human — payment is the only gate left.
+              A landlord whose plan has lapsed has finished listings that nobody
+              can see, so say that plainly and link to the fix rather than
+              leaving them to wonder why the leads stopped. */}
+          {properties.some(p => p.owner_plan_active === false) && (
             <div className="pending-insight">
-              <div className="pending-insight-title">Your listing is in review — exciting times ahead!</div>
+              <div className="pending-insight-title">
+                Your {properties.filter(p => p.owner_plan_active === false).length === 1 ? 'listing is' : 'listings are'} ready — add a plan to publish
+              </div>
               <div className="pending-insight-body">
-                The HomeHive team reviews every listing to ensure it&apos;s verified, legitimate, and a great experience for students.
-                Most listings are approved <strong>within 24 hours</strong>. Use this time to complete your listing — the more detail you add, the faster the approval and the more leads you&apos;ll get once you&apos;re live.
+                Everything is approved and set up. HomeHive only shows a listing to students
+                while your plan is active, so {properties.filter(p => p.owner_plan_active === false).length === 1 ? 'it goes' : 'they go'} live
+                the moment you subscribe — no review queue, no waiting.
               </div>
               <div className="pending-insight-tips">
-                <span className="pending-insight-tip">Add clear photos</span>
-                <span className="pending-insight-tip">Write a compelling description</span>
-                <span className="pending-insight-tip">Set your ASU distance</span>
-                <span className="pending-insight-tip">List nearby places</span>
-                <span className="pending-insight-tip">Add tags &amp; highlights</span>
+                <span className="pending-insight-tip">Unlimited inquiries</span>
+                <span className="pending-insight-tip">ASU &amp; Tempe students only</span>
+                <span className="pending-insight-tip">Cancel any time</span>
               </div>
+              <a
+                href="/landlord/subscribe"
+                style={{
+                  display: 'inline-block', marginTop: 12, background: '#8C1D40', color: '#fff',
+                  textDecoration: 'none', fontSize: 13, fontWeight: 700, padding: '10px 20px',
+                  borderRadius: 8,
+                }}
+              >
+                Publish my {properties.filter(p => p.owner_plan_active === false).length === 1 ? 'listing' : 'listings'} →
+              </a>
             </div>
           )}
           {properties.length === 0 ? (
@@ -184,9 +199,13 @@ export default function ListingsPage() {
               const listingStatus = (p.listing_status ?? 'active') as ListingStatus
               // The landlord's own status wins the badge when they've taken the
               // listing off the market; otherwise show where it sits with us.
+              // An unpaid plan outranks everything except the landlord's own
+              // choice to take the listing down: "Live" on a listing students
+              // cannot actually see is the one label we must never show.
               const statusBadge =
                 listingStatus === 'rented'   ? { cls: 'badge-rented',   text: p.show_when_rented ? 'Rented · waitlist' : 'Rented' } :
                 listingStatus === 'inactive' ? { cls: 'badge-inactive', text: 'Inactive' } :
+                p.owner_plan_active === false ? { cls: 'badge-pending',  text: 'Add plan to publish' } :
                 p.admin_status === 'active'   ? { cls: 'badge-active',   text: p.marketing_enabled === false ? 'Live · not promoted' : 'Live' } :
                 p.admin_status === 'pending'  ? { cls: 'badge-pending',  text: 'Under Review' } :
                 p.admin_status === 'rejected' ? { cls: 'badge-rejected', text: 'Not Approved' } :

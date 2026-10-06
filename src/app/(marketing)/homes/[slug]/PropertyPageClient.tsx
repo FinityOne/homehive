@@ -132,6 +132,7 @@ export default function PropertyPageClient({
       .eq('is_active', true)
       .eq('admin_status', 'active')
       .eq('is_test', false)
+      .eq('owner_plan_active', true)
       .eq('is_featured', true)
       .neq('slug', slug)
       .order('asu_score', { ascending: false })

@@ -14,6 +14,7 @@ export type EmailType =
   | 'admin_new_lead'
   | 'listing_submitted'
   | 'listing_approved'
+  | 'listing_awaiting_plan'
   | 'listing_rejected'
   | 'admin_new_signup'
   | 'admin_claim_notify'

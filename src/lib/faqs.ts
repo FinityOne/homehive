@@ -80,6 +80,8 @@ export async function getFaqsBySlug(slug: string): Promise<PropertyFaq[]> {
     .eq('slug', slug)
     .eq('is_active', true)
     .eq('is_test', false)
+    // A listing students cannot see has no public FAQ either.
+    .eq('owner_plan_active', true)
     .maybeSingle()
 
   if (!prop?.id) return []

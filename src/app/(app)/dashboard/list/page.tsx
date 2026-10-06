@@ -113,7 +113,8 @@ export default function ListYourPlacePage() {
           List your place
         </div>
         <div style={{ fontSize: 14, color: '#9b9b9b', marginBottom: 28, lineHeight: 1.5 }}>
-          Reach thousands of students near ASU — free to list, pre-screened leads.
+          Reach students searching for housing near ASU in Tempe — every inquiry is yours,
+          with no per-lead fees.
         </div>
 
         {/* ── APPROVED ── */}
@@ -121,9 +122,15 @@ export default function ListYourPlacePage() {
           <div className="lp-status approved">
             <div className="lp-status-title">🎉 You&apos;re approved as a landlord!</div>
             <div className="lp-status-sub" style={{ marginBottom: 14 }}>
-              Create listings, manage leads, and track everything from your portal.
+              One step left: pick a plan and your listing publishes immediately — no review
+              queue. Then manage leads, tours, screening and rent from your portal.
             </div>
-            <a href="/landlord/dashboard" className="lp-cta lp-cta-green">Go to Landlord Portal →</a>
+            {/* Straight to the plan rather than the dashboard. The portal gate
+                would bounce them to this same page anyway, and an unexplained
+                redirect reads as a bug rather than as a price. */}
+            <a href="/landlord/subscribe?from=upgrade" className="lp-cta lp-cta-green">
+              Choose a plan &amp; list my place →
+            </a>
           </div>
 
         /* ── PENDING ── */
@@ -170,9 +177,10 @@ export default function ListYourPlacePage() {
           <>
             <div className="lp-features">
               {([
-                ['📋', 'Free to list — no upfront cost'],
-                ['🎯', 'Pre-screened, qualified leads only'],
-                ['📊', 'Track inquiries and tours in one dashboard'],
+                ['🎯', 'ASU & Tempe students only — renters who can actually sign'],
+                ['∞', 'Every inquiry is yours — no per-lead fees, no commission'],
+                ['🛡️', 'Screening, background and reference checks built in'],
+                ['📊', 'Tours, leases, rent collection and reporting in one portal'],
                 ['🏡', 'Works for full rentals, rooms, and subleases'],
               ] as [string, string][]).map(([icon, text]) => (
                 <div key={text} className="lp-feature">
