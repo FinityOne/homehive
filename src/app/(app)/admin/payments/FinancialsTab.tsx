@@ -394,6 +394,27 @@ export default function FinancialsTab() {
   const onPlatform = scope.txns.filter(t => t.onPlatform)
   const avgNet = onPlatform.length > 0 ? Math.round(scoped.netCents / onPlatform.length) : 0
 
+  // Gross fees, minus each rail's processor cost, equals net. Split out so the
+  // tab can show the subtraction instead of asking the reader to take the net
+  // on faith — the card line is the one that surprises people.
+  const reconcile = scope.txns.reduce((acc, t) => {
+    if (t.method === 'card') {
+      acc.cardCostCents += t.costCents
+      acc.cardVolumeCents += t.volumeCents
+      acc.cardCount++
+    } else if (t.method === 'ach') {
+      acc.achCostCents += t.costCents
+      acc.achVolumeCents += t.volumeCents
+      acc.achCount++
+    } else {
+      acc.offPlatformCount++
+    }
+    return acc
+  }, {
+    cardCostCents: 0, cardVolumeCents: 0, cardCount: 0,
+    achCostCents: 0, achVolumeCents: 0, achCount: 0, offPlatformCount: 0,
+  })
+
   const methodRows = data.byMethod.filter(m => m.count > 0)
   const sourceRows = data.bySource.filter(s => s.count > 0)
   const maxSourceNet = Math.max(...sourceRows.map(s => Math.abs(s.netCents)), 1)
@@ -469,6 +490,51 @@ export default function FinancialsTab() {
           ))}
         </div>
       )}
+
+      {/* ── The arithmetic, shown rather than asserted ──────────────────── */}
+      <Card title={`After Stripe — how net revenue is arrived at (${periodLabel.toLowerCase()})`}
+        right={<span className="fin-card-note">{reconcile.cardCount + reconcile.achCount} Stripe charge{reconcile.cardCount + reconcile.achCount === 1 ? '' : 's'}</span>}>
+        <div className="fin-recon">
+          <div className="fin-recon-row">
+            <span>Gross fees collected</span>
+            <span className="fin-recon-note">surcharges on rent, plus plan and unlock prices</span>
+            <span className="fin-recon-val">{usd(scoped.feeCents)}</span>
+          </div>
+          <div className="fin-recon-row">
+            <span>Less Stripe on card charges</span>
+            <span className="fin-recon-note">
+              {pct(data.rates.stripe.card.pct, 1)} + {usd(data.rates.stripe.card.fixedCents)} on {usd0(reconcile.cardVolumeCents)} across {reconcile.cardCount} charge{reconcile.cardCount === 1 ? '' : 's'}
+            </span>
+            <span className="fin-recon-val" style={{ color: COST }}>
+              {reconcile.cardCostCents > 0 ? `−${usd(reconcile.cardCostCents)}` : '—'}
+            </span>
+          </div>
+          <div className="fin-recon-row">
+            <span>Less Stripe on ACH debits</span>
+            <span className="fin-recon-note">
+              {pct(data.rates.stripe.ach.pct, 1)} capped at {usd(data.rates.stripe.ach.capCents ?? 0)} on {usd0(reconcile.achVolumeCents)} across {reconcile.achCount} debit{reconcile.achCount === 1 ? '' : 's'}
+            </span>
+            <span className="fin-recon-val" style={{ color: COST }}>
+              {reconcile.achCostCents > 0 ? `−${usd(reconcile.achCostCents)}` : '—'}
+            </span>
+          </div>
+          <div className="fin-recon-row fin-recon-total">
+            <span>Net to HomeHive</span>
+            <span className="fin-recon-note">
+              {pct(marginPct, 0)} of gross fees survives · {pct(takeRate, 2)} of everything processed
+            </span>
+            <span className="fin-recon-val" style={{ color: scoped.netCents >= 0 ? NET : COST }}>{usd(scoped.netCents)}</span>
+          </div>
+        </div>
+        <div className="fin-note">
+          Stripe charges on the whole authorised amount, so a {usd0(200000)} rent payment on card costs
+          us {usd(Math.round(210000 * data.rates.stripe.card.pct) + data.rates.stripe.card.fixedCents)} against
+          a {usd0(Math.round(200000 * data.rates.surcharge.card))} surcharge. The same payment on ACH
+          costs {usd(Math.min(data.rates.stripe.ach.capCents ?? Infinity, Math.round(204000 * data.rates.stripe.ach.pct) + data.rates.stripe.ach.fixedCents))} —
+          which is why moving a landlord’s tenants onto ACH is worth more than winning a new one.
+          {reconcile.offPlatformCount > 0 && <> {reconcile.offPlatformCount} payment{reconcile.offPlatformCount === 1 ? '' : 's'} in this window settled off Stripe and cost nothing.</>}
+        </div>
+      </Card>
 
       {/* ── Trend ───────────────────────────────────────────────────────── */}
       <Card title="Revenue, cost and volume by month"
@@ -749,6 +815,20 @@ const CSS = `
   .fin-sub { font-size: 11px; color: #71717a; }
   .fin-muted { color: #52525b; font-size: 11.5px; }
   .fin-note { padding: 10px 14px; font-size: 11px; color: #71717a; border-top: 1px solid #3f3f46; line-height: 1.6; }
+
+  .fin-recon { display: flex; flex-direction: column; }
+  .fin-recon-row { display: grid; grid-template-columns: minmax(170px, auto) 1fr minmax(100px, auto);
+    gap: 14px; align-items: baseline; padding: 9px 0; font-size: 13px; color: #d4d4d8;
+    border-bottom: 1px solid #3f3f46; }
+  .fin-recon-row:last-child { border-bottom: none; }
+  .fin-recon-note { font-size: 11px; color: #71717a; }
+  .fin-recon-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fin-recon-total { border-top: 2px solid #52525b; margin-top: 2px; padding-top: 12px; font-weight: 700; }
+  .fin-recon-total .fin-recon-val { font-size: 18px; font-weight: 800; }
+  @media (max-width: 720px) {
+    .fin-recon-row { grid-template-columns: 1fr auto; }
+    .fin-recon-note { grid-column: 1 / -1; order: 3; }
+  }
   .fin-footnote { font-size: 11px; color: #52525b; line-height: 1.6; margin: 4px 0 8px; max-width: 760px; }
 
   .fin-pill { display: inline-flex; padding: 1px 8px; border-radius: 20px; font-size: 10.5px; font-weight: 600; border: 1px solid; }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getCurrentUser } from '@/lib/supabase'
 import * as d3 from 'd3'
 import FinancialsTab from './FinancialsTab'
+import LandlordBooksTab from './LandlordBooksTab'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Stats = {
@@ -269,7 +270,9 @@ function KpiCard({ label, value, sub, color = '#fafafa' }: { label: string; valu
 }
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
-type Tab = 'overview' | 'financials' | 'subscriptions' | 'products'
+type Tab = 'overview' | 'landlords' | 'financials' | 'subscriptions' | 'products'
+
+const TAB_IDS: Tab[] = ['overview', 'landlords', 'financials', 'subscriptions', 'products']
 
 export default function AdminPaymentsPage() {
   const router = useRouter()
@@ -295,7 +298,7 @@ export default function AdminPaymentsPage() {
   // through useSearchParams, which would force this whole page into Suspense.
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get('tab')
-    if (wanted && ['overview', 'financials', 'subscriptions', 'products'].includes(wanted))
+    if (wanted && (TAB_IDS as string[]).includes(wanted))
       setTab(wanted as Tab)
   }, [])
 
@@ -430,12 +433,13 @@ export default function AdminPaymentsPage() {
           <div className="pa-tabs">
             {([
               { id: 'overview',      label: '⊞ Overview'          },
+              // Financials is the books by landlord — payments processed, rent
+              // collected, lateness and fees, drilled landlord → property →
+              // lease. Revenue is the same money as one platform P&L.
+              { id: 'landlords',     label: '◈ Financials'        },
               // Labelled "Revenue", but the tab id stays `financials` so every
               // existing ?tab=financials link and bookmark still lands here.
-              // "Financials" now means the landlord's own rent page; this one
-              // is the platform's P&L, and two different things sharing a name
-              // is how people end up on the wrong screen.
-              { id: 'financials',    label: '◈ Revenue'           },
+              { id: 'financials',    label: '◉ Revenue'           },
               { id: 'subscriptions', label: '◎ Subscriptions'     },
               { id: 'products',      label: '▣ Products & Pricing' },
             ] as { id: Tab; label: string }[]).map(t => (
@@ -453,10 +457,18 @@ export default function AdminPaymentsPage() {
         <div className="pa-content">
 
           {/* ═══════════════════════════════════════════════════════════
-              FINANCIALS TAB — what the platform itself earns. Loads its
-              own data (/api/admin/financials) only when opened, so the
+              THE MONEY TABS — both read /api/admin/financials, which
+              returns the platform P&L and the same payments re-grouped by
+              landlord. Each mounts its own fetch only when opened, so the
               plan tables above stay fast.
+
+              FINANCIALS — payments processed per landlord, drilled down to
+              property and lease: rent collected, what is still owed, how
+              late it is, the late fees it accrued, and our cut.
+              REVENUE — the same money as one P&L: gross fees less Stripe.
           ═══════════════════════════════════════════════════════════ */}
+          {tab === 'landlords' && <LandlordBooksTab />}
+
           {tab === 'financials' && <FinancialsTab />}
 
           {/* ═══════════════════════════════════════════════════════════
