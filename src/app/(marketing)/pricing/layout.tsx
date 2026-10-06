@@ -40,26 +40,26 @@ const faqSchema = {
     },
     {
       '@type': 'Question',
-      name: 'Why is HomeHive free for landlords through 2026?',
+      name: 'How much does HomeHive cost for landlords?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: "We're building our landlord community. We want you to experience the platform, fill rooms faster than you have before, and see the value before we ever talk about pricing. No risk on your end.",
+        text: 'Landlord plans are a flat monthly price based on how many properties you list: $19.99/month for one property, $49.99/month for up to five, and $199.99/month for unlimited properties. Every plan includes the full platform.',
       },
     },
     {
       '@type': 'Question',
-      name: 'What happens to landlord pricing after 2026?',
+      name: 'Are there any other landlord fees on HomeHive?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: "We'll introduce a simple success fee model — a small percentage per room filled, only when we deliver results. No monthly subscriptions, no listing fees. You pay when you win.",
+        text: 'No. No per-lead charges, no commission on filled rooms, no listing fees and no setup fee. One flat monthly price based on how many properties you list.',
       },
     },
     {
       '@type': 'Question',
-      name: 'How do landlords get early access to HomeHive?',
+      name: 'How do landlords get started on HomeHive?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Email landlord@homehive.live. We review every application within 48 hours. Early landlords get locked-in favorable pricing when we transition to paid.',
+        text: 'Sign up at homehive.live, choose a plan, and your landlord portal opens immediately. Listings are quality-checked within 48 hours of going up.',
       },
     },
     {
@@ -86,7 +86,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'HomeHive Pricing — Free for Students, Free for Landlords',
     description:
-      'ASU students pay nothing — ever. Landlords list free through 2026. No broker fees, no hidden charges.',
+      'ASU students pay nothing — ever. Landlord plans start at $19.99/month for one property. No broker fees, no per-lead charges, no commission.',
     url: `${SITE_URL}/pricing`,
     siteName: 'HomeHive',
   },

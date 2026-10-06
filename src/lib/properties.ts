@@ -194,54 +194,48 @@ export function mapPropertyCard(p: any): Property {
   }
 }
 
+export type CreatePropertyResult = {
+  slug: string | null
+  id: string | null
+  error: string | null
+  /** 'no_plan' | 'limit_reached' when the plan is what stopped them. */
+  reason?: string
+  suggestedPlan?: string
+}
+
+/**
+ * Create a listing.
+ *
+ * Goes through /api/properties rather than inserting directly, because the
+ * plan's property cap has to be checked against a count the browser cannot
+ * influence. `ownerId` is accepted for call-site readability but the server
+ * takes the owner from the session, never from the payload.
+ */
 export async function createProperty(
-  ownerId: string,
+  _ownerId: string,
   data: NewPropertyInput
-): Promise<{ slug: string | null; id: string | null; error: any }> {
-  const base = data.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40)
-  const suffix = Math.random().toString(36).slice(2, 7)
-  const slug = `${base}-${suffix}`
-
-  const { data: row, error } = await supabase
-    .from('properties')
-    .insert({
-      slug,
-      owner_id: ownerId,
-      name: data.name,
-      address: data.address,
-      description: data.description || '',
-      price: data.price,
-      listing_type: data.listing_type,
-      unit_type: data.unit_type ?? null,
-      roommates_count: data.roommates_count ?? null,
-      sublease_end_date: data.sublease_end_date ?? null,
-      beds: data.beds ?? 1,
-      baths: data.baths ?? 1,
-      sqft: data.sqft ?? '',
-      total_rooms: data.total_rooms ?? 1,
-      available: data.available ?? 1,
-      asu_distance: data.asu_distance ?? 0,
-      security_deposit: data.security_deposit ?? null,
-      utilities_included: data.utilities_included ?? false,
-      rental_mode: data.rental_mode ?? 'whole_home',
-      available_from: data.available_from ?? null,
-      is_active: false,
-      admin_status: 'pending',
-      is_featured: false,
-      lat: 0,
-      lng: 0,
-      map_embed_url: '',
-      asu_score: 7,
+): Promise<CreatePropertyResult> {
+  try {
+    const res = await fetch('/api/properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     })
-    .select('id')
-    .single()
+    const payload = await res.json().catch(() => ({}))
 
-  if (error) return { slug: null, id: null, error }
-  return { slug, id: row?.id ?? null, error: null }
+    if (!res.ok) {
+      return {
+        slug: null,
+        id: null,
+        error: payload.error || 'Could not create the listing.',
+        reason: payload.reason,
+        suggestedPlan: payload.suggestedPlan,
+      }
+    }
+    return { slug: payload.slug ?? null, id: payload.id ?? null, error: null }
+  } catch {
+    return { slug: null, id: null, error: 'Network error. Check your connection and try again.' }
+  }
 }
 
 export type AdminStatus = 'pending' | 'active' | 'inactive' | 'test' | 'flagged' | 'rejected'

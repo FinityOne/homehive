@@ -1,22 +1,23 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { PLANS, PLAN_ORDER, formatUsd, formatPropertyLimit } from '@/lib/landlordPlans'
 import '@/styles/brand-tokens.css'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
 export const metadata = {
-  title: 'List Your Place on HomeHive — Free for Landlords Near ASU',
-  description: 'Stop fighting for attention on Zillow and Facebook. HomeHive connects landlords with pre-vetted ASU students. Free forever for the first 100 landlords.',
+  title: 'List Your Place on HomeHive — Landlord Plans from $19.99/mo',
+  description: 'Stop fighting for attention on Zillow and Facebook. HomeHive connects landlords with pre-vetted ASU students. Plans from $19.99/month — no per-lead fees, no commission.',
   keywords: [
     'list property near ASU',
     'rent to ASU students',
     'landlord housing platform Tempe',
-    'free property listing Arizona State',
+    'list property Arizona State',
     'student rental Tempe AZ',
-    'list house near ASU free',
+    'list house near ASU',
   ],
   openGraph: {
-    title: 'List Your Place on HomeHive — Free for Landlords Near ASU',
-    description: 'Stop fighting for attention on Zillow and Facebook. HomeHive connects landlords with pre-vetted ASU students. Free forever for the first 100 landlords.',
+    title: 'List Your Place on HomeHive — Landlord Plans from $19.99/mo',
+    description: 'Stop fighting for attention on Zillow and Facebook. HomeHive connects landlords with pre-vetted ASU students. Plans from $19.99/month — no per-lead fees, no commission.',
     url: `${SITE_URL}/for-landlords`,
     siteName: 'HomeHive',
     type: 'website' as const,
@@ -31,8 +32,8 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image' as const,
-    title: 'List Your Place on HomeHive — Free for Landlords',
-    description: 'Connect with pre-vetted ASU students looking for housing. Free to list through 2026.',
+    title: 'List Your Place on HomeHive',
+    description: 'Connect with pre-vetted ASU students looking for housing. Plans from $19.99/month.',
     images: [`${SITE_URL}/opengraph-image`],
   },
   alternates: { canonical: `${SITE_URL}/for-landlords` },
@@ -57,8 +58,6 @@ async function getListingCount(): Promise<number> {
 
 export default async function ForLandlordsPage() {
   const listingCount = await getListingCount()
-  const spotsLeft = Math.max(0, 100 - listingCount)
-  const pct = Math.min(100, (listingCount / 100) * 100)
 
   return (
     <>
@@ -119,21 +118,20 @@ export default async function ForLandlordsPage() {
         .type-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: rgba(47,74,72,0.08); color: var(--hh-primary); border: 1px solid rgba(47,74,72,0.15); }
 
         /* PRICING */
-        .pricing-card { background: #fff; border: 2px solid var(--hh-primary); border-radius: 20px; padding: 40px; max-width: 560px; margin: 0 auto; text-align: center; }
-        .pricing-badge { display: inline-block; background: var(--hh-primary); color: var(--hh-accent); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 20px; }
-        .pricing-price { font-family: var(--hh-font-display); font-size: 64px; font-weight: 300; color: var(--hh-text); letter-spacing: -3px; line-height: 1; margin-bottom: 4px; }
-        .pricing-price-sub { font-size: 14px; color: var(--hh-text-muted); margin-bottom: 24px; }
-        .pricing-features { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; text-align: left; }
+        .tier-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 820px; margin: 0 auto 24px; }
+        .tier-box { background: #fff; border: 1.5px solid var(--hh-border-faint); border-radius: 16px; padding: 26px 22px; position: relative; text-align: center; }
+        .tier-box-featured { border: 2px solid var(--hh-primary); }
+        .tier-box-flag { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: var(--hh-primary); color: var(--hh-accent); font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 11px; border-radius: 20px; white-space: nowrap; }
+        .tier-box-name { font-size: 14px; font-weight: 700; color: var(--hh-text); text-transform: uppercase; letter-spacing: 0.6px; }
+        .tier-box-price { font-family: var(--hh-font-display); font-size: 42px; font-weight: 300; color: var(--hh-text); letter-spacing: -2px; line-height: 1; margin: 12px 0 2px; }
+        .tier-box-price span { font-family: var(--hh-font-body, inherit); font-size: 14px; color: var(--hh-text-muted); letter-spacing: 0; }
+        .tier-box-limit { font-size: 13px; font-weight: 600; color: var(--hh-primary); }
+        .tier-box-aud { font-size: 13px; color: var(--hh-text-muted); line-height: 1.6; margin: 12px 0 0; }
+        .tier-included { background: #fff; border: 1.5px solid var(--hh-border-faint); border-radius: 16px; padding: 24px 28px; max-width: 820px; margin: 0 auto 28px; }
+        .tier-included-h { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--hh-text-muted); margin-bottom: 16px; }
+        .tier-included-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
         .pricing-feat { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--hh-text); }
         .feat-check { width: 20px; height: 20px; border-radius: 50%; background: #f0fdf4; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #166534; flex-shrink: 0; }
-        .counter-wrap { background: var(--hh-bg); border: 1px solid var(--hh-border-faint); border-radius: 12px; padding: 16px 20px; margin-bottom: 28px; }
-        .counter-label { font-size: 12px; color: var(--hh-text-muted); margin-bottom: 8px; }
-        .counter-bar-track { height: 8px; background: var(--hh-border-faint); border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
-        .counter-bar-fill { height: 100%; background: var(--hh-primary); border-radius: 10px; transition: width 1s ease; }
-        .counter-nums { display: flex; justify-content: space-between; font-size: 12px; }
-        .counter-taken { font-weight: 600; color: var(--hh-primary); }
-        .counter-left { color: var(--hh-text-muted); }
-        .pricing-future { font-size: 12px; color: var(--hh-text-muted); }
 
         /* BOTTOM CTA */
         .bottom-cta { background: var(--hh-hive-800); border-radius: 20px; padding: 56px 40px; text-align: center; margin: 0 0 80px; }
@@ -166,7 +164,7 @@ export default async function ForLandlordsPage() {
             Skip Zillow fees and the endless scroll of Marketplace posts. HomeHive puts your listing in front of pre-vetted ASU students actively looking for housing — no noise, no scams.
           </p>
           <div className="hero-cta-row">
-            <a href="/signup?role=landlord" className="btn-primary">List for free →</a>
+            <a href="/signup?role=landlord" className="btn-primary">Start listing — $19.99/mo →</a>
             <a href="#how-it-works" className="btn-ghost">See how it works ↓</a>
           </div>
         </div>
@@ -202,7 +200,7 @@ export default async function ForLandlordsPage() {
               <div className="hive-pt"><span className="hive-check">✓</span> ASU students only — filtered, verified, actively searching near Tempe</div>
               <div className="hive-pt"><span className="hive-check">✓</span> Built-in lead pre-screening so you only talk to serious prospects</div>
               <div className="hive-pt"><span className="hive-check">✓</span> Your own landlord dashboard — leads, tenants, and leases in one place</div>
-              <div className="hive-pt"><span className="hive-check">✓</span> $0 broker fees, ever. Free during beta, locked-in for early landlords.</div>
+              <div className="hive-pt"><span className="hive-check">✓</span> One flat monthly price — no broker fees, no per-lead charges, no commission</div>
             </div>
           </div>
         </div>
@@ -269,40 +267,54 @@ export default async function ForLandlordsPage() {
       <div className="section">
         <div className="wrap">
           <div className="section-label">Pricing</div>
-          <div className="section-h2">Free now. Locked in for early adopters.</div>
-          <div className="section-sub">We're in beta and growing fast. The first 100 landlords get free access permanently — even after we introduce pricing.</div>
+          <div className="section-h2">One price. Every feature.</div>
+          <div className="section-sub">
+            Plans are priced by how many properties you list — nothing else. No per-lead
+            charges, no commission when a room fills, no setup fee. Cancel any time.
+          </div>
 
-          <div className="pricing-card">
-            <div className="pricing-badge">Beta pricing</div>
-            <div className="pricing-price">$0</div>
-            <div className="pricing-price-sub">per month, forever for early landlords</div>
+          <div className="tier-row">
+            {PLAN_ORDER.map(t => {
+              const plan = PLANS[t]
+              return (
+                <div key={t} className={`tier-box${plan.highlight ? ' tier-box-featured' : ''}`}>
+                  {plan.highlight && <div className="tier-box-flag">Most popular</div>}
+                  <div className="tier-box-name">{plan.name}</div>
+                  <div className="tier-box-price">{formatUsd(plan.priceCents)}<span>/mo</span></div>
+                  <div className="tier-box-limit">
+                    {formatPropertyLimit(plan.propertyLimit)}{' '}
+                    {plan.propertyLimit === 1 ? 'property' : 'properties'}
+                  </div>
+                  <p className="tier-box-aud">{plan.audience}</p>
+                </div>
+              )
+            })}
+          </div>
 
-            <div className="pricing-features">
-              {['Unlimited listing views', 'Lead pre-screening included', 'Full landlord dashboard', 'Leads, tenants & leases CRM', 'Photo uploads & listing management', 'Priority support during beta'].map(f => (
+          <div className="tier-included">
+            <div className="tier-included-h">Every plan includes</div>
+            <div className="tier-included-grid">
+              {[
+                'Unlimited listing views',
+                'Unlimited leads — nothing to unlock',
+                'Lead pre-screening & background checks',
+                'Full landlord dashboard and CRM',
+                'Digital leases & online rent collection',
+                'Tours, maintenance & move-out tracking',
+              ].map(f => (
                 <div key={f} className="pricing-feat">
                   <div className="feat-check">✓</div>
                   <span>{f}</span>
                 </div>
               ))}
             </div>
+          </div>
 
-            <div className="counter-wrap">
-              <div className="counter-label">Free spots claimed out of first 100</div>
-              <div className="counter-bar-track">
-                <div className="counter-bar-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="counter-nums">
-                <span className="counter-taken">{listingCount} claimed</span>
-                <span className="counter-left">{spotsLeft} spot{spotsLeft !== 1 ? 's' : ''} left</span>
-              </div>
-            </div>
-
-            <a href="/signup?role=landlord" className="btn-primary" style={{ display: 'block', textAlign: 'center' }}>
-              Claim your free spot →
-            </a>
-            <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--hh-text-muted)' }}>
-              After 100 listings: plans starting at $29/mo. Early landlords never pay.
-            </div>
+          <a href="/signup?role=landlord" className="btn-primary" style={{ display: 'block', textAlign: 'center', maxWidth: '320px', margin: '0 auto' }}>
+            Create your account →
+          </a>
+          <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--hh-text-muted)', textAlign: 'center' }}>
+            {listingCount} propert{listingCount === 1 ? 'y' : 'ies'} already listed on HomeHive.
           </div>
         </div>
       </div>
@@ -311,8 +323,8 @@ export default async function ForLandlordsPage() {
       <div className="wrap">
         <div className="bottom-cta">
           <div className="bottom-cta-h2">Your next tenant is already<br /><em>searching on HomeHive.</em></div>
-          <div className="bottom-cta-sub">It takes 5 minutes to list. The students are ready. All that's missing is you.</div>
-          <a href="/signup?role=landlord" className="btn-gold">Get started free →</a>
+          <div className="bottom-cta-sub">It takes 5 minutes to list, and plans start at $19.99 a month. The students are ready. All that's missing is you.</div>
+          <a href="/signup?role=landlord" className="btn-gold">Get started →</a>
         </div>
       </div>
     </>

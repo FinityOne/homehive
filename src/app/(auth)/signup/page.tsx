@@ -119,7 +119,7 @@ function RolePicker({ onPick }: { onPick: (role: Role) => void }) {
                 Whether you own a property or are subleasing for the summer, reach thousands of renters actively looking for their next home.
               </div>
               <div className="pick-card-features">
-                <div className="pick-card-feature"><span className="pick-card-feature-dot" />Create and manage your listing for free</div>
+                <div className="pick-card-feature"><span className="pick-card-feature-dot" />Plans from $19.99/mo — no per-lead fees, no commission</div>
                 <div className="pick-card-feature"><span className="pick-card-feature-dot" />Receive and track inquiries in one dashboard</div>
                 <div className="pick-card-feature"><span className="pick-card-feature-dot" />Works for full rentals, rooms, and subleases</div>
               </div>
@@ -267,7 +267,9 @@ function SignupForm({ initialRole, onBack, next = '', prefillEmail = '' }: { ini
 
     ph?.capture('signup_completed', { role, has_session: !!data.session })
 
-    router.push(next || (role === 'landlord' ? '/landlord/dashboard' : '/dashboard'))
+    // A brand-new landlord has no plan yet, so send them straight to the plan
+    // picker rather than to a dashboard the gate would bounce them off anyway.
+    router.push(next || (role === 'landlord' ? '/landlord/subscribe' : '/dashboard'))
   }
 
   const handleGoogleSignup = async () => {

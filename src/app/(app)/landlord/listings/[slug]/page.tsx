@@ -192,8 +192,6 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const LEADS_PAGE_SIZE = 20
   const [loading, setLoading]       = useState(true)
   const [activeTab, setActiveTab]   = useState<Tab>('overview')
-  const [hasPlan, setHasPlan]       = useState(false)
-  const [unlockedIds, setUnlockedIds] = useState<string[]>([])
 
   // ── Basics form ─────────────────────────────────────────────────────────────
   const [basics, setBasics] = useState({ name: '', address: '', description: '', price: '', security_deposit: '', beds: '', baths: '', sqft: '', asu_distance: '', utilities_included: false })
@@ -239,18 +237,11 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
-      const [props, { data: unlocks }, { data: plan }] = await Promise.all([
-        getPropertiesByOwner(user.id),
-        supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', user.id),
-        supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', user.id).eq('status', 'active').maybeSingle(),
-      ])
+      const props = await getPropertiesByOwner(user.id)
       const found = props.find(p => p.slug === slug)
       if (!found) { router.push('/landlord/listings'); return }
 
-      const activePlan = plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)
       setProperty(found)
-      setHasPlan(!!activePlan)
-      setUnlockedIds((unlocks || []).map((u: any) => u.lead_id))
 
       // Fetch first page of leads for this property
       const { data: firstPage, count } = await supabase
@@ -694,11 +685,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                     <div style={{ fontSize: 13, color: '#9b9b9b', fontFamily: "'DM Sans', sans-serif" }}>Loading…</div>
                   </div>
                 )}
-                <LeadsTable
-                  leads={leads}
-                  hasPlan={hasPlan}
-                  initialUnlockedIds={unlockedIds}
-                />
+                <LeadsTable leads={leads} />
                 {leadsTotal > LEADS_PAGE_SIZE && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid #f1f5f9', fontFamily: "'DM Sans', sans-serif" }}>
                     <span style={{ fontSize: 12, color: '#94a3b8' }}>

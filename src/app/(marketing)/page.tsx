@@ -256,7 +256,7 @@ const faqJsonLd = {
       name: 'Is HomeHive free for ASU students?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Yes — HomeHive is completely free for students, now and always. There are no broker fees, no application fees, and no hidden charges. Landlords pay a small success fee only after a room is filled.',
+        text: 'Yes — HomeHive is completely free for students, now and always. There are no broker fees, no application fees, and no hidden charges. Landlords pay a flat monthly plan starting at $19.99.',
       },
     },
     {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
+import { planDisplayName, planGrantsAccess, propertyLimitFor, formatPropertyLimit } from '@/lib/landlordPlans'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import PhoneInput from '@/components/ui/PhoneInput'
@@ -18,12 +19,10 @@ type ProfileData = {
   avatar_url: string | null
 }
 
-type PlanType = 'per_lead' | 'single_listing' | 'two_listing' | 'lifetime' | null
-
 type PlanRow = {
-  plan_type: PlanType
+  plan_type: string
   status: 'active' | 'cancelled' | 'past_due'
-  stripe_customer_id: string
+  stripe_customer_id: string | null
   stripe_subscription_id: string | null
   current_period_end: string | null
 }
@@ -34,15 +33,8 @@ function splitName(full: string | null) {
 }
 
 function formatDate(iso: string | null) {
-  if (!iso) return 'Lifetime'
+  if (!iso) return null
   return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-}
-
-const PLAN_NAMES: Record<NonNullable<PlanType>, string> = {
-  per_lead:       'Pay Per Lead',
-  single_listing: 'Single Listing Plan',
-  two_listing:    'Two Listing Plan',
-  lifetime:       'Lifetime Founding Member',
 }
 
 // ─── Profile tab ─────────────────────────────────────────────────────────────
@@ -218,242 +210,76 @@ function ProfileTab({ profile, avatarUrl, setAvatarUrl, showToast }: {
 
 // ─── Billing tab ──────────────────────────────────────────────────────────────
 function BillingTab({ userId }: { userId: string }) {
-  const [subTab, setSubTab] = useState<'subscription' | 'usage'>('subscription')
   const [plan, setPlan] = useState<PlanRow | null | 'loading'>('loading')
-  const [unlockCount, setUnlockCount] = useState(0)
-  const [portalLoading, setPortalLoading] = useState(false)
+  const [propertyCount, setPropertyCount] = useState(0)
 
   useEffect(() => {
     Promise.all([
-      supabase.from('landlord_plans').select('plan_type, status, stripe_customer_id, stripe_subscription_id, current_period_end').eq('landlord_id', userId).eq('status', 'active').maybeSingle(),
-      supabase.from('lead_unlocks').select('id', { count: 'exact', head: true }).eq('landlord_id', userId),
-    ]).then(([planRes, unlocksRes]) => {
+      supabase.from('landlord_plans')
+        .select('plan_type, status, stripe_customer_id, stripe_subscription_id, current_period_end')
+        .eq('landlord_id', userId).maybeSingle(),
+      supabase.from('properties')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_id', userId).is('archived_at', null),
+    ]).then(([planRes, propRes]) => {
       setPlan(planRes.data as PlanRow | null)
-      setUnlockCount(unlocksRes.count ?? 0)
+      setPropertyCount(propRes.count ?? 0)
     })
   }, [userId])
 
-  const openPortal = async () => {
-    setPortalLoading(true)
-    try {
-      const res = await fetch('/api/stripe/portal', { method: 'POST' })
-      const { url, error } = await res.json()
-      if (url) window.location.href = url
-      else alert(error ?? 'Could not open billing portal')
-    } catch { alert('Could not open billing portal') }
-    finally { setPortalLoading(false) }
-  }
-
   const isLoading = plan === 'loading'
-  const activePlan = plan === 'loading' ? null : plan
-  const isLifetime = activePlan?.plan_type === 'lifetime'
-  const isAdminGrant = activePlan?.stripe_subscription_id === 'admin_override'
-
-  const subTabs = [
-    { id: 'subscription' as const, label: 'Subscription' },
-    { id: 'usage' as const, label: 'Usage' },
-  ]
-
-  const planStatusBadge = activePlan
-    ? isLifetime
-      ? { label: 'Founding Member ⭐', bg: '#fffbeb', color: '#92400e', border: '#fde68a' }
-      : activePlan.status === 'active'
-      ? { label: 'Active', bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' }
-      : activePlan.status === 'past_due'
-      ? { label: 'Past Due', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' }
-      : { label: 'Cancelled', bg: '#f5f4f0', color: '#6b6b6b', border: '#e0ddd7' }
-    : null
+  const row = isLoading ? null : plan
+  const active = planGrantsAccess(row?.plan_type, row?.status)
+  const limit = active ? propertyLimitFor(row?.plan_type) : 0
+  const renews = formatDate(row?.current_period_end ?? null)
 
   return (
-    <div>
-      {/* Sub-tabs */}
-      <div style={{ display: 'flex', gap: '2px', borderBottom: '1px solid #e8e5de', marginBottom: '24px' }}>
-        {subTabs.map(t => (
-          <button key={t.id} onClick={() => setSubTab(t.id)} style={{
-            background: 'none', border: 'none',
-            borderBottom: subTab === t.id ? '2px solid #8C1D40' : '2px solid transparent',
-            padding: '8px 14px', fontSize: '13px', fontWeight: subTab === t.id ? 700 : 500,
-            color: subTab === t.id ? '#8C1D40' : '#9b9b9b',
-            cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: '-1px',
-          }}>{t.label}</button>
-        ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div className="prof-card">
+        <div className="prof-card-header">
+          <div className="prof-section-icon" style={{ background: '#fdf9ec' }}>💳</div>
+          <div>
+            <div className="prof-section-title">Your plan</div>
+            <div style={{ fontSize: '11px', color: '#9b9b9b' }}>Priced by the number of properties you list</div>
+          </div>
+        </div>
+        <div className="prof-card-body">
+          {isLoading ? (
+            <div style={{ height: '40px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', borderRadius: '8px', animation: 'shimmer 1.4s infinite' }} />
+          ) : active ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '16px', color: '#1a1a1a' }}>
+                  {planDisplayName(row?.plan_type)}
+                </div>
+                <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '4px' }}>
+                  {propertyCount} of {formatPropertyLimit(limit)} properties used
+                  {renews && row?.status === 'active' ? ` · renews ${renews}` : ''}
+                  {row?.status === 'past_due' ? ' · ⚠️ payment past due' : ''}
+                </div>
+              </div>
+              <span style={{
+                background: row?.status === 'past_due' ? '#fef2f2' : '#f0fdf4',
+                color: row?.status === 'past_due' ? '#dc2626' : '#166534',
+                border: `1px solid ${row?.status === 'past_due' ? '#fecaca' : '#bbf7d0'}`,
+                borderRadius: '20px', fontSize: '11px', fontWeight: 700, padding: '3px 12px',
+              }}>
+                {row?.status === 'past_due' ? 'Past Due' : 'Active'}
+              </span>
+            </div>
+          ) : (
+            <div style={{ fontSize: '14px', color: '#6b6b6b', lineHeight: 1.6 }}>
+              You don’t have an active plan yet, so your listings aren’t live.
+            </div>
+          )}
+
+          <div style={{ marginTop: '16px' }}>
+            <a href="/landlord/billing" style={{ display: 'inline-block', background: '#1a1a1a', color: '#fff', borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
+              {active ? 'Manage plan & billing →' : 'Choose a plan →'}
+            </a>
+          </div>
+        </div>
       </div>
-
-      {/* Subscription sub-tab */}
-      {subTab === 'subscription' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-
-          {/* Current plan */}
-          <div className="prof-card">
-            <div className="prof-card-header">
-              <div className="prof-section-icon" style={{ background: '#fdf9ec' }}>💳</div>
-              <div>
-                <div className="prof-section-title">Current Plan</div>
-                <div style={{ fontSize: '11px', color: '#9b9b9b' }}>Your active HomeHive subscription</div>
-              </div>
-            </div>
-            <div className="prof-card-body">
-              {isLoading ? (
-                <div style={{ height: '40px', background: 'linear-gradient(90deg,#f0ede6 25%,#faf9f6 50%,#f0ede6 75%)', backgroundSize: '400% 100%', borderRadius: '8px', animation: 'shimmer 1.4s infinite' }} />
-              ) : activePlan ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: '16px', color: '#1a1a1a' }}>
-                        {isAdminGrant ? `Complimentary ${PLAN_NAMES[activePlan.plan_type!]}` : PLAN_NAMES[activePlan.plan_type!]}
-                      </span>
-                      {isAdminGrant && (
-                        <span style={{ fontSize: '10px', fontWeight: 700, background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '20px' }}>
-                          COMPLIMENTARY
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '4px' }}>
-                      {isAdminGrant
-                        ? 'Complimentary plan — contact support for questions'
-                        : isLifetime
-                        ? 'Lifetime access — never expires'
-                        : activePlan.status === 'active'
-                        ? `Renews ${formatDate(activePlan.current_period_end)}`
-                        : activePlan.status === 'past_due'
-                        ? '⚠️ Payment past due — update payment method'
-                        : 'Cancelled'}
-                    </div>
-                  </div>
-                  {planStatusBadge && !isAdminGrant && (
-                    <span style={{ background: planStatusBadge.bg, color: planStatusBadge.color, border: `1px solid ${planStatusBadge.border}`, borderRadius: '20px', fontSize: '11px', fontWeight: 700, padding: '3px 12px' }}>
-                      {planStatusBadge.label}
-                    </span>
-                  )}
-                  {isAdminGrant && (
-                    <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '20px', fontSize: '11px', fontWeight: 700, padding: '3px 12px' }}>
-                      Active ✓
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  <div style={{ fontSize: '14px', color: '#6b6b6b', marginBottom: '14px' }}>
-                    No active plan. You're on pay-per-lead — first lead per listing is always free.
-                  </div>
-                  <a href="/landlord/leads" style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
-                    View Plans →
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Plan comparison — only show if no active plan or not lifetime */}
-          {!isLoading && !isLifetime && (
-            <div className="prof-card">
-              <div className="prof-card-header">
-                <div className="prof-section-icon" style={{ background: '#f0fdf4' }}>⬆</div>
-                <div>
-                  <div className="prof-section-title">{activePlan ? 'Change Plan' : 'Available Plans'}</div>
-                  <div style={{ fontSize: '11px', color: '#9b9b9b' }}>Unlock unlimited leads for your listings</div>
-                </div>
-              </div>
-              <div className="prof-card-body">
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                  {[
-                    { name: 'Per Lead', price: '$1.99', freq: 'one time', desc: 'Pay as you go', current: activePlan?.plan_type === 'per_lead' },
-                    { name: '1 Listing', price: '$29.99', freq: '/mo', desc: 'Unlimited for 1 listing', current: activePlan?.plan_type === 'single_listing' },
-                    { name: '2 Listings', price: '$49.99', freq: '/mo', desc: 'Unlimited for 2 listings', highlight: true, badge: 'BEST VALUE', current: activePlan?.plan_type === 'two_listing' },
-                  ].map(p => (
-                    <div key={p.name} style={{
-                      background: p.current ? '#fdf2f5' : p.highlight ? '#f8f7f4' : '#fff',
-                      border: p.current ? '2px solid #8C1D40' : p.highlight ? '2px solid #1a1a1a' : '1.5px solid #e8e4db',
-                      borderRadius: '10px', padding: '14px 12px', position: 'relative',
-                    }}>
-                      {p.badge && (
-                        <div style={{ position: 'absolute', top: '-9px', left: '50%', transform: 'translateX(-50%)', background: '#FFC627', color: '#1a1a1a', fontSize: '9px', fontWeight: 800, padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{p.badge}</div>
-                      )}
-                      {p.current && (
-                        <div style={{ position: 'absolute', top: '-9px', right: '10px', background: '#8C1D40', color: '#fff', fontSize: '9px', fontWeight: 800, padding: '2px 7px', borderRadius: '20px' }}>CURRENT</div>
-                      )}
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#6b6b6b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>{p.name}</div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '20px', fontWeight: 800, color: '#1a1a1a' }}>{p.price}</span>
-                        <span style={{ fontSize: '11px', color: '#9b9b9b' }}>{p.freq}</span>
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#6b6b6b' }}>{p.desc}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: '14px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <a href="/landlord/leads" style={{ display: 'inline-block', background: '#1a1a1a', color: '#fff', borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
-                    Unlock a Lead to Upgrade →
-                  </a>
-                  {activePlan && !isLifetime && !isAdminGrant && (
-                    <button onClick={openPortal} disabled={portalLoading} style={{ background: 'none', border: '1.5px solid #e8e5de', color: '#3a3a3a', borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-                      {portalLoading ? 'Opening…' : 'Manage Subscription →'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Manage subscription for active plans (not admin grants or lifetime) */}
-          {!isLoading && activePlan && !isLifetime && !isAdminGrant && (
-            <div className="prof-card">
-              <div className="prof-card-header">
-                <div className="prof-section-icon" style={{ background: '#faf9f6' }}>⚙️</div>
-                <div>
-                  <div className="prof-section-title">Manage Subscription</div>
-                  <div style={{ fontSize: '11px', color: '#9b9b9b' }}>Update payment method, download invoices, cancel</div>
-                </div>
-              </div>
-              <div className="prof-card-body">
-                <button onClick={openPortal} disabled={portalLoading} style={{ background: portalLoading ? '#c5c1b8' : '#1a1a1a', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 20px', fontSize: '13px', fontWeight: 700, cursor: portalLoading ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-                  {portalLoading ? 'Opening…' : 'Open Billing Portal →'}
-                </button>
-                <span style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '8px', display: 'block' }}>
-                  You'll be redirected to Stripe's secure billing portal.
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Usage sub-tab */}
-      {subTab === 'usage' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div className="prof-card">
-            <div className="prof-card-header">
-              <div className="prof-section-icon" style={{ background: '#eff6ff' }}>📊</div>
-              <div>
-                <div className="prof-section-title">Lead Usage</div>
-                <div style={{ fontSize: '11px', color: '#9b9b9b' }}>All-time unlock history</div>
-              </div>
-            </div>
-            <div className="prof-card-body">
-              <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontSize: '36px', fontWeight: 800, color: '#1a1a1a', letterSpacing: '-1px' }}>{unlockCount}</div>
-                  <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '2px' }}>total leads unlocked</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '36px', fontWeight: 800, color: unlockCount === 0 ? '#c5c1b8' : '#10b981', letterSpacing: '-1px' }}>
-                    {unlockCount === 0 ? '—' : activePlan && activePlan.plan_type !== 'per_lead' ? '∞' : `$${(unlockCount * 1.99).toFixed(2)}`}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#9b9b9b', marginTop: '2px' }}>
-                    {activePlan && activePlan.plan_type !== 'per_lead' ? 'unlimited plan active' : 'est. pay-per-lead spend'}
-                  </div>
-                </div>
-              </div>
-
-              {unlockCount === 0 && (
-                <div style={{ marginTop: '16px', padding: '12px 14px', background: '#f5f4f0', borderRadius: '8px', fontSize: '13px', color: '#9b9b9b' }}>
-                  No leads unlocked yet. Your first lead on each listing is always free.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

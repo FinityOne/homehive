@@ -3,13 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 
-const UnlockModal = dynamic(() => import('@/components/leads/UnlockModal'), { ssr: false })
 
 // Main pipeline flow — cold is a side bucket before closed
 export const PIPELINE_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'closed']
@@ -113,18 +111,6 @@ function scoreColor(s: number): { color: string; bg: string } {
   return { color: '#94a3b8', bg: 'rgba(148,163,184,0.1)' }
 }
 
-function computeFreeLeadIds(leads: Lead[]): Set<string> {
-  const oldestBySlug: Record<string, Lead> = {}
-  for (const lead of leads) {
-    if (!lead.property) continue
-    const prev = oldestBySlug[lead.property]
-    if (!prev || new Date(lead.created_at ?? 0) < new Date(prev.created_at ?? 0)) {
-      oldestBySlug[lead.property] = lead
-    }
-  }
-  return new Set(Object.values(oldestBySlug).map(l => l.id))
-}
-
 function urgencyOf(lead: Lead): 'urgent' | 'hot' | 'warm' | 'normal' {
   const d = Math.floor((Date.now() - new Date(lead.created_at || 0).getTime()) / 86400000)
   if (['qualified', 'matching'].includes(lead.status)) return 'hot'
@@ -151,10 +137,6 @@ export default function LeadsListPage() {
   const [closeModal, setCloseModal] = useState<{ leadId: string } | null>(null)
   const [closeReason, setCloseReason] = useState<Lead['closed_reason']>(null)
   const [closeNotes, setCloseNotes] = useState('')
-  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set())
-  const [freeLeadIds, setFreeLeadIds] = useState<Set<string>>(new Set())
-  const [hasPlan, setHasPlan] = useState(false)
-  const [unlockModalLeadId, setUnlockModalLeadId] = useState<string | null>(null)
   const [prescreenMap, setPrescreenMap] = useState<Record<string, Prescreen>>({})
   const [page, setPage] = useState(1)
   const [collapsedProps, setCollapsedProps] = useState<Set<string>>(new Set())
@@ -165,7 +147,6 @@ export default function LeadsListPage() {
   const [addingLead, setAddingLead] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
-  const isLeadVisible = (lead: Lead) => hasPlan || freeLeadIds.has(lead.id) || unlockedIds.has(lead.id)
 
   useEffect(() => { document.title = 'Leads — HomeHive' }, [])
 
@@ -180,15 +161,11 @@ export default function LeadsListPage() {
   // lazily per selected property (below) so we never pull every lead up front.
   const bootstrap = useCallback(async () => {
     if (!userId) return
-    const [{ data: propsData }, { data: unlocks }, { data: plan }] = await Promise.all([
-      supabase.from('properties').select('slug, name, address, price').eq('owner_id', userId).order('created_at', { ascending: true }),
-      supabase.from('lead_unlocks').select('lead_id').eq('landlord_id', userId),
-      supabase.from('landlord_plans').select('plan_type, status').eq('landlord_id', userId).eq('status', 'active').maybeSingle(),
-    ])
+    const { data: propsData } = await supabase
+      .from('properties').select('slug, name, address, price').eq('owner_id', userId)
+      .order('created_at', { ascending: true })
     const props = (propsData || []) as Property[]
     setProperties(props)
-    setHasPlan(!!(plan && ['single_listing', 'two_listing', 'lifetime'].includes(plan.plan_type)))
-    setUnlockedIds(new Set((unlocks || []).map((u: { lead_id: string }) => u.lead_id)))
     // Default to the first property — the most common view. 'All properties' is opt-in.
     setPropertyFilter(prev => prev ?? (props.length > 0 ? props[0].slug : 'all'))
     if (props.length === 0) { setLeads([]); setLoading(false) }
@@ -208,7 +185,6 @@ export default function LeadsListPage() {
     const leadsData = await getLeadsForSlugs(slugs)
     leadsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
     setLeads(leadsData)
-    setFreeLeadIds(computeFreeLeadIds(leadsData))
 
     const leadIds = leadsData.map(l => l.id)
     if (leadIds.length > 0) {
@@ -294,16 +270,6 @@ export default function LeadsListPage() {
     setRemindingId(null)
   }
 
-  const handleUnlockSuccess = (unlockType: string) => {
-    if (unlockType === 'subscription') {
-      setHasPlan(true)
-    } else if (unlockModalLeadId) {
-      setUnlockedIds(prev => new Set([...prev, unlockModalLeadId]))
-    }
-    setUnlockModalLeadId(null)
-    showToast('Lead unlocked!')
-  }
-
   const handleCopy = (e: React.MouseEvent, key: string, value: string) => {
     e.stopPropagation()
     navigator.clipboard.writeText(value).then(() => {
@@ -383,8 +349,6 @@ export default function LeadsListPage() {
   }
 
   const sortedLeads = [...displayLeads].sort((a, b) => {
-    const rank = (l: Lead) => isLeadVisible(l) ? 0 : freeLeadIds.has(l.id) ? 1 : 2
-    if (rank(a) !== rank(b)) return rank(a) - rank(b)
     const aClosed = a.status === 'closed', bClosed = b.status === 'closed'
     if (aClosed !== bClosed) return aClosed ? 1 : -1
     if (sortBy === 'date') return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
@@ -400,21 +364,16 @@ export default function LeadsListPage() {
     if (activePropFilter !== 'all' && l.property !== activePropFilter) return false
     if (search) {
       const q = search.toLowerCase()
-      if (isLeadVisible(l)) {
-        if (!((l.first_name || '').toLowerCase().includes(q) ||
-              (l.last_name || '').toLowerCase().includes(q) ||
-              (l.email || '').toLowerCase().includes(q) ||
-              (l.property || '').toLowerCase().includes(q))) return false
-      } else {
-        if (!(l.property || '').toLowerCase().includes(q)) return false
-      }
+      if (!((l.first_name || '').toLowerCase().includes(q) ||
+            (l.last_name || '').toLowerCase().includes(q) ||
+            (l.email || '').toLowerCase().includes(q) ||
+            (l.property || '').toLowerCase().includes(q))) return false
     }
     return true
   })
 
   const PAGE_SIZE = 25
-  const visibleFiltered = filteredLeads.filter(l => isLeadVisible(l))
-  const lockedFiltered = filteredLeads.filter(l => !isLeadVisible(l))
+  const visibleFiltered = filteredLeads
   const totalPages = Math.max(1, Math.ceil(visibleFiltered.length / PAGE_SIZE))
   const pagedVisible = visibleFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -422,7 +381,6 @@ export default function LeadsListPage() {
     acc[s] = displayLeads.filter(l => (l.status === 'tour_scheduled' ? 'qualified' : l.status) === s).length
     return acc
   }, {})
-  const lockedCount = displayLeads.filter(l => !isLeadVisible(l)).length
 
   const renderColHeader = (showPropCol: boolean) => (
     <div className="ll-col-hdr">
@@ -607,47 +565,6 @@ export default function LeadsListPage() {
     )
   }
 
-  const renderLockedSection = (lockedLeads: Lead[]) => (
-    <>
-      <div style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1118 100%)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', borderTop: '2px solid #e8e5de' }}>
-        <div>
-          <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginBottom: 3 }}>🔒 {lockedLeads.length} lead{lockedLeads.length !== 1 ? 's' : ''} locked</div>
-          <div style={{ color: '#9b9b9b', fontSize: 11 }}>
-            <span style={{ color: '#FFC627', fontWeight: 600 }}>$29.99/mo</span> · <span style={{ color: '#FFC627', fontWeight: 600 }}>$1.99</span> per lead
-          </div>
-        </div>
-        <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)}
-          style={{ background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}>
-          Unlock Leads →
-        </button>
-      </div>
-      {lockedLeads.slice(0, 3).map(lead => (
-        <div key={lead.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid #f0ede6', background: '#fafaf8', borderLeft: '3px solid #e0ddd7' }}>
-          <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#d4d0c8', flexShrink: 0, filter: 'blur(3px)' }} />
-          <div style={{ flex: 1, filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none' }}>
-            <div style={{ width: 90, height: 12, background: '#e0ddd7', borderRadius: 3, marginBottom: 4 }} />
-            <div style={{ width: 140, height: 10, background: '#e0ddd7', borderRadius: 3 }} />
-          </div>
-          <div style={{ fontSize: 11, color: '#b0a898' }}>{timeAgo(lead.created_at)}</div>
-          <div>
-            <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_META[lead.status]?.color || '#9b9b9b', background: STATUS_META[lead.status]?.bg, border: `1px solid ${STATUS_META[lead.status]?.border}`, borderRadius: 20, padding: '2px 9px' }}>
-              {STATUS_META[lead.status]?.label || lead.status}
-            </span>
-          </div>
-          <button className="ll-unlock-btn" onClick={() => setUnlockModalLeadId(lead.id)}>🔒 Unlock</button>
-        </div>
-      ))}
-      {lockedLeads.length > 3 && (
-        <div style={{ padding: '9px 16px', background: '#f7f6f3', textAlign: 'center', borderTop: '1px dashed #e0ddd7' }}>
-          <span style={{ fontSize: 12, color: '#9b9b9b' }}>+{lockedLeads.length - 3} more — </span>
-          <button onClick={() => setUnlockModalLeadId(lockedLeads[0].id)} style={{ background: 'none', border: 'none', color: '#8C1D40', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", padding: 0 }}>
-            unlock all →
-          </button>
-        </div>
-      )}
-    </>
-  )
-
   if (!loading && properties.length === 0) {
     return (
       <div style={{ maxWidth: 560, margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
@@ -799,11 +716,6 @@ export default function LeadsListPage() {
           <a href="/landlord/leads/insights" className="ll-subnav-link">Insights</a>
           <a href="/landlord/leads/list" className="ll-subnav-link active">All Leads</a>
           <div className="ll-subnav-right">
-            {lockedCount > 0 && (
-              <span style={{ fontSize: 11, color: '#FFC627', fontWeight: 600, background: 'rgba(255,198,39,0.12)', border: '1px solid rgba(255,198,39,0.3)', borderRadius: 20, padding: '3px 10px' }}>
-                🔒 {lockedCount} locked
-              </span>
-            )}
             <button className="btn-gold" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => setShowAddModal(true)}>+ Add Lead</button>
           </div>
         </div>
@@ -947,8 +859,7 @@ export default function LeadsListPage() {
                   <div style={{ paddingBottom: 20 }}>
                     {properties.map(prop => {
                       const propVisible = visibleFiltered.filter(l => l.property === prop.slug)
-                      const propLocked = lockedFiltered.filter(l => l.property === prop.slug)
-                      if (propVisible.length === 0 && propLocked.length === 0) return null
+                      if (propVisible.length === 0) return null
                       const urgencyRank = (l: Lead) => {
                         const u = urgencyOf(l)
                         return u === 'urgent' ? 0 : u === 'hot' ? 1 : u === 'warm' ? 2 : 3
@@ -975,23 +886,21 @@ export default function LeadsListPage() {
                               {hotCnt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.15)', borderRadius: 10, padding: '2px 8px' }}>{hotCnt} hot</span>}
                               {newCnt > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: '#93c5fd', background: 'rgba(59,130,246,0.15)', borderRadius: 10, padding: '2px 8px' }}>{newCnt} new</span>}
                               {coldLeads.length > 0 && <span style={{ fontSize: 11, color: '#94a3b8', background: 'rgba(100,116,139,0.1)', borderRadius: 10, padding: '2px 8px' }}>❄ {coldLeads.length}</span>}
-                              {propLocked.length > 0 && <span style={{ fontSize: 11, color: '#9b9b9b' }}>🔒 {propLocked.length}</span>}
                               <span style={{ color: '#9b9b9b', fontSize: 16, lineHeight: 1, display: 'inline-block', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>⌄</span>
                             </div>
                           </div>
                           {!isCollapsed && (
                             <div className="ll-group-body">
                               {renderColHeader(false)}
-                              {activeLeads.map((lead, i) => renderLeadCard(lead, i < activeLeads.length - 1 || coldLeads.length > 0 || propLocked.length > 0, false))}
+                              {activeLeads.map((lead, i) => renderLeadCard(lead, i < activeLeads.length - 1 || coldLeads.length > 0, false))}
                               {coldLeads.length > 0 && (
                                 <>
                                   <div style={{ padding: '6px 16px', background: '#f8fafc', borderTop: activeLeads.length > 0 ? '1px dashed #e2e8f0' : 'none', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     ❄ Cold — no recent activity
                                   </div>
-                                  {coldLeads.map((lead, i) => renderLeadCard(lead, i < coldLeads.length - 1 || propLocked.length > 0, false))}
+                                  {coldLeads.map((lead, i) => renderLeadCard(lead, i < coldLeads.length - 1, false))}
                                 </>
                               )}
-                              {propLocked.length > 0 && renderLockedSection(propLocked)}
                             </div>
                           )}
                         </div>
@@ -1011,7 +920,6 @@ export default function LeadsListPage() {
                           {pagedVisible.filter(l => (l.status === 'tour_scheduled' ? 'qualified' : l.status) === 'cold').map((lead, i, arr) => renderLeadCard(lead, i < arr.length - 1, properties.length > 1))}
                         </>
                       )}
-                      {lockedFiltered.length > 0 && renderLockedSection(lockedFiltered)}
                     </div>
                     {totalPages > 1 && (
                       <div className="ll-pagination">
@@ -1033,7 +941,7 @@ export default function LeadsListPage() {
               <div className="ll-pipeline">
                 {PIPELINE_ORDER.map(status => {
                   const meta = STATUS_META[status]
-                  const colLeads = filteredLeads.filter(l => (l.status === 'tour_scheduled' ? 'qualified' : l.status) === status && isLeadVisible(l))
+                  const colLeads = filteredLeads.filter(l => (l.status === 'tour_scheduled' ? 'qualified' : l.status) === status)
                   const isColdCol = status === 'cold'
                   return (
                     <div key={status} className="ll-pcol" style={{ borderTopColor: meta.color, opacity: isColdCol ? 0.75 : 1 }}>
@@ -1174,9 +1082,6 @@ export default function LeadsListPage() {
         </div>
       )}
 
-      {unlockModalLeadId && (
-        <UnlockModal leadId={unlockModalLeadId} onSuccess={handleUnlockSuccess} onClose={() => setUnlockModalLeadId(null)} />
-      )}
     </>
   )
 }
