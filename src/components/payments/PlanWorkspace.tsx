@@ -403,7 +403,12 @@ function MonthGroup({
   const paid     = active.filter(p => p.status === 'paid').length
   const overdue  = active.filter(p => isOverdue(p)).length
   const expected = active.reduce((s, p) => s + p.amount, 0)
-  const collected = active.filter(p => p.status === 'paid').reduce((s, p) => s + p.paid_amount, 0)
+  // Every dollar received against this month, not just the rows that settled in
+  // full: counting only `paid` rows reported $0 collected for a month where a
+  // part-payment had plainly arrived, which is the fastest way to make a ledger
+  // look wrong. Partial and processing money is money.
+  const collected = active.reduce((s, p) => s + p.paid_amount, 0)
+  const outstanding = Math.max(0, expected - collected)
   const voided   = payments.filter(p => p.status === 'voided').length
 
   return (
@@ -447,6 +452,23 @@ function MonthGroup({
               history={emailsForCharge(emails, { scheduledId: p.id })}
             />
           ))}
+
+          {/* The month's own bottom line, in the same columns as the rows above
+              it — so a shared lease's six payers visibly sum to one figure. */}
+          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '10px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', alignItems: 'center' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
+              {fmtMonth(month)} total
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtCurrency(expected)}
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtCurrency(collected)}
+            </div>
+            <div style={{ gridColumn: 'span 3', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: outstanding > 0 ? (overdue > 0 ? '#dc2626' : '#d97706') : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+              {outstanding > 0 ? `${fmtCurrency(outstanding)} outstanding` : 'Fully collected'}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1920,8 +1942,9 @@ export default function PlanWorkspace({
     ...overdueSPs.filter(p => unsettled(p) && !thisMonthSPs.some(m => m.id === p.id)),
   ]
   const requestableTotal = requestableSPs.reduce((s, p) => s + (p.amount - p.paid_amount), 0)
-  const totalExpected = thisMonthSPs.reduce((s, p) => s + p.amount, 0)
-  const totalPaid     = thisMonthSPs.filter(p => p.status === 'paid').reduce((s, p) => s + p.paid_amount, 0)
+  // Same rule as the month groups: all money received, not only the rows that
+  // settled in full, and voided rent is not expected of anyone.
+  const totalPaid     = thisMonthSPs.filter(p => p.status !== 'voided').reduce((s, p) => s + p.paid_amount, 0)
   const totalMonthly  = plan.tenants.reduce((s, t) => s + t.monthly_total, 0)
   const leaseRent     = plan.lease?.rent_amount ?? 0
   const amountMismatch = leaseRent > 0 && Math.abs(totalMonthly - leaseRent) > 0.01

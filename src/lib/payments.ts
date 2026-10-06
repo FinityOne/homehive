@@ -429,7 +429,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       lease:leases(id, start_date, end_date, rent_amount),
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id),
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, late_fees_applied, payment_method),
       special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date)
     `)
     .eq('owner_id', ownerId)
@@ -437,17 +437,28 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
 
   if (error || !data) { console.error('getPlansForOwner:', error); return [] }
 
-  return data.map((row: any) => ({
-    ...row,
-    tenants:        (row.tenants || []).map((t: any) => ({ ...t, line_items: [] })),
-    late_fee_rule:  Array.isArray(row.late_fee_rule) ? (row.late_fee_rule[0] ?? null) : (row.late_fee_rule ?? null),
-    property:       row.property   ?? undefined,
-    lease:          row.lease      ?? undefined,
-    scheduled_payments: row.scheduled_payments || [],
-    // Deposits and one-off charges ride along so Financials can report on them
-    // portfolio-wide, not just inside a single plan.
-    special_payments: row.special_payments || [],
-  })) as PaymentPlan[]
+  return data.map((row: any) => {
+    const tenants = (row.tenants || []).map((t: any) => ({ ...t, line_items: [] }))
+    // Who a charge belongs to, resolved here rather than with a second join:
+    // the rollup names the person on every open deposit and one-off charge.
+    const names = new Map<string, string>(tenants.map((t: any) => [t.id, t.name]))
+    return {
+      ...row,
+      tenants,
+      late_fee_rule:  Array.isArray(row.late_fee_rule) ? (row.late_fee_rule[0] ?? null) : (row.late_fee_rule ?? null),
+      property:       row.property   ?? undefined,
+      lease:          row.lease      ?? undefined,
+      scheduled_payments: row.scheduled_payments || [],
+      // Deposits and one-off charges ride along so Financials can report on them
+      // portfolio-wide, not just inside a single plan.
+      special_payments: (row.special_payments || []).map((sp: any) => ({
+        ...sp,
+        tenant: sp.plan_tenant_id && names.has(sp.plan_tenant_id)
+          ? { name: names.get(sp.plan_tenant_id) as string }
+          : null,
+      })),
+    }
+  }) as PaymentPlan[]
 }
 
 // Full detail for the plan detail page
