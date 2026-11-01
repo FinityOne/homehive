@@ -114,6 +114,20 @@ export type Totals = {
    * because "fees" is otherwise assumed to come out of rent.
    */
   tenantFees: number
+  /**
+   * Late-fee money that genuinely arrived, from `late_fee_paid`.
+   *
+   * The tenant pay route bills rent *plus* the derived late fee, but settlement
+   * records only the rent in `paid_amount` — so until this existed, a late fee
+   * the tenant actually paid appeared nowhere, and the landlord could not see
+   * money they had received. It is kept separate from `collected` rather than
+   * folded in, because `collected ÷ billed` has to stay a rent collection rate:
+   * fold fees into the numerator and a tenant who pays late pushes the rate
+   * over 100%. Use `received` for "money in".
+   */
+  lateFeesCollected: number
+  /** Everything that actually came in: `collected + lateFeesCollected`. */
+  received: number
   /** collected ÷ billed as 0–100. `null` when nothing was billed. */
   rate: number | null
 }
@@ -121,13 +135,15 @@ export type Totals = {
 export const EMPTY_TOTALS: Totals = {
   billed: 0, collected: 0, outstanding: 0, overdue: 0,
   overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0,
-  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0, rate: null,
+  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0,
+  lateFeesCollected: 0, received: 0, rate: null,
 }
 
-function finish(t: Omit<Totals, 'outstanding' | 'rate'>): Totals {
+function finish(t: Omit<Totals, 'outstanding' | 'rate' | 'received'>): Totals {
   return {
     ...t,
     outstanding: Math.max(0, t.billed - t.collected),
+    received: Math.round((t.collected + t.lateFeesCollected) * 100) / 100,
     rate: t.billed > 0 ? Math.round((t.collected / t.billed) * 100) : null,
   }
 }
@@ -147,7 +163,8 @@ export function sumTotals(parts: Totals[]): Totals {
     collectedLateCount: a.collectedLateCount + b.collectedLateCount,
     maxDaysLate:   Math.max(a.maxDaysLate, b.maxDaysLate),
     tenantFees:    a.tenantFees + b.tenantFees,
-  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0 }))
+    lateFeesCollected: a.lateFeesCollected + b.lateFeesCollected,
+  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0, lateFeesCollected: 0 }))
 }
 
 /** Whole days from one ISO date to another. */
@@ -184,12 +201,15 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
   let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
+  let lateFeesCollected = 0
   for (const sp of sps) {
     if (!liveRent(sp) || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
     collected += sp.paid_amount
     tenantFees += sp.processing_fee ?? 0
+    // Money in, not a derived figure — see Totals.lateFeesCollected.
+    lateFeesCollected += sp.late_fee_paid ?? 0
     if (sp.paid_amount >= sp.amount) settledCount++
     if (sp.status === 'processing') {
       inFlight += Math.max(0, sp.amount - sp.paid_amount)
@@ -207,7 +227,7 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
       overdueCount++
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees, lateFeesCollected })
 }
 
 /** A one-off charge has no partial state on `special_payments` — paid means the
@@ -234,7 +254,8 @@ export function chargeTotals(specials: SpecialPayment[], range: Range, now = new
       maxDaysLate = Math.max(maxDaysLate, daysBetweenDates(sp.due_date, sp.paid_date))
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees })
+  // A late-fee rule is written against rent, so a one-off never carries one.
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees, lateFeesCollected: 0 })
 }
 
 // ─── HOW MONEY ARRIVED ───────────────────────────────────────────────────────

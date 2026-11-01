@@ -59,7 +59,8 @@ export async function settleRentPayment(
   // Late fees ride on the first rent row for the same reason the surcharge does:
   // they belong to the payment, not to any one month, and splitting them would
   // make every row's figures wrong. Writing it here also corrects the stale
-  // `late_fees_applied` value that row may be carrying.
+  // `late_fees_applied` value that row may be carrying, and records the same
+  // figure in `late_fee_paid`, which is the one totals are allowed to read.
   let lateFeeApplied = false
   let scheduled = 0
   let special = 0
@@ -97,7 +98,14 @@ export async function settleRentPayment(
       stripe_payment_intent_id: pi.id,
       settled_at: settledAt,
       ...(status === 'paid'
-        ? { late_fees_applied: lateFeeApplied ? 0 : lateFeeDollars }
+        ? {
+            late_fees_applied: lateFeeApplied ? 0 : lateFeeDollars,
+            // The fee the tenant was actually charged on this intent, recorded
+            // as money *received*. Without this the landlord's collected total
+            // silently omits late fees they have genuinely been paid, because
+            // `paid_amount` above is deliberately the rent alone.
+            late_fee_paid: lateFeeApplied ? 0 : lateFeeDollars,
+          }
         : {}),
     }).eq('id', id)
     if (isTransition(row.status)) movedScheduled.push(id)
@@ -168,6 +176,8 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
       status: 'pending', paid_amount: 0, paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
       settled_at: null,
+      // The fee came back with the rent — it was never collected after all.
+      late_fee_paid: 0,
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
       .in('status', ['paid', 'processing'])
       .select('id')

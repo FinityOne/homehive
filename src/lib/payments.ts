@@ -35,6 +35,9 @@ export type PaymentLineItem = {
   label: string
   amount: number
   created_at: string
+  /** Set when this line came from a lease-level utility (src/lib/utilities.ts).
+   *  Such a line is owned by that declaration — edit the utility, not the line. */
+  utility_id: string | null
 }
 
 export type PaymentPlanTenant = {
@@ -81,6 +84,15 @@ export type ScheduledPayment = {
   /** How it settled — card/ach = tenant paid online, manual_* = landlord logged it. */
   payment_method: 'card' | 'ach' | 'manual_zelle' | 'manual_other' | null
   recorded_by: 'tenant' | 'landlord' | null
+  /**
+   * Late-fee money actually *received* for this charge, on top of `paid_amount`.
+   *
+   * Not to be confused with `late_fees_applied`, which is corrupt and must only
+   * ever be ignored — the fee *due* is always derived through `lateFeeDue`.
+   * This is the fee that genuinely changed hands, so it is the only late-fee
+   * figure that may be added to collected money.
+   */
+  late_fee_paid: number
   /** Surcharge the tenant paid on top (5% card, 2% ACH) — not landlord income. */
   processing_fee: number
   stripe_payment_intent_id: string | null
@@ -117,6 +129,8 @@ export type SpecialPayment = {
   created_at: string
   updated_at: string
   tenant?: { name: string } | null
+  /** Set when this charge came from a one-time lease utility. */
+  utility_id: string | null
 }
 
 export type PaymentPlan = {
@@ -441,7 +455,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       lease:leases(id, start_date, end_date, rent_amount, is_demo),
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, payment_method, processing_fee),
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee),
       special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
     `)
     .eq('owner_id', ownerId)
@@ -679,6 +693,8 @@ export async function updateScheduledPayment(
     paid_amount:        number
     paid_date:          string | null
     late_fees_applied:  number
+    /** Late-fee money the landlord actually took, recorded deliberately. */
+    late_fee_paid:      number
     notes:              string
   }>
 ): Promise<{ error: any }> {

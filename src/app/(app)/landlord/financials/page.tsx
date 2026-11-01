@@ -545,15 +545,21 @@ export default function FinancialsPage({
               />
               <SummaryCard
                 label="Collected"
-                value={fmtCurrency(t.collected)}
+                // Money actually received, which includes late fees the tenant
+                // paid on top. Those used to be invisible here: settlement
+                // records only the rent in `paid_amount`, so a fee a tenant
+                // genuinely handed over appeared nowhere on this page.
+                value={fmtCurrency(t.received)}
                 meta={
                   // Collecting the money late is still a problem, and `overdue`
                   // forgets it the instant a tenant pays. Say it here or the
                   // page congratulates itself on rent that arrived three weeks
                   // after it was owed.
-                  t.collectedLate > 0
-                    ? `${fmtCurrency(t.collectedLate)} of it arrived late`
-                    : t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'
+                  t.lateFeesCollected > 0
+                    ? `incl. ${fmtCurrency(t.lateFeesCollected)} of late fees collected`
+                    : t.collectedLate > 0
+                      ? `${fmtCurrency(t.collectedLate)} of it arrived late`
+                      : t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'
                 }
                 tone="good"
                 bar={t.rate}
@@ -1283,8 +1289,12 @@ function MonthLedger({
         />
         <MonthFig
           label={view.position === 'future' ? 'Paid early' : 'Collected'}
-          value={fmtCurrency(t.collected)}
-          meta={t.rate !== null ? `${t.rate}% of the month` : 'nothing billed'}
+          value={fmtCurrency(t.received)}
+          // The rate stays rent-against-rent: fold fees into the numerator and
+          // a tenant who pays late pushes a collection rate past 100%.
+          meta={t.lateFeesCollected > 0
+            ? `incl. ${fmtCurrency(t.lateFeesCollected)} late fees`
+            : t.rate !== null ? `${t.rate}% of the month` : 'nothing billed'}
           tone={t.rate !== null && t.rate >= 100 ? 'good' : undefined}
         />
         <MonthFig
