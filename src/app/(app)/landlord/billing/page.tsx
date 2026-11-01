@@ -31,6 +31,7 @@ type PlanState = {
   hasAccess: boolean
   propertyCount: number
   propertyLimit: number
+  propertyAllowance: number
   canAddProperty: boolean
 }
 
@@ -102,8 +103,12 @@ export default function BillingPage() {
   const active = state?.hasAccess ?? false
   const pastDue = state?.status === 'past_due'
   const tier = isPlanTier(planType) ? PLANS[planType] : null
-  const limit = state?.propertyLimit ?? 0
   const used = state?.propertyCount ?? 0
+  // What the bar measures: the plan's allowance when paying, the free ceiling
+  // when not. A free landlord filling up 2 of 3 is the same useful signal as a
+  // Growth landlord at 4 of 5, and showing "0 properties allowed" to someone
+  // who has built two would be plainly wrong.
+  const limit = active ? (state?.propertyLimit ?? 0) : (state?.propertyAllowance ?? 0)
   const unlimited = limit >= UNLIMITED_PROPERTIES
   const pctUsed = unlimited || limit === 0 ? 0 : Math.min(100, Math.round((used / limit) * 100))
   const renews = formatDate(state?.currentPeriodEnd ?? null)
@@ -162,20 +167,22 @@ export default function BillingPage() {
           </div>
         ) : (
           <div style={{ fontSize: 14, color: '#6b6b6b', lineHeight: 1.6 }}>
-            You don’t have an active plan, so your listings aren’t live and the portal is
-            limited. Pick a plan below to switch everything back on.
+            <strong style={{ color: '#1a1a1a' }}>Free — build only.</strong> You can add and
+            manage up to {formatPropertyLimit(state?.propertyAllowance ?? 0)} properties, and
+            nothing you build expires. A plan is what publishes them to students and switches
+            on leads, screening, tours, leases and rent.
           </div>
         )}
       </div>
 
       {/* ── Usage ─────────────────────────────────────────────────────────── */}
-      {active && (
+      {(active || used > 0) && (
         <div style={section}>
-          <div style={label}>Properties used</div>
+          <div style={label}>{active ? 'Properties used' : 'Properties built'}</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 30, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-1px' }}>{used}</span>
             <span style={{ fontSize: 14, color: '#9b9b9b' }}>
-              of {formatPropertyLimit(limit)} on {planDisplayName(planType)}
+              of {formatPropertyLimit(limit)} {active ? `on ${planDisplayName(planType)}` : 'you can build for free'}
             </span>
           </div>
           {!unlimited && limit > 0 && (
@@ -191,7 +198,9 @@ export default function BillingPage() {
           <div style={{ fontSize: 13, color: '#6b6b6b', lineHeight: 1.6 }}>
             {state?.canAddProperty
               ? `You can add ${unlimited ? 'as many properties as you like' : `${limit - used} more`}.`
-              : 'You’ve used every property on this plan — move up a tier to add another.'}
+              : active
+                ? 'You’ve used every property on this plan — move up a tier to add another.'
+                : 'That’s every property the free tier covers — start a plan to publish these and add more.'}
             {' '}
             <a href="/landlord/listings/new" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
               Add a listing →

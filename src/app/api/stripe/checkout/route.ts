@@ -9,7 +9,7 @@ import {
   ensureCustomer,
   syncSubscription,
 } from '@/lib/landlordPlanServer'
-import { PLANS, isPlanTier, formatPropertyLimit } from '@/lib/landlordPlans'
+import { PLANS, isPlanTier, formatPropertyLimit, smallestTierFor } from '@/lib/landlordPlans'
 
 /**
  * Start — or change — a landlord's subscription.
@@ -37,15 +37,22 @@ export async function POST(req: Request) {
   const state = await loadPlanState(db, user.id)
   const def = PLANS[plan]
 
-  // Downgrading below what they already have would silently orphan listings.
-  // Say so instead, and name the number — "archive 2 properties" is actionable
-  // in a way that "plan limit exceeded" never is.
+  // Picking a tier smaller than what they already have would silently orphan
+  // listings — `owner_plan_active` is per landlord, not per listing, so the
+  // plan cannot publish "the first one". Say so instead, and name the number:
+  // "archive 2 properties" is actionable in a way that "plan limit exceeded"
+  // never is. The free tier makes this a normal path rather than an edge case,
+  // so the wording covers a landlord who has built but never published.
   if (state.propertyCount > def.propertyLimit) {
+    const over = state.propertyCount - def.propertyLimit
+    const bigger = PLANS[smallestTierFor(state.propertyCount)]
     return Response.json({
       error:
         `${def.name} covers ${formatPropertyLimit(def.propertyLimit)} ` +
-        `propert${def.propertyLimit === 1 ? 'y' : 'ies'}, and you have ${state.propertyCount} live. ` +
-        `Archive ${state.propertyCount - def.propertyLimit} first, or pick a larger plan.`,
+        `propert${def.propertyLimit === 1 ? 'y' : 'ies'}, and you have ${state.propertyCount}. ` +
+        (bigger.tier === def.tier
+          ? `Archive ${over} first.`
+          : `${bigger.name} covers all ${state.propertyCount} — or archive ${over} and stay on ${def.name}.`),
     }, { status: 409 })
   }
 

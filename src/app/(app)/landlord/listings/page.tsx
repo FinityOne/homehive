@@ -5,9 +5,13 @@ import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, setPropertyArchived, updateListingStatus, Property } from '@/lib/properties'
 import { LISTING_STATUS_META, LISTING_STATUS_ORDER, type ListingStatus } from '@/lib/listingStatus'
+import { useLandlordPlan } from '@/lib/useLandlordPlan'
 
 export default function ListingsPage() {
   const router = useRouter()
+  const plan = useLandlordPlan()
+  /** null while unknown — the header says nothing rather than guessing. */
+  const atCeiling = plan ? !plan.canAddProperty : null
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -78,6 +82,7 @@ export default function ListingsPage() {
 
         .listings-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; gap: 12px; }
         .listings-title { font-family: 'Fraunces', serif; font-size: 26px; font-weight: 300; color: #0f172a; letter-spacing: -0.4px; }
+        .listings-count { font-size: 12px; color: #94a3b8; margin-top: 4px; }
         .btn-add { background: #0f172a; color: #34d399; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: inline-block; }
         .btn-add:hover { background: #1e293b; }
 
@@ -144,8 +149,23 @@ export default function ListingsPage() {
 
       <div className="listings-wrap">
         <div className="listings-header">
-          <h1 className="listings-title">My Listings</h1>
-          <a href="/landlord/listings/new" className="btn-add">+ Add Property</a>
+          <div>
+            <h1 className="listings-title">My Listings</h1>
+            {/* The ceiling, stated before they hit it. A landlord who fills in
+                a whole listing and *then* learns they are out of room blames
+                us; one who knows the count going in is making a choice. */}
+            {atCeiling !== null && (
+              <div className="listings-count">
+                {plan?.propertyCount} of {plan?.propertyAllowance} built
+                {atCeiling ? ' — start a plan to add more' : plan?.hasAccess ? ' on your plan' : ' for free'}
+              </div>
+            )}
+          </div>
+          {atCeiling ? (
+            <a href="/landlord/subscribe" className="btn-add">See plans →</a>
+          ) : (
+            <a href="/landlord/listings/new" className="btn-add">+ Add Property</a>
+          )}
         </div>
 
         <div className="prop-grid">
@@ -183,8 +203,12 @@ export default function ListingsPage() {
           {properties.length === 0 ? (
             <div className="empty-card">
               <div className="empty-headline">Your first listing is one step away</div>
-              <div className="empty-sub">Join landlords earning $2,000+/mo on HomeHive by listing your property today.</div>
+              <div className="empty-sub">
+                Building it is free — photos, rent, availability, the lot. You only pay when
+                you want students to see it.
+              </div>
               <div className="empty-proof">
+                <span className="proof-item">✓ Free to build</span>
                 <span className="proof-item">✓ 150+ students placed</span>
                 <span className="proof-item">✓ No agency fees</span>
                 <span className="proof-item">✓ Avg. 3 days to first lead</span>

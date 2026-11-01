@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify:landlord-access": "tsx scripts/verify-landlord-access.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.1.0",

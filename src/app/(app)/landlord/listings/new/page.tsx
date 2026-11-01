@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { createProperty, replacePropertyRooms, uploadPropertyImage } from '@/lib/properties'
+import { useLandlordPlan } from '@/lib/useLandlordPlan'
 
 type ListingType = 'sublease' | 'lease_transfer' | 'standard_rental'
 type UnitType = 'room_in_house' | 'apartment' | 'condo' | 'studio'
@@ -92,6 +93,11 @@ export default function NewListingWizard() {
   const [uploadStatus, setUploadStatus] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitBlockedByPlan, setSubmitBlockedByPlan] = useState(false)
+  // Building a listing is free; publishing it is not. The last step has to say
+  // which of the two is about to happen, or a free landlord hits "Publish",
+  // sees nothing on the public site, and concludes the product is broken.
+  const plan = useLandlordPlan()
+  const willPublish = plan?.canPublish !== false
 
   useEffect(() => { document.title = 'New Listing — Landlord | HomeHive' }, [])
 
@@ -210,7 +216,9 @@ export default function NewListingWizard() {
       setSubmitError(error || 'Something went wrong. Please try again.')
       // Hitting the plan cap is the one failure with an obvious next step, so
       // offer it as a link rather than leaving them re-reading the message.
-      setSubmitBlockedByPlan(reason === 'no_plan' || reason === 'limit_reached')
+      setSubmitBlockedByPlan(
+        reason === 'no_plan' || reason === 'limit_reached' || reason === 'free_limit_reached'
+      )
       return
     }
 
@@ -857,7 +865,11 @@ export default function NewListingWizard() {
         {step === 5 && (
           <div className="wiz-card">
             <div className="wiz-card-title">Review your listing.</div>
-            <div className="wiz-card-sub">Everything look good? Hit publish and your listing goes live immediately.</div>
+            <div className="wiz-card-sub">
+              {willPublish
+                ? 'Everything look good? Hit publish and your listing goes live immediately.'
+                : 'Everything look good? Save it and it is finished and waiting — it goes live for students the moment you start a plan.'}
+            </div>
 
             {pendingFiles.length > 0 && (
               <div className="review-section">
@@ -959,7 +971,7 @@ export default function NewListingWizard() {
                 {submitError}
                 {submitBlockedByPlan && (
                   <div style={{ marginTop: '8px' }}>
-                    <a href="/landlord/billing" style={{ color: '#8C1D40', fontWeight: 700, textDecoration: 'underline' }}>
+                    <a href="/landlord/subscribe" style={{ color: '#8C1D40', fontWeight: 700, textDecoration: 'underline' }}>
                       See plans &rarr;
                     </a>
                   </div>
@@ -993,7 +1005,9 @@ export default function NewListingWizard() {
             <button className="btn-next" onClick={next}>Continue →</button>
           ) : (
             <button className="btn-publish" onClick={handlePublish} disabled={submitting}>
-              {submitting ? (uploadStatus || 'Publishing…') : 'Publish listing →'}
+              {submitting
+                ? (uploadStatus || (willPublish ? 'Publishing…' : 'Saving…'))
+                : willPublish ? 'Publish listing →' : 'Save my listing →'}
             </button>
           )}
         </div>

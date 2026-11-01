@@ -3,28 +3,41 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import { isFreeLandlordPath, lockedFeature, FREE_LANDLORD_HOME } from '@/lib/landlordAccess'
+import PlanLockedScreen from '@/components/billing/PlanLockedScreen'
 
 /**
  * The paywall on the landlord portal.
  *
- * Access to the portal *is* the product now, so this gate is the only place
- * that decides whether a landlord is let in. It deliberately renders nothing
- * while it checks: showing a dashboard and then yanking it away a tick later
- * reads as a bug, and worse, as a bait-and-switch.
+ * It used to be a door: no plan, no portal. Now it is a line drawn through the
+ * middle of the portal — building properties is free, everything that earns
+ * from them is paid (the line itself lives in `landlordAccess.ts`).
  *
- * Admins pass through — they manage landlord accounts and are not customers of
- * this plan.
+ * Two behaviours worth keeping straight:
+ *
+ *   • A locked page *renders*, as a screen that names the feature and asks for
+ *     the plan. Redirecting everything to pricing threw away the only piece of
+ *     information we had about intent — which feature they wanted.
+ *   • Overview is the one exception. It is the portal's front door and the
+ *     first URL after login, so an unpaid landlord is sent to Listings
+ *     instead: landing on a paywall before seeing the product is how a signup
+ *     becomes a bounce, and Listings is where their work actually is.
+ *
+ * It renders nothing while it checks: showing a dashboard and then yanking it
+ * away a tick later reads as a bug, and worse, as a bait-and-switch. Admins
+ * pass through — they manage landlord accounts and are not customers of this
+ * plan.
  */
-
-/** Pages a landlord without a plan must still reach: how they get one. */
-const OPEN_PATHS = ['/landlord/subscribe', '/landlord/billing']
 
 export default function LandlordLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [allowed, setAllowed] = useState<boolean | null>(null)
+  const [auth, setAuth] = useState<'checking' | 'admin' | 'landlord'>('checking')
 
-  const isOpenPath = OPEN_PATHS.some(p => pathname === p || pathname.startsWith(`${p}/`))
+  const isFree = isFreeLandlordPath(pathname)
+  // Admins are not gated, so they are not made to wait on a plan lookup.
+  const plan = useLandlordPlan(auth === 'landlord')
 
   useEffect(() => {
     let cancelled = false
@@ -40,25 +53,25 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
       const { data: profile } = await supabase
         .from('profiles').select('role').eq('id', user.id).maybeSingle()
       if (cancelled) return
-      if (profile?.role === 'admin') { setAllowed(true); return }
-
-      if (isOpenPath) { setAllowed(true); return }
-
-      const res = await fetch('/api/landlord/plan')
-      if (cancelled) return
-      if (!res.ok) { setAllowed(true); return }  // never lock someone out on a blip
-
-      const plan = await res.json()
-      if (cancelled) return
-
-      if (plan.hasAccess) setAllowed(true)
-      else router.replace('/landlord/subscribe')
+      setAuth(profile?.role === 'admin' ? 'admin' : 'landlord')
     })()
 
     return () => { cancelled = true }
-  }, [pathname, isOpenPath, router])
+  }, [pathname, router])
 
-  if (allowed === null) {
+  // The front door: an unpaid landlord starts where they can work.
+  const bounceHome = auth === 'landlord' && plan?.hasAccess === false && pathname === '/landlord/dashboard'
+  useEffect(() => {
+    if (bounceHome) router.replace(FREE_LANDLORD_HOME)
+  }, [bounceHome, router])
+
+  const waiting =
+    auth === 'checking' ||
+    bounceHome ||
+    // A free path needs no plan answer; a paid one must not flash before it.
+    (auth === 'landlord' && !isFree && plan === undefined)
+
+  if (waiting) {
     return (
       <div style={{
         padding: '80px 24px', textAlign: 'center',
@@ -67,6 +80,16 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
         Loading…
       </div>
     )
+  }
+
+  // `plan === null` means the lookup failed — never lock someone out on a blip.
+  const locked =
+    auth === 'landlord' && !isFree && plan != null && !plan.hasAccess
+      ? lockedFeature(pathname)
+      : null
+
+  if (locked) {
+    return <PlanLockedScreen feature={locked} propertyCount={plan?.propertyCount ?? 0} />
   }
 
   return <>{children}</>

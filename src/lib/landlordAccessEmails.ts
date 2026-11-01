@@ -69,7 +69,7 @@ export function renderUpgradeApprovedEmail(opts: UpgradeApprovedEmailOpts): { su
     ${emailStatRow(cells)}
     ${noteBlock}
     <div style="margin-bottom:10px;">${emailButton({ label: 'List my place', url: `${site}/landlord/listings/new` })}</div>
-    <div>${emailButton({ label: 'Open my dashboard', url: `${site}/landlord/dashboard`, secondary: true })}</div>`,
+    <div>${emailButton({ label: 'Open my listings', url: `${site}/landlord/listings`, secondary: true })}</div>`,
       }),
     }
   }
@@ -83,10 +83,10 @@ export function renderUpgradeApprovedEmail(opts: UpgradeApprovedEmailOpts): { su
       body: `
     <p style="font-size:16px;font-weight:700;color:#1a1a1a;margin:0 0 12px;">Hey ${first}, you're approved.</p>
     <p style="font-size:14px;color:#4a4a4a;line-height:1.7;margin:0 0 20px;">
-      You can log in to the landlord portal, add your place, and start marketing it to
-      students. Publishing a listing needs an active plan — from
-      ${esc(formatMonthly(starter.priceCents))}, month to month — and once you have one
-      your listing goes live immediately, with no review queue to wait on.
+      Building your listing is free — add the place, the photos, the rent and the
+      availability, and nothing expires. Publishing it to students is what needs a plan,
+      from ${esc(formatMonthly(starter.priceCents))} month to month, and the listing goes
+      live the moment you start one. No review queue either way.
     </p>
     ${emailStatRow(cells)}
     <p style="font-size:13.5px;color:#4a4a4a;line-height:1.7;margin:0 0 18px;">
@@ -106,8 +106,8 @@ export function renderUpgradeApprovedEmail(opts: UpgradeApprovedEmailOpts): { su
       ])}
     </div>
     ${noteBlock}
-    <div style="margin-bottom:10px;">${emailButton({ label: 'Choose a plan & list my place', url: `${site}/landlord/subscribe` })}</div>
-    <div>${emailButton({ label: 'Look around the portal first', url: `${site}/landlord/dashboard`, secondary: true })}</div>
+    <div style="margin-bottom:10px;">${emailButton({ label: 'Add my place — free', url: `${site}/landlord/listings/new` })}</div>
+    <div>${emailButton({ label: 'See the plans', url: `${site}/landlord/subscribe`, secondary: true })}</div>
     <p style="margin:18px 0 0;font-size:12.5px;color:#9b9b9b;line-height:1.6;">
       Cancel any time from your billing page. Students never pay to use HomeHive.
     </p>`,

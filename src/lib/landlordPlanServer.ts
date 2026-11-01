@@ -6,6 +6,7 @@ import {
   propertyLimitFor,
   planGrantsAccess,
 } from '@/lib/landlordPlans'
+import { FREE_PROPERTY_LIMIT } from '@/lib/landlordAccess'
 
 /**
  * Server-side plumbing for landlord plans: reading the plan a landlord is on,
@@ -34,14 +35,22 @@ export type PlanRow = {
 
 export type PlanState = {
   plan: PlanRow | null
-  /** True when the landlord may use the portal at all. */
+  /** True when the landlord is being paid for: publishing and the full portal. */
   hasAccess: boolean
   /** Live (non-archived) properties they own right now. */
   propertyCount: number
-  /** How many they are allowed. 0 when they have no plan. */
+  /** What their *plan* covers. 0 when they have no plan — a plan fact, not a cap. */
   propertyLimit: number
-  /** Whether one more would fit. */
+  /**
+   * What they may actually build right now: the plan's allowance when paying,
+   * the free ceiling when not. Building is free (see landlordAccess.ts), so
+   * this is the only number the create path should check.
+   */
+  propertyAllowance: number
+  /** Whether one more would fit inside `propertyAllowance`. */
   canAddProperty: boolean
+  /** Only a paid plan puts a listing in front of students. */
+  canPublish: boolean
 }
 
 const PLAN_COLUMNS =
@@ -84,15 +93,21 @@ export async function loadPlanState(db: SupabaseClient, landlordId: string): Pro
   ])
   const hasAccess = planGrantsAccess(row?.plan_type, row?.status)
   const propertyCount = count ?? 0
-  // No access means no allowance, even if an old row carries a stale limit.
+  // No plan means no plan allowance, even if an old row carries a stale limit.
   const propertyLimit = hasAccess ? propertyLimitFor(row?.plan_type, row?.property_limit) : 0
+  // ...but no plan does not mean no building. An unpaid landlord gets the free
+  // ceiling so the work comes before the payment, which is the whole point of
+  // the free tier.
+  const propertyAllowance = hasAccess ? propertyLimit : FREE_PROPERTY_LIMIT
 
   return {
     plan: row,
     hasAccess,
     propertyCount,
     propertyLimit,
-    canAddProperty: propertyCount < propertyLimit,
+    propertyAllowance,
+    canAddProperty: propertyCount < propertyAllowance,
+    canPublish: hasAccess,
   }
 }
 
