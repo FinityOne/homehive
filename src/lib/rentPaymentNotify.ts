@@ -33,7 +33,22 @@ export type Audience = 'tenant' | 'landlord' | 'both'
 const FROM = 'HomeHive <hello@homehive.live>'
 
 /** Rows already settled, in the shape the emails want. */
-type SettledRow = { kind: 'scheduled' | 'special'; id: string; amount: number; label: string }
+type SettledRow = {
+  /**
+   * `late_fee` is a fee collected on its own. Its `id` is still a
+   * `scheduled_payments` id — the fee rides on the rent row it was assessed
+   * against — so only the kind distinguishes it, and the plan lookup below
+   * treats it like any other rent row.
+   */
+  kind: 'scheduled' | 'special' | 'late_fee'
+  id: string
+  amount: number
+  label: string
+}
+
+/** Just the month and year, for a late-fee line. */
+const feeMonthLabel = (due: string) =>
+  new Date(due + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
 const monthLabel = (due: string) =>
   `Rent — ${new Date(due + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`
@@ -58,7 +73,10 @@ async function claim(db: SupabaseClient, intentId: string, kind: PayEvent): Prom
 
 /** Everything the two emails need, or null when the rows can't be resolved. */
 async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
-  const scheduledIds = rows.filter(r => r.kind === 'scheduled').map(r => r.id)
+  // A fee row is a rent row for the purposes of finding the plan and the payer.
+  const scheduledIds = rows
+    .filter(r => r.kind === 'scheduled' || r.kind === 'late_fee')
+    .map(r => r.id)
   const specialIds = rows.filter(r => r.kind === 'special').map(r => r.id)
 
   // Any one row identifies the plan and the payer — a single intent never spans
@@ -141,9 +159,29 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
 export async function rowsForIntent(
   db: SupabaseClient,
   scheduledIds: string[],
-  specialIds: string[]
+  specialIds: string[],
+  /** Fees collected on their own: the charge they sat on, and what was paid. */
+  lateFeeRows: { id: string; amount: number }[] = []
 ): Promise<SettledRow[]> {
   const out: SettledRow[] = []
+  if (lateFeeRows.length > 0) {
+    const { data } = await db
+      .from('scheduled_payments')
+      .select('id, due_date')
+      .in('id', lateFeeRows.map(r => r.id))
+    for (const r of data ?? []) {
+      const paid = lateFeeRows.find(x => x.id === r.id)
+      if (!paid) continue
+      // The amount is what was actually charged, not anything on the row — a
+      // late fee is derived and has no column of its own.
+      out.push({
+        kind: 'late_fee',
+        id: r.id,
+        amount: paid.amount,
+        label: 'Late fee — ' + feeMonthLabel(r.due_date) + ' rent',
+      })
+    }
+  }
   if (scheduledIds.length > 0) {
     const { data } = await db
       .from('scheduled_payments').select('id, amount, due_date').in('id', scheduledIds)
@@ -266,12 +304,12 @@ async function deliverRentPaymentEmails(input: {
     const to = ctx.tenantEmail || pi.receipt_email || null
     // The same rows, in the shape the email history wants.
     const logItems: PaymentEmailItem[] = rows.map(r => ({
-      scheduledPaymentId: r.kind === 'scheduled' ? r.id : null,
-      specialPaymentId:   r.kind === 'special'   ? r.id : null,
+      scheduledPaymentId: r.kind === 'special' ? null : r.id,
+      specialPaymentId:   r.kind === 'special' ? r.id : null,
       label: r.label,
       dueDate: new Date().toISOString().slice(0, 10),
       amount: r.amount,
-      kind: r.kind === 'special' ? 'charge' : 'rent',
+      kind: r.kind === 'special' ? 'charge' : r.kind === 'late_fee' ? 'late_fee' : 'rent',
     }))
 
     if (audience !== 'landlord' && !to) skipped.push('tenant has no email address on file')

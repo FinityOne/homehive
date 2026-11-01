@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getProperties, type Property } from '@/lib/properties'
-import { lateFeeDue } from '@/lib/rentPayments'
+import { lateFeeOutstanding } from '@/lib/rentPayments'
 
 type LeadStatus = 'new' | 'contacted' | 'engaged' | 'qualified' | 'tour_scheduled' | 'closed'
 
@@ -144,28 +144,32 @@ function DashboardInner() {
             // Only charges that have reached their due date — a lease schedules
             // every month up front, and the balance isn't the whole tenancy.
             const today = new Date().toISOString().split('T')[0]
-            // The same figure the lease page and the payment sheet quote: rent
-            // short plus the late fee genuinely outstanding on it. Rent alone
-            // showed a tenant one number here and a bigger one at the till.
-            const feeOwed = (s: any) => {
-              const assessed = lateFeeDue(t.lateFeeRule, {
-                status: s.status,
-                due_date: s.due_date,
-                paid_date: s.paid_date ?? null,
-                amount: Number(s.amount),
-                paid_amount: Number(s.paid_amount ?? 0),
-              })
-              const waived = Math.min(assessed, Number(s.late_fee_waived ?? 0))
-              return Math.max(0, assessed - Number(s.late_fee_paid ?? 0) - waived)
-            }
+            // The same figure the lease page and the payment sheet quote.
+            const feeOwed = (s: any) =>
+              lateFeeOutstanding(
+                t.lateFeeRule,
+                {
+                  status: s.status,
+                  due_date: s.due_date,
+                  paid_date: s.paid_date ?? null,
+                  amount: Number(s.amount),
+                  paid_amount: Number(s.paid_amount ?? 0),
+                  late_fee_paid: Number(s.late_fee_paid ?? 0),
+                },
+                Number(s.late_fee_waived ?? 0),
+              )
             const owed =
+              // Rent that has come due and not been settled.
               (t.scheduled ?? [])
                 .filter((s: any) => payable(s) && s.due_date <= today)
-                .reduce(
-                  (sum: number, s: any) =>
-                    sum + Math.max(0, s.amount - (s.paid_amount ?? 0)) + feeOwed(s),
-                  0,
-                ) +
+                .reduce((sum: number, s: any) => sum + Math.max(0, s.amount - (s.paid_amount ?? 0)), 0) +
+              // Every outstanding late fee, on *any* row that isn't cancelled —
+              // including rows whose rent is settled, which is where all of
+              // them currently are. Filtering these by `payable` is what kept
+              // them off this figure and out of the tenant's view entirely.
+              (t.scheduled ?? [])
+                .filter((s: any) => !voided(s.status))
+                .reduce((sum: number, s: any) => sum + feeOwed(s), 0) +
               (t.specials ?? [])
                 .filter((s: any) => s.status === 'pending' && (!s.due_date || s.due_date <= today))
                 .reduce((sum: number, s: any) => sum + s.amount, 0)

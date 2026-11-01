@@ -13,7 +13,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import {
-  computeFee, amountDue, MIN_CHARGE_CENTS, lateFeeDue,
+  computeFee, amountDue, MIN_CHARGE_CENTS, lateFeeOutstanding,
   type PayMethod, type LateFeeRuleLike,
 } from '@/lib/rentPayments'
 import { stripeSecretKey, stripeMode } from '@/lib/stripeEnv'
@@ -49,8 +49,15 @@ export async function POST(req: NextRequest) {
   const method: PayMethod = body.method === 'ach' ? 'ach' : 'card'
   const scheduledIds: string[] = Array.isArray(body.scheduledIds) ? body.scheduledIds.slice(0, 12) : []
   const specialIds: string[] = Array.isArray(body.specialIds) ? body.specialIds.slice(0, 12) : []
+  /**
+   * Charges whose *late fee* is being paid, without the rent.
+   *
+   * Capped at 10 rather than 12 so the id and amount lists both stay inside
+   * Stripe's 500-character metadata limit — settlement reads them from there.
+   */
+  const lateFeeIds: string[] = Array.isArray(body.lateFeeIds) ? body.lateFeeIds.slice(0, 10) : []
 
-  if (scheduledIds.length === 0 && specialIds.length === 0) {
+  if (scheduledIds.length === 0 && specialIds.length === 0 && lateFeeIds.length === 0) {
     return Response.json({ error: 'Nothing selected to pay.' }, { status: 400 })
   }
 
@@ -95,41 +102,20 @@ export async function POST(req: NextRequest) {
   )
 
   // Load the rows and confirm every one belongs to this tenant.
-  const rows: { kind: 'scheduled' | 'special'; id: string; due: number; lateFee: number; label: string; dueDate: string | null }[] = []
+  const rows: {
+    kind: 'scheduled' | 'special' | 'late_fee'
+    id: string
+    due: number
+    lateFee: number
+    label: string
+    dueDate: string | null
+  }[] = []
 
   if (scheduledIds.length > 0) {
     const { data } = await supabaseAdmin
       .from('scheduled_payments')
       .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, late_fee_paid')
       .in('id', scheduledIds)
-
-    // Late fees are a property of the plan's rule, so fetch the rules for just
-    // the plans in play. Derived here and never read from `late_fees_applied`:
-    // that column is stale and has been observed holding fees on rows that were
-    // paid early, which would bill a tenant for being punctual.
-    const planIds = [...new Set((data ?? []).map(r => r.plan_id).filter(Boolean))]
-    const { data: ruleRows } = planIds.length
-      ? await supabaseAdmin
-          .from('late_fee_rules')
-          .select('plan_id, grace_period_days, fee_amount, frequency_days, max_total_fees')
-          .in('plan_id', planIds)
-      : { data: [] as (LateFeeRuleLike & { plan_id: string })[] }
-    const ruleByPlan = new Map<string, LateFeeRuleLike>(
-      (ruleRows ?? []).map(r => [r.plan_id, r as LateFeeRuleLike])
-    )
-
-    // A fee the landlord has written off is not owed, and a fee already paid has
-    // already been paid. The assessed figure alone is neither — it is what the
-    // rule says before either of those decisions is applied. Charging it raw
-    // bills a waived fee and double-bills a collected one, so subtract both,
-    // exactly as `chargeBreakdown` and the late-fee reminder already do.
-    const { data: waiverRows } = await supabaseAdmin
-      .from('late_fee_waivers')
-      .select('scheduled_payment_id, amount')
-      .in('scheduled_payment_id', scheduledIds)
-    const waivedBy = new Map<string, number>(
-      (waiverRows ?? []).map(w => [w.scheduled_payment_id, Number(w.amount ?? 0)])
-    )
 
     for (const r of data ?? []) {
       if (!mine.has(r.plan_tenant_id)) {
@@ -143,22 +129,12 @@ export async function POST(req: NextRequest) {
       if (r.status === 'voided') continue
       if (r.status === 'paid' || r.status === 'processing') continue
       const due = amountDue({ amount: Number(r.amount), paid_amount: Number(r.paid_amount ?? 0) })
-      const assessed = lateFeeDue(ruleByPlan.get(r.plan_id), {
-        status: r.status,
-        due_date: r.due_date,
-        paid_date: r.paid_date ?? null,
-        amount: Number(r.amount),
-        paid_amount: Number(r.paid_amount ?? 0),
-      })
-      // A waiver is frozen at the amount written off; an uncapped fee on still
-      // unpaid rent can grow past it, and the part above the waiver is genuinely
-      // owed again. `min` is wrong here for the same reason it is right there.
-      const waived = Math.min(assessed, waivedBy.get(r.id) ?? 0)
-      const lateFee = Math.max(
-        0,
-        Math.round((assessed - Number(r.late_fee_paid ?? 0) - waived) * 100) / 100,
-      )
-      if (due > 0) rows.push({ kind: 'scheduled', id: r.id, due, lateFee, label: `Rent due ${r.due_date}`, dueDate: r.due_date })
+      // Rent only. A late fee is never folded into its rent line any more: it
+      // is its own selectable charge, sent in `lateFeeIds`, so a tenant can
+      // settle the rent, settle the fees, or settle everything — which is not
+      // expressible if paying the month silently drags the fee along with it.
+      // Anything the client leaves out simply is not charged.
+      if (due > 0) rows.push({ kind: 'scheduled', id: r.id, due, lateFee: 0, label: `Rent due ${r.due_date}`, dueDate: r.due_date })
     }
   }
 
@@ -179,8 +155,87 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Late fees being paid on their own ──────────────────────────────────
+  //
+  // Nearly always on rent that is already settled: the fee froze on the day the
+  // money landed and nobody ever asked for it. So this block must not care what
+  // `status` says about the rent — only what the fee arithmetic says is still
+  // owed. `lateFeeOutstanding` is the same figure the portal quoted and the
+  // same one the landlord's ledger shows.
+  if (lateFeeIds.length > 0) {
+    const { data } = await supabaseAdmin
+      .from('scheduled_payments')
+      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, late_fee_paid')
+      .in('id', lateFeeIds)
+
+    const planIds = [...new Set((data ?? []).map(r => r.plan_id).filter(Boolean))]
+    const { data: ruleRows } = planIds.length
+      ? await supabaseAdmin
+          .from('late_fee_rules')
+          .select('plan_id, grace_period_days, fee_amount, frequency_days, max_total_fees')
+          .in('plan_id', planIds)
+      : { data: [] as (LateFeeRuleLike & { plan_id: string })[] }
+    const feeRuleByPlan = new Map<string, LateFeeRuleLike>(
+      (ruleRows ?? []).map(r => [r.plan_id, r as LateFeeRuleLike])
+    )
+
+    const { data: waiverRows } = await supabaseAdmin
+      .from('late_fee_waivers')
+      .select('scheduled_payment_id, amount')
+      .in('scheduled_payment_id', lateFeeIds)
+    const feeWaivedBy = new Map<string, number>(
+      (waiverRows ?? []).map(w => [w.scheduled_payment_id, Number(w.amount ?? 0)])
+    )
+
+    for (const r of data ?? []) {
+      if (!mine.has(r.plan_tenant_id)) {
+        return Response.json({ error: 'That late fee isn\'t yours.' }, { status: 403 })
+      }
+      if (demoPlanIds.has(r.plan_id)) return demoRefusal()
+      // Cancelled rent assesses no fee, and `lateFeeDue` already returns zero
+      // for it — but skip it explicitly rather than relying on that.
+      if (r.status === 'voided') continue
+      // Don't let one request pay the same fee twice, once attached to its rent
+      // and once on its own.
+      if (scheduledIds.includes(r.id)) continue
+
+      const owed = lateFeeOutstanding(
+        feeRuleByPlan.get(r.plan_id),
+        {
+          status: r.status,
+          due_date: r.due_date,
+          paid_date: r.paid_date ?? null,
+          amount: Number(r.amount),
+          paid_amount: Number(r.paid_amount ?? 0),
+          late_fee_paid: Number(r.late_fee_paid ?? 0),
+        },
+        feeWaivedBy.get(r.id) ?? 0,
+      )
+
+      if (owed > 0) {
+        rows.push({
+          kind: 'late_fee',
+          id: r.id,
+          // A fee-only row carries no rent. Keeping the two apart all the way
+          // through is what lets the tenant be shown, and the landlord be
+          // credited, for the right thing.
+          due: 0,
+          lateFee: owed,
+          label: `Late fee — rent due ${r.due_date}`,
+          // A fee is owed now, whatever its rent's due date was. Dating it
+          // forward would push it into the pay-ahead branch below and have it
+          // refused as not yet due.
+          dueDate: null,
+        })
+      }
+    }
+  }
+
   if (rows.length === 0) {
-    return Response.json({ error: 'Those charges are already settled.' }, { status: 409 })
+    return Response.json(
+      { error: 'Those charges are already settled.' },
+      { status: 409 }
+    )
   }
 
   // Guard against a stale page billing an entire lease: a tenant is only ever
@@ -198,6 +253,8 @@ export async function POST(req: NextRequest) {
   if (dueNow.length === 0 && ahead.length === 0) {
     return Response.json({ error: 'Nothing is due right now.' }, { status: 409 })
   }
+
+  const feeOnlyRows = rows.filter(r => r.kind === 'late_fee')
 
   // Late fees are part of what is owed, so they are inside the base the
   // surcharge is computed on — the processor bills on the whole charge.
@@ -223,7 +280,10 @@ export async function POST(req: NextRequest) {
     user.id,
     method,
     String(fee.totalCents),
-    ...rows.map(r => `${r.kind}:${r.id}:${r.due}`).sort(),
+    // The fee is in the key as well as the rent: paying a charge's rent and
+    // paying its late fee are different payments on the same id, and a key that
+    // ignored the fee would hand back the wrong intent for the second one.
+    ...rows.map(r => `${r.kind}:${r.id}:${r.due}:${r.lateFee}`).sort(),
   ].join('|')).digest('hex')
 
   const params: Stripe.PaymentIntentCreateParams = {
@@ -248,6 +308,11 @@ export async function POST(req: NextRequest) {
       lateFeeCents: String(Math.round(lateFeeTotal * 100)),
       scheduledIds: rows.filter(r => r.kind === 'scheduled').map(r => r.id).join(','),
       specialIds: rows.filter(r => r.kind === 'special').map(r => r.id).join(','),
+      // Fees paid on their own, with the amount charged for each. Settlement
+      // applies these to `late_fee_payments` without touching the rent, which
+      // on these rows was settled long ago by a different payment.
+      lateFeeIds: feeOnlyRows.map(r => r.id).join(','),
+      lateFeeAmounts: feeOnlyRows.map(r => r.lateFee.toFixed(2)).join(','),
     },
   }
 
@@ -276,6 +341,11 @@ export async function POST(req: NextRequest) {
     total: fee.total,
     ratePct: fee.ratePct,
     method,
-    items: rows.map(r => ({ label: r.label, amount: r.due })),
+    items: rows.map(r => ({
+      label: r.label,
+      // A fee-only line's money is in `lateFee`, not `due`.
+      amount: r.kind === 'late_fee' ? r.lateFee : r.due,
+      kind: r.kind,
+    })),
   })
 }

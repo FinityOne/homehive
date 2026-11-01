@@ -206,3 +206,39 @@ export function lateFeeRuleRisk(rule: LateFeeRuleLike | null | undefined): strin
   }
   return null
 }
+
+/**
+ * What a tenant still owes in late fees on one rent charge.
+ *
+ * `lateFeeDue` answers "what does the rule assess", which is not the same
+ * question. The fee may have been paid already, and the landlord may have
+ * written part of it off, and a tenant must never be billed for either. This is
+ * the figure that is actually collectable:
+ *
+ *     assessed − already paid − waived
+ *
+ * It is deliberately the same arithmetic as `chargeBreakdown.lateFeeOutstanding`
+ * in `lateFees.ts`, which is the landlord's view of the identical number. That
+ * module reaches `@/lib/payments` and so cannot be imported into a route
+ * handler; this file imports nothing, which is why the tenant portal and the
+ * payment API share this copy. If you change one, change both.
+ *
+ * Works on a *settled* charge too, and that is the whole point. Every
+ * outstanding fee on this platform sits on rent that was paid in full — the fee
+ * froze on the day the money landed and was never asked for. Keying
+ * collectability on `status` would make all of it permanently invisible.
+ */
+export function lateFeeOutstanding(
+  rule: LateFeeRuleLike | null | undefined,
+  sp: LateFeeChargeLike & { late_fee_paid?: number | null },
+  waived: number = 0,
+  now = new Date(),
+): number {
+  const assessed = lateFeeDue(rule, sp, now)
+  if (assessed <= 0) return 0
+  // A waiver is frozen at the amount written off, so an uncapped fee on unpaid
+  // rent can grow past it; the excess is genuinely owed again.
+  const forgiven = Math.min(assessed, Math.max(0, Number(waived) || 0))
+  const paid = Math.max(0, Number(sp.late_fee_paid ?? 0))
+  return Math.max(0, Math.round((assessed - paid - forgiven) * 100) / 100)
+}

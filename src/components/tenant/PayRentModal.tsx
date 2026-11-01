@@ -17,19 +17,26 @@ const APPEARANCE = {
 }
 
 export type Payable = {
-  kind: 'scheduled' | 'special'
+  /**
+   * `late_fee` is a fee being paid on its own, which is how nearly every
+   * outstanding fee has to be paid: the rent underneath it was settled months
+   * ago, so there is no rent line left to carry it.
+   */
+  kind: 'scheduled' | 'special' | 'late_fee'
   id: string
   label: string
-  /** Rent or charge owed, excluding any late fee. */
+  /** Rent or charge owed, excluding any late fee. Zero on a `late_fee` row. */
   amount: number
   /**
-   * Late fee this charge has accrued, as its own figure.
+   * The late fee, as its own figure.
    *
    * Kept separate from `amount` all the way to the total so the tenant can see
    * why they are being asked for more than their rent. A late fee folded into
    * the rent line is indistinguishable from a rent increase.
    */
   lateFee?: number
+  /** `late_fee` only: the rent this fee was charged against, already paid. */
+  rentSettled?: boolean
   /** How many days past due, for the row's own explanation. */
   daysLate?: number
 }
@@ -57,6 +64,7 @@ export default function PayRentModal({
 
   const rent = payables.reduce((s, p) => s + p.amount, 0)
   const lateFees = Math.round(payables.reduce((s, p) => s + (p.lateFee ?? 0), 0) * 100) / 100
+  const feeOnly = payables.filter(p => p.kind === 'late_fee')
   // The surcharge applies to everything being charged, late fees included —
   // the same base the server recomputes, so the two figures always agree.
   const base = Math.round((rent + lateFees) * 100) / 100
@@ -74,6 +82,7 @@ export default function PayRentModal({
         method,
         scheduledIds: payables.filter(p => p.kind === 'scheduled').map(p => p.id),
         specialIds: payables.filter(p => p.kind === 'special').map(p => p.id),
+        lateFeeIds: feeOnly.map(p => p.id),
       }),
     })
     const json = await res.json().catch(() => ({}))
@@ -102,8 +111,15 @@ export default function PayRentModal({
           <div className="lines">
             {payables.map(p => (
               <div key={`${p.kind}-${p.id}`} className="line">
-                <span>{p.label}</span>
-                <span className="line-amt">{fmtMoney(p.amount)}</span>
+                <span>
+                  {p.label}
+                  {p.kind === 'late_fee' && p.rentSettled && (
+                    <em className="line-note">rent already paid</em>
+                  )}
+                </span>
+                <span className="line-amt">
+                  {fmtMoney(p.kind === 'late_fee' ? (p.lateFee ?? 0) : p.amount)}
+                </span>
               </div>
             ))}
           </div>
@@ -137,7 +153,11 @@ export default function PayRentModal({
               </div>
 
               <div className="totals">
-                <div className="tot-row"><span>Rent &amp; charges</span><span>{fmtMoney(rent)}</span></div>
+                {/* A fee-only payment has no rent in it. Showing "Rent &
+                    charges $0.00" above a late-fee line reads like an error. */}
+                {rent > 0 && (
+                  <div className="tot-row"><span>Rent &amp; charges</span><span>{fmtMoney(rent)}</span></div>
+                )}
                 {lateFees > 0 && (
                   <div className="tot-row late">
                     <span>
@@ -275,6 +295,7 @@ const CSS = `
   .line { display: flex; justify-content: space-between; gap: 12px; padding: 10px 13px; font-size: 13px; color: #334155; }
   .line + .line { border-top: 1px solid #f8fafc; }
   .line-amt { font-weight: 700; color: #0f172a; white-space: nowrap; }
+  .line-note { display: block; font-style: normal; font-size: 11px; color: #94a3b8; margin-top: 2px; }
 
   .sec-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 9px; }
 
