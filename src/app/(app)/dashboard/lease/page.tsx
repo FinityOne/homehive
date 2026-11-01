@@ -5,13 +5,16 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-  amountDue, fmtMoney, METHOD_META, lateFeeOutstanding,
-  type SettledMethod,
+  amountDue, fmtMoney, METHOD_META, explainLateFee,
+  type SettledMethod, type LateFeeExplanation,
 } from '@/lib/rentPayments'
 import type { Payable } from '@/components/tenant/PayRentModal'
 import StripeModeBanner from '@/components/StripeModeBanner'
 
 const PayRentModal = dynamic(() => import('@/components/tenant/PayRentModal'), { ssr: false })
+const LateFeeDetailSheet = dynamic(
+  () => import('@/components/tenant/LateFeeDetailSheet'), { ssr: false },
+)
 
 type Scheduled = {
   id: string; due_date: string; amount: number; status: string
@@ -49,6 +52,10 @@ type Tab = 'overview' | 'payments' | 'lease'
 const fmtDate = (d: string | null) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
+/** "June 2026" — how a tenant refers to a month's rent. */
+const fmtMonthYear = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
 const isSettled = (s: string) => s === 'paid' || s === 'processing'
 /**
  * Rent that was cancelled rather than paid.
@@ -74,6 +81,8 @@ export default function MyLeasePage() {
   const [paying, setPaying] = useState<Payable[] | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [flash, setFlash] = useState<string | null>(null)
+  /** The fee whose detail sheet is open, keyed by its charge id. */
+  const [openFee, setOpenFee] = useState<string | null>(null)
   // Set from the URL on mount, cleared once acted on — a ref, not state, so
   // arriving with `pay=1` doesn't cost an extra render.
   const autoPay = useRef(false)
@@ -153,11 +162,12 @@ export default function MyLeasePage() {
    * whole remaining lease would ask a tenant to prepay a year of rent.
    * Future months are shown separately and can be paid early by choice.
    */
-  const { owed, upcoming, lateFees } = useMemo(() => {
+  const { owed, upcoming, lateFees, explanations } = useMemo(() => {
     const owedRows: Payable[] = []
     const futureRows: Payable[] = []
     const feeRows: Payable[] = []
-    if (!t) return { owed: owedRows, upcoming: futureRows, lateFees: feeRows }
+    const explanations = new Map<string, LateFeeExplanation>()
+    if (!t) return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, explanations }
 
     const today = new Date().toISOString().split('T')[0]
     const daysSince = (d: string) =>
@@ -175,7 +185,7 @@ export default function MyLeasePage() {
       // and keying this on `isSettled` is exactly why none of these fees has
       // ever been visible to the person who owes them. The arithmetic is
       // `lateFeeOutstanding`, the same function the payment API prices with.
-      const feeOwed = lateFeeOutstanding(
+      const x = explainLateFee(
         t.lateFeeRule,
         {
           status: s.status,
@@ -187,16 +197,19 @@ export default function MyLeasePage() {
         },
         s.late_fee_waived,
       )
-      if (feeOwed > 0) {
+      if (x.outstanding > 0) {
         feeRows.push({
           kind: 'late_fee',
           id: s.id,
-          label: `Late fee — ${fmtDate(s.due_date)} rent`,
+          label: `${fmtMonthYear(s.due_date)} rent`,
           amount: 0,
-          lateFee: feeOwed,
-          daysLate: daysSince(s.due_date),
-          rentSettled: isSettled(s.status),
+          lateFee: x.outstanding,
+          daysLate: x.daysPastDue,
+          rentSettled: x.rentSettled,
         })
+        // The full working, kept next to the row so opening the sheet costs
+        // nothing and can never disagree with the figure on the line.
+        explanations.set(s.id, x)
       }
 
       // ── The rent itself ───────────────────────────────────────────────
@@ -216,8 +229,11 @@ export default function MyLeasePage() {
     }
     // Oldest first: that is the order a person settles a backlog in, and it
     // puts the fee that has been owed longest at the top.
-    feeRows.sort((a, b) => (b.daysLate ?? 0) - (a.daysLate ?? 0))
-    return { owed: owedRows, upcoming: futureRows, lateFees: feeRows }
+    // Chronological: a backlog reads as a story, and "which months was I
+    // behind" is answered by scanning down the list in order.
+    feeRows.sort((a, b) =>
+      (explanations.get(a.id)?.dueDate ?? '').localeCompare(explanations.get(b.id)?.dueDate ?? ''))
+    return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, explanations }
   }, [t])
 
   /**
@@ -253,6 +269,25 @@ export default function MyLeasePage() {
       total: Math.round((rent + fees) * 100) / 100,
     }
   }
+
+  /**
+   * "Which months was I behind?", answered in one sentence.
+   *
+   * A list of eleven rows is data; "you were late on 11 months, from August
+   * 2025 to June 2026" is the thing a person actually wants to know before
+   * they start reading the rows.
+   */
+  const feeSpan = (() => {
+    if (lateFees.length === 0) return null
+    const months = lateFees
+      .map(r => explanations.get(r.id)?.dueDate)
+      .filter((d): d is string => !!d)
+      .sort()
+    if (months.length === 0) return null
+    const first = fmtMonthYear(months[0])
+    const last = fmtMonthYear(months[months.length - 1])
+    return { count: lateFees.length, first, last, same: first === last }
+  })()
 
   const owedSum = sumOf(owed)
   const feeSum = sumOf(lateFees)
@@ -438,24 +473,44 @@ export default function MyLeasePage() {
                 </div>
                 <div className="card-bd">
                   <div className="fee-why">
+                    {feeSpan && (
+                      <strong>
+                        {feeSpan.same
+                          ? `Your ${feeSpan.first} rent arrived late.`
+                          : `You were late on ${feeSpan.count} ${feeSpan.count === 1 ? 'month' : 'months'}, from ${feeSpan.first} to ${feeSpan.last}.`}
+                      </strong>
+                    )}
                     {lateFees.every(r => r.rentSettled)
-                      ? <>These were charged because rent arrived after its due date. The rent itself
-                         is paid in full — these fees were never collected at the time.</>
-                      : <>These were charged because rent arrived, or is still arriving, after its
-                         due date.</>}
+                      ? <> Your rent is paid in full — these fees were charged at the time because
+                         it arrived after the due date, and were never collected. Tap any month to
+                         see exactly how its fee was worked out.</>
+                      : <> These were charged because rent arrived, or is still arriving, after its
+                         due date. Tap any month to see how its fee was worked out.</>}
                   </div>
-                  {lateFees.map(r => (
-                    <div key={`${r.kind}-${r.id}`} className="row">
-                      <span>
-                        {r.label}
-                        <em className="fee-sub">
-                          {r.daysLate ? `${r.daysLate} days past due` : 'past due'}
-                          {r.rentSettled ? ' · rent paid' : ' · rent still outstanding'}
-                        </em>
-                      </span>
-                      <span className="row-amt">{fmtMoney(r.lateFee ?? 0)}</span>
-                    </div>
-                  ))}
+                  {lateFees.map(r => {
+                    const x = explanations.get(r.id)
+                    return (
+                      <button
+                        key={`${r.kind}-${r.id}`}
+                        className="fee-row"
+                        onClick={() => setOpenFee(r.id)}
+                        aria-label={`Details of the late fee for ${r.label}`}
+                      >
+                        <span className="fee-row-main">
+                          <span className="fee-row-label">{r.label}</span>
+                          <em className="fee-sub">
+                            {x
+                              ? `Paid ${x.rentSettled ? fmtDate(x.paidDate) : 'not yet'} · ${x.daysPastDue} ${x.daysPastDue === 1 ? 'day' : 'days'} late · ${x.periods} × ${fmtMoney(x.perPeriod)}`
+                              : `${r.daysLate} days late`}
+                          </em>
+                        </span>
+                        <span className="fee-row-right">
+                          <span className="row-amt">{fmtMoney(r.lateFee ?? 0)}</span>
+                          <span className="fee-chev" aria-hidden="true">›</span>
+                        </span>
+                      </button>
+                    )
+                  })}
                   <div className="fee-actions">
                     <button className="btn-dark" onClick={() => { setSelected(new Set(lateFees.map(x => `${x.kind}-${x.id}`))); setPaying(lateFees) }}>
                       Pay late fees · {fmtMoney(feeSum.total)}
@@ -557,18 +612,26 @@ export default function MyLeasePage() {
                     together" is only true if a tenant can pick one. */}
                 {lateFees.map(r => {
                   const key = `${r.kind}-${r.id}`
+                  const x = explanations.get(r.id)
                   return (
-                    <label key={key} className="pick fee">
-                      <input type="checkbox" checked={selected.has(key)} onChange={() => toggle(r)} />
-                      <span style={{ flex: 1 }}>
-                        {r.label}
-                        <em className="fee-sub">
-                          {r.daysLate ? `${r.daysLate} days past due` : 'past due'}
-                          {r.rentSettled ? ' · rent paid' : ''}
-                        </em>
-                      </span>
-                      <span className="row-amt">{fmtMoney(r.lateFee ?? 0)}</span>
-                    </label>
+                    <div key={key} className="pick fee">
+                      <label className="pick-hit">
+                        <input type="checkbox" checked={selected.has(key)} onChange={() => toggle(r)} />
+                        <span style={{ flex: 1 }}>
+                          <span className="fee-row-label">Late fee · {r.label}</span>
+                          <em className="fee-sub">
+                            {x ? `${x.daysPastDue} ${x.daysPastDue === 1 ? 'day' : 'days'} late · ${x.periods} × ${fmtMoney(x.perPeriod)}` : ''}
+                            {r.rentSettled ? ' · rent paid' : ''}
+                          </em>
+                        </span>
+                        <span className="row-amt">{fmtMoney(r.lateFee ?? 0)}</span>
+                      </label>
+                      {/* Outside the label, so opening the details cannot tick
+                          the box by accident. */}
+                      <button className="fee-why-btn" onClick={() => setOpenFee(r.id)}>
+                        Why this amount?
+                      </button>
+                    </div>
                   )
                 })}
                 {owed.length === 0 && lateFees.length === 0 ? (
@@ -683,6 +746,20 @@ export default function MyLeasePage() {
         )}
       </div>
 
+      {openFee && explanations.get(openFee) && (
+        <LateFeeDetailSheet
+          explanation={explanations.get(openFee)!}
+          onClose={() => setOpenFee(null)}
+          onPay={() => {
+            const row = lateFees.find(r => r.id === openFee)
+            setOpenFee(null)
+            if (!row) return
+            setSelected(new Set([`${row.kind}-${row.id}`]))
+            setPaying([row])
+          }}
+        />
+      )}
+
       {paying && (
         <PayRentModal
           payables={paying}
@@ -769,7 +846,20 @@ const CSS = `
   .fee-why { font-size: 12.5px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 13px; line-height: 1.55; margin-bottom: 12px; }
   .fee-sub { display: block; font-style: normal; font-size: 11px; color: #94a3b8; margin-top: 2px; }
   .fee-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-  .pick.fee { background: #fffdf8; }
+  .pick.fee { background: #fffdf8; display: block; padding: 4px 0 9px; }
+  .pick-hit { display: flex; align-items: center; gap: 11px; padding: 8px 0 4px; cursor: pointer; }
+  .fee-why-btn { background: none; border: none; padding: 0 0 0 27px; font-family: inherit;
+    font-size: 11.5px; font-weight: 700; color: #b45309; cursor: pointer; text-decoration: underline; }
+
+  .fee-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    width: 100%; background: none; border: none; border-bottom: 1px solid #f8fafc;
+    padding: 11px 2px; font-family: inherit; text-align: left; cursor: pointer; }
+  .fee-row:last-of-type { border-bottom: none; }
+  .fee-row:hover { background: #fffdf8; }
+  .fee-row-main { min-width: 0; }
+  .fee-row-label { font-size: 13.5px; font-weight: 600; color: #0f172a; }
+  .fee-row-right { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+  .fee-chev { font-size: 19px; color: #cbd5e1; line-height: 1; }
   .hd-actions { display: flex; align-items: center; gap: 8px; }
   .btn-ghost { background: #fff; color: #0f172a; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 11px 18px; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
   .btn-ghost.sm { padding: 6px 12px; font-size: 12.5px; }

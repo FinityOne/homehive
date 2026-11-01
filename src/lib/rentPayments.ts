@@ -228,17 +228,145 @@ export function lateFeeRuleRisk(rule: LateFeeRuleLike | null | undefined): strin
  * froze on the day the money landed and was never asked for. Keying
  * collectability on `status` would make all of it permanently invisible.
  */
+export type LateFeeExplanation = {
+  /** The rent this fee sits on. */
+  rentDue: number
+  rentPaid: number
+  rentSettled: boolean
+  dueDate: string
+  /** Last day the rent could arrive without a fee. Equals `dueDate` with no grace. */
+  graceEndDate: string
+  /** The date the fee is measured to: when the rent landed, or today. */
+  asOfDate: string
+  paidDate: string | null
+  /** Whether the fee has stopped growing. */
+  frozen: boolean
+
+  /** The rule, in the pieces a sentence needs. */
+  graceDays: number
+  perPeriod: number
+  frequencyDays: number
+  ruleCap: number | null
+
+  /** Days from the due date to `asOfDate`. What a tenant means by "how late". */
+  daysPastDue: number
+  /** Chargeable periods elapsed after the grace period. */
+  periods: number
+  /** periods x perPeriod, before any ceiling. */
+  accrued: number
+  /** Which ceiling bit, if either. `charge` is the uncapped-rule safeguard. */
+  cappedBy: 'rule' | 'charge' | null
+  /** The ceiling's value, when one applied. */
+  capAmount: number | null
+  /** What the rule assesses after any ceiling. */
+  assessed: number
+
+  /** Fee money recorded in `late_fee_paid`. */
+  feePaid: number
+  /**
+   * Money paid on this charge *above* its rent.
+   *
+   * On this database two charges were overpaid by exactly one and four days'
+   * worth of the daily fee — the tenant paid the fee and it was recorded as
+   * rent. Anything above the rent on a charge cannot be rent, and the only
+   * other thing owed on that row is its fee, so it is credited here. Without
+   * this the tenant is billed a second time for money they already sent.
+   */
+  overpaymentCredit: number
+  /** Fee the landlord has written off. */
+  waived: number
+  /** assessed - feePaid - overpaymentCredit - waived, never below zero. */
+  outstanding: number
+}
+
+/**
+ * The whole story of one late fee, in the pieces a person needs to accept it.
+ *
+ * A tenant asked for $1,506.96 across eleven months will not pay on the
+ * strength of a total. They need to see which month, how late it actually was,
+ * what the rule charges, the arithmetic that turns those into a number, and
+ * what they have already paid towards it. Every figure the detail sheet shows
+ * comes from here, so the explanation and the amount charged cannot drift
+ * apart — `lateFeeOutstanding` is this function's `outstanding` field.
+ */
+export function explainLateFee(
+  rule: LateFeeRuleLike | null | undefined,
+  sp: LateFeeChargeLike & { late_fee_paid?: number | null },
+  waived: number = 0,
+  now = new Date(),
+): LateFeeExplanation {
+  const rentDue = Number(sp.amount)
+  const rentPaid = Number(sp.paid_amount ?? 0)
+  const settled = rentIsSettled(sp)
+  const asOf = lateFeeAsOf(sp, now)
+  const graceDays = rule?.grace_period_days ?? 0
+  const perPeriod = Number(rule?.fee_amount ?? 0)
+  const frequencyDays = Math.max(1, rule?.frequency_days ?? 1)
+  const graceEnd = addDays(sp.due_date, graceDays)
+
+  const voided = sp.status === 'voided'
+  const overGrace = voided ? 0 : Math.max(0, daysBetweenDates(graceEnd, asOf))
+  const periods = perPeriod > 0 ? Math.floor(overGrace / frequencyDays) : 0
+  const accrued = round2(periods * perPeriod)
+
+  // The same two ceilings `lateFeeDue` applies, reported rather than just used.
+  let assessed = accrued
+  let cappedBy: 'rule' | 'charge' | null = null
+  let capAmount: number | null = null
+  if (rule?.max_total_fees != null) {
+    capAmount = Number(rule.max_total_fees)
+    if (accrued > capAmount) { assessed = capAmount; cappedBy = 'rule' }
+  } else {
+    const chargeCap = Math.max(0, round2(rentDue - rentPaid)) || rentDue
+    capAmount = chargeCap
+    if (accrued > chargeCap) { assessed = chargeCap; cappedBy = 'charge' }
+  }
+
+  const feePaid = Math.max(0, Number(sp.late_fee_paid ?? 0))
+  const overpaymentCredit = Math.max(0, round2(rentPaid - rentDue))
+  const forgiven = Math.min(assessed, Math.max(0, Number(waived) || 0))
+  const outstanding = Math.max(
+    0,
+    round2(assessed - feePaid - overpaymentCredit - forgiven),
+  )
+
+  return {
+    rentDue, rentPaid, rentSettled: settled,
+    dueDate: sp.due_date,
+    graceEndDate: graceEnd,
+    asOfDate: asOf,
+    paidDate: sp.paid_date ?? null,
+    frozen: settled,
+    graceDays, perPeriod, frequencyDays,
+    ruleCap: rule?.max_total_fees != null ? Number(rule.max_total_fees) : null,
+    daysPastDue: voided ? 0 : Math.max(0, daysBetweenDates(sp.due_date, asOf)),
+    periods, accrued, cappedBy, capAmount, assessed,
+    feePaid, overpaymentCredit, waived: forgiven,
+    outstanding,
+  }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * What a tenant still owes in late fees on one rent charge.
+ *
+ * `lateFeeDue` answers "what does the rule assess", which is not the same
+ * question. The fee may have been paid already — in `late_fee_paid`, or as an
+ * overpayment on the rent — and the landlord may have written part of it off.
+ * A tenant must never be billed for any of those. This is the collectable
+ * figure, and it is `explainLateFee().outstanding` so the number charged is
+ * always the number the detail sheet justified.
+ *
+ * Works on a *settled* charge, and that is the point: every outstanding fee
+ * here sits on rent paid in full. Keying collectability on `status` is what
+ * made all of it invisible.
+ */
 export function lateFeeOutstanding(
   rule: LateFeeRuleLike | null | undefined,
   sp: LateFeeChargeLike & { late_fee_paid?: number | null },
   waived: number = 0,
   now = new Date(),
 ): number {
-  const assessed = lateFeeDue(rule, sp, now)
-  if (assessed <= 0) return 0
-  // A waiver is frozen at the amount written off, so an uncapped fee on unpaid
-  // rent can grow past it; the excess is genuinely owed again.
-  const forgiven = Math.min(assessed, Math.max(0, Number(waived) || 0))
-  const paid = Math.max(0, Number(sp.late_fee_paid ?? 0))
-  return Math.max(0, Math.round((assessed - paid - forgiven) * 100) / 100)
+  return explainLateFee(rule, sp, waived, now).outstanding
 }
