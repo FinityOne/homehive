@@ -21,9 +21,43 @@ export function idsFromMetadata(pi: Stripe.PaymentIntent) {
     feeDollars: Number(m.feeCents ?? 0) / 100,
     /** Late fees the tenant was actually charged on this intent, in dollars. */
     lateFeeDollars: Number(m.lateFeeCents ?? 0) / 100,
+    /**
+     * Late fees paid *on their own*, as [chargeId, dollars] pairs.
+     *
+     * Two parallel comma-separated lists rather than JSON, because a Stripe
+     * metadata value is capped at 500 characters and a dozen uuids with their
+     * amounts does not reliably fit in one. The route caps the count so both
+     * lists stay well inside the limit.
+     *
+     * The amount is carried rather than recomputed at settlement time on
+     * purpose: what gets recorded must be what the tenant was actually
+     * charged, and for a fee on unpaid rent a recomputation minutes later is a
+     * different number.
+     */
+    lateFeeRows: zipLateFees(m.lateFeeIds ?? '', m.lateFeeAmounts ?? ''),
     method: m.method === 'ach' ? ('ach' as const) : ('card' as const),
     userId: (m.userId ?? '') as string,
   }
+}
+
+export type LateFeeRow = { id: string; amount: number }
+
+/** Pair the id and amount lists, dropping anything that does not line up. */
+function zipLateFees(ids: string, amounts: string): LateFeeRow[] {
+  const idList = ids.split(',').filter(Boolean)
+  const amountList = amounts.split(',').filter(Boolean)
+  const out: LateFeeRow[] = []
+  for (let i = 0; i < idList.length; i++) {
+    const amount = Number(amountList[i])
+    // A malformed pair is skipped rather than guessed at. Charging money we
+    // cannot attribute to a charge is worse than failing to record it.
+    if (!Number.isFinite(amount) || amount <= 0) {
+      console.error('[rent] late fee metadata malformed for charge', idList[i])
+      continue
+    }
+    out.push({ id: idList[i], amount: Math.round(amount * 100) / 100 })
+  }
+  return out
 }
 
 /**
@@ -47,8 +81,17 @@ export async function settleRentPayment(
   db: DB,
   pi: Stripe.PaymentIntent,
   status: 'paid' | 'processing'
-): Promise<{ scheduled: number; special: number; conflicts: string[] }> {
-  const { scheduledIds, specialIds, feeDollars, lateFeeDollars, method } = idsFromMetadata(pi)
+): Promise<{
+  scheduled: number
+  special: number
+  /** Fee-only collections applied by this run. */
+  lateFees: number
+  /** Their total, in dollars. */
+  lateFeeTotal: number
+  conflicts: string[]
+}> {
+  const { scheduledIds, specialIds, feeDollars, lateFeeDollars, lateFeeRows, method } =
+    idsFromMetadata(pi)
   const paidDate = new Date().toISOString().split('T')[0]
   // `paid_date` is a DATE, so it loses the time of day. A landlord reconciling
   // a bank statement needs the instant, so record it alongside — and only when
@@ -140,22 +183,94 @@ export async function settleRentPayment(
     special++
   }
 
+  // ── Late fees paid on their own ────────────────────────────────────────
+  //
+  // These charges are usually settled already — the fee froze when the rent
+  // landed and was never asked for — so nothing about the rent may be touched
+  // here. Only the fee moves.
+  let lateFeesApplied = 0
+  let lateFeeTotal = 0
+  /** The fees this run applied, for the notification. Empty on a repeat run. */
+  const appliedLateFees: { id: string; amount: number }[] = []
+  // The surcharge rides on the first fee row when the payment carried no rent
+  // at all, so a fee-only payment still records what it cost to send.
+  let lateFeeSurchargeLeft = scheduled === 0 && special === 0 ? feeDollars : 0
+
+  for (const row of lateFeeRows) {
+    const { data: charge } = await db
+      .from('scheduled_payments')
+      .select('id, plan_id, late_fee_paid')
+      .eq('id', row.id)
+      .maybeSingle()
+    if (!charge) continue
+
+    // The claim. Unique on (charge, intent), so the webhook and the browser's
+    // confirm call race safely: the loser's insert fails and it applies nothing.
+    const { error: claimErr } = await db.from('late_fee_payments').insert({
+      scheduled_payment_id: row.id,
+      plan_id: charge.plan_id,
+      stripe_payment_intent_id: pi.id,
+      amount: row.amount,
+      processing_fee: lateFeeSurchargeLeft,
+      method,
+      status,
+      settled_at: settledAt,
+    })
+
+    if (claimErr) {
+      // 23505 = unique violation: already applied by the other caller.
+      if (claimErr.code !== '23505') {
+        console.error('[rent] late fee claim failed', row.id, claimErr.message)
+      }
+      continue
+    }
+    lateFeeSurchargeLeft = 0
+
+    // Only now is the money ours to count. `late_fee_paid` is the running
+    // total every landlord total reads, so it is incremented rather than
+    // overwritten — the row may already hold fee money from its own rent
+    // payment.
+    //
+    // An ACH debit still clearing is deliberately *not* added: a fee that has
+    // not landed must not read as collected. The bounce-or-clear webhook
+    // revisits it.
+    if (status === 'paid') {
+      const next = Math.round((Number(charge.late_fee_paid ?? 0) + row.amount) * 100) / 100
+      const { error: bumpErr } = await db
+        .from('scheduled_payments')
+        .update({ late_fee_paid: next })
+        .eq('id', row.id)
+      if (bumpErr) {
+        console.error('[rent] late fee total not updated', row.id, bumpErr.message)
+        continue
+      }
+    }
+
+    lateFeesApplied++
+    lateFeeTotal = Math.round((lateFeeTotal + row.amount) * 100) / 100
+    appliedLateFees.push({ id: row.id, amount: row.amount })
+  }
+
   if (conflicts.length > 0) {
     console.error('[rent] DUPLICATE PAYMENT — intent', pi.id, 'covers rows already paid:', conflicts)
   }
 
-  if (movedScheduled.length > 0 || movedSpecial.length > 0) {
+  // A fee-only payment moves no rent row, so the old condition stayed silent
+  // and the landlord was never told the money had arrived. The fees this run
+  // actually applied count as news in their own right.
+  const movedLateFees = appliedLateFees
+  if (movedScheduled.length > 0 || movedSpecial.length > 0 || movedLateFees.length > 0) {
     await notifyRentPayment({
       db,
       pi,
       event: status,
       method,
       fee: feeDollars,
-      rows: await rowsForIntent(db, movedScheduled, movedSpecial),
+      rows: await rowsForIntent(db, movedScheduled, movedSpecial, movedLateFees),
     })
   }
 
-  return { scheduled, special, conflicts }
+  return { scheduled, special, lateFees: lateFeesApplied, lateFeeTotal, conflicts }
 }
 
 /**
@@ -166,10 +281,44 @@ export async function settleRentPayment(
  * settled count — reverting an already-pending row is a no-op and says nothing.
  */
 export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
-  const { scheduledIds, specialIds, feeDollars, method } = idsFromMetadata(pi)
+  const { scheduledIds, specialIds, feeDollars, lateFeeRows, method } = idsFromMetadata(pi)
 
   const revertedScheduled: string[] = []
   const revertedSpecial: string[] = []
+
+  // A fee paid on its own, now bounced. Take it back off the running total and
+  // drop the claim, so the fee shows as outstanding again and a later retry can
+  // be applied afresh. Keyed on this intent, so a fee collected by some *other*
+  // payment on the same charge is untouched.
+  for (const row of lateFeeRows) {
+    const { data: claim } = await db
+      .from('late_fee_payments')
+      .select('id, amount, status')
+      .eq('scheduled_payment_id', row.id)
+      .eq('stripe_payment_intent_id', pi.id)
+      .maybeSingle()
+    if (!claim) continue
+
+    // Only money that was actually counted comes back off. A claim still in
+    // `processing` never reached `late_fee_paid` in the first place.
+    if (claim.status === 'paid') {
+      const { data: charge } = await db
+        .from('scheduled_payments')
+        .select('late_fee_paid')
+        .eq('id', row.id)
+        .maybeSingle()
+      if (charge) {
+        const next = Math.max(
+          0,
+          Math.round((Number(charge.late_fee_paid ?? 0) - Number(claim.amount)) * 100) / 100,
+        )
+        await db.from('scheduled_payments').update({ late_fee_paid: next }).eq('id', row.id)
+      }
+    }
+
+    await db.from('late_fee_payments').delete().eq('id', claim.id)
+    console.warn('[rent] late fee payment reverted', row.id, 'intent', pi.id)
+  }
 
   for (const id of scheduledIds) {
     const { data } = await db.from('scheduled_payments').update({
