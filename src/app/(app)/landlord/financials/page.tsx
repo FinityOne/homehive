@@ -15,6 +15,9 @@ import {
   type Arrears, type Charge,
 } from '@/lib/financialsMonth'
 
+import PaymentEmailHistory, {
+  emailsForCharge, type PlanEmail,
+} from '@/components/payments/PaymentEmailHistory'
 import {
   lateFeeLedger, withReminderHistory, EMPTY_LEDGER,
   type LateFeeLedger as FeeLedger, type LateFeeWaiver,
@@ -1128,6 +1131,34 @@ function ChargeDetail({
     }
   }, [onClose])
 
+  // What was actually emailed about this charge. The counters on the row can
+  // only say "chased twice"; they cannot say to whom, when, or whether either
+  // message arrived — which is the question being asked when a landlord opens
+  // a charge that has gone quiet. Fetched per lease (one small request) and
+  // filtered to this charge, the same way the lease ledger does it.
+  const [sends, setSends] = useState<PlanEmail[] | null>(null)
+  useEffect(() => {
+    let live = true
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(`/api/payments/${c.planId}/emails`, {
+          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        })
+        const json = await res.json()
+        if (live) setSends(res.ok ? (json.emails ?? []) : [])
+      } catch {
+        if (live) setSends([])
+      }
+    })()
+    return () => { live = false }
+  }, [c.planId])
+
+  const mine = useMemo(
+    () => emailsForCharge(sends ?? [], c.kind === 'rent' ? { scheduledId: c.id } : { specialId: c.id }),
+    [sends, c.id, c.kind],
+  )
+
   const st = c.settlement
   const when = st?.paidDate ? settledLabel({ paidDate: st.paidDate, settledAt: st.settledAt }) : null
   const method = st?.method ? METHOD_META[st.method] : null
@@ -1291,23 +1322,37 @@ function ChargeDetail({
             )}
           </div>
 
-          {/* ── Who has been asked ── */}
-          {(c.chases.count > 0 || c.chases.feeCount > 0 || c.notes) && (
+          {/* ── What the tenant was actually sent ── */}
+          <div className="sheet-sec">
+            <div className="sheet-sec-hd">
+              <h3>Emails about this charge</h3>
+              <span>
+                {sends === null ? 'loading…'
+                  : mine.length > 0 ? `${mine.length} sent`
+                  : 'none sent'}
+              </span>
+            </div>
+            {sends === null ? (
+              <p className="muted sm">Looking up what was sent…</p>
+            ) : (
+              <PaymentEmailHistory
+                emails={mine}
+                // Sends counted on the charge itself. Anything above the number
+                // of logged emails happened before this history existed, and
+                // saying so beats implying nobody was ever contacted.
+                priorCount={c.chases.count + c.chases.feeCount}
+                empty="No email has been sent to the tenant about this charge yet."
+              />
+            )}
+            <p className="muted sm sheet-link">
+              <a className="lnk" href="/landlord/reminders">See every reminder sent →</a>
+            </p>
+          </div>
+
+          {c.notes && (
             <div className="sheet-sec">
-              <div className="sheet-sec-hd"><h3>History</h3></div>
-              {c.chases.count > 0 && (
-                <p className="muted sm">
-                  Chased {c.chases.count} time{c.chases.count !== 1 ? 's' : ''} about the charge
-                  {c.chases.lastAt && <> — last {whenLabel(c.chases.lastAt)}</>}.
-                </p>
-              )}
-              {c.chases.feeCount > 0 && (
-                <p className="muted sm">
-                  Chased {c.chases.feeCount} time{c.chases.feeCount !== 1 ? 's' : ''} about the late fee
-                  {c.chases.feeLastAt && <> — last {whenLabel(c.chases.feeLastAt)}</>}.
-                </p>
-              )}
-              {c.notes && <p className="muted sm">Note: {c.notes}</p>}
+              <div className="sheet-sec-hd"><h3>Note</h3></div>
+              <p className="muted sm">{c.notes}</p>
             </div>
           )}
         </div>
@@ -1818,6 +1863,7 @@ const CSS = `
     flex-wrap: wrap; padding: 14px 22px; border-top: 1px solid var(--line); background: #fcfcfd;
   }
   .muted.sm { font-size: 12.5px; line-height: 1.6; }
+  .sheet-link { margin-top: 12px; }
   .mchip.sm { padding: 1px 8px; font-size: 11px; }
 
   @media (max-width: 760px) {

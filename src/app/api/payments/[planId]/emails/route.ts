@@ -1,8 +1,10 @@
 /**
  * GET /api/payments/[planId]/emails
  *
- * Every payment request sent on this lease, newest first, with the charges each
- * one covered. Feeds both the Activity tab and the per-row history in the
+ * Every payment email sent on this lease, newest first, with the charges each
+ * one covered and what the provider later observed about it — delivered,
+ * opened, bounced. Delivery state is what makes the history worth reading: a
+ * send we merely *attempted* is the weakest fact in the chain. Feeds both the Activity tab and the per-row history in the
  * ledger — the ledger filters client-side rather than refetching per row, since
  * one lease's history is small and the rows are already on screen.
  */
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ planId: str
 
   const { data, error } = await supabaseAdmin
     .from('payment_emails')
-    .select('id, plan_tenant_id, recipient_email, recipient_name, subject, kind, trigger, status, error, custom_message, amount_total, created_at, items:payment_email_items ( id, scheduled_payment_id, special_payment_id, label, due_date, amount, kind )')
+    .select('id, plan_tenant_id, recipient_email, recipient_name, subject, kind, audience, trigger, status, error, custom_message, amount_total, created_at, delivered_at, opened_at, clicked_at, bounced_at, complained_at, delivery_detail, items:payment_email_items ( id, scheduled_payment_id, special_payment_id, label, due_date, amount, kind )')
     .eq('plan_id', planId)
     .order('created_at', { ascending: false })
     .limit(200)

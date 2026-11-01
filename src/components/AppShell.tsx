@@ -85,6 +85,7 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
         { href: '/landlord/leases',      label: 'Leases',      icon: 'fileText',       primary: true },
         { href: '/landlord/tenants',     label: 'Tenants',     icon: 'userCheck' },
         { href: '/landlord/financials',  label: 'Financials',  icon: 'creditCard',     primary: true },
+        { href: '/landlord/reminders',   label: 'Reminders',   icon: 'bell' },
         { href: '/landlord/maintenance', label: 'Maintenance', icon: 'wrench' },
         { href: '/landlord/inspections', label: 'Move-out',    icon: 'clipboardCheck' },
       ],

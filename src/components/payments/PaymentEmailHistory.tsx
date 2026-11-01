@@ -1,6 +1,7 @@
 'use client'
 
 import { fmtCurrency } from '@/lib/payments'
+import { OUTCOME_META, outcomeOf } from '@/lib/paymentEmails'
 
 /** One payment request, as /api/payments/[planId]/emails returns it. */
 export type PlanEmail = {
@@ -16,6 +17,15 @@ export type PlanEmail = {
   custom_message: string | null
   amount_total: number
   created_at: string
+  /** What the provider observed after the send. Null throughout on a row
+   *  written before delivery tracking existed, which reads as 'Sent' — the
+   *  honest answer, since nothing was watching. */
+  delivered_at?: string | null
+  opened_at?: string | null
+  clicked_at?: string | null
+  bounced_at?: string | null
+  complained_at?: string | null
+  delivery_detail?: string | null
   items: {
     id: string
     scheduled_payment_id: string | null
@@ -81,12 +91,23 @@ export default function PaymentEmailHistory({
         // What this email covered beyond the row being viewed — worth showing,
         // because one request often settles several months at once.
         const others = e.items.length - 1
+        // "Sent" was the only thing this line could ever say, and it is the
+        // weakest fact available: a reminder that bounced looked identical to
+        // one the tenant read. The outcome is the whole point of the row now.
+        const outcome = outcomeOf({
+          status: e.status,
+          delivered_at: e.delivered_at ?? null,
+          opened_at: e.opened_at ?? null,
+          bounced_at: e.bounced_at ?? null,
+          complained_at: e.complained_at ?? null,
+        })
+        const meta = OUTCOME_META[outcome]
         return (
           <div key={e.id} style={S.item}>
-            <span style={{ ...S.dot, background: e.status === 'failed' ? '#d13b30' : '#1d8a4e' }} />
+            <span style={{ ...S.dot, background: DOT[meta.tone] }} title={meta.hint} />
             <div style={S.body}>
               <div style={S.line}>
-                <strong style={S.strong}>{e.status === 'failed' ? 'Failed' : 'Sent'}</strong>
+                <strong style={S.strong}>{meta.label}</strong>
                 {' · '}{fmtWhen(e.created_at)}
                 {' · '}{e.recipient_name || e.recipient_email}
               </div>
@@ -96,6 +117,8 @@ export default function PaymentEmailHistory({
                 {e.trigger === 'auto' && ' · automatic'}
               </div>
               {e.status === 'failed' && e.error && <div style={S.err}>{e.error}</div>}
+              {e.bounced_at && <div style={S.err}>{e.delivery_detail || 'The address rejected it.'}</div>}
+              {e.complained_at && <div style={S.err}>Marked as spam — stop emailing this address.</div>}
               {e.custom_message && <div style={S.note}>“{e.custom_message}”</div>}
             </div>
           </div>
@@ -108,6 +131,11 @@ export default function PaymentEmailHistory({
       )}
     </div>
   )
+}
+
+/** The dot colour per outcome tone — the fastest read in the list. */
+const DOT: Record<string, string> = {
+  good: '#1d8a4e', info: '#0057b8', quiet: '#c7c7cc', warn: '#b25000', bad: '#d13b30',
 }
 
 const S: Record<string, React.CSSProperties> = {
