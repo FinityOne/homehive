@@ -4,6 +4,7 @@ import '@/styles/brand-tokens.css'
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getProperties, type Property } from '@/lib/properties'
+import { PLANS, formatMonthly } from '@/lib/landlordPlans'
 import SaveButton from '@/components/SaveButton'
 
 function fmtDate(d: string | null | undefined) {
@@ -430,6 +431,25 @@ function ListingCard({ h }: { h: Property }) {
   )
 }
 
+// ─── LIST-YOUR-PLACE CTA ─────────────────────────────────────────────────────
+// Rendered in both the empty and populated branches, so it lives here rather
+// than inline twice. The price comes from the landlord paywall's own source of
+// truth — a hardcoded one drifted into claiming the product was free.
+function ListYourPlaceCta() {
+  return (
+    <div className="list-cta">
+      <div>
+        <div className="list-cta-eyebrow">For landlords &amp; students subleasing</div>
+        <div className="list-cta-title">Have a place to rent?<br /><em>Get it in front of students.</em></div>
+        <div className="list-cta-sub">
+          Plans from {formatMonthly(PLANS.starter.priceCents)}. Student leads straight to your inbox.
+        </div>
+      </div>
+      <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
+    </div>
+  )
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 function HomePageInner({ initialProperties }: { initialProperties?: Property[] }) {
   const searchParams    = useSearchParams()
@@ -822,7 +842,7 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
       {showLandlordBanner && (
         <div className="landlord-bar">
           🏠 Listing your place? Skip Zillow — get student leads on HomeHive.{' '}
-          <a href="/for-landlords">List for free →</a>
+          <a href="/for-landlords">Plans from {formatMonthly(PLANS.starter.priceCents)} →</a>
           <button
             className="landlord-bar-close"
             onClick={() => { sessionStorage.setItem('hh_landlord_bar_dismissed', '1'); setShowLandlordBanner(false) }}
@@ -872,14 +892,7 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
               <div style={{ fontFamily: 'var(--hh-font-display)', fontSize: '22px', fontWeight: 300, color: 'var(--hh-text)', marginBottom: '8px' }}>No listings right now</div>
               <div style={{ fontSize: '14px', color: 'var(--hh-text-muted)' }}>Check back soon — new homes are added regularly.</div>
             </div>
-            <div className="list-cta">
-              <div>
-                <div className="list-cta-eyebrow">For landlords &amp; students subleasing</div>
-                <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
-                <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
-              </div>
-              <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
-            </div>
+            <ListYourPlaceCta />
           </>
         ) : (
           <>
@@ -896,14 +909,7 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
 
             <HowItWorks />
 
-            <div className="list-cta">
-              <div>
-                <div className="list-cta-eyebrow">For landlords &amp; students subleasing</div>
-                <div className="list-cta-title">Have a place to rent?<br /><em>List it free.</em></div>
-                <div className="list-cta-sub">No fees. Student leads straight to your inbox.</div>
-              </div>
-              <a href="/landlord/signup" className="list-cta-btn">List your place →</a>
-            </div>
+            <ListYourPlaceCta />
           </>
         )}
 
