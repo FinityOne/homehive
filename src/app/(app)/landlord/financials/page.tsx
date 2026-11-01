@@ -18,6 +18,8 @@ import {
 import PaymentEmailHistory, {
   emailsForCharge, type PlanEmail,
 } from '@/components/payments/PaymentEmailHistory'
+import MoneyHub from '@/components/finance/MoneyHub'
+import { FINANCE_THEME } from '@/lib/financeTheme'
 import {
   lateFeeLedger, withReminderHistory, EMPTY_LEDGER,
   type LateFeeLedger as FeeLedger, type LateFeeWaiver,
@@ -127,12 +129,33 @@ export default function FinancialsPage({
   // the page, so a charge reads the same wherever it was clicked from.
   const [detail, setDetail] = useState<Charge | null>(null)
 
+  // How many emails to tenants never arrived. It is carried on the money hub's
+  // Reminders tab from every money screen, because a landlord has no reason to
+  // go and look at a log of sent mail on a normal day — and a bounced reminder
+  // is indistinguishable from a tenant ignoring them until someone says so.
+  const [bouncedCount, setBouncedCount] = useState(0)
+
   // Waivers are the landlord's recorded decisions not to collect a fee. They
   // live outside the plan rows, so they are fetched alongside and netted off
   // the derived fees — see `lateFeeLedger`.
   const [waivers, setWaivers] = useState<LateFeeWaiver[]>([])
 
   useEffect(() => { document.title = 'Financials — Landlord | HomeHive' }, [])
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/payments/emails?state=problem&limit=50', {
+          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        })
+        const json = await res.json()
+        if (res.ok) setBouncedCount(json.counts?.problem ?? 0)
+      } catch {
+        // A badge is not worth a visible error: the page's job is the money.
+      }
+    })()
+  }, [])
 
   const loadWaivers = useCallback(async () => {
     // RLS keys this table on plan ownership, so no owner filter is needed here
@@ -271,25 +294,28 @@ export default function FinancialsPage({
     const summary = portfolio.leases.find(l => l.planId === openPlanId)
     return (
       <>
-        <style>{CSS}</style>
-        <div className="fin-wrap wide">
-          <button className="back" onClick={() => openPlan(null)}>
-            <span className="back-chev" aria-hidden="true" />
-            Financials
-          </button>
-
-          <header className="led-head">
-            <div className="led-head-main">
-              <h1 className="title">{current ? (current.property?.name ?? current.name) : 'Rent ledger'}</h1>
-              <p className="sub">
-                {current ? current.name : 'Loading…'}
-                {current?.lease && ` · ${fmtDate(current.lease.start_date)} – ${fmtDate(current.lease.end_date)}`}
-              </p>
-            </div>
-            {current?.lease_id && (
-              <a href={`/landlord/leases/${current.lease_id}`} className="btn-quiet">View lease</a>
-            )}
-          </header>
+        <style>{FINANCE_THEME}{CSS}</style>
+        <div className="fin fin-wrap wide">
+          {/* A trail, not a back button. Two levels down, "where am I" and "how
+              do I get out" are different questions, and a single ‹ Financials
+              answered only the second. */}
+          <MoneyHub
+            tab="overview"
+            crumbs={[
+              { label: 'Financials', href: '/landlord/financials' },
+              { label: current ? (current.property?.name ?? current.name) : 'Rent ledger' },
+            ]}
+            title={current ? (current.property?.name ?? current.name) : 'Rent ledger'}
+            sub={current
+              ? `${current.name}${current.lease ? ` · ${fmtDate(current.lease.start_date)} – ${fmtDate(current.lease.end_date)}` : ''}`
+              : 'Loading…'}
+            // The ledger's own primary action is the tenancy behind the money:
+            // every other action here belongs to a row, not to the page.
+            action={current?.lease_id
+              ? { label: 'View the lease', href: `/landlord/leases/${current.lease_id}` }
+              : undefined}
+            alarmCount={bouncedCount}
+          />
 
           {/* The lease's whole financial life, above the month-by-month work.
               Without it the ledger could only answer "what about this month". */}
@@ -312,19 +338,17 @@ export default function FinancialsPage({
   // ── The portfolio, top to bottom ─────────────────────────────────────────
   return (
     <>
-      <style>{CSS}</style>
-      <div className="fin-wrap wide">
-        <header className="fin-head">
-          <div>
-            <h1 className="title">Financials</h1>
-            <p className="sub">
-              {leaseFilter === 'current'
-                ? 'Rent you can still collect — leases running right now.'
-                : LEASE_FILTERS.find(f => f.id === leaseFilter)!.hint + '.'}
-            </p>
-          </div>
-          <a href="/landlord/financials/new" className="btn-primary">New plan</a>
-        </header>
+      <style>{FINANCE_THEME}{CSS}</style>
+      <div className="fin fin-wrap wide">
+        <MoneyHub
+          tab="overview"
+          title="Financials"
+          sub={leaseFilter === 'current'
+            ? 'Rent you can still collect — leases running right now.'
+            : LEASE_FILTERS.find(f => f.id === leaseFilter)!.hint + '.'}
+          action={{ label: 'New payment plan', href: '/landlord/financials/new' }}
+          alarmCount={bouncedCount}
+        />
 
         {/* Which tenancies the whole page is about. First control on the page
             because it changes what every figure below even refers to. */}
@@ -394,7 +418,25 @@ export default function FinancialsPage({
                 has a reporting period to be read against, which is exactly why
                 they lead: a figure that moves when a window changes is a figure
                 a landlord cannot act on. */}
-            <section className="now" aria-label="Where things stand">
+            {/* The page answers five questions in order, and a landlord
+                usually arrives wanting the third. Scrolling past the other two
+                every time is a tax; this is the index. */}
+            <nav className="jump" aria-label="Jump to a section">
+              <a href="#now">Standing</a>
+              <a href="#missed">
+                Missed
+                {behind.payerCount > 0 && <span className="jump-n late">{behind.payerCount}</span>}
+              </a>
+              <a href="#fees">
+                Late fees
+                {feeLedger.payerCount > 0 && <span className="jump-n fee">{feeLedger.payerCount}</span>}
+              </a>
+              <a href="#upcoming">Upcoming</a>
+              <a href="#month">{monthLabel(month, true)}</a>
+              <a href="#paid">Payments</a>
+            </nav>
+
+            <section className="now" id="now" aria-label="Where things stand">
               <div className="sec-hd">
                 <h2 className="sec-title">Where things stand</h2>
                 <span className="sec-note">Right now, across the whole of each lease — not this month</span>
@@ -434,7 +476,22 @@ export default function FinancialsPage({
               </div>
             </section>
 
+            {/* A reminder that bounced looks exactly like a tenant ignoring
+                you, and the landlord is standing here, not in the email log. */}
+            {bouncedCount > 0 && (
+              <a className="alarm-bar" href="/landlord/reminders?state=problem">
+                <span>
+                  <strong>
+                    {bouncedCount} email{bouncedCount !== 1 ? 's' : ''} to tenants never arrived.
+                  </strong>{' '}
+                  Bounced, refused, or marked as spam — so nobody read them.
+                </span>
+                <span className="go">Check them →</span>
+              </a>
+            )}
+
             {/* ══ 2. WHO IS BEHIND — the whole lease, never one month ══ */}
+            <div id="missed">
             <MissedPayments
               arrears={behind}
               hidden={hidden}
@@ -443,27 +500,33 @@ export default function FinancialsPage({
               onOpen={openLeaseLedger}
               onInspect={setDetail}
             />
+            </div>
 
             {/* ══ 2b. LATE FEES — assessed by the lease, never collected ══
                 Its own section rather than a line inside arrears: a fee on rent
                 that has *already settled* is not arrears at all, and that is
                 where nearly all of this money is. It also needs actions arrears
                 does not have — writing a fee off is a legitimate outcome. */}
-            <LateFeesPanel
-              ledger={feeLedger}
-              onReload={reloadMoney}
-              onOpenLease={openLeaseLedger}
-            />
+            <div id="fees">
+              <LateFeesPanel
+                ledger={feeLedger}
+                onReload={reloadMoney}
+                onOpenLease={openLeaseLedger}
+              />
+            </div>
 
             {/* ══ 3. WHAT IS COMING ══ */}
+            <div id="upcoming">
             <UpcomingStrip
               months={ahead}
               selected={month}
               thisMonth={thisMonth}
               onSelect={selectMonth}
             />
+            </div>
 
             {/* ══ 4. ONE NAMED MONTH ══ */}
+            <div id="month">
             <MonthLedger
               view={ledger}
               thisMonth={thisMonth}
@@ -471,6 +534,7 @@ export default function FinancialsPage({
               onOpen={openLeaseLedger}
               onInspect={setDetail}
             />
+            </div>
 
             {/* ══ 5. MONEY IN — a log, not a report ══
                 What used to sit here was a reporting half: a reporting-window
@@ -483,7 +547,9 @@ export default function FinancialsPage({
                 What is left is the one thing those tables had that nothing else
                 on the page did: money that actually arrived, newest first, with
                 a way into any single payment. No window, no toggle. */}
-            <RecentPayments charges={charges} onInspect={setDetail} />
+            <div id="paid">
+              <RecentPayments charges={charges} onInspect={setDetail} />
+            </div>
           </>
         )}
       </div>
@@ -675,9 +741,14 @@ function MissedPayments({
                       <span className="mc-chev" aria-hidden="true" />
                     </button>
                   ))}
-                  <button className="btn-quiet sm" onClick={() => onOpen(p.planId)}>
-                    Open ledger to record or chase
-                  </button>
+                  <div className="miss-actions">
+                    <button className="btn-primary sm" onClick={() => onOpen(p.planId)}>
+                      Chase or record a payment
+                    </button>
+                    <a className="btn-secondary sm" href={`/landlord/reminders?plan=${p.planId}`}>
+                      See what they were sent
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
@@ -694,7 +765,7 @@ function MissedPayments({
             {hidden.payerCount} {hidden.payerCount === 1 ? 'payer' : 'payers'} on leases outside
             this view.
           </span>
-          <button className="btn-quiet sm" onClick={onShowAll}>Show all leases</button>
+          <button className="btn-secondary sm" onClick={onShowAll}>Show all leases</button>
         </div>
       )}
     </section>
@@ -852,6 +923,19 @@ function MonthLedger({
         />
       </div>
 
+      {/* A palette has to be teachable exactly once, and this is the densest
+          thing on the page — the place a landlord first wonders what the
+          colours mean. */}
+      <div className="month-key">
+        <span className="key">
+          <span className="key-item"><span className="key-dot in" />paid</span>
+          <span className="key-item"><span className="key-dot late" />overdue</span>
+          <span className="key-item"><span className="key-dot fee" />late fee</span>
+          <span className="key-item"><span className="key-dot flight" />clearing</span>
+          <span className="key-item"><span className="key-dot idle" />not due yet</span>
+        </span>
+      </div>
+
       <div className="panel-bd flush">
         {view.empty ? (
           <p className="muted pad">
@@ -911,7 +995,9 @@ function MonthLeaseBlock({
           >
             <b>{fmtCurrency(lease.totalDue)}</b> due
           </span>
-          <button className="btn-quiet sm" onClick={() => onOpen(lease.planId)}>Ledger</button>
+          <button className="btn-secondary sm" onClick={() => onOpen(lease.planId)}>
+            Open ledger
+          </button>
         </div>
       </div>
 
@@ -1358,8 +1444,12 @@ function ChargeDetail({
         </div>
 
         <div className="sheet-ft">
-          <span className="muted sm">Recording, chasing and editing money happens in the ledger.</span>
-          <button className="btn-primary sm" onClick={onOpenLedger}>Open the lease ledger</button>
+          <a className="btn-secondary sm" href={`/landlord/reminders?plan=${c.planId}`}>
+            Emails on this lease
+          </a>
+          <button className="btn-primary sm" onClick={onOpenLedger}>
+            Open the lease ledger
+          </button>
         </div>
       </div>
     </div>
@@ -1384,105 +1474,28 @@ const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* A restrained palette and a lot of air: one accent, hairline separators,
-     and every figure set in tabular numerals so columns of money line up
-     digit-for-digit down the page — the whole point of a grouped table. */
-  .fin-wrap {
-    --ink:      #1d1d1f;
-    --ink-2:    #6e6e73;
-    --ink-3:    #8e8e93;
-    --line:     #e5e5ea;
-    --line-2:   #f0f0f2;
-    --surface:  #ffffff;
-    --accent:   #0071e3;
-    --good:     #1d8a4e;
-    --warn:     #b25000;
-    --bad:      #d13b30;
-    max-width: 940px; margin: 0 auto; padding: 32px 22px 96px;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', sans-serif;
-    color: var(--ink);
-    -webkit-font-smoothing: antialiased;
-  }
+  /* Tokens, buttons, badges, panels and the hub header come from
+     src/lib/financeTheme.ts — this sheet is now only what is particular to
+     this page's layout. A lot of air, hairline separators, and every figure in
+     tabular numerals so columns of money line up digit-for-digit. */
+  .fin-wrap { max-width: 940px; margin: 0 auto; padding: 32px 22px 96px; }
   /* The grouped tables need the room; the ledger beneath them does too. */
   .fin-wrap.wide { max-width: 1120px; }
-
-  .title { font-size: 30px; font-weight: 600; letter-spacing: -0.022em; line-height: 1.15; }
-  .sub   { font-size: 14px; color: var(--ink-2); margin-top: 5px; letter-spacing: -0.01em; }
-
-  .fin-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
-
-  .btn-primary {
-    background: var(--accent); color: #fff; border: none; border-radius: 980px;
-    padding: 9px 18px; font-size: 14px; font-weight: 500; font-family: inherit;
-    cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap;
-    letter-spacing: -0.01em; transition: opacity 0.15s;
-  }
-  .btn-primary:hover { opacity: 0.85; }
-  .btn-primary.sm { padding: 7px 15px; font-size: 13px; }
-  .btn-quiet {
-    background: none; border: none; color: var(--accent); font-size: 14px;
-    text-decoration: none; white-space: nowrap; letter-spacing: -0.01em; cursor: pointer;
-    font-family: inherit; padding: 0;
-  }
-  .btn-quiet:hover { text-decoration: underline; }
-
-  /* ── Back affordance ── */
-  .back {
-    display: inline-flex; align-items: center; gap: 5px; background: none; border: none;
-    padding: 0; margin-bottom: 16px; cursor: pointer; font-family: inherit;
-    font-size: 14px; color: var(--accent); letter-spacing: -0.01em;
-  }
-  .back-chev {
-    width: 7px; height: 7px; border-left: 1.7px solid currentColor; border-bottom: 1.7px solid currentColor;
-    transform: rotate(45deg); display: inline-block;
-  }
-  .back:hover { text-decoration: underline; }
 
   .led-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
   .led-head-main { min-width: 0; }
   .led-note { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin: 18px 0; letter-spacing: -0.01em; }
 
-  .seg {
-    display: inline-flex; background: var(--line-2); border-radius: 10px; padding: 2px;
-    gap: 2px; max-width: 100%; overflow-x: auto;
-  }
-  .seg-btn {
-    border: none; background: none; font-family: inherit; cursor: pointer;
-    padding: 7px 16px; border-radius: 8px; font-size: 13.5px; font-weight: 500;
-    color: var(--ink-2); letter-spacing: -0.01em; white-space: nowrap;
-    display: inline-flex; align-items: center; gap: 7px;
-    transition: background 0.18s, color 0.18s, box-shadow 0.18s;
-  }
-  .seg-btn:hover { color: var(--ink); }
-  .seg-btn.on {
-    background: var(--surface); color: var(--ink);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
-  }
-  .seg-badge {
-    background: #d8d8dc; color: #4a4a4f; font-size: 11px; font-weight: 600;
-    border-radius: 980px; padding: 1px 7px; font-variant-numeric: tabular-nums;
-  }
-  .seg-badge.bad { background: #fdeceb; color: var(--bad); }
+  .seg-badge.bad { background: var(--late-bg); color: var(--late); }
 
   .mchip {
     display: inline-flex; align-items: center; gap: 7px;
     border-radius: 980px; padding: 5px 13px 5px 10px; font-size: 12.5px;
     letter-spacing: -0.01em; white-space: nowrap;
   }
-  /* ── Panels ── */
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 16px; overflow: hidden; }
-  .panel-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; }
-  .panel-title { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; }
-  .panel-note { font-size: 12.5px; color: var(--ink-3); letter-spacing: -0.01em; text-align: right; font-variant-numeric: tabular-nums; }
-  .panel-bd { padding: 4px 22px 20px; }
-  .panel-bd.flush { padding: 0; }
-
-  .num { text-align: right; font-size: 13.5px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
-  .num.good { color: var(--good); }
-  .num.bad  { color: var(--bad); font-weight: 600; }
-  .num.warn { color: var(--warn); }
-  .num.dim  { color: var(--ink-3); }
-  .num.info { color: #0057b8; }
+  /* Money reads right-aligned in a column of money; the colours are the
+     theme's. */
+  .num { text-align: right; font-size: 13.5px; letter-spacing: -0.01em; white-space: nowrap; }
 
   .dfact { padding: 0 16px; border-left: 1px solid #e3e8ef; }
   .dfact:first-child { border-left: none; padding-left: 0; }
@@ -1502,45 +1515,33 @@ const CSS = `
   .vitals-mark { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink); border-radius: 2px; }
   .vitals-key { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-3); margin-top: 8px; }
 
-  /* ── Row chevron ── */
-  .row-chev {
-    width: 7px; height: 7px; border-top: 1.6px solid #c7c7cc; border-right: 1.6px solid #c7c7cc;
-    transform: rotate(45deg); flex-shrink: 0;
-  }
-  /* ── Pills ── */
-  .pill { font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 980px; letter-spacing: -0.005em; white-space: nowrap; }
-  .pill.bad   { background: #fdeceb; color: var(--bad); }
-  .pill.good  { background: #e8f5ed; color: var(--good); }
-  .pill.warn  { background: #fdf1e3; color: var(--warn); }
-  .pill.info  { background: #e8f1fd; color: #0057b8; }
-  .pill.plain { background: var(--line-2); color: var(--ink-2); }
-
-  /* ── Empty / loading ── */
-  .empty { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 56px 36px; text-align: center; }
-  .empty-title { font-size: 19px; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 8px; }
-  .empty-sub { font-size: 14px; color: var(--ink-2); line-height: 1.6; max-width: 400px; margin: 0 auto 22px; letter-spacing: -0.01em; }
-  .skeleton-hero { height: 190px; border-radius: 18px; background: linear-gradient(90deg,#f2f2f4,#f7f7f9,#f2f2f4); background-size: 200% 100%; animation: sk 1.4s ease-in-out infinite; }
-  @keyframes sk { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
-
-  .lnk { color: var(--accent); text-decoration: none; }
-  .lnk:hover { text-decoration: underline; }
-  .muted { font-size: 13.5px; color: var(--ink-2); line-height: 1.6; letter-spacing: -0.01em; }
-  .muted.sm { font-size: 12.5px; }
-
-  /* ── Narrow screens ──
-     The money columns are the first thing to go: on a phone a lease is a name
-     and one number — what is still owed — and everything else lives one tap
-     deeper, where there is room to lay it out properly. */
-  /* ── Section walls ─────────────────────────────────────────────────────────
-     The page now carries three kinds of question, and a reader needs to know
-     which one they are in. A labelled rule does that more quietly than a box. */
-  .sec-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
-  .sec-title { font-size: 17px; font-weight: 600; letter-spacing: -0.018em; }
-  .sec-note { font-size: 12.5px; color: var(--ink-3); letter-spacing: -0.01em; }
-
   .lease-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+
+  /* ── Jump bar ──────────────────────────────────────────────────────────────
+     Sticky, because its whole job is to be reachable from the bottom of a long
+     page. Quiet, because it is a map and not a decision. */
+  .jump {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+    overflow-x: auto; margin: 0 -4px 16px; padding: 8px 4px;
+    background: rgba(255,255,255,0.86); backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line-2);
+  }
+  .jump a {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 11px; border-radius: 980px; white-space: nowrap;
+    font-size: 12.5px; color: var(--ink-2); text-decoration: none; letter-spacing: -0.01em;
+  }
+  .jump a:hover { background: var(--line-2); color: var(--ink); }
+  .jump-n {
+    font-size: 10.5px; font-weight: 600; border-radius: 980px; padding: 0 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .jump-n.late { background: var(--late-bg); color: var(--late); }
+  .jump-n.fee  { background: var(--fee-bg);  color: var(--fee); }
+  /* The sticky bar would otherwise cover the heading it just jumped to. */
+  #now, #missed, #fees, #upcoming, #month, #paid { scroll-margin-top: 58px; }
   .seg-badge.quiet { background: var(--line-2); color: var(--ink-2); }
-  .seg-btn.on .seg-badge.quiet { background: rgba(255,255,255,0.22); color: #fff; }
 
   /* ── Where things stand ───────────────────────────────────────────────────
      The headline tile is wider and louder than the other three on purpose:
@@ -1593,11 +1594,7 @@ const CSS = `
   .miss-amt { font-size: 17px; font-weight: 600; color: var(--bad); font-variant-numeric: tabular-nums; letter-spacing: -0.018em; }
   .miss-amt-lbl { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; font-variant-numeric: tabular-nums; }
 
-  .twist {
-    width: 7px; height: 7px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3);
-    transform: rotate(-45deg); transition: transform 0.15s; margin-left: 2px;
-  }
-  .twist.open { transform: rotate(45deg); }
+  .miss-row .twist { margin-left: 2px; }
 
   .miss-detail { padding: 2px 22px 16px 48px; background: #fcfcfd; border-top: 1px solid var(--line-2); }
   .miss-charge {
@@ -1618,7 +1615,9 @@ const CSS = `
   .mc-amt { font-weight: 600; font-variant-numeric: tabular-nums; }
   .mc-part { font-weight: 400; color: var(--ink-3); font-size: 12px; }
   .mc-fee { font-size: 11.5px; color: var(--warn); font-variant-numeric: tabular-nums; }
-  .miss-detail .btn-quiet { margin-top: 12px; }
+  .miss-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  .month-key { padding: 0 22px 14px; }
 
   /* ── Upcoming strip ──────────────────────────────────────────────────────── */
   .strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; align-items: end; padding: 6px 0 2px; }
@@ -1714,12 +1713,6 @@ const CSS = `
 
   /* Charge state, as a pill. Quiet for "scheduled": a future charge is the
      normal case and should not shout alongside a missed one. */
-  .st { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 980px; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
-  .st-good  { background: #e8f5ed; color: var(--good); }
-  .st-bad   { background: #fdeceb; color: var(--bad); }
-  .st-warn  { background: #fdf1e3; color: var(--warn); }
-  .st-info  { background: #e8f1fd; color: #0057b8; }
-  .st-quiet { background: var(--line-2); color: var(--ink-3); }
 
   @media (max-width: 1040px) {
     .now-tiles { grid-template-columns: 1fr 1fr; }

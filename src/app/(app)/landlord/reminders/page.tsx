@@ -24,6 +24,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
+import MoneyHub from '@/components/finance/MoneyHub'
+import { FINANCE_THEME } from '@/lib/financeTheme'
 import {
   OUTCOME_META, KIND_FILTERS, STATE_FILTERS, kindLabel, isProblem,
   type EmailOutcome, type EmailState,
@@ -90,9 +92,21 @@ export default function RemindersPage() {
   const [leases, setLeases] = useState<Lease[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  const [state, setState] = useState<EmailState>('all')
+  // Arriving from the alarm banner on Financials means "show me the ones that
+  // did not arrive" — landing on an unfiltered log would make the landlord
+  // repeat a filter they already chose by clicking.
+  const [state, setState] = useState<EmailState>(() => {
+    if (typeof window === 'undefined') return 'all'
+    const wanted = new URLSearchParams(window.location.search).get('state')
+    return STATE_FILTERS.some(f => f.id === wanted) ? (wanted as EmailState) : 'all'
+  })
   const [kind, setKind] = useState('')
-  const [plan, setPlan] = useState('')
+  // Arriving from one lease ("see what this tenant was sent") lands on that
+  // lease, not on the whole portfolio.
+  const [plan, setPlan] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return new URLSearchParams(window.location.search).get('plan') ?? ''
+  })
   const [audience, setAudience] = useState<'tenant' | 'all'>('tenant')
   // The box the landlord types in, and the value actually sent. Debounced so a
   // tenant's name does not cost one request per keystroke.
@@ -124,7 +138,12 @@ export default function RemindersPage() {
       setCounts(json.counts ?? EMPTY_COUNTS)
       // The lease list comes from the rows, so it is only trustworthy when
       // nothing is narrowing them. Keep the last full list otherwise.
-      if (!plan && !query && !kind && state === 'all') setLeases(json.leases ?? [])
+      // The lease list is derived from the rows, so it is only complete when
+      // nothing is narrowing them — but a deep link arrives pre-narrowed, so
+      // an empty list would strand the landlord on one property with no way
+      // back. Keep whatever we last knew, and fill it when unfiltered.
+      const unfiltered = !plan && !query && !kind && state === 'all'
+      setLeases(prev => (unfiltered || prev.length === 0) ? (json.leases ?? []) : prev)
     } catch (e) {
       setEmails([])
       setError(e instanceof Error ? e.message : 'Could not load the email history')
@@ -174,18 +193,17 @@ export default function RemindersPage() {
 
   return (
     <>
-      <style>{CSS}</style>
-      <div className="rem-wrap">
-        <header className="rem-head">
-          <div>
-            <h1 className="title">Reminders</h1>
-            <p className="sub">
-              Every email sent to a tenant about rent, charges and late fees — and what happened to
-              it after it left.
-            </p>
-          </div>
-          <a href="/landlord/financials" className="btn-quiet">Back to Financials</a>
-        </header>
+      <style>{FINANCE_THEME}{CSS}</style>
+      <div className="fin rem-wrap">
+        <MoneyHub
+          tab="reminders"
+          title="Reminders"
+          sub="Every email sent to a tenant about rent, charges and late fees — and what happened to it after it left."
+          alarmCount={counts.problem}
+          // Sending happens from the charge being chased, never from a log, so
+          // this page's one action is the way back to the money.
+          action={{ label: 'Go to Financials', href: '/landlord/financials' }}
+        />
 
         <section className="tiles" aria-label="Summary">
           <div className="tile">
@@ -223,11 +241,14 @@ export default function RemindersPage() {
         {/* A bounce is the one outcome that is actively costing the landlord
             money — the tenant is not ignoring them, they never got the mail. */}
         {stats.problem > 0 && state !== 'problem' && (
-          <button className="alert" onClick={() => setState('problem')}>
-            <strong>
-              {stats.problem} email{stats.problem !== 1 ? 's' : ''} never reached the tenant.
-            </strong>{' '}
-            A bounced reminder looks exactly like a tenant ignoring you. Show them →
+          <button className="alarm-bar" onClick={() => setState('problem')}>
+            <span>
+              <strong>
+                {stats.problem} email{stats.problem !== 1 ? 's' : ''} never reached the tenant.
+              </strong>{' '}
+              A bounced reminder looks exactly like a tenant ignoring you.
+            </span>
+            <span className="go">Show them →</span>
           </button>
         )}
 
@@ -456,30 +477,11 @@ function Step({ label, at, done, bad }: { label: string; at: string | null; done
 }
 
 const CSS = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  .rem-wrap {
-    --ink: #1d1d1f; --ink-2: #6e6e73; --ink-3: #8e8e93;
-    --line: #e5e5ea; --line-2: #f0f0f2; --surface: #fff;
-    --accent: #0071e3; --good: #1d8a4e; --warn: #b25000; --bad: #d13b30;
-    max-width: 1060px; margin: 0 auto; padding: 32px 22px 96px;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', sans-serif;
-    color: var(--ink); -webkit-font-smoothing: antialiased;
-  }
-  .title { font-size: 30px; font-weight: 600; letter-spacing: -0.022em; }
-  .sub { font-size: 14px; color: var(--ink-2); margin-top: 5px; letter-spacing: -0.01em; max-width: 60ch; line-height: 1.5; }
-  .rem-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
-
-  .btn-primary {
-    background: var(--accent); color: #fff; border: none; border-radius: 980px;
-    padding: 9px 18px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer;
-    text-decoration: none; display: inline-block; letter-spacing: -0.01em;
-  }
-  .btn-primary:hover { opacity: 0.85; }
-  .btn-quiet {
-    background: none; border: none; color: var(--accent); font-size: 14px; cursor: pointer;
-    font-family: inherit; padding: 0; text-decoration: none; letter-spacing: -0.01em;
-  }
-  .btn-quiet:hover { text-decoration: underline; }
+  /* Tokens, buttons, badges, panels, the hub header and the alarm bar all come
+     from src/lib/financeTheme.ts. What is left here is this page's own layout:
+     the summary tiles, the filter bar and the day-grouped log. */
+  .rem-wrap { max-width: 1060px; margin: 0 auto; padding: 32px 22px 96px; }
+  .sub { max-width: 64ch; }
 
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
   .tile {
@@ -492,28 +494,7 @@ const CSS = `
   .tile.bad .tile-value { color: var(--bad); }
   .tile-meta { font-size: 12px; color: var(--ink-3); margin-top: 4px; line-height: 1.45; font-variant-numeric: tabular-nums; }
 
-  .alert {
-    display: block; width: 100%; text-align: left; font-family: inherit; cursor: pointer;
-    background: #fff8f7; border: 1px solid #f6cfcb; border-radius: 14px;
-    padding: 13px 17px; margin-bottom: 18px; font-size: 13.5px; color: #8c2f26;
-    line-height: 1.55; letter-spacing: -0.01em;
-  }
-  .alert:hover { background: #fff2f0; }
-
   .controls { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-  .seg { display: inline-flex; background: var(--line-2); border-radius: 10px; padding: 2px; gap: 2px; max-width: 100%; overflow-x: auto; }
-  .seg-btn {
-    display: inline-flex; align-items: center; gap: 7px; border: none; background: none;
-    border-radius: 8px; padding: 7px 13px; font-size: 13px; font-family: inherit;
-    color: var(--ink-2); cursor: pointer; white-space: nowrap; letter-spacing: -0.01em;
-  }
-  .seg-btn:hover { color: var(--ink); }
-  .seg-btn.on { background: var(--surface); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.07); }
-  .seg-btn.hot { color: var(--bad); }
-  .seg-badge {
-    background: rgba(0,0,0,0.07); border-radius: 980px; padding: 0 7px;
-    font-size: 11px; font-variant-numeric: tabular-nums;
-  }
   .pickers { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pickers select, .pickers input[type="search"] {
     font-family: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
@@ -538,15 +519,9 @@ const CSS = `
     padding: 13px 18px; cursor: pointer;
   }
   .send:hover { background: #fafafb; }
-  .out {
-    display: inline-block; text-align: center; font-size: 11px; font-weight: 600;
-    padding: 3px 9px; border-radius: 980px; letter-spacing: -0.005em; white-space: nowrap;
-  }
-  .out-good  { background: #e8f5ed; color: var(--good); }
-  .out-info  { background: #e8f1fd; color: #0057b8; }
-  .out-quiet { background: var(--line-2); color: var(--ink-2); }
-  .out-warn  { background: #fdf1e3; color: var(--warn); }
-  .out-bad   { background: #fdeceb; color: var(--bad); }
+  /* The outcome badge is the theme's; it only needs to fill its column here so
+     a stack of them reads as one edge down the page. */
+  .out { justify-content: center; width: 100%; font-weight: 600; }
   .send-main { min-width: 0; }
   .send-who {
     display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
@@ -556,11 +531,6 @@ const CSS = `
   .send-fig { text-align: right; white-space: nowrap; }
   .send-amt { display: block; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .send-when { display: block; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .twist {
-    width: 7px; height: 7px; border-right: 1.5px solid #c7c7cc; border-bottom: 1.5px solid #c7c7cc;
-    transform: rotate(-45deg); transition: transform 0.15s;
-  }
-  .twist.open { transform: rotate(45deg); }
 
   .detail { padding: 2px 18px 16px 128px; background: #fcfcfd; border-top: 1px solid var(--line-2); }
   .dl { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 7px 0; font-size: 13px; }
@@ -570,11 +540,12 @@ const CSS = `
 
   .track { display: flex; flex-direction: column; gap: 5px; }
   .step { display: grid; grid-template-columns: 10px 1fr auto; gap: 9px; align-items: center; font-size: 12.5px; color: var(--ink-3); }
-  .step-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #c7c7cc; }
-  .step.done .step-dot { background: var(--good); border-color: var(--good); }
+  .step-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--line); }
+  .step.done .step-dot { background: var(--in); border-color: var(--in); }
   .step.done { color: var(--ink); }
-  .step.bad .step-dot { background: var(--bad); border-color: var(--bad); }
-  .step.bad { color: var(--bad); }
+  .step.bad .step-dot { background: var(--late); border-color: var(--late); }
+  .step.bad { color: var(--late); }
+  .step-lbl { min-width: 0; letter-spacing: -0.01em; }
   .step-at { font-variant-numeric: tabular-nums; color: var(--ink-3); font-size: 11.5px; }
   .track-note { display: block; font-size: 12px; color: var(--ink-2); margin-top: 7px; line-height: 1.5; }
   .track-note.bad { color: var(--bad); }
@@ -585,19 +556,6 @@ const CSS = `
   .item-amt { font-variant-numeric: tabular-nums; font-weight: 500; }
   .detail-ft { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line-2); }
 
-  .pill { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 980px; white-space: nowrap; }
-  .pill.plain { background: var(--line-2); color: var(--ink-2); }
-  .pill.warn { background: #fdf1e3; color: var(--warn); }
-
-  .empty { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 52px 36px; text-align: center; }
-  .empty-title { font-size: 19px; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 8px; }
-  .empty-sub { font-size: 14px; color: var(--ink-2); line-height: 1.6; max-width: 52ch; margin: 0 auto 20px; letter-spacing: -0.01em; }
-  .skeleton {
-    height: 220px; border-radius: 18px;
-    background: linear-gradient(90deg,#f2f2f4,#f7f7f9,#f2f2f4); background-size: 200% 100%;
-    animation: sk 1.4s ease-in-out infinite;
-  }
-  @keyframes sk { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
   .foot { font-size: 12px; color: var(--ink-3); line-height: 1.6; margin-top: 4px; letter-spacing: -0.01em; }
 
   @media (max-width: 900px) {
@@ -607,7 +565,6 @@ const CSS = `
   }
   @media (max-width: 680px) {
     .rem-wrap { padding: 24px 16px 90px; }
-    .title { font-size: 25px; }
     .send { grid-template-columns: 1fr auto; row-gap: 8px; }
     .send > .out { grid-column: 1 / -1; justify-self: start; }
     .send > .twist { display: none; }

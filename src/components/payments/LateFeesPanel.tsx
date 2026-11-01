@@ -33,10 +33,10 @@ import {
 } from '@/lib/lateFees'
 
 const C = {
-  ink: '#0f172a', dim: '#64748b', faint: '#94a3b8', line: '#e2e8f0', wash: '#f8fafc',
-  bad: '#b91c1c', badBg: '#fef2f2', badLine: '#fecaca',
-  warn: '#b45309', warnBg: '#fffbeb', warnLine: '#fde68a',
-  good: '#15803d', goodBg: '#f0fdf4',
+  ink: '#1d1d1f', dim: '#6e6e73', faint: '#8e8e93', line: '#e5e5ea', wash: '#fafafb',
+  bad: '#d13b30', badBg: '#fdeceb', badLine: '#f3c6c2',
+  warn: '#b25000', warnBg: '#fdf1e3', warnLine: '#f6dcc0',
+  good: '#1d8a4e', goodBg: '#e8f5ed',
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -116,7 +116,7 @@ export default function LateFeesPanel({
           marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
           background: flash.tone === 'good' ? C.goodBg : C.badBg,
           color: flash.tone === 'good' ? C.good : C.bad,
-          border: `1px solid ${flash.tone === 'good' ? '#bbf7d0' : C.badLine}`,
+          border: `1px solid ${flash.tone === 'good' ? '#e8f5ed' : C.badLine}`,
         }}>
           {flash.text}
         </div>
@@ -334,7 +334,7 @@ function PayerCard({
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: C.warn, marginBottom: 4 }}>
               Before you send
             </div>
-            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#b25000', lineHeight: 1.6 }}>
               {payer.cautions.map((c, i) => <li key={i}>{c}</li>)}
             </ul>
           </div>
@@ -522,7 +522,7 @@ function RemindModal({
         <div style={{
           marginTop: 11, borderRadius: 10, padding: '10px 13px', fontSize: 12, lineHeight: 1.6,
           background: payable ? C.goodBg : C.wash,
-          border: `1px solid ${payable ? '#bbf7d0' : C.line}`,
+          border: `1px solid ${payable ? '#e8f5ed' : C.line}`,
           color: payable ? C.good : C.dim,
         }}>
           {payable
@@ -535,7 +535,7 @@ function RemindModal({
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: C.warn, marginBottom: 4 }}>
               Worth weighing first
             </div>
-            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#b25000', lineHeight: 1.6 }}>
               {payer.cautions.map((c, i) => <li key={i}>{c}</li>)}
             </ul>
           </div>

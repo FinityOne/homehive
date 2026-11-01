@@ -26,14 +26,14 @@ type Tab = 'schedule' | 'tenants' | 'charges' | 'activity'
 // ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<string, { bg: string; color: string; label: string; dot: string }> = {
-  paid:    { bg: '#dcfce7', color: '#166534', label: 'Paid',    dot: '#16a34a' },
-  partial: { bg: '#fef9c3', color: '#92400e', label: 'Partial', dot: '#d97706' },
-  pending: { bg: '#f1f5f9', color: '#475569', label: 'Pending', dot: '#94a3b8' },
-  late:    { bg: '#fee2e2', color: '#991b1b', label: 'Late',    dot: '#ef4444' },
+  paid:    { bg: '#e8f5ed', color: '#1d8a4e', label: 'Paid',    dot: '#1d8a4e' },
+  partial: { bg: '#fef9c3', color: '#b25000', label: 'Partial', dot: '#b25000' },
+  pending: { bg: '#f0f0f2', color: '#6e6e73', label: 'Pending', dot: '#8e8e93' },
+  late:    { bg: '#fdeceb', color: '#d13b30', label: 'Late',    dot: '#d13b30' },
   missed:  { bg: '#fce7f3', color: '#9d174d', label: 'Missed',  dot: '#db2777' },
-  voided:  { bg: '#f1f5f9', color: '#94a3b8', label: 'Voided',  dot: '#cbd5e1' },
+  voided:  { bg: '#f0f0f2', color: '#8e8e93', label: 'Voided',  dot: '#d6d6db' },
   // Tenant paid by ACH; the money is in flight and settles in a few days.
-  processing: { bg: '#fef3c7', color: '#92400e', label: 'Clearing', dot: '#f59e0b' },
+  processing: { bg: '#fdf1e3', color: '#b25000', label: 'Clearing', dot: '#b25000' },
 }
 
 /**
@@ -43,9 +43,9 @@ const STATUS_CFG: Record<string, { bg: string; color: string; label: string; dot
  */
 const METHOD_CFG: Record<string, { label: string; bg: string; color: string }> = {
   card:         { label: 'Card',   bg: '#f5f3ff', color: '#6d28d9' },
-  ach:          { label: 'ACH',    bg: '#eff6ff', color: '#1d4ed8' },
-  manual_zelle: { label: 'Zelle',  bg: '#ecfeff', color: '#0e7490' },
-  manual_other: { label: 'Manual', bg: '#f1f5f9', color: '#64748b' },
+  ach:          { label: 'ACH',    bg: '#e8f1fd', color: '#005bb8' },
+  manual_zelle: { label: 'Zelle',  bg: '#e6f5f5', color: '#0e7490' },
+  manual_other: { label: 'Manual', bg: '#f0f0f2', color: '#6e6e73' },
 }
 
 function MethodBadge({ method, recordedBy }: { method: string | null; recordedBy?: string | null }) {
@@ -115,11 +115,11 @@ function Amt({
   return (
     <div style={{ textAlign: 'right' }} title={title}>
       {value > 0.005 ? (
-        <span style={{ fontSize: '13px', fontWeight: bold ? 700 : 600, color: color ?? '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: '13px', fontWeight: bold ? 700 : 600, color: color ?? '#1d1d1f', fontVariantNumeric: 'tabular-nums' }}>
           {fmtCurrency(value)}
         </span>
       ) : (
-        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>{zero}</span>
+        <span style={{ fontSize: '12px', color: '#d6d6db' }}>{zero}</span>
       )}
       {sub}
     </div>
@@ -156,7 +156,7 @@ function PaymentRow({
   const b = chargeBreakdown(payment, rule, tenant, waiver ?? null)
 
   return (
-    <div style={{ borderBottom: '1px solid #f1f5f9', opacity: isVoided ? 0.55 : 1 }}>
+    <div style={{ borderBottom: '1px solid #f0f0f2', opacity: isVoided ? 0.55 : 1 }}>
       <div
         role={isVoided ? undefined : 'button'}
         tabIndex={isVoided ? undefined : 0}
@@ -167,17 +167,17 @@ function PaymentRow({
           if (isVoided) return
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(payment) }
         }}
-        onMouseEnter={e => !isVoided && ((e.currentTarget as HTMLElement).style.background = '#fafafa')}
+        onMouseEnter={e => !isVoided && ((e.currentTarget as HTMLElement).style.background = '#fafafb')}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
       >
         {/* Tenant */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#475569', flexShrink: 0 }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#6e6e73', flexShrink: 0 }}>
             {(payment.tenant?.name ?? 'T')[0].toUpperCase()}
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{payment.tenant?.name ?? '—'}</div>
-            {payment.tenant?.email && <div style={{ fontSize: '11px', color: '#94a3b8' }}>{payment.tenant.email}</div>}
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1d1d1f' }}>{payment.tenant?.name ?? '—'}</div>
+            {payment.tenant?.email && <div style={{ fontSize: '11px', color: '#8e8e93' }}>{payment.tenant.email}</div>}
           </div>
         </div>
 
@@ -203,11 +203,11 @@ function PaymentRow({
         {/* Late fee assessed on this charge, and what became of it */}
         <Amt
           value={b.lateFeeAssessed}
-          color={b.lateFeeOutstanding > 0.005 ? '#c2410c' : '#15803d'}
+          color={b.lateFeeOutstanding > 0.005 ? '#b25000' : '#1d8a4e'}
           title={b.lateFeeCapped ? 'Trimmed to the size of this charge — the rule has no maximum.' : undefined}
           sub={
             b.lateFeeAssessed > 0.005 ? (
-              <div style={{ fontSize: '10px', color: b.lateFeeWaived > 0.005 ? '#64748b' : b.lateFeeOutstanding > 0.005 ? '#c2410c' : '#15803d' }}>
+              <div style={{ fontSize: '10px', color: b.lateFeeWaived > 0.005 ? '#6e6e73' : b.lateFeeOutstanding > 0.005 ? '#b25000' : '#1d8a4e' }}>
                 {b.lateFeeWaived > 0.005
                   ? 'written off'
                   : b.lateFeeOutstanding > 0.005
@@ -226,10 +226,10 @@ function PaymentRow({
         <Amt
           value={b.collected}
           bold
-          color="#16a34a"
+          color="#1d8a4e"
           sub={
             b.lateFeeCollected > 0.005 ? (
-              <div style={{ fontSize: '10px', color: '#15803d' }}>incl. {fmtCurrency(b.lateFeeCollected)} fee</div>
+              <div style={{ fontSize: '10px', color: '#1d8a4e' }}>incl. {fmtCurrency(b.lateFeeCollected)} fee</div>
             ) : undefined
           }
         />
@@ -238,11 +238,11 @@ function PaymentRow({
         <Amt
           value={b.balance}
           bold
-          color={isVoided ? '#94a3b8' : effStatus === 'late' ? '#dc2626' : '#d97706'}
+          color={isVoided ? '#8e8e93' : effStatus === 'late' ? '#d13b30' : '#b25000'}
           zero={isVoided ? '—' : '✓'}
           sub={
             b.lateFeeWaived > 0.005 ? (
-              <div style={{ fontSize: '10px', color: '#64748b' }}>{fmtCurrency(b.lateFeeWaived)} waived</div>
+              <div style={{ fontSize: '10px', color: '#6e6e73' }}>{fmtCurrency(b.lateFeeWaived)} waived</div>
             ) : undefined
           }
         />
@@ -303,38 +303,38 @@ function MonthGroup({
   const voided  = payments.filter(p => p.status === 'voided').length
 
   return (
-    <div style={{ marginBottom: 6, border: '1px solid #e2e8f0', borderRadius: '11px', overflow: 'hidden', background: '#fff' }}>
+    <div style={{ marginBottom: 6, border: '1px solid #e5e5ea', borderRadius: '11px', overflow: 'hidden', background: '#fff' }}>
       <div
         onClick={() => setOpen(v => !v)}
-        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: open ? '#fff' : '#fafafa' }}
+        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: open ? '#fff' : '#fafafb' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtMonth(month)}</span>
-          {overdue > 0 && <span style={{ background: '#fee2e2', color: '#991b1b', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{overdue} overdue</span>}
-          {overdue === 0 && paid === active.length && active.length > 0 && <span style={{ background: '#dcfce7', color: '#166534', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>All paid ✓</span>}
+          <span style={{ fontSize: '14px', fontWeight: 700, color: '#1d1d1f' }}>{fmtMonth(month)}</span>
+          {overdue > 0 && <span style={{ background: '#fdeceb', color: '#d13b30', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{overdue} overdue</span>}
+          {overdue === 0 && paid === active.length && active.length > 0 && <span style={{ background: '#e8f5ed', color: '#1d8a4e', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>All paid ✓</span>}
           {/* A month can be fully paid and still owe fees. Saying "All paid"
               and nothing else is how $4,050 of fees went unnoticed. */}
           {sums.balance > 0.005 && paid === active.length && active.length > 0 && (
-            <span style={{ background: '#fff7ed', color: '#c2410c', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
+            <span style={{ background: '#fdf1e3', color: '#b25000', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
               {fmtCurrency(sums.balance)} in fees owed
             </span>
           )}
-          {voided > 0 && <span style={{ background: '#f1f5f9', color: '#94a3b8', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{voided} voided</span>}
+          {voided > 0 && <span style={{ background: '#f0f0f2', color: '#8e8e93', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{voided} voided</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ fontSize: '12px', color: '#64748b' }}>
+          <span style={{ fontSize: '12px', color: '#6e6e73' }}>
             {paid}/{active.length} paid · {fmtCurrency(sums.collected)}/{fmtCurrency(sums.due)}
           </span>
-          <span style={{ fontSize: '11px', color: '#94a3b8', transition: 'transform 0.2s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0)' }}>▾</span>
+          <span style={{ fontSize: '11px', color: '#8e8e93', transition: 'transform 0.2s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0)' }}>▾</span>
         </div>
       </div>
 
       {open && (
-        <div style={{ borderTop: '1px solid #f1f5f9' }}>
+        <div style={{ borderTop: '1px solid #f0f0f2' }}>
           {/* Table header */}
-          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '8px 16px', background: '#f8fafc' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '8px 16px', background: '#fafafb' }}>
             {COL_HEADS.map(h => (
-              <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: h === 'Tenant' ? 'left' : h === 'Status' ? 'center' : 'right' }}>
+              <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: h === 'Tenant' ? 'left' : h === 'Status' ? 'center' : 'right' }}>
                 {h}
               </div>
             ))}
@@ -352,28 +352,28 @@ function MonthGroup({
 
           {/* The month's own bottom line, in the same columns as the rows above
               it — so a shared lease's six payers visibly sum to one figure. */}
-          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '10px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', alignItems: 'center' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '10px 16px', background: '#fafafb', borderTop: '1px solid #e5e5ea', alignItems: 'center' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#6e6e73' }}>
               {fmtMonth(month)} total
             </div>
             <Amt value={sums.rent} bold />
             <Amt value={sums.utilities} bold color="#0e7490" />
-            <Amt value={sums.fees} bold color={sums.fees - sums.feesPaid - sums.waived > 0.005 ? '#c2410c' : '#15803d'} />
+            <Amt value={sums.fees} bold color={sums.fees - sums.feesPaid - sums.waived > 0.005 ? '#b25000' : '#1d8a4e'} />
             <Amt value={sums.due} bold />
             <Amt
               value={sums.collected}
               bold
-              color="#16a34a"
-              sub={sums.feesPaid > 0.005 ? <div style={{ fontSize: '10px', color: '#15803d' }}>incl. {fmtCurrency(sums.feesPaid)} fees</div> : undefined}
+              color="#1d8a4e"
+              sub={sums.feesPaid > 0.005 ? <div style={{ fontSize: '10px', color: '#1d8a4e' }}>incl. {fmtCurrency(sums.feesPaid)} fees</div> : undefined}
             />
             <Amt
               value={sums.balance}
               bold
-              color={overdue > 0 ? '#dc2626' : '#d97706'}
+              color={overdue > 0 ? '#d13b30' : '#b25000'}
               zero="✓"
-              sub={sums.waived > 0.005 ? <div style={{ fontSize: '10px', color: '#64748b' }}>{fmtCurrency(sums.waived)} waived</div> : undefined}
+              sub={sums.waived > 0.005 ? <div style={{ fontSize: '10px', color: '#6e6e73' }}>{fmtCurrency(sums.waived)} waived</div> : undefined}
             />
-            <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, color: sums.balance > 0.005 ? (overdue > 0 ? '#dc2626' : '#d97706') : '#94a3b8' }}>
+            <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, color: sums.balance > 0.005 ? (overdue > 0 ? '#d13b30' : '#b25000') : '#8e8e93' }}>
               {sums.balance > 0.005 ? 'outstanding' : 'settled'}
             </div>
           </div>
@@ -439,8 +439,8 @@ function LineItemEditor({
   const mismatch = totalMode === 'custom' && Math.abs(finalTotal - lineSum) > 0.005
 
   const iS: React.CSSProperties = {
-    padding: '6px 9px', fontSize: '12px', border: '1.5px solid #e2e8f0', borderRadius: '6px',
-    outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a',
+    padding: '6px 9px', fontSize: '12px', border: '1.5px solid #e5e5ea', borderRadius: '6px',
+    outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0071e3',
     boxSizing: 'border-box',
   }
 
@@ -483,9 +483,9 @@ function LineItemEditor({
     return (
       <button
         onClick={openEdit}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4, padding: '5px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f8fafc', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'border-color 0.15s, color 0.15s' }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#94a3b8'; (e.currentTarget as HTMLElement).style.color = '#0f172a' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'; (e.currentTarget as HTMLElement).style.color = '#475569' }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4, padding: '5px 10px', border: '1px solid #e5e5ea', borderRadius: '6px', background: '#fafafb', color: '#6e6e73', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'border-color 0.15s, color 0.15s' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#8e8e93'; (e.currentTarget as HTMLElement).style.color = '#0071e3' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#e5e5ea'; (e.currentTarget as HTMLElement).style.color = '#6e6e73' }}
       >
         ✏ Edit breakdown
       </button>
@@ -493,8 +493,8 @@ function LineItemEditor({
   }
 
   return (
-    <div style={{ marginTop: 10, background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '14px' }}>
-      <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Edit line items</div>
+    <div style={{ marginTop: 10, background: '#fafafb', border: '1.5px solid #d6d6db', borderRadius: '10px', padding: '14px' }}>
+      <div style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Edit line items</div>
       {draft.some(d => d.utilityId) && (
         <div style={{ fontSize: '11.5px', color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '7px', padding: '8px 11px', marginBottom: 10, lineHeight: 1.5 }}>
           Lines marked <strong>UTILITY</strong> come from a charge set once for the whole lease.
@@ -506,7 +506,7 @@ function LineItemEditor({
       {/* Column headers */}
       <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, marginBottom: 4 }}>
         {['Category', 'Label', 'Amount', ''].map(h => (
-          <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{h}</div>
+          <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{h}</div>
         ))}
       </div>
 
@@ -520,11 +520,11 @@ function LineItemEditor({
             <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '5px', padding: '4px 6px', textAlign: 'center', letterSpacing: '0.02em' }}>
               UTILITY
             </span>
-            <span style={{ fontSize: '12px', color: '#475569' }}>
+            <span style={{ fontSize: '12px', color: '#6e6e73' }}>
               {item.label}
-              <span style={{ color: '#94a3b8', marginLeft: 6 }}>· set on the lease</span>
+              <span style={{ color: '#8e8e93', marginLeft: 6 }}>· set on the lease</span>
             </span>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textAlign: 'right', paddingRight: 4 }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#6e6e73', textAlign: 'right', paddingRight: 4 }}>
               {fmtCurrency(parseFloat(item.amount) || 0)}
             </span>
             <span />
@@ -549,7 +549,7 @@ function LineItemEditor({
               placeholder="Label"
             />
             <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: '#94a3b8', pointerEvents: 'none' }}>$</span>
+              <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: '#8e8e93', pointerEvents: 'none' }}>$</span>
               <input
                 style={{ ...iS, width: '100%', paddingLeft: 18 }}
                 type="number" min={0} step="0.01"
@@ -560,9 +560,9 @@ function LineItemEditor({
             </div>
             <button
               onClick={() => removeRow(idx)}
-              style={{ width: 26, height: 26, border: 'none', borderRadius: '5px', background: 'none', color: '#94a3b8', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fef2f2' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'none' }}
+              style={{ width: 26, height: 26, border: 'none', borderRadius: '5px', background: 'none', color: '#8e8e93', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#d13b30'; (e.currentTarget as HTMLElement).style.background = '#fdeceb' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8e8e93'; (e.currentTarget as HTMLElement).style.background = 'none' }}
               title="Remove"
             >
               ×
@@ -574,17 +574,17 @@ function LineItemEditor({
       {/* Add row */}
       <button
         onClick={addRow}
-        style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', background: 'none', border: '1px dashed #cbd5e1', borderRadius: '5px', padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: 12 }}
+        style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', background: 'none', border: '1px dashed #d6d6db', borderRadius: '5px', padding: '5px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", marginBottom: 12 }}
       >
         + Add line item
       </button>
 
       {/* Sum + total */}
-      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+      <div style={{ borderTop: '1px solid #e5e5ea', paddingTop: 10 }}>
         {/* Auto-sum row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: '12px', color: '#64748b' }}>Sum of line items</span>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(lineSum)}</span>
+          <span style={{ fontSize: '12px', color: '#6e6e73' }}>Sum of line items</span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>{fmtCurrency(lineSum)}</span>
         </div>
 
         {/* Total mode toggle */}
@@ -596,7 +596,7 @@ function LineItemEditor({
                 setTotalMode(mode)
                 if (mode === 'custom') setTotalOverride(String(finalTotal))
               }}
-              style={{ flex: 1, padding: '6px 0', borderRadius: '6px', border: `1.5px solid ${totalMode === mode ? '#0f172a' : '#e2e8f0'}`, background: totalMode === mode ? '#0f172a' : '#fff', color: totalMode === mode ? '#fff' : '#64748b', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              style={{ flex: 1, padding: '6px 0', borderRadius: '6px', border: `1.5px solid ${totalMode === mode ? '#0071e3' : '#e5e5ea'}`, background: totalMode === mode ? '#0071e3' : '#fff', color: totalMode === mode ? '#fff' : '#6e6e73', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
             >
               {mode === 'sum' ? 'Use sum' : 'Custom total'}
             </button>
@@ -605,7 +605,7 @@ function LineItemEditor({
 
         {totalMode === 'custom' ? (
           <div>
-            <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Monthly total ($)</label>
+            <label style={{ fontSize: '10px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Monthly total ($)</label>
             <input
               style={{ ...iS2, width: '100%', fontWeight: 700 }}
               type="number" min={0} step="0.01"
@@ -613,15 +613,15 @@ function LineItemEditor({
               onChange={e => setTotalOverride(e.target.value)}
             />
             {mismatch && (
-              <div style={{ marginTop: 5, fontSize: '11px', color: '#d97706' }}>
+              <div style={{ marginTop: 5, fontSize: '11px', color: '#b25000' }}>
                 ⚠ Total ({fmtCurrency(finalTotal)}) differs from sum ({fmtCurrency(lineSum)}) by {fmtCurrency(Math.abs(finalTotal - lineSum))}
               </div>
             )}
           </div>
         ) : (
-          <div style={{ background: '#f1f5f9', borderRadius: '7px', padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Monthly total</span>
-            <span style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>{fmtCurrency(finalTotal)}</span>
+          <div style={{ background: '#f0f0f2', borderRadius: '7px', padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#6e6e73' }}>Monthly total</span>
+            <span style={{ fontSize: '16px', fontWeight: 800, color: '#1d1d1f' }}>{fmtCurrency(finalTotal)}</span>
           </div>
         )}
       </div>
@@ -629,13 +629,13 @@ function LineItemEditor({
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button
           onClick={save} disabled={saving}
-          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           {saving ? 'Saving…' : 'Save changes'}
         </button>
         <button
           onClick={cancel}
-          style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           Cancel
         </button>
@@ -666,8 +666,8 @@ function TenantRentEditor({
   const changed     = !isNaN(parsedAmt) && parsedAmt > 0 && Math.abs(parsedAmt - tenant.monthly_total) > 0.005
 
   const iS: React.CSSProperties = {
-    padding: '8px 11px', fontSize: '13px', border: '1.5px solid #e2e8f0', borderRadius: '8px',
-    outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a',
+    padding: '8px 11px', fontSize: '13px', border: '1.5px solid #e5e5ea', borderRadius: '8px',
+    outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0071e3',
     boxSizing: 'border-box',
   }
 
@@ -687,9 +687,9 @@ function TenantRentEditor({
     return (
       <button
         onClick={() => setOpen(true)}
-        style={{ marginTop: 12, width: '100%', padding: '8px 0', border: '1.5px dashed #cbd5e1', borderRadius: '8px', background: 'none', color: '#64748b', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'border-color 0.15s, color 0.15s' }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#94a3b8'; (e.currentTarget as HTMLElement).style.color = '#0f172a' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#cbd5e1'; (e.currentTarget as HTMLElement).style.color = '#64748b' }}
+        style={{ marginTop: 12, width: '100%', padding: '8px 0', border: '1.5px dashed #d6d6db', borderRadius: '8px', background: 'none', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", transition: 'border-color 0.15s, color 0.15s' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#8e8e93'; (e.currentTarget as HTMLElement).style.color = '#0071e3' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#d6d6db'; (e.currentTarget as HTMLElement).style.color = '#6e6e73' }}
       >
         ✏ Edit rent amount
       </button>
@@ -697,20 +697,20 @@ function TenantRentEditor({
   }
 
   return (
-    <div style={{ marginTop: 12, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px' }}>
-      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>Update rent for entire lease</div>
+    <div style={{ marginTop: 12, background: '#fafafb', border: '1.5px solid #e5e5ea', borderRadius: '10px', padding: '16px' }}>
+      <div style={{ fontSize: '12px', fontWeight: 700, color: '#1d1d1f', marginBottom: 12 }}>Update rent for entire lease</div>
 
       {/* New amount */}
       <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>New monthly amount ($)</label>
+        <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>New monthly amount ($)</label>
         <input
-          style={{ ...iS, width: '100%', fontSize: '16px', fontWeight: 700, color: '#0f172a' }}
+          style={{ ...iS, width: '100%', fontSize: '16px', fontWeight: 700, color: '#1d1d1f' }}
           type="number" min={0} step="0.01"
           value={newAmt}
           onChange={e => setNewAmt(e.target.value)}
         />
         {changed && (
-          <div style={{ marginTop: 5, fontSize: '11px', color: parsedAmt > tenant.monthly_total ? '#059669' : '#d97706', fontWeight: 600 }}>
+          <div style={{ marginTop: 5, fontSize: '11px', color: parsedAmt > tenant.monthly_total ? '#1d8a4e' : '#b25000', fontWeight: 600 }}>
             {parsedAmt > tenant.monthly_total
               ? `↑ Increase of ${fmtCurrency(parsedAmt - tenant.monthly_total)}/mo from current ${fmtCurrency(tenant.monthly_total)}`
               : `↓ Decrease of ${fmtCurrency(tenant.monthly_total - parsedAmt)}/mo from current ${fmtCurrency(tenant.monthly_total)}`}
@@ -720,7 +720,7 @@ function TenantRentEditor({
 
       {/* Apply to */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Apply to</label>
+        <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Apply to</label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {([
             { value: 'unpaid', label: 'Unpaid payments only', sub: `${unpaidCount} pending or late payment${unpaidCount !== 1 ? 's' : ''}` },
@@ -728,17 +728,17 @@ function TenantRentEditor({
           ] as const).map(opt => (
             <label
               key={opt.value}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', borderRadius: '8px', border: `1.5px solid ${applyTo === opt.value ? '#0f172a' : '#e2e8f0'}`, background: applyTo === opt.value ? '#f1f5f9' : '#fff', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', borderRadius: '8px', border: `1.5px solid ${applyTo === opt.value ? '#0071e3' : '#e5e5ea'}`, background: applyTo === opt.value ? '#f0f0f2' : '#fff', cursor: 'pointer' }}
             >
               <input
                 type="radio" name={`applyTo-${tenant.id}`} value={opt.value}
                 checked={applyTo === opt.value}
                 onChange={() => setApplyTo(opt.value)}
-                style={{ marginTop: 2, accentColor: '#0f172a', flexShrink: 0 }}
+                style={{ marginTop: 2, accentColor: '#0071e3', flexShrink: 0 }}
               />
               <div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>{opt.label}</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: 1 }}>{opt.sub}</div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#1d1d1f' }}>{opt.label}</div>
+                <div style={{ fontSize: '11px', color: '#8e8e93', marginTop: 1 }}>{opt.sub}</div>
               </div>
             </label>
           ))}
@@ -747,13 +747,13 @@ function TenantRentEditor({
 
       {/* Preview */}
       {changed && (
-        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '7px', padding: '9px 12px', marginBottom: 12, fontSize: '12px', color: '#1d4ed8' }}>
+        <div style={{ background: '#e8f1fd', border: '1px solid #bfdbfe', borderRadius: '7px', padding: '9px 12px', marginBottom: 12, fontSize: '12px', color: '#005bb8' }}>
           Will update <strong>{preview} payment{preview !== 1 ? 's' : ''}</strong> to <strong>{fmtCurrency(parsedAmt)}/mo</strong>
         </div>
       )}
 
       {saved && (
-        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '7px', padding: '9px 12px', marginBottom: 12, fontSize: '12px', color: '#166534', fontWeight: 600 }}>
+        <div style={{ background: '#e8f5ed', border: '1px solid #e8f5ed', borderRadius: '7px', padding: '9px 12px', marginBottom: 12, fontSize: '12px', color: '#1d8a4e', fontWeight: 600 }}>
           ✓ Updated successfully
         </div>
       )}
@@ -761,13 +761,13 @@ function TenantRentEditor({
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           onClick={save} disabled={saving || !changed || saved}
-          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving || !changed ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: (saving || !changed) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving || !changed ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: (saving || !changed) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           {saving ? 'Saving…' : `Update ${preview} payment${preview !== 1 ? 's' : ''}`}
         </button>
         <button
           onClick={() => { setOpen(false); setNewAmt(String(tenant.monthly_total)) }}
-          style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           Cancel
         </button>
@@ -846,37 +846,37 @@ function SpecialChargeCard({
   const requestCount = Math.max(history.length, sp.reminder_count ?? 0)
 
   const iS: React.CSSProperties = {
-    width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e2e8f0',
+    width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e5e5ea',
     borderRadius: '7px', outline: 'none', fontFamily: "'DM Sans', sans-serif",
-    background: '#fff', color: '#0f172a', boxSizing: 'border-box',
+    background: '#fff', color: '#0071e3', boxSizing: 'border-box',
   }
 
   // ── VIEW mode ──
   if (mode === 'view') {
     return (
-      <div style={{ background: '#fff', borderRadius: '11px', border: `1px solid ${isOverdueCharge ? '#fca5a5' : '#e2e8f0'}`, padding: '16px 20px' }}>
+      <div style={{ background: '#fff', borderRadius: '11px', border: `1px solid ${isOverdueCharge ? '#f3c6c2' : '#e5e5ea'}`, padding: '16px 20px' }}>
        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-            <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{sp.label}</span>
-            <span style={{ background: '#f1f5f9', color: '#475569', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{catLabel(sp.category)}</span>
-            {sp.tenant && <span style={{ fontSize: '12px', color: '#94a3b8' }}>→ {sp.tenant.name}</span>}
-            {!sp.tenant && multiTenant && <span style={{ fontSize: '12px', color: '#94a3b8' }}>→ All tenants</span>}
+            <span style={{ fontSize: '14px', fontWeight: 700, color: '#1d1d1f' }}>{sp.label}</span>
+            <span style={{ background: '#f0f0f2', color: '#6e6e73', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{catLabel(sp.category)}</span>
+            {sp.tenant && <span style={{ fontSize: '12px', color: '#8e8e93' }}>→ {sp.tenant.name}</span>}
+            {!sp.tenant && multiTenant && <span style={{ fontSize: '12px', color: '#8e8e93' }}>→ All tenants</span>}
           </div>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>
+          <div style={{ fontSize: '12px', color: '#6e6e73' }}>
             Due {fmtDate(sp.due_date)}
             {sp.paid_date && ` · Paid ${fmtDate(sp.paid_date)}`}
             {sp.notes && ` · ${sp.notes}`}
           </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{fmtCurrency(sp.amount)}</div>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', marginBottom: 6 }}>{fmtCurrency(sp.amount)}</div>
           <StatusBadge status={sp.status} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
           <button
             onClick={openEdit}
-            style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+            style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
           >
             ✏ Edit
           </button>
@@ -886,7 +886,7 @@ function SpecialChargeCard({
               title={sp.reminder_sent_at
                 ? `Last requested ${new Date(sp.reminder_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                 : 'Email this tenant a request for this charge'}
-              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
             >
               {(() => {
                 const n = Math.max(history.length, sp.reminder_count ?? 0)
@@ -898,7 +898,7 @@ function SpecialChargeCard({
             <button
               onClick={() => onResendReceipt(sp)}
               title="Send the payment confirmation again"
-              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+              style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
             >
               Resend confirmation
             </button>
@@ -907,13 +907,13 @@ function SpecialChargeCard({
             <>
               <button
                 onClick={() => onUpdate(sp.id, { status: 'paid', paid_date: new Date().toISOString().split('T')[0] })}
-                style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#0f172a', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#0071e3', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
               >
                 Mark paid
               </button>
               <button
                 onClick={() => onUpdate(sp.id, { status: 'waived' })}
-                style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#94a3b8', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#8e8e93', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
               >
                 Waive
               </button>
@@ -925,10 +925,10 @@ function SpecialChargeCard({
         {/* When this charge was actually asked for — the deposit at move-in is
             the one a landlord most often has to prove they chased. */}
         {requestCount > 0 && (
-          <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 14, paddingTop: 12 }}>
+          <div style={{ borderTop: '1px solid #f0f0f2', marginTop: 14, paddingTop: 12 }}>
             <button
               onClick={() => setShowHistory(v => !v)}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: '11.5px', fontWeight: 600, color: '#64748b' }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: '11.5px', fontWeight: 600, color: '#6e6e73' }}
             >
               {showHistory ? 'Hide' : 'Show'} request history ({requestCount})
             </button>
@@ -950,15 +950,15 @@ function SpecialChargeCard({
   // ── EDIT mode ──
   if (mode === 'edit') {
     return (
-      <div style={{ background: '#fff', borderRadius: '11px', border: '1.5px solid #0f172a', padding: '20px' }}>
+      <div style={{ background: '#fff', borderRadius: '11px', border: '1.5px solid #0071e3', padding: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Edit charge</span>
-          <button onClick={() => setMode('view')} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>Edit charge</span>
+          <button onClick={() => setMode('view')} style={{ background: 'none', border: 'none', color: '#8e8e93', fontSize: '18px', cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Type</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Type</label>
             <select style={iS} value={category} onChange={e => {
               const cat = SPECIAL_CATEGORIES.find(c => c.value === e.target.value)
               setCategory(e.target.value as typeof category)
@@ -968,15 +968,15 @@ function SpecialChargeCard({
             </select>
           </div>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Label</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Label</label>
             <input style={iS} value={label} onChange={e => setLabel(e.target.value)} />
           </div>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Amount ($)</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Amount ($)</label>
             <input style={iS} type="number" min={0} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
           </div>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Status</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Status</label>
             <select style={iS} value={status} onChange={e => setStatus(e.target.value as typeof status)}>
               <option value="pending">Pending</option>
               <option value="paid">Paid</option>
@@ -987,15 +987,15 @@ function SpecialChargeCard({
             </select>
           </div>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Due date</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Due date</label>
             <input style={iS} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
           </div>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Paid date</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Paid date</label>
             <input style={iS} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} disabled={status !== 'paid'} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Notes</label>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Notes</label>
             <input style={iS} value={notes} placeholder="Optional note" onChange={e => setNotes(e.target.value)} />
           </div>
         </div>
@@ -1004,11 +1004,11 @@ function SpecialChargeCard({
           <button
             onClick={() => changes.length > 0 ? setMode('confirm') : setMode('view')}
             disabled={!parsedAmt || !dueDate}
-            style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: (!parsedAmt || !dueDate) ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: (!parsedAmt || !dueDate) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+            style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: (!parsedAmt || !dueDate) ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: (!parsedAmt || !dueDate) ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
           >
             {changes.length === 0 ? 'No changes' : `Review ${changes.length} change${changes.length !== 1 ? 's' : ''} →`}
           </button>
-          <button onClick={() => setMode('view')} style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+          <button onClick={() => setMode('view')} style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
             Cancel
           </button>
         </div>
@@ -1018,17 +1018,17 @@ function SpecialChargeCard({
 
   // ── CONFIRM mode ──
   return (
-    <div style={{ background: '#fff', borderRadius: '11px', border: '1.5px solid #0f172a', padding: '20px' }}>
-      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Confirm changes</div>
-      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: 14 }}>Review before saving — this cannot be undone.</div>
+    <div style={{ background: '#fff', borderRadius: '11px', border: '1.5px solid #0071e3', padding: '20px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Confirm changes</div>
+      <div style={{ fontSize: '12px', color: '#6e6e73', marginBottom: 14 }}>Review before saving — this cannot be undone.</div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
         {changes.map(ch => (
-          <div key={ch.field} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 14px 1fr', gap: 8, alignItems: 'center', background: '#f8fafc', borderRadius: '7px', padding: '8px 10px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{ch.field}</span>
-            <span style={{ fontSize: '12px', color: '#64748b', textDecoration: 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.from}</span>
-            <span style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center' }}>→</span>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.to}</span>
+          <div key={ch.field} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 14px 1fr', gap: 8, alignItems: 'center', background: '#fafafb', borderRadius: '7px', padding: '8px 10px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{ch.field}</span>
+            <span style={{ fontSize: '12px', color: '#6e6e73', textDecoration: 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.from}</span>
+            <span style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center' }}>→</span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.to}</span>
           </div>
         ))}
       </div>
@@ -1036,11 +1036,11 @@ function SpecialChargeCard({
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           onClick={confirm} disabled={saving}
-          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', background: saving ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           {saving ? 'Saving…' : 'Confirm & save'}
         </button>
-        <button onClick={() => setMode('edit')} style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+        <button onClick={() => setMode('edit')} style={{ padding: '8px 14px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
           ← Back
         </button>
       </div>
@@ -1060,7 +1060,7 @@ function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: 
   const [tenantId,   setTenantId]  = useState<string | undefined>(undefined)
   const [notes,      setNotes]     = useState('')
 
-  const iS: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e2e8f0', borderRadius: '7px', outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a', boxSizing: 'border-box' }
+  const iS: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e5e5ea', borderRadius: '7px', outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0071e3', boxSizing: 'border-box' }
 
   const save = async () => {
     if (!amount || !dueDate) return
@@ -1078,34 +1078,34 @@ function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: 
   return (
     <div>
       {!open ? (
-        <button onClick={() => setOpen(true)} style={{ padding: '9px 16px', border: '1.5px dashed #cbd5e1', borderRadius: '9px', background: 'none', color: '#64748b', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+        <button onClick={() => setOpen(true)} style={{ padding: '9px 16px', border: '1.5px dashed #d6d6db', borderRadius: '9px', background: 'none', color: '#6e6e73', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
           + Add charge
         </button>
       ) : (
-        <div style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '18px 20px', background: '#f8fafc' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: 14 }}>New charge</div>
+        <div style={{ border: '1.5px solid #e5e5ea', borderRadius: '10px', padding: '18px 20px', background: '#fafafb' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f', marginBottom: 14 }}>New charge</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>TYPE</label>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4 }}>TYPE</label>
               <select style={iS} value={category} onChange={e => { setCategory(e.target.value as SpecialCategory); setLabel(SPECIAL_CATEGORIES.find(c => c.value === e.target.value)?.label ?? label) }}>
                 {SPECIAL_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>LABEL</label>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4 }}>LABEL</label>
               <input style={iS} value={label} onChange={e => setLabel(e.target.value)} />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>AMOUNT ($)</label>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4 }}>AMOUNT ($)</label>
               <input style={iS} type="number" min={0} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>DUE DATE</label>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4 }}>DUE DATE</label>
               <input style={iS} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
             {tenants.length > 1 && (
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>APPLIES TO</label>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4 }}>APPLIES TO</label>
                 <select style={iS} value={tenantId ?? ''} onChange={e => setTenantId(e.target.value || undefined)}>
                   <option value="">All tenants</option>
                   {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -1113,15 +1113,15 @@ function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: 
               </div>
             )}
             <div style={{ gridColumn: tenants.length > 1 ? 'auto' : '1/-1' }}>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>NOTES</label>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', display: 'block', marginBottom: 4 }}>NOTES</label>
               <input style={iS} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={save} disabled={saving || !amount || !dueDate} style={{ padding: '7px 16px', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+            <button onClick={save} disabled={saving || !amount || !dueDate} style={{ padding: '7px 16px', borderRadius: '7px', border: 'none', background: saving ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
               {saving ? 'Saving…' : 'Add charge'}
             </button>
-            <button onClick={() => setOpen(false)} style={{ padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+            <button onClick={() => setOpen(false)} style={{ padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
               Cancel
             </button>
           </div>
@@ -1136,7 +1136,7 @@ function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: 
 function computeTenantRating(sps: ScheduledPayment[]) {
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const evaluable = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') < today)
-  if (evaluable.length === 0) return { score: null, grade: 'No history', color: '#94a3b8', label: 'N/A' }
+  if (evaluable.length === 0) return { score: null, grade: 'No history', color: '#8e8e93', label: 'N/A' }
 
   const paid    = evaluable.filter(sp => ['paid', 'partial'].includes(sp.status))
   const missed  = evaluable.filter(sp => sp.status === 'missed')
@@ -1162,12 +1162,12 @@ function computeTenantRating(sps: ScheduledPayment[]) {
   const score = Math.min(100, Math.max(0, Math.round(comp1 + comp2 + comp3)))
 
   let grade: string, color: string, label: string
-  if (score >= 92) { grade = 'Excellent'; color = '#16a34a'; label = 'A+' }
-  else if (score >= 85) { grade = 'Great';      color = '#059669'; label = 'A'  }
-  else if (score >= 75) { grade = 'Good';       color = '#0284c7'; label = 'B'  }
-  else if (score >= 60) { grade = 'Fair';       color = '#d97706'; label = 'C'  }
-  else if (score >= 40) { grade = 'Poor';       color = '#dc2626'; label = 'D'  }
-  else                  { grade = 'Critical';   color = '#991b1b'; label = 'F'  }
+  if (score >= 92) { grade = 'Excellent'; color = '#1d8a4e'; label = 'A+' }
+  else if (score >= 85) { grade = 'Great';      color = '#1d8a4e'; label = 'A'  }
+  else if (score >= 75) { grade = 'Good';       color = '#0d7f82'; label = 'B'  }
+  else if (score >= 60) { grade = 'Fair';       color = '#b25000'; label = 'C'  }
+  else if (score >= 40) { grade = 'Poor';       color = '#d13b30'; label = 'D'  }
+  else                  { grade = 'Critical';   color = '#d13b30'; label = 'F'  }
 
   return { score, grade, color, label, onTime: onTime.length, latePaid: latePaid.length, missed: missed.length, overdue: overdue.length, totalDaysLate, n }
 }
@@ -1243,10 +1243,10 @@ function TenantDetailView({
   }
 
   const statCard = (label: string, value: string, sub: string, accent: string, bg: string) => (
-    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 18px', flex: '1 1 140px', minWidth: 0 }}>
-      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>{label}</div>
+    <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: '12px', padding: '16px 18px', flex: '1 1 140px', minWidth: 0 }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: '22px', fontWeight: 800, color: accent, letterSpacing: '-0.5px', lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: 4 }}>{sub}</div>
+      <div style={{ fontSize: '11px', color: '#8e8e93', marginTop: 4 }}>{sub}</div>
     </div>
   )
 
@@ -1258,16 +1258,16 @@ function TenantDetailView({
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
         <button
           onClick={onBack}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', border: '1px solid #e5e5ea', borderRadius: '8px', background: '#fff', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           ← Tenants
         </button>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0071e3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
           {tenant.name[0].toUpperCase()}
         </div>
         <div>
-          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' }}>{tenant.name}</div>
-          {tenant.email && <div style={{ fontSize: '12px', color: '#64748b' }}>{tenant.email}</div>}
+          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', letterSpacing: '-0.3px' }}>{tenant.name}</div>
+          {tenant.email && <div style={{ fontSize: '12px', color: '#6e6e73' }}>{tenant.email}</div>}
         </div>
       </div>
 
@@ -1276,28 +1276,28 @@ function TenantDetailView({
 
         {/* Metric cards */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1 }}>
-          {statCard('Collected', fmtCurrency(totalCollected), `of ${fmtCurrency(totalExpectedPast)} billed`, '#0f172a', '#f8fafc')}
+          {statCard('Collected', fmtCurrency(totalCollected), `of ${fmtCurrency(totalExpectedPast)} billed`, '#1d1d1f', '#fafafb')}
           {statCard(
             'Currently Owed',
             fmtCurrency(totalOwedNow),
             lateFeesPending > 0
               ? `${fmtCurrency(rentOwedNow)} rent + ${fmtCurrency(lateFeesPending)} fees`
               : `${overdue.length + missed.length} payment${(overdue.length + missed.length) !== 1 ? 's' : ''} past due`,
-            totalOwedNow > 0 ? '#dc2626' : '#0f172a', '#fff'
+            totalOwedNow > 0 ? '#d13b30' : '#1d1d1f', '#fff'
           )}
-          {statCard('Upcoming', fmtCurrency(totalUpcoming), `${upcoming.length} payment${upcoming.length !== 1 ? 's' : ''} scheduled`, '#0284c7', '#fff')}
-          {statCard('Late Fees Owed', fmtCurrency(lateFeesPending), lateFeesCollected > 0 ? `${fmtCurrency(lateFeesCollected)} already collected` : 'none collected yet', lateFeesPending > 0 ? '#c2410c' : '#0f172a', '#fff')}
-          {statCard('Days Late Total', String(totalDaysLate), `across ${sps.length} payment${sps.length !== 1 ? 's' : ''}`, totalDaysLate > 0 ? '#d97706' : '#0f172a', '#fff')}
+          {statCard('Upcoming', fmtCurrency(totalUpcoming), `${upcoming.length} payment${upcoming.length !== 1 ? 's' : ''} scheduled`, '#0d7f82', '#fff')}
+          {statCard('Late Fees Owed', fmtCurrency(lateFeesPending), lateFeesCollected > 0 ? `${fmtCurrency(lateFeesCollected)} already collected` : 'none collected yet', lateFeesPending > 0 ? '#b25000' : '#1d1d1f', '#fff')}
+          {statCard('Days Late Total', String(totalDaysLate), `across ${sps.length} payment${sps.length !== 1 ? 's' : ''}`, totalDaysLate > 0 ? '#b25000' : '#1d1d1f', '#fff')}
         </div>
 
         {/* Rating card */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', minWidth: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Payment Rating</div>
+        <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: '12px', padding: '18px 22px', minWidth: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Payment Rating</div>
 
           {/* Arc gauge */}
           <div style={{ position: 'relative', width: 92, height: 92, marginBottom: 8 }}>
             <svg width="92" height="92" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx={cx} cy={cy} r={R} fill="none" stroke="#f1f5f9" strokeWidth="8" />
+              <circle cx={cx} cy={cy} r={R} fill="none" stroke="#f0f0f2" strokeWidth="8" />
               {rating.score !== null && (
                 <circle cx={cx} cy={cy} r={R} fill="none" stroke={rating.color} strokeWidth="8"
                   strokeDasharray={`${arc} ${circ}`} strokeLinecap="round"
@@ -1309,7 +1309,7 @@ function TenantDetailView({
               <div style={{ fontSize: rating.score !== null ? '22px' : '14px', fontWeight: 800, color: rating.color, lineHeight: 1 }}>
                 {rating.score !== null ? rating.score : '—'}
               </div>
-              {rating.score !== null && <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>/100</div>}
+              {rating.score !== null && <div style={{ fontSize: '10px', color: '#8e8e93', fontWeight: 600 }}>/100</div>}
             </div>
           </div>
 
@@ -1319,14 +1319,14 @@ function TenantDetailView({
           {rating.score !== null && 'onTime' in rating && (
             <div style={{ marginTop: 10, width: '100%', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {[
-                { label: 'On time',   value: rating.onTime,   color: '#16a34a' },
-                { label: 'Late',      value: rating.latePaid, color: '#d97706' },
-                { label: 'Overdue',   value: rating.overdue,  color: '#ef4444' },
+                { label: 'On time',   value: rating.onTime,   color: '#1d8a4e' },
+                { label: 'Late',      value: rating.latePaid, color: '#b25000' },
+                { label: 'Overdue',   value: rating.overdue,  color: '#d13b30' },
                 { label: 'Missed',    value: rating.missed,   color: '#9d174d' },
               ].map(row => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                  <span style={{ color: '#64748b' }}>{row.label}</span>
-                  <span style={{ fontWeight: 700, color: row.value > 0 ? row.color : '#cbd5e1' }}>{row.value}</span>
+                  <span style={{ color: '#6e6e73' }}>{row.label}</span>
+                  <span style={{ fontWeight: 700, color: row.value > 0 ? row.color : '#d6d6db' }}>{row.value}</span>
                 </div>
               ))}
             </div>
@@ -1335,16 +1335,16 @@ function TenantDetailView({
       </div>
 
       {/* Payment history table */}
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '13px', overflow: 'hidden' }}>
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Payment History</div>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>{sps.length} total · {paid.length} paid · {overdue.length + missed.length} outstanding</div>
+      <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: '13px', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0f0f2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>Payment History</div>
+          <div style={{ fontSize: '12px', color: '#6e6e73' }}>{sps.length} total · {paid.length} paid · {overdue.length + missed.length} outstanding</div>
         </div>
 
         {/* Table header */}
-        <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '8px 18px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '8px 18px', background: '#fafafb', borderBottom: '1px solid #f0f0f2' }}>
           {['Month', 'Due Date', 'Period', 'Expected', 'Collected', 'Days Late', 'Late Fee'].map((h, i) => (
-            <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: i >= 3 ? 'right' : 'left' }}>{h}</div>
+            <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: i >= 3 ? 'right' : 'left' }}>{h}</div>
           ))}
         </div>
 
@@ -1363,16 +1363,16 @@ function TenantDetailView({
           return (
             <div key={monthKey}>
               {/* Month sub-header */}
-              <div style={{ padding: '7px 18px', background: '#fafafa', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{fmtMonth(monthKey + '-01')}</span>
-                {allPaid && !anyLate && <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>All on time ✓</span>}
-                {allPaid && anyLate  && <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>Paid late</span>}
+              <div style={{ padding: '7px 18px', background: '#fafafb', borderBottom: '1px solid #f0f0f2', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#6e6e73' }}>{fmtMonth(monthKey + '-01')}</span>
+                {allPaid && !anyLate && <span style={{ fontSize: '10px', background: '#e8f5ed', color: '#1d8a4e', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>All on time ✓</span>}
+                {allPaid && anyLate  && <span style={{ fontSize: '10px', background: '#fef9c3', color: '#b25000', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>Paid late</span>}
                 {monthBalanceDue > 0 && (
-                  <span style={{ fontSize: '10px', background: '#fee2e2', color: '#991b1b', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>
+                  <span style={{ fontSize: '10px', background: '#fdeceb', color: '#d13b30', padding: '1px 7px', borderRadius: '10px', fontWeight: 700 }}>
                     Balance due: {fmtCurrency(monthBalanceDue)}{monthLateFees > 0 ? ` (incl. ${fmtCurrency(monthLateFees)} fees)` : ''}
                   </span>
                 )}
-                <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#94a3b8' }}>{fmtCurrency(monthPaid)} / {fmtCurrency(monthExpected)}</span>
+                <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#8e8e93' }}>{fmtCurrency(monthPaid)} / {fmtCurrency(monthExpected)}</span>
               </div>
 
               {monthSPs.map(sp => {
@@ -1387,46 +1387,46 @@ function TenantDetailView({
                 return (
                   <div
                     key={sp.id}
-                    style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '10px 18px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isOverdue(sp) ? '#fefefe' : '#fff' }}
+                    style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '10px 18px', borderBottom: '1px solid #fafafb', alignItems: 'center', background: isOverdue(sp) ? '#fefefe' : '#fff' }}
                   >
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>{new Date(sp.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</div>
-                    <div style={{ fontSize: '12px', color: '#475569' }}>{fmtDate(sp.due_date)}</div>
+                    <div style={{ fontSize: '12px', color: '#6e6e73' }}>{new Date(sp.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</div>
+                    <div style={{ fontSize: '12px', color: '#6e6e73' }}>{fmtDate(sp.due_date)}</div>
                     <div>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: stCfg.bg, color: stCfg.color, fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
                         <span style={{ width: 5, height: 5, borderRadius: '50%', background: stCfg.dot, flexShrink: 0 }} />{stCfg.label}
                       </span>
-                      {sp.paid_date && <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: 6 }}>paid {fmtDate(sp.paid_date)}</span>}
+                      {sp.paid_date && <span style={{ fontSize: '10px', color: '#8e8e93', marginLeft: 6 }}>paid {fmtDate(sp.paid_date)}</span>}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       {lfDisp > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                          <span style={{ fontSize: '11px', color: '#64748b' }}>{fmtCurrency(sp.amount)} rent</span>
-                          <span style={{ fontSize: '11px', color: '#c2410c' }}>+{fmtCurrency(lfDisp)} fee</span>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: lfUncollected > 0 ? '#dc2626' : '#16a34a' }}>{fmtCurrency(sp.amount + lfDisp)}</span>
+                          <span style={{ fontSize: '11px', color: '#6e6e73' }}>{fmtCurrency(sp.amount)} rent</span>
+                          <span style={{ fontSize: '11px', color: '#b25000' }}>+{fmtCurrency(lfDisp)} fee</span>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: lfUncollected > 0 ? '#d13b30' : '#1d8a4e' }}>{fmtCurrency(sp.amount + lfDisp)}</span>
                         </div>
                       ) : (
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(sp.amount)}</span>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#1d1d1f' }}>{fmtCurrency(sp.amount)}</span>
                       )}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       {sp.paid_amount > 0 ? (
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>{fmtCurrency(sp.paid_amount)}</span>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#b25000' : '#1d8a4e' }}>{fmtCurrency(sp.paid_amount)}</span>
                       ) : (
-                        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
+                        <span style={{ fontSize: '12px', color: '#d6d6db' }}>—</span>
                       )}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       {dlDisp > 0
-                        ? <span style={{ fontSize: '11px', fontWeight: 700, color: sp.paid_date ? '#d97706' : '#ef4444', background: sp.paid_date ? '#fff7ed' : '#fef2f2', padding: '2px 6px', borderRadius: '5px' }}>{dlDisp}d</span>
-                        : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
+                        ? <span style={{ fontSize: '11px', fontWeight: 700, color: sp.paid_date ? '#b25000' : '#d13b30', background: sp.paid_date ? '#fdf1e3' : '#fdeceb', padding: '2px 6px', borderRadius: '5px' }}>{dlDisp}d</span>
+                        : <span style={{ fontSize: '12px', color: '#d6d6db' }}>—</span>}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       {lfDisp > 0 ? (
                         lfUncollected > 0
-                          ? <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 6px', borderRadius: '5px' }}>🚩 {fmtCurrency(lfUncollected)}</span>
-                          : <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 6px', borderRadius: '5px' }}>✓ {fmtCurrency(lfDisp)}</span>
+                          ? <span style={{ fontSize: '11px', fontWeight: 700, color: '#b25000', background: '#fdf1e3', border: '1px solid #f6dcc0', padding: '2px 6px', borderRadius: '5px' }}>🚩 {fmtCurrency(lfUncollected)}</span>
+                          : <span style={{ fontSize: '11px', fontWeight: 700, color: '#1d8a4e', background: '#e8f5ed', border: '1px solid #e8f5ed', padding: '2px 6px', borderRadius: '5px' }}>✓ {fmtCurrency(lfDisp)}</span>
                       ) : (
-                        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
+                        <span style={{ fontSize: '12px', color: '#d6d6db' }}>—</span>
                       )}
                     </div>
                   </div>
@@ -1437,21 +1437,21 @@ function TenantDetailView({
         })}
 
         {/* Totals footer */}
-        <div style={{ borderTop: '2px solid #e2e8f0' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '12px 18px', background: '#f8fafc' }}>
-            <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Totals</div>
-            <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(sps.reduce((s, sp) => s + sp.amount, 0))}</div>
-            <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: totalCollected > 0 ? '#16a34a' : '#cbd5e1' }}>{fmtCurrency(totalCollected)}</div>
-            <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: totalDaysLate > 0 ? '#d97706' : '#cbd5e1' }}>{totalDaysLate}d</div>
-            <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: lateFeesPending > 0 ? '#c2410c' : '#cbd5e1' }}>{lateFeesPending > 0 ? `🚩 ${fmtCurrency(lateFeesPending)}` : '—'}</div>
+        <div style={{ borderTop: '2px solid #e5e5ea' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '12px 18px', background: '#fafafb' }}>
+            <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#1d1d1f' }}>Totals</div>
+            <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>{fmtCurrency(sps.reduce((s, sp) => s + sp.amount, 0))}</div>
+            <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 700, color: totalCollected > 0 ? '#1d8a4e' : '#d6d6db' }}>{fmtCurrency(totalCollected)}</div>
+            <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: totalDaysLate > 0 ? '#b25000' : '#d6d6db' }}>{totalDaysLate}d</div>
+            <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: lateFeesPending > 0 ? '#b25000' : '#d6d6db' }}>{lateFeesPending > 0 ? `🚩 ${fmtCurrency(lateFeesPending)}` : '—'}</div>
           </div>
           {totalOwedNow > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '10px 18px', background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
-              <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: 8, padding: '10px 18px', background: '#fdeceb', borderTop: '1px solid #f3c6c2' }}>
+              <div style={{ gridColumn: '1 / 4', fontSize: '12px', fontWeight: 700, color: '#d13b30', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>⚠</span> Balance Due
-                {lateFeesPending > 0 && <span style={{ fontSize: '11px', fontWeight: 500, color: '#b91c1c' }}>({fmtCurrency(rentOwedNow)} rent + {fmtCurrency(lateFeesPending)} fees)</span>}
+                {lateFeesPending > 0 && <span style={{ fontSize: '11px', fontWeight: 500, color: '#d13b30' }}>({fmtCurrency(rentOwedNow)} rent + {fmtCurrency(lateFeesPending)} fees)</span>}
               </div>
-              <div style={{ gridColumn: '4 / 5', textAlign: 'right', fontSize: '15px', fontWeight: 800, color: '#dc2626' }}>{fmtCurrency(totalOwedNow)}</div>
+              <div style={{ gridColumn: '4 / 5', textAlign: 'right', fontSize: '15px', fontWeight: 800, color: '#d13b30' }}>{fmtCurrency(totalOwedNow)}</div>
               <div style={{ gridColumn: '5 / -1' }} />
             </div>
           )}
@@ -1464,14 +1464,14 @@ function TenantDetailView({
 // ─── PAYER ADMINISTRATION ─────────────────────────────────────────────────────
 
 const INP: React.CSSProperties = {
-  width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 11px',
-  fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: 'none', color: '#0f172a',
+  width: '100%', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '9px 11px',
+  fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: 'none', color: '#0071e3',
 }
 
 function FieldBox({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 5 }}>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 5 }}>
         {label}
       </label>
       {children}
@@ -1537,8 +1537,8 @@ function AddPayerForm({
   }
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 13, padding: '18px 20px', marginBottom: 14 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>Add payer</div>
+    <div style={{ background: '#fff', border: '1px solid #e5e5ea', borderRadius: 13, padding: '18px 20px', marginBottom: 14 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#1d1d1f', marginBottom: 12 }}>Add payer</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
         <FieldBox label="Full name *">
           <input style={INP} value={name} onChange={e => setName(e.target.value)} placeholder="Jane Doe" />
@@ -1557,19 +1557,19 @@ function AddPayerForm({
         </FieldBox>
       </div>
 
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', marginBottom: 6, cursor: 'pointer' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6e6e73', marginBottom: 6, cursor: 'pointer' }}>
         <input type="checkbox" checked={schedule} onChange={e => setSchedule(e.target.checked)} />
         Generate payment schedule
       </label>
       {schedule && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', marginBottom: 6, cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6e6e73', marginBottom: 6, cursor: 'pointer' }}>
           <input type="checkbox" checked={prorate} onChange={e => setProrate(e.target.checked)} />
           Prorate first month
         </label>
       )}
 
       {preview && (
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#475569', marginTop: 8, lineHeight: 1.55 }}>
+        <div style={{ background: '#fafafb', border: '1px solid #e5e5ea', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#6e6e73', marginTop: 8, lineHeight: 1.55 }}>
           <strong>Proration preview:</strong> first payment on {fmtDate(startDate)} is{' '}
           <strong>{fmtCurrency(preview.proratedAmount)}</strong> ({preview.proratedDays} of {preview.totalDays} days).
           Full payments of <strong>{fmtCurrency(parseFloat(monthly))}</strong> start {fmtDate(preview.firstDueDate)}.
@@ -1577,20 +1577,20 @@ function AddPayerForm({
       )}
 
       {error && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#991b1b', marginTop: 10 }}>{error}</div>
+        <div style={{ background: '#fdeceb', border: '1px solid #f3c6c2', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#d13b30', marginTop: 10 }}>{error}</div>
       )}
 
       <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
         <button
           onClick={submit}
           disabled={blocked}
-          style={{ background: '#0f172a', color: '#34d399', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.55 : 1, fontFamily: "'DM Sans', sans-serif" }}
+          style={{ background: '#0071e3', color: '#fff', border: 'none', borderRadius: 980, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.55 : 1, fontFamily: "'DM Sans', sans-serif" }}
         >
           {saving ? 'Adding…' : 'Add payer'}
         </button>
         <button
           onClick={onCancel}
-          style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ background: '#fff', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#6e6e73', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           Cancel
         </button>
@@ -1643,8 +1643,8 @@ function TerminatePayerPanel({
   }
 
   return (
-    <div style={{ background: '#fff7f7', border: '1.5px solid #fecaca', borderRadius: 12, padding: '16px 18px', marginBottom: 14 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#991b1b', marginBottom: 12 }}>
+    <div style={{ background: '#fff7f7', border: '1.5px solid #f3c6c2', borderRadius: 12, padding: '16px 18px', marginBottom: 14 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#d13b30', marginBottom: 12 }}>
         Early termination — {tenant.name}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
@@ -1657,25 +1657,25 @@ function TerminatePayerPanel({
       </div>
 
       {preview !== null && date && (
-        <div style={{ fontSize: 12.5, color: '#991b1b', marginTop: 10 }}>
+        <div style={{ fontSize: 12.5, color: '#d13b30', marginTop: 10 }}>
           {preview === 0
             ? 'No future pending payments to void.'
             : `${preview} future payment${preview !== 1 ? 's' : ''} will be voided after ${fmtDate(date)}.`}
         </div>
       )}
-      {error && <div style={{ fontSize: 12.5, color: '#991b1b', marginTop: 10 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12.5, color: '#d13b30', marginTop: 10 }}>{error}</div>}
 
       <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
         <button
           onClick={submit}
           disabled={!date || saving}
-          style={{ background: '#991b1b', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: !date || saving ? 'not-allowed' : 'pointer', opacity: !date || saving ? 0.55 : 1, fontFamily: "'DM Sans', sans-serif" }}
+          style={{ background: '#d13b30', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: !date || saving ? 'not-allowed' : 'pointer', opacity: !date || saving ? 0.55 : 1, fontFamily: "'DM Sans', sans-serif" }}
         >
           {saving ? 'Terminating…' : 'Confirm termination'}
         </button>
         <button
           onClick={onCancel}
-          style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+          style={{ background: '#fff', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#6e6e73', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
         >
           Cancel
         </button>
@@ -1896,19 +1896,19 @@ export default function PlanWorkspace({
 
   if (loading) {
     return (
-      <div style={{ minHeight: embedded ? '160px' : '100vh', background: embedded ? 'transparent' : '#f0f4f8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '14px', color: '#64748b' }}>Loading…</div>
+      <div style={{ minHeight: embedded ? '160px' : '100vh', background: embedded ? 'transparent' : '#fafafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '14px', color: '#6e6e73' }}>Loading…</div>
       </div>
     )
   }
 
   if (!plan) {
     return (
-      <div style={{ minHeight: embedded ? '160px' : '100vh', background: embedded ? 'transparent' : '#f0f4f8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: embedded ? '160px' : '100vh', background: embedded ? 'transparent' : '#fafafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: 12 }}>🔍</div>
-          <div style={{ fontSize: '16px', fontWeight: 600, color: '#0f172a' }}>Plan not found</div>
-          <a href="/landlord/financials" style={{ display: 'inline-block', marginTop: 16, color: '#64748b', fontSize: '13px' }}>← Back to financials</a>
+          <div style={{ fontSize: '16px', fontWeight: 600, color: '#1d1d1f' }}>Plan not found</div>
+          <a href="/landlord/financials" style={{ display: 'inline-block', marginTop: 16, color: '#6e6e73', fontSize: '13px' }}>← Back to financials</a>
         </div>
       </div>
     )
@@ -1951,20 +1951,20 @@ export default function PlanWorkspace({
   const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 
   return (
-    <div style={{ minHeight: embedded ? undefined : '100vh', background: embedded ? 'transparent' : '#f0f4f8', fontFamily: "'DM Sans', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Fraunces:ital,wght@0,300;1,300&display=swap'); input:focus,select:focus{border-color:#0f172a!important;}`}</style>
+    <div style={{ minHeight: embedded ? undefined : '100vh', background: embedded ? 'transparent' : '#fafafb', fontFamily: "'DM Sans', sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Fraunces:ital,wght@0,300;1,300&display=swap'); input:focus,select:focus{border-color:#0071e3!important;}`}</style>
 
       {/* Header */}
-      <div style={{ background: embedded ? 'transparent' : '#fff', borderBottom: embedded ? 'none' : '1px solid #e2e8f0' }}>
+      <div style={{ background: embedded ? 'transparent' : '#fff', borderBottom: embedded ? 'none' : '1px solid #e5e5ea' }}>
         {!embedded && (
-          <div style={{ padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 14, borderBottom: '1px solid #f1f5f9' }}>
-            <a href="/landlord/financials" style={{ color: '#64748b', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}>← Financials</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>{plan.name}</span>
+          <div style={{ padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 14, borderBottom: '1px solid #f0f0f2' }}>
+            <a href="/landlord/financials" style={{ color: '#6e6e73', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}>← Financials</a>
+            <span style={{ color: '#d6d6db' }}>/</span>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#1d1d1f' }}>{plan.name}</span>
             {plan.lease_id && (
               <>
-                <span style={{ color: '#cbd5e1' }}>·</span>
-                <a href={`/landlord/leases/${plan.lease_id}`} style={{ color: '#10b981', textDecoration: 'none', fontSize: '13px', fontWeight: 600 }}>
+                <span style={{ color: '#d6d6db' }}>·</span>
+                <a href={`/landlord/leases/${plan.lease_id}`} style={{ color: '#1d8a4e', textDecoration: 'none', fontSize: '13px', fontWeight: 600 }}>
                   Open lease →
                 </a>
               </>
@@ -1976,33 +1976,33 @@ export default function PlanWorkspace({
           {!embedded && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
               <div>
-                <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>{plan.property?.name ?? plan.name}</h1>
+                <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>{plan.property?.name ?? plan.name}</h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '13px', color: '#64748b' }}>{plan.name}</span>
+                  <span style={{ fontSize: '13px', color: '#6e6e73' }}>{plan.name}</span>
                   {plan.lease && (
-                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+                    <span style={{ fontSize: '13px', color: '#8e8e93' }}>
                       {fmtDate(plan.lease.start_date)} – {fmtDate(plan.lease.end_date)}
                     </span>
                   )}
-                  <span style={{ fontSize: '13px', color: '#64748b' }}>Due {fmtOrdinal(plan.due_day)} of month</span>
+                  <span style={{ fontSize: '13px', color: '#6e6e73' }}>Due {fmtOrdinal(plan.due_day)} of month</span>
                 </div>
               </div>
 
               {/* Summary pills */}
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(totalMonthly)}</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>monthly total</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#1d1d1f' }}>{fmtCurrency(totalMonthly)}</div>
+                  <div style={{ fontSize: '11px', color: '#8e8e93' }}>monthly total</div>
                 </div>
-                <div style={{ width: '1px', background: '#e2e8f0' }} />
+                <div style={{ width: '1px', background: '#e5e5ea' }} />
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: overdueSPs.length > 0 ? '#ef4444' : '#0f172a' }}>{overdueSPs.length}</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>overdue</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: overdueSPs.length > 0 ? '#d13b30' : '#1d1d1f' }}>{overdueSPs.length}</div>
+                  <div style={{ fontSize: '11px', color: '#8e8e93' }}>overdue</div>
                 </div>
-                <div style={{ width: '1px', background: '#e2e8f0' }} />
+                <div style={{ width: '1px', background: '#e5e5ea' }} />
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#10b981' }}>{fmtCurrency(totalPaid)}</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>this month</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#1d8a4e' }}>{fmtCurrency(totalPaid)}</div>
+                  <div style={{ fontSize: '11px', color: '#8e8e93' }}>this month</div>
                 </div>
               </div>
             </div>
@@ -2010,7 +2010,7 @@ export default function PlanWorkspace({
 
           {/* Collect this month's rent — the everyday action, not just chasing arrears */}
           {requestableSPs.length > 0 && (
-            <div style={{ marginTop: 14, background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#065f46', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 14, background: '#e8f5ed', border: '1px solid #cfe9d9', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#1d8a4e', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span>💸</span>
               <span style={{ flex: 1, minWidth: 200 }}>
                 <strong>{fmtCurrency(requestableTotal)}</strong> outstanding across{' '}
@@ -2022,7 +2022,7 @@ export default function PlanWorkspace({
                   ids: requestableSPs.map(p => p.id),
                   label: `${requestableSPs.length} outstanding payment${requestableSPs.length !== 1 ? 's' : ''} (${fmtCurrency(requestableTotal)})`,
                 })}
-                style={{ background: '#065f46', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                style={{ background: '#0071e3', color: '#fff', border: 'none', borderRadius: 980, padding: '8px 16px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', minHeight: 36 }}
               >
                 ✉ Send rent requests
               </button>
@@ -2031,7 +2031,7 @@ export default function PlanWorkspace({
 
           {/* Warnings — and the action a landlord actually wants here */}
           {overdueSPs.length > 0 && (
-            <div style={{ marginTop: 14, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 14, background: '#fdeceb', border: '1px solid #f3c6c2', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#d13b30', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span>⚠️</span>
               <span style={{ flex: 1, minWidth: 200 }}>
                 <strong>{overdueSPs.length} payment{overdueSPs.length !== 1 ? 's' : ''}</strong> past due
@@ -2040,7 +2040,7 @@ export default function PlanWorkspace({
               </span>
               <button
                 onClick={() => setRemindTarget({ ids: overdueSPs.map(p => p.id), label: `${overdueSPs.length} overdue payment${overdueSPs.length !== 1 ? 's' : ''}` })}
-                style={{ background: '#991b1b', color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                style={{ background: '#0071e3', color: '#fff', border: 'none', borderRadius: 980, padding: '8px 16px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', minHeight: 36 }}
               >
                 ✉ Send reminders
               </button>
@@ -2048,7 +2048,7 @@ export default function PlanWorkspace({
           )}
 
           {amountMismatch && (
-            <div style={{ marginTop: 10, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#c2410c', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ marginTop: 10, background: '#fdf1e3', border: '1px solid #f6dcc0', borderRadius: '9px', padding: '11px 16px', fontSize: '13px', color: '#b25000', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>⚠</span>
               <span>Payer totals ({fmtCurrency(totalMonthly)}) don't match lease rent ({fmtCurrency(leaseRent)}). Difference: {fmtCurrency(Math.abs(totalMonthly - leaseRent))}.</span>
             </div>
@@ -2056,7 +2056,7 @@ export default function PlanWorkspace({
 
           {/* Late fee info */}
           {plan.late_fee_rule && (
-            <div style={{ marginTop: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '9px', padding: '10px 16px', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ marginTop: 10, background: '#fafafb', border: '1px solid #e5e5ea', borderRadius: '9px', padding: '10px 16px', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>📋</span>
               <span>
                 Late fees: <strong>{fmtCurrency(plan.late_fee_rule.fee_amount)}</strong> every {plan.late_fee_rule.frequency_days} day{plan.late_fee_rule.frequency_days !== 1 ? 's' : ''}
@@ -2068,7 +2068,7 @@ export default function PlanWorkspace({
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 0, paddingLeft: embedded ? 0 : 28, borderTop: embedded ? 'none' : '1px solid #f1f5f9', borderBottom: embedded ? '1px solid #e2e8f0' : 'none', marginTop: embedded ? 4 : 0 }}>
+        <div style={{ display: 'flex', gap: 0, paddingLeft: embedded ? 0 : 28, borderTop: embedded ? 'none' : '1px solid #f0f0f2', borderBottom: embedded ? '1px solid #e5e5ea' : 'none', marginTop: embedded ? 4 : 0 }}>
           {(['schedule', 'tenants', 'charges', 'activity'] as Tab[]).map(t => (
             <button
               key={t}
@@ -2076,8 +2076,8 @@ export default function PlanWorkspace({
               style={{
                 padding: '12px 20px', border: 'none', background: 'none', cursor: 'pointer',
                 fontSize: '13px', fontWeight: tab === t ? 700 : 500,
-                color: tab === t ? '#0f172a' : '#64748b',
-                borderBottom: `2px solid ${tab === t ? '#0f172a' : 'transparent'}`,
+                color: tab === t ? '#1d1d1f' : '#6e6e73',
+                borderBottom: `2px solid ${tab === t ? '#0071e3' : 'transparent'}`,
                 fontFamily: "'DM Sans', sans-serif", transition: 'color 0.15s',
                 textTransform: 'capitalize',
               }}
@@ -2088,7 +2088,7 @@ export default function PlanWorkspace({
                   ? `Activity${emails.length ? ` (${emails.length})` : ''}`
                   : t.charAt(0).toUpperCase() + t.slice(1)}
               {t === 'schedule' && overdueSPs.length > 0 && (
-                <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px' }}>{overdueSPs.length}</span>
+                <span style={{ marginLeft: 6, background: '#d13b30', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px' }}>{overdueSPs.length}</span>
               )}
             </button>
           ))}
@@ -2103,8 +2103,8 @@ export default function PlanWorkspace({
         {tab === 'schedule' && (
           <div>
             {monthKeys.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '13px', color: '#94a3b8' }}>No payments in schedule.</div>
+              <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '14px', border: '1px solid #e5e5ea' }}>
+                <div style={{ fontSize: '13px', color: '#8e8e93' }}>No payments in schedule.</div>
               </div>
             ) : (
               <>
@@ -2119,7 +2119,7 @@ export default function PlanWorkspace({
                       ))}
                       {past.length > 0 && (
                         <details style={{ marginTop: 12 }}>
-                          <summary style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', cursor: 'pointer', padding: '8px 4px', userSelect: 'none' }}>
+                          <summary style={{ fontSize: '12px', fontWeight: 600, color: '#8e8e93', cursor: 'pointer', padding: '8px 4px', userSelect: 'none' }}>
                             {past.length} past month{past.length !== 1 ? 's' : ''} (click to expand)
                           </summary>
                           <div style={{ marginTop: 8, opacity: 0.7 }}>
@@ -2156,23 +2156,23 @@ export default function PlanWorkspace({
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1d1d1f', marginBottom: 2 }}>
                   Who pays ({plan.tenants.length})
                 </div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                <div style={{ fontSize: '12px', color: '#6e6e73' }}>
                   What each person owes each month, and what they have paid
                 </div>
               </div>
               <button
                 onClick={() => { setShowAddPayer(v => !v); setTerminateTarget(null) }}
-                style={{ background: '#0f172a', color: '#34d399', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                style={{ background: '#0071e3', color: '#fff', border: 'none', borderRadius: 980, padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
               >
                 {showAddPayer ? 'Cancel' : '+ Add payer'}
               </button>
             </div>
 
             {payerMsg && (
-              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: '#065f46', marginBottom: 14 }}>
+              <div style={{ background: '#e8f5ed', border: '1px solid #cfe9d9', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: '#1d8a4e', marginBottom: 14 }}>
                 {payerMsg}
               </div>
             )}
@@ -2220,27 +2220,27 @@ export default function PlanWorkspace({
               const tenantPaid    = tenantSPs.filter(p => p.status === 'paid').length
               const rating        = computeTenantRating(tenantSPs)
               return (
-                <div key={t.id} style={{ background: '#fff', borderRadius: '13px', border: tenantOverdue > 0 ? '1.5px solid #fca5a5' : '1px solid #e2e8f0', padding: '20px 22px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+                <div key={t.id} style={{ background: '#fff', borderRadius: '13px', border: tenantOverdue > 0 ? '1.5px solid #f3c6c2' : '1px solid #e5e5ea', padding: '20px 22px', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
                   onClick={() => setSelectedTenantId(t.id)}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = 'none'}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0071e3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, flexShrink: 0 }}>
                       {t.name[0].toUpperCase()}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#1d1d1f', display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                         {t.name}
                         {t.status !== 'active' && (
-                          <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px' }}>
+                          <span style={{ background: '#f0f0f2', color: '#6e6e73', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px' }}>
                             {t.status === 'terminated' ? 'Terminated' : 'Completed'}
                           </span>
                         )}
                       </div>
-                      {t.email && <div style={{ fontSize: '12px', color: '#64748b' }}>{t.email}</div>}
+                      {t.email && <div style={{ fontSize: '12px', color: '#6e6e73' }}>{t.email}</div>}
                       {(t.start_date || t.end_date || t.termination_date) && (
-                        <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: 2 }}>
+                        <div style={{ fontSize: '11.5px', color: '#8e8e93', marginTop: 2 }}>
                           {t.start_date && `from ${fmtDate(t.start_date)}`}
                           {t.end_date && ` → ${fmtDate(t.end_date)}`}
                           {t.termination_date && ` · terminated ${fmtDate(t.termination_date)}`}
@@ -2255,7 +2255,7 @@ export default function PlanWorkspace({
                           setShowAddPayer(false)
                           setTerminateTarget(terminateTarget === t.id ? null : t.id)
                         }}
-                        style={{ background: '#fff', border: '1.5px solid #fecaca', color: '#991b1b', borderRadius: 7, padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}
+                        style={{ background: '#fff', border: '1.5px solid #f3c6c2', color: '#d13b30', borderRadius: 7, padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}
                       >
                         Terminate
                       </button>
@@ -2265,24 +2265,24 @@ export default function PlanWorkspace({
                   {/* Line items */}
                   <div style={{ marginBottom: 10 }}>
                     {t.line_items.map(li => (
-                      <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f8fafc' }}>
-                        <span style={{ fontSize: '13px', color: '#475569' }}>{li.label}</span>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{fmtCurrency(li.amount)}</span>
+                      <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #fafafb' }}>
+                        <span style={{ fontSize: '13px', color: '#6e6e73' }}>{li.label}</span>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#1d1d1f' }}>{fmtCurrency(li.amount)}</span>
                       </div>
                     ))}
                     {t.line_items.length > 1 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #e2e8f0' }}>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sum</span>
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{fmtCurrency(t.line_items.reduce((s, li) => s + li.amount, 0))}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #e5e5ea' }}>
+                        <span style={{ fontSize: '11px', color: '#8e8e93' }}>Sum</span>
+                        <span style={{ fontSize: '12px', color: '#8e8e93' }}>{fmtCurrency(t.line_items.reduce((s, li) => s + li.amount, 0))}</span>
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 6 }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Monthly total</span>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>Monthly total</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {t.line_items.length > 0 && Math.abs(t.line_items.reduce((s, li) => s + li.amount, 0) - t.monthly_total) > 0.005 && (
-                          <span style={{ fontSize: '10px', color: '#d97706', background: '#fff7ed', border: '1px solid #fed7aa', padding: '1px 6px', borderRadius: '4px' }}>custom</span>
+                          <span style={{ fontSize: '10px', color: '#b25000', background: '#fdf1e3', border: '1px solid #f6dcc0', padding: '1px 6px', borderRadius: '4px' }}>custom</span>
                         )}
-                        <span style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(t.monthly_total)}</span>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: '#1d1d1f' }}>{fmtCurrency(t.monthly_total)}</span>
                       </div>
                     </div>
                     <LineItemEditor
@@ -2298,20 +2298,20 @@ export default function PlanWorkspace({
                   </div>
 
                   {/* Quick stats + rating */}
-                  <div style={{ display: 'flex', gap: 10, background: '#f8fafc', borderRadius: '8px', padding: '10px 12px', marginBottom: 10, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 10, background: '#fafafb', borderRadius: '8px', padding: '10px 12px', marginBottom: 10, alignItems: 'center' }}>
                     <div style={{ textAlign: 'center', flex: 1 }}>
-                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981' }}>{tenantPaid}</div>
-                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>Paid</div>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#1d8a4e' }}>{tenantPaid}</div>
+                      <div style={{ fontSize: '10px', color: '#8e8e93' }}>Paid</div>
                     </div>
                     <div style={{ textAlign: 'center', flex: 1 }}>
-                      <div style={{ fontSize: '16px', fontWeight: 700, color: tenantOverdue > 0 ? '#ef4444' : '#94a3b8' }}>{tenantOverdue}</div>
-                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>Overdue</div>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: tenantOverdue > 0 ? '#d13b30' : '#8e8e93' }}>{tenantOverdue}</div>
+                      <div style={{ fontSize: '10px', color: '#8e8e93' }}>Overdue</div>
                     </div>
                     <div style={{ textAlign: 'center', flex: 1 }}>
-                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{tenantSPs.length}</div>
-                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>Total</div>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#1d1d1f' }}>{tenantSPs.length}</div>
+                      <div style={{ fontSize: '10px', color: '#8e8e93' }}>Total</div>
                     </div>
-                    <div style={{ width: '1px', background: '#e2e8f0', alignSelf: 'stretch' }} />
+                    <div style={{ width: '1px', background: '#e5e5ea', alignSelf: 'stretch' }} />
                     <div style={{ textAlign: 'center', paddingLeft: 4 }}>
                       <div style={{ fontSize: '16px', fontWeight: 800, color: rating.color }}>{rating.score ?? '—'}</div>
                       <div style={{ fontSize: '10px', color: rating.color, fontWeight: 600 }}>{rating.label}</div>
@@ -2320,7 +2320,7 @@ export default function PlanWorkspace({
 
                   {/* View payments link */}
                   <div style={{ textAlign: 'right', marginBottom: 8 }}>
-                    <span style={{ fontSize: '12px', color: '#0284c7', fontWeight: 600, cursor: 'pointer' }}>
+                    <span style={{ fontSize: '12px', color: '#0d7f82', fontWeight: 600, cursor: 'pointer' }}>
                       View payments →
                     </span>
                   </div>
@@ -2358,17 +2358,17 @@ export default function PlanWorkspace({
               onChanged={reloadAfterUtility}
             />
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderTop: '1px solid #e2e8f0', paddingTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderTop: '1px solid #e5e5ea', paddingTop: 20 }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>Deposits &amp; one-off charges</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Security deposits, penalties and anything charged once</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1d1d1f', marginBottom: 2 }}>Deposits &amp; one-off charges</div>
+                <div style={{ fontSize: '12px', color: '#6e6e73' }}>Security deposits, penalties and anything charged once</div>
               </div>
               <AddChargeForm planId={planId} tenants={plan.tenants} onAdded={load} />
             </div>
 
             {specials.length === 0 ? (
-              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '40px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: '13px', color: '#94a3b8' }}>No special charges. Use the button above to add one.</div>
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e5e5ea', padding: '40px 24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '13px', color: '#8e8e93' }}>No special charges. Use the button above to add one.</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2399,25 +2399,25 @@ export default function PlanWorkspace({
         {tab === 'activity' && (
           <div>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>Payment requests</div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#1d1d1f', marginBottom: 2 }}>Payment requests</div>
+              <div style={{ fontSize: '12px', color: '#6e6e73' }}>
                 Every rent reminder and charge request sent on this lease — who it went to, what it
                 covered, and whether it was delivered.
               </div>
             </div>
 
             {emails.length === 0 ? (
-              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '40px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e5e5ea', padding: '40px 24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '13px', color: '#8e8e93' }}>
                   Nothing sent yet. Requests you send from the schedule or a charge show up here.
                 </div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {emails.map(e => (
-                  <div key={e.id} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '14px 16px' }}>
+                  <div key={e.id} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e5e5ea', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a' }}>
+                      <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#1d1d1f' }}>
                         {e.recipient_name || e.recipient_email}
                         <span style={{
                           marginLeft: 8, fontSize: '10.5px', fontWeight: 600, padding: '2px 8px', borderRadius: 980,
@@ -2435,7 +2435,7 @@ export default function PlanWorkspace({
                     </div>
 
                     {/* What the request actually asked for, month by month. */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0f2' }}>
                       {e.items.map(i => (
                         <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '12.5px' }}>
                           <span style={{ color: '#1d1d1f' }}>{i.label}</span>
@@ -2468,7 +2468,7 @@ export default function PlanWorkspace({
       {remindResult && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
-          background: remindResult.ok ? '#065f46' : '#991b1b', color: '#fff',
+          background: remindResult.ok ? '#1d8a4e' : '#d13b30', color: '#fff',
           padding: '12px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
           fontFamily: "'DM Sans', sans-serif", boxShadow: '0 8px 30px rgba(15,23,42,0.25)',
         }}>
@@ -2486,10 +2486,10 @@ export default function PlanWorkspace({
             onClick={e => e.stopPropagation()}
             style={{ background: '#fff', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: 420, fontFamily: "'DM Sans', sans-serif", boxShadow: '0 20px 60px rgba(15,23,42,0.3)' }}
           >
-            <div style={{ fontSize: '17px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>
+            <div style={{ fontSize: '17px', fontWeight: 700, color: '#1d1d1f', letterSpacing: '-0.01em' }}>
               Resend confirmation
             </div>
-            <div style={{ fontSize: '13px', color: '#64748b', marginTop: 6, lineHeight: 1.55 }}>
+            <div style={{ fontSize: '13px', color: '#6e6e73', marginTop: 6, lineHeight: 1.55 }}>
               {receiptTarget.label} · {fmtCurrency(receiptTarget.amount)}. This confirms money that
               has already been received — it does not ask for anything.
             </div>
@@ -2507,11 +2507,11 @@ export default function PlanWorkspace({
                     display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2,
                     textAlign: 'left', padding: '11px 14px', borderRadius: '10px', cursor: 'pointer',
                     fontFamily: 'inherit', background: receiptAudience === opt.id ? '#f0f7ff' : '#fff',
-                    border: `1.5px solid ${receiptAudience === opt.id ? '#0071e3' : '#e2e8f0'}`,
+                    border: `1.5px solid ${receiptAudience === opt.id ? '#0071e3' : '#e5e5ea'}`,
                   }}
                 >
-                  <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a' }}>{opt.label}</span>
-                  <span style={{ fontSize: '11.5px', color: '#64748b' }}>{opt.hint}</span>
+                  <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#1d1d1f' }}>{opt.label}</span>
+                  <span style={{ fontSize: '11.5px', color: '#6e6e73' }}>{opt.hint}</span>
                 </button>
               ))}
             </div>
@@ -2520,14 +2520,14 @@ export default function PlanWorkspace({
               <button
                 onClick={sendReceipt}
                 disabled={sendingReceipt}
-                style={{ flex: 1, padding: '10px 0', borderRadius: '9px', border: 'none', background: sendingReceipt ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: sendingReceipt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                style={{ flex: 1, padding: '10px 0', borderRadius: '9px', border: 'none', background: sendingReceipt ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: sendingReceipt ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
               >
                 {sendingReceipt ? 'Sending…' : 'Send confirmation'}
               </button>
               <button
                 onClick={() => setReceiptTarget(null)}
                 disabled={sendingReceipt}
-                style={{ padding: '10px 16px', borderRadius: '9px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ padding: '10px 16px', borderRadius: '9px', border: '1.5px solid #e5e5ea', background: '#fff', color: '#6e6e73', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 Cancel
               </button>
@@ -2571,41 +2571,41 @@ export default function PlanWorkspace({
             style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
           >
             <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 440, fontFamily: "'DM Sans', sans-serif", overflow: 'hidden' }}>
-              <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid #f1f5f9' }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
+              <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid #f0f0f2' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>
                   {onlyCharges ? 'Send payment request' : 'Send rent reminder'}
                 </div>
-                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>
                   Covering {remindTarget.label} · one email per tenant
                 </div>
               </div>
 
               <div style={{ padding: '16px 20px' }}>
                 {lastReminded && (
-                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#92400e', marginBottom: 14, lineHeight: 1.5 }}>
+                  <div style={{ background: '#fdf1e3', border: '1px solid #f6dcc0', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#b25000', marginBottom: 14, lineHeight: 1.5 }}>
                     Last {onlyCharges ? 'requested' : 'reminded'} {new Date(lastReminded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
                     Chasing too often tends to get filtered.
                   </div>
                 )}
 
                 {unassignedCharges.length > 0 && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#991b1b', marginBottom: 14, lineHeight: 1.5 }}>
+                  <div style={{ background: '#fdeceb', border: '1px solid #f3c6c2', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#d13b30', marginBottom: 14, lineHeight: 1.5 }}>
                     {unassignedCharges.length === 1 ? 'One charge is' : `${unassignedCharges.length} charges are`} not assigned to a tenant
                     and will be skipped — open the charge and pick who owes it.
                   </div>
                 )}
 
                 {people.map(p => (
-                  <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #f8fafc' }}>
+                  <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #fafafb' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0f172a' }}>{p.name}</div>
-                      <div style={{ fontSize: 11.5, color: p.email ? '#94a3b8' : '#b45309' }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1d1d1f' }}>{p.name}</div>
+                      <div style={{ fontSize: 11.5, color: p.email ? '#8e8e93' : '#b25000' }}>
                         {p.email ?? 'No email on file — will be skipped'}
                       </div>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1d1d1f', whiteSpace: 'nowrap' }}>
                       {fmtCurrency(p.total)}
-                      <span style={{ display: 'block', fontSize: 10, fontWeight: 500, color: '#94a3b8', textAlign: 'right' }}>
+                      <span style={{ display: 'block', fontSize: 10, fontWeight: 500, color: '#8e8e93', textAlign: 'right' }}>
                         {p.count} charge{p.count !== 1 ? 's' : ''}
                       </span>
                     </div>
@@ -2613,7 +2613,7 @@ export default function PlanWorkspace({
                 ))}
 
                 <div style={{ marginTop: 14 }}>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 5 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 5 }}>
                     Add a note (optional)
                   </label>
                   <textarea
@@ -2622,26 +2622,26 @@ export default function PlanWorkspace({
                     rows={2}
                     maxLength={500}
                     placeholder="Happy to set up a payment plan if that helps — just let me know."
-                    style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 11px', fontSize: 13, fontFamily: "'DM Sans', sans-serif", resize: 'vertical', outline: 'none', color: '#0f172a' }}
+                    style={{ width: '100%', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '9px 11px', fontSize: 13, fontFamily: "'DM Sans', sans-serif", resize: 'vertical', outline: 'none', color: '#0071e3' }}
                   />
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 4 }}>
                     The email shows the amount, each {onlyCharges ? 'item' : 'charge'}, how late it is, and a button to pay online.
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, padding: '14px 20px', borderTop: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, padding: '14px 20px', borderTop: '1px solid #f0f0f2' }}>
                 <button
                   onClick={() => setRemindTarget(null)}
                   disabled={reminding}
-                  style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                  style={{ background: '#fff', border: '1.5px solid #e5e5ea', borderRadius: 8, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, color: '#6e6e73', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={sendReminders}
                   disabled={reminding || withEmail.length === 0}
-                  style={{ background: '#0f172a', color: '#34d399', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: withEmail.length === 0 ? 'not-allowed' : 'pointer', opacity: withEmail.length === 0 ? 0.5 : 1, fontFamily: "'DM Sans', sans-serif" }}
+                  style={{ background: '#0071e3', color: '#fff', border: 'none', borderRadius: 980, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: withEmail.length === 0 ? 'not-allowed' : 'pointer', opacity: withEmail.length === 0 ? 0.5 : 1, fontFamily: "'DM Sans', sans-serif" }}
                 >
                   {reminding ? 'Sending…' : `Send to ${withEmail.length} tenant${withEmail.length !== 1 ? 's' : ''}`}
                 </button>
