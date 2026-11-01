@@ -9,11 +9,14 @@ import {
   computeProration,
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES,
-  type PaymentPlan, type ScheduledPayment, type SpecialPayment, type PaymentStatus, type SpecialCategory,
-  type PaymentPlanTenant, type PaymentLineItem,
+  type PaymentPlan, type ScheduledPayment, type SpecialPayment, type SpecialCategory,
+  type PaymentPlanTenant,
 } from '@/lib/payments'
 import StripeModeBanner from '@/components/StripeModeBanner'
 import PaymentEmailHistory, { emailsForCharge, fmtWhen, type PlanEmail } from './PaymentEmailHistory'
+import UtilitiesPanel from './UtilitiesPanel'
+import PaymentDetailModal from './PaymentDetailModal'
+import { getUtilitiesForPlan, reapplyPlanUtilities, type PlanUtility } from '@/lib/utilities'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -74,93 +77,53 @@ function StatusBadge({ status }: { status: string }) {
 
 const ROW_COLS = '1fr 88px 88px 110px 68px 96px'
 
+/**
+ * One line of the schedule. Reading it is this component's whole job — the
+ * detail and every control live in PaymentDetailModal, which clicking opens.
+ *
+ * Keeping the row this thin is deliberate: the ledger renders 72 of them on the
+ * live lease, and each one used to carry a full edit form's worth of state for
+ * a panel almost none of them would ever show.
+ */
 function PaymentRow({
-  payment, rule, onUpdate, onRemind, onResendReceipt, history = [],
+  payment, rule, onOpen,
 }: {
   payment: ScheduledPayment
   rule?: { grace_period_days: number; fee_amount: number; frequency_days: number; max_total_fees: number | null } | null
-  onUpdate: (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => void
-  /** Chase this one charge. Absent when the row is already settled. */
-  onRemind?: (payment: ScheduledPayment) => void
-  emails?: PlanEmail[]
-  /** Re-send the confirmation for rent that has already settled. */
-  onResendReceipt?: (payment: ScheduledPayment) => void
-  /** Requests that mentioned this month's rent, newest first. */
-  history?: PlanEmail[]
+  onOpen: (p: ScheduledPayment) => void
 }) {
-  const [open,      setOpen]      = useState(false)
-  const [saving,    setSaving]    = useState(false)
-  const [paidAmt,   setPaidAmt]   = useState(payment.paid_amount > 0 ? String(payment.paid_amount) : '')
-  const [paidDate,  setPaidDate]  = useState(payment.paid_date ?? new Date().toISOString().split('T')[0])
-  const [notes,     setNotes]     = useState(payment.notes ?? '')
-  const [newStatus, setNewStatus] = useState<PaymentStatus>(payment.status)
-  // Moving the due date is how a landlord grants an extension: every late-fee
-  // number in this panel is derived from it, so pushing it out calls the fee off.
-  const [dueDate,   setDueDate]   = useState(payment.due_date)
-
   const effStatus = getEffectiveStatus(payment)
-  const isPaidOrPartial = ['paid', 'partial'].includes(newStatus)
 
-  // Late days: use paid_date for paid/partial, today for unpaid late
+  // Days late: from paid_date once it is settled, from today while it is not.
   const dlRow = payment.paid_date
     ? daysLateByDate(payment.due_date, payment.paid_date)
     : daysLate(payment.due_date)
 
-  // Late fee in row: use paid_date if paid, today otherwise
   const lateFeeRow = rule
     ? (payment.paid_date
         ? computeLateFeesByDate(rule, payment.due_date, payment.paid_date)
         : (dlRow > 0 ? computeLateFees(rule, payment.due_date) : 0))
     : 0
 
-  // Reactive late fee in the edit panel: keyed off the *edited* due date (so an
-  // extension shows its effect before saving) and the paidDate field when paid/partial.
-  const editDl = isPaidOrPartial
-    ? daysLateByDate(dueDate, paidDate)
-    : daysLate(dueDate)
-  const editLateFee = rule && editDl > 0
-    ? (isPaidOrPartial
-        ? computeLateFeesByDate(rule, dueDate, paidDate)
-        : computeLateFees(rule, dueDate))
-    : 0
-
-  const dueDateMoved = dueDate !== payment.due_date
-  // What the extension is worth: the fee that stood on the original date, gone.
-  const feeClearedByMove = dueDateMoved && lateFeeRow > 0 && editLateFee < lateFeeRow
-    ? lateFeeRow - editLateFee
-    : 0
-
-  const collectedAmt  = payment.paid_amount
-  const expectedTotal = payment.amount + lateFeeRow
-  const shortfall     = expectedTotal - collectedAmt
-
-  const save = async () => {
-    setSaving(true)
-    const amt         = parseFloat(paidAmt) || 0
-    const finalStatus = newStatus as PaymentStatus
-    await onUpdate(payment.id, {
-      status:             finalStatus,
-      paid_amount:        amt,
-      paid_date:          isPaidOrPartial ? paidDate : null,
-      notes:              notes || undefined,
-      ...(dueDateMoved ? { due_date: dueDate } : {}),
-      // Always written, never conditionally: an extension has to be able to
-      // clear a fee that was already applied, not just raise a new one.
-      late_fees_applied:  editLateFee,
-    })
-    setSaving(false)
-    setOpen(false)
-  }
-
-  const iS: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: '13px', border: '1.5px solid #e2e8f0', borderRadius: '7px', outline: 'none', fontFamily: "'DM Sans', sans-serif", background: '#fff', color: '#0f172a', boxSizing: 'border-box' }
+  // Money in, which is rent *plus* any late fee that was actually collected —
+  // the fee is real income and was previously invisible here.
+  const received = payment.paid_amount + payment.late_fee_paid
+  const shortfall = (payment.amount + lateFeeRow) - received
 
   const isVoided = payment.status === 'voided'
 
   return (
     <div style={{ borderBottom: '1px solid #f1f5f9', opacity: isVoided ? 0.55 : 1 }}>
       <div
+        role={isVoided ? undefined : 'button'}
+        tabIndex={isVoided ? undefined : 0}
+        aria-label={isVoided ? undefined : `Open ${fmtMonth(payment.due_date)} rent for ${payment.tenant?.name ?? 'tenant'}`}
         style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, alignItems: 'center', padding: '11px 16px', cursor: isVoided ? 'default' : 'pointer', transition: 'background 0.1s' }}
-        onClick={() => !isVoided && setOpen(v => !v)}
+        onClick={() => !isVoided && onOpen(payment)}
+        onKeyDown={e => {
+          if (isVoided) return
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(payment) }
+        }}
         onMouseEnter={e => !isVoided && ((e.currentTarget as HTMLElement).style.background = '#fafafa')}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
       >
@@ -169,7 +132,7 @@ function PaymentRow({
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#475569', flexShrink: 0 }}>
             {(payment.tenant?.name ?? 'T')[0].toUpperCase()}
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{payment.tenant?.name ?? '—'}</div>
             {payment.tenant?.email && <div style={{ fontSize: '11px', color: '#94a3b8' }}>{payment.tenant.email}</div>}
           </div>
@@ -180,12 +143,19 @@ function PaymentRow({
           {fmtCurrency(payment.amount)}
         </div>
 
-        {/* Collected */}
+        {/* Collected — rent plus late fees that genuinely arrived */}
         <div style={{ textAlign: 'right' }}>
-          {collectedAmt > 0 ? (
-            <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>
-              {fmtCurrency(collectedAmt)}
-            </span>
+          {received > 0 ? (
+            <>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>
+                {fmtCurrency(received)}
+              </span>
+              {payment.late_fee_paid > 0 && (
+                <div style={{ fontSize: '10px', color: '#15803d' }}>
+                  incl. {fmtCurrency(payment.late_fee_paid)} fee
+                </div>
+              )}
+            </>
           ) : (
             <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
           )}
@@ -208,177 +178,23 @@ function PaymentRow({
             : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
         </div>
 
-        {/* Late fee flag */}
+        {/* Late fee — accrued, and whether it was taken */}
         <div style={{ textAlign: 'right' }}>
           {lateFeeRow > 0 ? (
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 7px', borderRadius: '5px' }}>
-              🚩 {fmtCurrency(lateFeeRow)}
-            </span>
+            payment.late_fee_paid >= lateFeeRow - 0.01 ? (
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '5px' }}>
+                ✓ {fmtCurrency(lateFeeRow)}
+              </span>
+            ) : (
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 7px', borderRadius: '5px' }}>
+                🚩 {fmtCurrency(lateFeeRow)}
+              </span>
+            )
           ) : (
             <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
           )}
         </div>
       </div>
-
-      {/* Inline expand */}
-      {open && (
-        <div style={{ background: '#f8fafc', borderTop: '1px solid #f1f5f9', padding: '16px 16px 18px', borderLeft: '3px solid #0f172a' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>STATUS</label>
-              <select style={iS} value={newStatus} onChange={e => setNewStatus(e.target.value as PaymentStatus)}>
-                <option value="pending">Pending</option>
-                <option value="paid">Paid</option>
-                <option value="partial">Partial</option>
-                <option value="late">Late</option>
-                <option value="missed">Missed</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>AMOUNT COLLECTED ($)</label>
-              <input
-                style={iS} type="number" step="0.01" min={0}
-                placeholder={fmtCurrency(payment.amount).replace('$', '')}
-                value={paidAmt}
-                onChange={e => setPaidAmt(e.target.value)}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>DATE PAID</label>
-              <input style={iS} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} disabled={!isPaidOrPartial} />
-            </div>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>DUE DATE</label>
-              <input style={iS} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
-              <div style={{ fontSize: '10.5px', color: dueDateMoved ? '#0f766e' : '#94a3b8', marginTop: 4, lineHeight: 1.4 }}>
-                {dueDateMoved
-                  ? `Extension — was ${fmtDate(payment.due_date)}`
-                  : 'Push this out to grant an extension'}
-              </div>
-            </div>
-          </div>
-
-          {/* An extension is only worth granting if the landlord can see what it costs them. */}
-          {dueDateMoved && (
-            <div style={{ background: feeClearedByMove > 0 ? '#f0fdf4' : '#f8fafc', border: `1px solid ${feeClearedByMove > 0 ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: '9px', padding: '10px 13px', marginBottom: 12, fontSize: '12px', color: feeClearedByMove > 0 ? '#166534' : '#475569', lineHeight: 1.55, fontWeight: 600 }}>
-              {feeClearedByMove > 0
-                ? `Moving the due date to ${fmtDate(dueDate)} clears ${fmtCurrency(feeClearedByMove)} in late fees${editLateFee > 0 ? ` — ${fmtCurrency(editLateFee)} still stands` : ' — this charge will no longer show as late'}.`
-                : `Due date moves to ${fmtDate(dueDate)}. Save to apply.`}
-            </div>
-          )}
-
-          {/* Late fee analysis — reactive */}
-          {editLateFee > 0 && (
-            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '9px', padding: '12px 14px', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <span>🚩</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#c2410c' }}>
-                  {isPaidOrPartial ? `Paid ${editDl} day${editDl !== 1 ? 's' : ''} late` : `${editDl} day${editDl !== 1 ? 's' : ''} overdue`} — Expected late fee: <strong>{fmtCurrency(editLateFee)}</strong>
-                </span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <div style={{ background: '#fff', borderRadius: '7px', padding: '8px 10px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Rent Due</div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(payment.amount)}</div>
-                </div>
-                <div style={{ background: '#fff', borderRadius: '7px', padding: '8px 10px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Late Fee</div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#c2410c' }}>+{fmtCurrency(editLateFee)}</div>
-                </div>
-                <div style={{ background: '#fff', borderRadius: '7px', padding: '8px 10px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Total Expected</div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(payment.amount + editLateFee)}</div>
-                </div>
-              </div>
-              {/* Gap between collected and expected */}
-              {(() => {
-                const collected = parseFloat(paidAmt) || 0
-                const gap = (payment.amount + editLateFee) - collected
-                if (gap > 0.01 && collected > 0) return (
-                  <div style={{ marginTop: 8, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '7px', padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: '#991b1b', fontWeight: 600 }}>Late fees not collected</span>
-                    <span style={{ fontSize: '14px', fontWeight: 800, color: '#dc2626' }}>{fmtCurrency(gap)}</span>
-                  </div>
-                )
-                if (collected >= payment.amount + editLateFee) return (
-                  <div style={{ marginTop: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '7px', padding: '8px 10px', fontSize: '12px', color: '#166534', fontWeight: 600 }}>
-                    ✓ Late fee collected in full
-                  </div>
-                )
-                return null
-              })()}
-            </div>
-          )}
-
-          {/* Shortfall when no late fee but paid less than expected */}
-          {editLateFee === 0 && (() => {
-            const collected = parseFloat(paidAmt) || 0
-            const gap = payment.amount - collected
-            if (gap > 0.01 && collected > 0) return (
-              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '7px', padding: '8px 12px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', color: '#991b1b', fontWeight: 600 }}>Short by</span>
-                <span style={{ fontSize: '14px', fontWeight: 800, color: '#dc2626' }}>{fmtCurrency(gap)}</span>
-              </div>
-            )
-            return null
-          })()}
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 4 }}>NOTES (optional)</label>
-            <input style={iS} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Paid via Zelle" />
-          </div>
-
-          {/* When was this month actually chased, and did it land? */}
-          <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12, marginBottom: 12 }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: 8, letterSpacing: '0.02em' }}>
-              REQUEST HISTORY
-            </div>
-            <PaymentEmailHistory
-              emails={history}
-              priorCount={payment.reminder_count ?? 0}
-              empty="No requests sent for this month yet."
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={save} disabled={saving} style={{ padding: '7px 18px', borderRadius: '7px', border: 'none', background: saving ? '#94a3b8' : '#0f172a', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={() => setOpen(false)} style={{ padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
-              Cancel
-            </button>
-
-            {/* Chase this one charge, without touching anyone else's. */}
-            {onRemind && (
-              <button
-                onClick={() => onRemind(payment)}
-                title={payment.reminder_sent_at
-                  ? `Last reminded ${new Date(payment.reminder_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                  : 'Email this tenant about this charge'}
-                style={{ marginLeft: 'auto', padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-              >
-                {(() => {
-                  // The charge's own counter covers sends made before the email
-                  // history existed, so it wins whenever it is the larger number.
-                  const n = Math.max(history.length, payment.reminder_count ?? 0)
-                  return n > 0 ? `Remind again (${n})` : 'Send reminder'
-                })()}
-              </button>
-            )}
-
-            {/* Settled rent gets a confirmation, not a chase. */}
-            {onResendReceipt && (payment.status === 'paid' || payment.status === 'processing') && (
-              <button
-                onClick={() => onResendReceipt(payment)}
-                title="Send the payment confirmation again"
-                style={{ marginLeft: onRemind ? 0 : 'auto', padding: '7px 14px', borderRadius: '7px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-              >
-                Resend confirmation
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -386,17 +202,14 @@ function PaymentRow({
 // ─── MONTH GROUP ──────────────────────────────────────────────────────────────
 
 function MonthGroup({
-  month, payments, rule, onUpdate, onRemind, onResendReceipt, defaultOpen, emails = [],
+  month, payments, rule, onOpen, defaultOpen,
 }: {
   month: string
   payments: ScheduledPayment[]
   rule: PaymentPlan['late_fee_rule']
-  onUpdate: (id: string, u: Parameters<typeof updateScheduledPayment>[1]) => void
-  onRemind?: (payment: ScheduledPayment) => void
-  onResendReceipt?: (payment: ScheduledPayment) => void
+  /** Rows are read-only; the modal owns recording and chasing. */
+  onOpen: (payment: ScheduledPayment) => void
   defaultOpen: boolean
-  /** Every request sent on this plan; each row filters to its own. */
-  emails?: PlanEmail[]
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const active   = payments.filter(p => p.status !== 'voided')
@@ -407,7 +220,10 @@ function MonthGroup({
   // full: counting only `paid` rows reported $0 collected for a month where a
   // part-payment had plainly arrived, which is the fastest way to make a ledger
   // look wrong. Partial and processing money is money.
-  const collected = active.reduce((s, p) => s + p.paid_amount, 0)
+  // ...and late fees that genuinely arrived are money too, so the month's
+  // collected figure counts them exactly as each row now does.
+  const collected = active.reduce((s, p) => s + p.paid_amount + p.late_fee_paid, 0)
+  const feesCollected = active.reduce((s, p) => s + p.late_fee_paid, 0)
   const outstanding = Math.max(0, expected - collected)
   const voided   = payments.filter(p => p.status === 'voided').length
 
@@ -446,10 +262,7 @@ function MonthGroup({
               key={p.id}
               payment={p}
               rule={rule ?? undefined}
-              onUpdate={onUpdate}
-              onRemind={onRemind}
-              onResendReceipt={onResendReceipt}
-              history={emailsForCharge(emails, { scheduledId: p.id })}
+              onOpen={onOpen}
             />
           ))}
 
@@ -462,8 +275,13 @@ function MonthGroup({
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
               {fmtCurrency(expected)}
             </div>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-              {fmtCurrency(collected)}
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtCurrency(collected)}
+              </div>
+              {feesCollected > 0 && (
+                <div style={{ fontSize: '10px', color: '#15803d' }}>incl. {fmtCurrency(feesCollected)} fees</div>
+              )}
             </div>
             <div style={{ gridColumn: 'span 3', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: outstanding > 0 ? (overdue > 0 ? '#dc2626' : '#d97706') : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
               {outstanding > 0 ? `${fmtCurrency(outstanding)} outstanding` : 'Fully collected'}
@@ -477,7 +295,17 @@ function MonthGroup({
 
 // ─── LINE ITEM EDITOR ─────────────────────────────────────────────────────────
 
-type DraftItem = { id: string | null; category: string; label: string; amount: string; isNew?: boolean }
+type DraftItem = {
+  id: string | null
+  category: string
+  label: string
+  amount: string
+  isNew?: boolean
+  /** Set when the line is materialised from a lease utility. Such a line is
+   *  owned by that declaration — editing it here would leave the two
+   *  disagreeing, so it is shown but not editable. */
+  utilityId?: string | null
+}
 
 function LineItemEditor({
   tenant, onSaved,
@@ -494,6 +322,7 @@ function LineItemEditor({
   const openEdit = () => {
     setDraft(tenant.line_items.map(li => ({
       id: li.id, category: li.category, label: li.label, amount: String(li.amount),
+      utilityId: li.utility_id,
     })))
     const sum = tenant.line_items.reduce((s, li) => s + li.amount, 0)
     setTotalOverride(String(tenant.monthly_total))
@@ -528,14 +357,20 @@ function LineItemEditor({
   const save = async () => {
     setSaving(true)
 
-    // 1. Handle deletions — items in original that are gone from draft
+    // 1. Handle deletions — items in original that are gone from draft.
+    //    Utility-owned lines are excluded: they belong to the lease's utility
+    //    declaration and are removed by deleting that, which also unwinds
+    //    everyone's share. Deleting one here would leave the declaration
+    //    claiming a charge that no longer exists on this payer.
+    const utilityOwned = new Set(tenant.line_items.filter(li => li.utility_id).map(li => li.id))
     const originalIds = new Set(tenant.line_items.map(li => li.id))
     const draftIds    = new Set(draft.filter(d => d.id).map(d => d.id!))
-    const toDelete    = [...originalIds].filter(id => !draftIds.has(id))
+    const toDelete    = [...originalIds].filter(id => !draftIds.has(id) && !utilityOwned.has(id))
     for (const id of toDelete) await deleteLineItem(id)
 
-    // 2. Update existing + insert new
+    // 2. Update existing + insert new, again leaving utility lines alone.
     for (const item of draft) {
+      if (item.utilityId) continue
       const amt = parseFloat(item.amount) || 0
       if (item.id) {
         await updateLineItem(item.id, { label: item.label, amount: amt, category: item.category })
@@ -570,6 +405,13 @@ function LineItemEditor({
   return (
     <div style={{ marginTop: 10, background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '14px' }}>
       <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Edit line items</div>
+      {draft.some(d => d.utilityId) && (
+        <div style={{ fontSize: '11.5px', color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '7px', padding: '8px 11px', marginBottom: 10, lineHeight: 1.5 }}>
+          Lines marked <strong>UTILITY</strong> come from a charge set once for the whole lease.
+          Change the amount under <strong>Charges → Utilities &amp; shared charges</strong> and every
+          payer moves together.
+        </div>
+      )}
 
       {/* Column headers */}
       <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, marginBottom: 4 }}>
@@ -580,7 +422,24 @@ function LineItemEditor({
 
       {/* Line item rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
-        {draft.map((item, idx) => (
+        {draft.map((item, idx) => item.utilityId ? (
+          /* A lease utility's share. Shown so the payer's total visibly adds
+             up, read-only because the charge is declared once for the whole
+             lease — edited here, the two would quietly disagree. */
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '5px', padding: '4px 6px', textAlign: 'center', letterSpacing: '0.02em' }}>
+              UTILITY
+            </span>
+            <span style={{ fontSize: '12px', color: '#475569' }}>
+              {item.label}
+              <span style={{ color: '#94a3b8', marginLeft: 6 }}>· set on the lease</span>
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textAlign: 'right', paddingRight: 4 }}>
+              {fmtCurrency(parseFloat(item.amount) || 0)}
+            </span>
+            <span />
+          </div>
+        ) : (
           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
             <select
               style={{ ...iS, width: '100%' }}
@@ -1772,10 +1631,22 @@ export default function PlanWorkspace({
   const [showAddPayer, setShowAddPayer] = useState(false)
   const [terminateTarget, setTerminateTarget] = useState<string | null>(null)
   const [payerMsg, setPayerMsg] = useState('')
+  /** Lease-level utilities — declared once, charged to every payer. */
+  const [utilities, setUtilities] = useState<PlanUtility[]>([])
+  /** The charge whose detail sheet is open. One modal, not one per row. */
+  const [openPayment, setOpenPayment] = useState<ScheduledPayment | null>(null)
 
   const load = () => {
     setLoading(true)
     getPlanById(planId).then(p => { setPlan(p); setLoading(false) })
+    getUtilitiesForPlan(planId).then(setUtilities)
+  }
+
+  /** A utility changed: its shares and everyone's totals moved with it, so the
+   *  whole plan is re-read rather than patched in place. */
+  const reloadAfterUtility = () => {
+    getPlanById(planId).then(p => { if (p) setPlan(p) })
+    getUtilitiesForPlan(planId).then(setUtilities)
   }
 
   /** Request history is independent of the ledger, so a failure here must not
@@ -1807,6 +1678,9 @@ export default function PlanWorkspace({
         sp.id === id ? { ...sp, ...updates } : sp
       ),
     } : prev)
+    // The sheet reads from this row too, so keep it on the saved values rather
+    // than the ones it opened with.
+    setOpenPayment(prev => prev && prev.id === id ? { ...prev, ...updates } as ScheduledPayment : prev)
   }
 
   /** Chase a single charge from its row. */
@@ -2127,7 +2001,7 @@ export default function PlanWorkspace({
                   return (
                     <>
                       {future.map(k => (
-                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} onResendReceipt={resendReceiptFor} defaultOpen={k === currentMonthKey} emails={emails} />
+                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onOpen={setOpenPayment} defaultOpen={k === currentMonthKey} />
                       ))}
                       {past.length > 0 && (
                         <details style={{ marginTop: 12 }}>
@@ -2136,7 +2010,7 @@ export default function PlanWorkspace({
                           </summary>
                           <div style={{ marginTop: 8, opacity: 0.7 }}>
                             {past.slice().reverse().map(k => (
-                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onUpdate={handleUpdateScheduled} onRemind={remindOne} onResendReceipt={resendReceiptFor} defaultOpen={false} emails={emails} />
+                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onOpen={setOpenPayment} defaultOpen={false} />
                             ))}
                           </div>
                         </details>
@@ -2197,7 +2071,11 @@ export default function PlanWorkspace({
                   setShowAddPayer(false)
                   setPayerMsg(msg)
                   setTimeout(() => setPayerMsg(''), 5000)
-                  load()
+                  // An even split divides by the number of active payers, so a
+                  // new payer re-prices every monthly utility — including onto
+                  // the person who just joined, who otherwise pays no share of
+                  // the internet everyone else is covering.
+                  reapplyPlanUtilities(planId).then(load)
                 }}
               />
             )}
@@ -2214,7 +2092,8 @@ export default function PlanWorkspace({
                     setTerminateTarget(null)
                     setPayerMsg(msg)
                     setTimeout(() => setPayerMsg(''), 6000)
-                    load()
+                    // One fewer person sharing the bill — the rest absorb it.
+                    reapplyPlanUtilities(planId).then(load)
                   }}
                 />
               )
@@ -2355,10 +2234,20 @@ export default function PlanWorkspace({
         {/* ── SPECIAL CHARGES TAB ── */}
         {tab === 'charges' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* Recurring, lease-wide money comes first: it is what a landlord
+                sets up once and then stops thinking about. The one-off charges
+                below it are the exceptions. */}
+            <UtilitiesPanel
+              planId={planId}
+              tenants={plan.tenants}
+              utilities={utilities}
+              onChanged={reloadAfterUtility}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderTop: '1px solid #e2e8f0', paddingTop: 20 }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>Special Charges</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Security deposits, one-time fees, and penalties</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>Deposits &amp; one-off charges</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>Security deposits, penalties and anything charged once</div>
               </div>
               <AddChargeForm planId={planId} tenants={plan.tenants} onAdded={load} />
             </div>
@@ -2647,6 +2536,22 @@ export default function PlanWorkspace({
           </div>
         )
       })()}
+
+      {/* ── One charge, in full. Rows are read-only; this owns the detail and
+             every control that changes a charge. ── */}
+      {openPayment && (
+        <PaymentDetailModal
+          payment={openPayment}
+          tenant={plan.tenants.find(t => t.id === openPayment.plan_tenant_id)}
+          utilities={utilities}
+          rule={plan.late_fee_rule ?? null}
+          history={emailsForCharge(emails, { scheduledId: openPayment.id })}
+          onUpdate={handleUpdateScheduled}
+          onRemind={openPayment.status === 'paid' ? undefined : p => { setOpenPayment(null); remindOne(p) }}
+          onResendReceipt={p => { setOpenPayment(null); resendReceiptFor(p) }}
+          onClose={() => setOpenPayment(null)}
+        />
+      )}
     </div>
   )
 }

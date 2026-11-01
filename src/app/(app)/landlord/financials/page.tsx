@@ -545,15 +545,21 @@ export default function FinancialsPage({
               />
               <SummaryCard
                 label="Collected"
-                value={fmtCurrency(t.collected)}
+                // Money actually received, which includes late fees the tenant
+                // paid on top. Those used to be invisible here: settlement
+                // records only the rent in `paid_amount`, so a fee a tenant
+                // genuinely handed over appeared nowhere on this page.
+                value={fmtCurrency(t.received)}
                 meta={
                   // Collecting the money late is still a problem, and `overdue`
                   // forgets it the instant a tenant pays. Say it here or the
                   // page congratulates itself on rent that arrived three weeks
                   // after it was owed.
-                  t.collectedLate > 0
-                    ? `${fmtCurrency(t.collectedLate)} of it arrived late`
-                    : t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'
+                  t.lateFeesCollected > 0
+                    ? `incl. ${fmtCurrency(t.lateFeesCollected)} of late fees collected`
+                    : t.collectedLate > 0
+                      ? `${fmtCurrency(t.collectedLate)} of it arrived late`
+                      : t.rate !== null ? `${t.rate}% of billed` : 'Nothing billed yet'
                 }
                 tone="good"
                 bar={t.rate}
@@ -882,6 +888,19 @@ function LeaseRow({
             <DrillFact label="Deposits held" value={fmtCurrency(lease.depositsHeld)} meta={lease.depositsHeld > 0 ? 'returnable at move-out' : 'none on file'} />
             <DrillFact label="Last payment" value={lease.lastPaid ? fmtCurrency(lease.lastPaid.amount) : '—'} meta={lease.lastPaid ? fmtDate(lease.lastPaid.date) : 'nothing received yet'} />
           </div>
+
+          {/* The monthly figure above includes the lease's utilities, so name
+              them — otherwise rent and the bills riding on it are one number. */}
+          {lease.utilitiesMonthly > 0 && (
+            <div className="util-note">
+              <span>
+                Of {fmtCurrency(lease.monthly)}/mo billed,{' '}
+                <strong>{fmtCurrency(lease.utilitiesMonthly)}</strong> is{' '}
+                {lease.utilityLabels.join(', ')} charged across the lease — the rest is rent.
+              </span>
+              <button className="btn-quiet sm" onClick={onOpenLedger}>Manage utilities</button>
+            </div>
+          )}
 
           {/* Who owes what, inside this one agreement. */}
           <div className="drill-sec">
@@ -1283,8 +1302,12 @@ function MonthLedger({
         />
         <MonthFig
           label={view.position === 'future' ? 'Paid early' : 'Collected'}
-          value={fmtCurrency(t.collected)}
-          meta={t.rate !== null ? `${t.rate}% of the month` : 'nothing billed'}
+          value={fmtCurrency(t.received)}
+          // The rate stays rent-against-rent: fold fees into the numerator and
+          // a tenant who pays late pushes a collection rate past 100%.
+          meta={t.lateFeesCollected > 0
+            ? `incl. ${fmtCurrency(t.lateFeesCollected)} late fees`
+            : t.rate !== null ? `${t.rate}% of the month` : 'nothing billed'}
           tone={t.rate !== null && t.rate >= 100 ? 'good' : undefined}
         />
         <MonthFig
@@ -2043,6 +2066,13 @@ const CSS = `
   /* ── Lease drill-down ── */
   .drill { background: #f7f9fc; border-bottom: 1px solid var(--line); padding: 4px 20px 18px; }
   .drill-vitals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 14px 0 4px; }
+  .util-note {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin: 12px 0 2px; padding: 10px 13px; border-radius: 10px;
+    background: #f4fbfa; border: 1px solid #cdeae6; color: #15605a;
+    font-size: 12.5px; line-height: 1.5; letter-spacing: -0.01em;
+  }
+  .util-note strong { font-variant-numeric: tabular-nums; color: #0f4f4a; }
   .dfact { padding: 0 16px; border-left: 1px solid #e3e8ef; }
   .dfact:first-child { border-left: none; padding-left: 0; }
   .dfact-label { font-size: 11.5px; color: var(--ink-3); letter-spacing: -0.005em; }

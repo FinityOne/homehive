@@ -114,6 +114,20 @@ export type Totals = {
    * because "fees" is otherwise assumed to come out of rent.
    */
   tenantFees: number
+  /**
+   * Late-fee money that genuinely arrived, from `late_fee_paid`.
+   *
+   * The tenant pay route bills rent *plus* the derived late fee, but settlement
+   * records only the rent in `paid_amount` — so until this existed, a late fee
+   * the tenant actually paid appeared nowhere, and the landlord could not see
+   * money they had received. It is kept separate from `collected` rather than
+   * folded in, because `collected ÷ billed` has to stay a rent collection rate:
+   * fold fees into the numerator and a tenant who pays late pushes the rate
+   * over 100%. Use `received` for "money in".
+   */
+  lateFeesCollected: number
+  /** Everything that actually came in: `collected + lateFeesCollected`. */
+  received: number
   /** collected ÷ billed as 0–100. `null` when nothing was billed. */
   rate: number | null
 }
@@ -121,13 +135,15 @@ export type Totals = {
 export const EMPTY_TOTALS: Totals = {
   billed: 0, collected: 0, outstanding: 0, overdue: 0,
   overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0,
-  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0, rate: null,
+  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0,
+  lateFeesCollected: 0, received: 0, rate: null,
 }
 
-function finish(t: Omit<Totals, 'outstanding' | 'rate'>): Totals {
+function finish(t: Omit<Totals, 'outstanding' | 'rate' | 'received'>): Totals {
   return {
     ...t,
     outstanding: Math.max(0, t.billed - t.collected),
+    received: Math.round((t.collected + t.lateFeesCollected) * 100) / 100,
     rate: t.billed > 0 ? Math.round((t.collected / t.billed) * 100) : null,
   }
 }
@@ -147,7 +163,8 @@ export function sumTotals(parts: Totals[]): Totals {
     collectedLateCount: a.collectedLateCount + b.collectedLateCount,
     maxDaysLate:   Math.max(a.maxDaysLate, b.maxDaysLate),
     tenantFees:    a.tenantFees + b.tenantFees,
-  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0 }))
+    lateFeesCollected: a.lateFeesCollected + b.lateFeesCollected,
+  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0, lateFeesCollected: 0 }))
 }
 
 /** Whole days from one ISO date to another. */
@@ -184,12 +201,15 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
   let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
+  let lateFeesCollected = 0
   for (const sp of sps) {
     if (!liveRent(sp) || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
     collected += sp.paid_amount
     tenantFees += sp.processing_fee ?? 0
+    // Money in, not a derived figure — see Totals.lateFeesCollected.
+    lateFeesCollected += sp.late_fee_paid ?? 0
     if (sp.paid_amount >= sp.amount) settledCount++
     if (sp.status === 'processing') {
       inFlight += Math.max(0, sp.amount - sp.paid_amount)
@@ -207,7 +227,7 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
       overdueCount++
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees, lateFeesCollected })
 }
 
 /** A one-off charge has no partial state on `special_payments` — paid means the
@@ -234,7 +254,8 @@ export function chargeTotals(specials: SpecialPayment[], range: Range, now = new
       maxDaysLate = Math.max(maxDaysLate, daysBetweenDates(sp.due_date, sp.paid_date))
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees })
+  // A late-fee rule is written against rent, so a one-off never carries one.
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees, lateFeesCollected: 0 })
 }
 
 // ─── HOW MONEY ARRIVED ───────────────────────────────────────────────────────
@@ -405,6 +426,16 @@ export type LeaseSummary = {
   /** Security deposits received and not yet returned. */
   depositsHeld: number
   /**
+   * Monthly utilities declared on the lease, as the whole property pays them.
+   *
+   * `monthly` above is the sum of what the payers owe, which silently *includes*
+   * these — so without naming them a landlord cannot tell rent from the bills
+   * riding on top of it. See src/lib/utilities.ts.
+   */
+  utilitiesMonthly: number
+  /** Those utilities, for a one-line "what is in this figure". */
+  utilityLabels: string[]
+  /**
    * Late fees genuinely accrued across the lease, derived from the rule — see
    * `lateFeeDue`. Not the `late_fees_applied` column, which is corrupt.
    */
@@ -487,6 +518,19 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
   const depositsHeld = specials
     .filter(sp => sp.category === 'security_deposit' && sp.status === 'paid')
     .reduce((s, sp) => s + sp.amount, 0)
+
+  // The house-level cost of each monthly utility. `per_payer` means the amount
+  // is what *each* payer owes, so the property pays it once per head; `even`
+  // means the amount already is the whole bill. Kept inline rather than
+  // imported from utilities.ts, which would pull the browser Supabase client
+  // into every consumer of this module.
+  const activePayerCount = plan.tenants.filter(t => t.status === 'active').length
+  const monthlyUtilities = (plan.utilities ?? []).filter(u => u.cadence === 'monthly')
+  const utilitiesMonthly = Math.round(monthlyUtilities.reduce(
+    (sum, u) => sum + (u.split === 'even' ? u.amount : u.amount * activePayerCount),
+    0,
+  ) * 100) / 100
+  const utilityLabels = monthlyUtilities.map(u => u.label)
 
   const rule = plan.late_fee_rule ?? null
   // Derived from the rule, never read from the corrupt column — see lateFeeDue.
@@ -601,6 +645,8 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     contractValue: contract.billed,
     contractCollected: contract.collected,
     depositsHeld,
+    utilitiesMonthly,
+    utilityLabels,
     lateFeesDue,
     lateFeesRecorded,
     lateFeeRisk: lateFeeRuleRisk(rule),
