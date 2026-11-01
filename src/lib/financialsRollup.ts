@@ -426,6 +426,16 @@ export type LeaseSummary = {
   /** Security deposits received and not yet returned. */
   depositsHeld: number
   /**
+   * Monthly utilities declared on the lease, as the whole property pays them.
+   *
+   * `monthly` above is the sum of what the payers owe, which silently *includes*
+   * these — so without naming them a landlord cannot tell rent from the bills
+   * riding on top of it. See src/lib/utilities.ts.
+   */
+  utilitiesMonthly: number
+  /** Those utilities, for a one-line "what is in this figure". */
+  utilityLabels: string[]
+  /**
    * Late fees genuinely accrued across the lease, derived from the rule — see
    * `lateFeeDue`. Not the `late_fees_applied` column, which is corrupt.
    */
@@ -508,6 +518,19 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
   const depositsHeld = specials
     .filter(sp => sp.category === 'security_deposit' && sp.status === 'paid')
     .reduce((s, sp) => s + sp.amount, 0)
+
+  // The house-level cost of each monthly utility. `per_payer` means the amount
+  // is what *each* payer owes, so the property pays it once per head; `even`
+  // means the amount already is the whole bill. Kept inline rather than
+  // imported from utilities.ts, which would pull the browser Supabase client
+  // into every consumer of this module.
+  const activePayerCount = plan.tenants.filter(t => t.status === 'active').length
+  const monthlyUtilities = (plan.utilities ?? []).filter(u => u.cadence === 'monthly')
+  const utilitiesMonthly = Math.round(monthlyUtilities.reduce(
+    (sum, u) => sum + (u.split === 'even' ? u.amount : u.amount * activePayerCount),
+    0,
+  ) * 100) / 100
+  const utilityLabels = monthlyUtilities.map(u => u.label)
 
   const rule = plan.late_fee_rule ?? null
   // Derived from the rule, never read from the corrupt column — see lateFeeDue.
@@ -622,6 +645,8 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     contractValue: contract.billed,
     contractCollected: contract.collected,
     depositsHeld,
+    utilitiesMonthly,
+    utilityLabels,
     lateFeesDue,
     lateFeesRecorded,
     lateFeeRisk: lateFeeRuleRisk(rule),

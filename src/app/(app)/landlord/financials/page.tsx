@@ -889,6 +889,19 @@ function LeaseRow({
             <DrillFact label="Last payment" value={lease.lastPaid ? fmtCurrency(lease.lastPaid.amount) : '—'} meta={lease.lastPaid ? fmtDate(lease.lastPaid.date) : 'nothing received yet'} />
           </div>
 
+          {/* The monthly figure above includes the lease's utilities, so name
+              them — otherwise rent and the bills riding on it are one number. */}
+          {lease.utilitiesMonthly > 0 && (
+            <div className="util-note">
+              <span>
+                Of {fmtCurrency(lease.monthly)}/mo billed,{' '}
+                <strong>{fmtCurrency(lease.utilitiesMonthly)}</strong> is{' '}
+                {lease.utilityLabels.join(', ')} charged across the lease — the rest is rent.
+              </span>
+              <button className="btn-quiet sm" onClick={onOpenLedger}>Manage utilities</button>
+            </div>
+          )}
+
           {/* Who owes what, inside this one agreement. */}
           <div className="drill-sec">
             <div className="drill-hd">
@@ -2053,6 +2066,13 @@ const CSS = `
   /* ── Lease drill-down ── */
   .drill { background: #f7f9fc; border-bottom: 1px solid var(--line); padding: 4px 20px 18px; }
   .drill-vitals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 14px 0 4px; }
+  .util-note {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin: 12px 0 2px; padding: 10px 13px; border-radius: 10px;
+    background: #f4fbfa; border: 1px solid #cdeae6; color: #15605a;
+    font-size: 12.5px; line-height: 1.5; letter-spacing: -0.01em;
+  }
+  .util-note strong { font-variant-numeric: tabular-nums; color: #0f4f4a; }
   .dfact { padding: 0 16px; border-left: 1px solid #e3e8ef; }
   .dfact:first-child { border-left: none; padding-left: 0; }
   .dfact-label { font-size: 11.5px; color: var(--ink-3); letter-spacing: -0.005em; }

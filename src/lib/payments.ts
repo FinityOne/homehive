@@ -149,6 +149,16 @@ export type PaymentPlan = {
   late_fee_rule?: LateFeeRule | null
   scheduled_payments?: ScheduledPayment[]
   special_payments?: SpecialPayment[]
+  /** Lease-level utilities (src/lib/utilities.ts). Carried here so Financials
+   *  can say what a lease's monthly figure is actually made of. */
+  utilities?: {
+    id: string
+    label: string
+    category: string
+    amount: number
+    cadence: 'monthly' | 'one_time'
+    split: 'even' | 'per_payer'
+  }[]
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -455,6 +465,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       lease:leases(id, start_date, end_date, rent_amount, is_demo),
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
+      utilities:plan_utilities(id, label, category, amount, cadence, split),
       scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee),
       special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
     `)
@@ -470,6 +481,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
   const real = data.filter((row: any) => !row.lease?.is_demo)
 
   return real.map((row: any) => {
+    const utilities = (row.utilities || []).map((u: any) => ({ ...u, amount: Number(u.amount) }))
     const tenants = (row.tenants || []).map((t: any) => ({ ...t, line_items: [] }))
     // Who a charge belongs to, resolved here rather than with a second join:
     // the rollup names the person on every open deposit and one-off charge.
@@ -477,6 +489,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
     return {
       ...row,
       tenants,
+      utilities,
       late_fee_rule:  Array.isArray(row.late_fee_rule) ? (row.late_fee_rule[0] ?? null) : (row.late_fee_rule ?? null),
       property:       row.property   ?? undefined,
       lease:          row.lease      ?? undefined,
@@ -503,6 +516,7 @@ export async function getPlanById(planId: string): Promise<PaymentPlan | null> {
       lease:leases(id, start_date, end_date, rent_amount, is_demo),
       tenants:payment_plan_tenants(*, line_items:payment_line_items(*)),
       late_fee_rule:late_fee_rules(*),
+      utilities:plan_utilities(id, label, category, amount, cadence, split),
       scheduled_payments(*),
       special_payments(*)
     `)
@@ -537,6 +551,7 @@ export async function getPlanById(planId: string): Promise<PaymentPlan | null> {
   return {
     ...data,
     tenants,
+    utilities: (data.utilities || []).map((u: any) => ({ ...u, amount: Number(u.amount) })),
     late_fee_rule: Array.isArray(data.late_fee_rule) ? (data.late_fee_rule[0] ?? null) : (data.late_fee_rule ?? null),
     property:      data.property ?? undefined,
     lease:         data.lease    ?? undefined,

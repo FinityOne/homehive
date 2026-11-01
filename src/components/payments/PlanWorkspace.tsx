@@ -295,7 +295,17 @@ function MonthGroup({
 
 // ─── LINE ITEM EDITOR ─────────────────────────────────────────────────────────
 
-type DraftItem = { id: string | null; category: string; label: string; amount: string; isNew?: boolean }
+type DraftItem = {
+  id: string | null
+  category: string
+  label: string
+  amount: string
+  isNew?: boolean
+  /** Set when the line is materialised from a lease utility. Such a line is
+   *  owned by that declaration — editing it here would leave the two
+   *  disagreeing, so it is shown but not editable. */
+  utilityId?: string | null
+}
 
 function LineItemEditor({
   tenant, onSaved,
@@ -312,6 +322,7 @@ function LineItemEditor({
   const openEdit = () => {
     setDraft(tenant.line_items.map(li => ({
       id: li.id, category: li.category, label: li.label, amount: String(li.amount),
+      utilityId: li.utility_id,
     })))
     const sum = tenant.line_items.reduce((s, li) => s + li.amount, 0)
     setTotalOverride(String(tenant.monthly_total))
@@ -346,14 +357,20 @@ function LineItemEditor({
   const save = async () => {
     setSaving(true)
 
-    // 1. Handle deletions — items in original that are gone from draft
+    // 1. Handle deletions — items in original that are gone from draft.
+    //    Utility-owned lines are excluded: they belong to the lease's utility
+    //    declaration and are removed by deleting that, which also unwinds
+    //    everyone's share. Deleting one here would leave the declaration
+    //    claiming a charge that no longer exists on this payer.
+    const utilityOwned = new Set(tenant.line_items.filter(li => li.utility_id).map(li => li.id))
     const originalIds = new Set(tenant.line_items.map(li => li.id))
     const draftIds    = new Set(draft.filter(d => d.id).map(d => d.id!))
-    const toDelete    = [...originalIds].filter(id => !draftIds.has(id))
+    const toDelete    = [...originalIds].filter(id => !draftIds.has(id) && !utilityOwned.has(id))
     for (const id of toDelete) await deleteLineItem(id)
 
-    // 2. Update existing + insert new
+    // 2. Update existing + insert new, again leaving utility lines alone.
     for (const item of draft) {
+      if (item.utilityId) continue
       const amt = parseFloat(item.amount) || 0
       if (item.id) {
         await updateLineItem(item.id, { label: item.label, amount: amt, category: item.category })
@@ -388,6 +405,13 @@ function LineItemEditor({
   return (
     <div style={{ marginTop: 10, background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '14px' }}>
       <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Edit line items</div>
+      {draft.some(d => d.utilityId) && (
+        <div style={{ fontSize: '11.5px', color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '7px', padding: '8px 11px', marginBottom: 10, lineHeight: 1.5 }}>
+          Lines marked <strong>UTILITY</strong> come from a charge set once for the whole lease.
+          Change the amount under <strong>Charges → Utilities &amp; shared charges</strong> and every
+          payer moves together.
+        </div>
+      )}
 
       {/* Column headers */}
       <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, marginBottom: 4 }}>
@@ -398,7 +422,24 @@ function LineItemEditor({
 
       {/* Line item rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
-        {draft.map((item, idx) => (
+        {draft.map((item, idx) => item.utilityId ? (
+          /* A lease utility's share. Shown so the payer's total visibly adds
+             up, read-only because the charge is declared once for the whole
+             lease — edited here, the two would quietly disagree. */
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '5px', padding: '4px 6px', textAlign: 'center', letterSpacing: '0.02em' }}>
+              UTILITY
+            </span>
+            <span style={{ fontSize: '12px', color: '#475569' }}>
+              {item.label}
+              <span style={{ color: '#94a3b8', marginLeft: 6 }}>· set on the lease</span>
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textAlign: 'right', paddingRight: 4 }}>
+              {fmtCurrency(parseFloat(item.amount) || 0)}
+            </span>
+            <span />
+          </div>
+        ) : (
           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
             <select
               style={{ ...iS, width: '100%' }}
