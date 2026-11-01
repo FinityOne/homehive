@@ -81,6 +81,30 @@ export type LateFeeChargeLike = {
   paid_amount: number
 }
 
+/**
+ * Has this charge stopped accruing a late fee?
+ *
+ * Not the same question as "is it paid in full". A landlord who marks a row
+ * `paid` has closed it, and on this database four rows carry `status='paid'`
+ * with `paid_amount` short of `amount` — two of them at exactly $0.00, settled
+ * by hand against money taken outside the platform. Keying only on the figures
+ * leaves those rows looking perpetually unpaid, so the fee recomputes against
+ * *today* every time anyone loads the page and grows without end: one of them
+ * reached $825 on $741.96 of rent that the landlord considers closed.
+ *
+ * So the landlord's own verdict settles it, and the amounts are the fallback
+ * for rows nobody has ruled on. `processing` is excluded deliberately — an ACH
+ * debit in flight has not landed, and if it bounces the fee is owed after all.
+ */
+export function rentIsSettled(sp: Pick<LateFeeChargeLike, 'status' | 'amount' | 'paid_amount'>): boolean {
+  return sp.status === 'paid' || sp.paid_amount >= sp.amount
+}
+
+/** The date a late fee is measured to: when it stopped, or today. */
+export function lateFeeAsOf(sp: LateFeeChargeLike, now = new Date()): string {
+  return sp.paid_date && rentIsSettled(sp) ? sp.paid_date : isoDate(now)
+}
+
 export type LateFeeRuleLike = {
   grace_period_days: number
   fee_amount: number
@@ -130,7 +154,7 @@ export function lateFeeDue(
 ): number {
   if (!rule || rule.fee_amount <= 0) return 0
   if (sp.status === 'voided') return 0
-  const asOf = sp.paid_date && sp.paid_amount >= sp.amount ? sp.paid_date : isoDate(now)
+  const asOf = lateFeeAsOf(sp, now)
   const graceEnd = addDays(sp.due_date, rule.grace_period_days)
   if (asOf <= graceEnd) return 0
   const daysOver = daysBetweenDates(graceEnd, asOf)
@@ -157,7 +181,7 @@ export function lateFeeCappedByCharge(
   now = new Date(),
 ): boolean {
   if (!rule || rule.max_total_fees != null || rule.fee_amount <= 0) return false
-  const asOf = sp.paid_date && sp.paid_amount >= sp.amount ? sp.paid_date : isoDate(now)
+  const asOf = lateFeeAsOf(sp, now)
   const graceEnd = addDays(sp.due_date, rule.grace_period_days)
   if (asOf <= graceEnd) return false
   const periods = Math.floor(daysBetweenDates(graceEnd, asOf) / Math.max(1, rule.frequency_days))

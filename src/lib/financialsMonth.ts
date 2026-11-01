@@ -251,8 +251,11 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
         state,
         daysLate: state === 'overdue' ? Math.max(0, daysBetweenDates(sp.due_date, todayStr)) : 0,
         // Derived from the rule, never read from `late_fees_applied` — that
-        // column is corrupt and has held fees on rent that was paid early.
-        lateFee: lateFeeDue(rule, sp, now),
+        // column is corrupt and has held fees on rent that was paid early. Fee
+        // money that already arrived is netted off: `lateFeeDue` reports what
+        // the rule *assessed*, and a tenant who has paid part of their fee does
+        // not still owe that part.
+        lateFee: Math.max(0, Math.round((lateFeeDue(rule, sp, now) - (sp.late_fee_paid ?? 0)) * 100) / 100),
       })
     }
 

@@ -17,7 +17,9 @@ export type PaymentEmailItem = {
   label: string
   dueDate: string
   amount: number
-  kind: 'rent' | 'charge'
+  /** `late_fee` rides on the rent row the fee was assessed against, so it still
+   *  carries `scheduledPaymentId` — only the kind tells them apart. */
+  kind: 'rent' | 'charge' | 'late_fee'
 }
 
 export type PaymentEmailRecord = {
