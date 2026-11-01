@@ -8,7 +8,7 @@
  * only place that decides, so proving it here proves the portal gate, the
  * sidebar locks and the paywall screen at once.
  *
- * Run: npx tsx scripts/verify-landlord-access.mjs
+ * Run: npm run verify:landlord-access
  */
 const { isFreeLandlordPath, lockedFeature, navItemLocked, FREE_PROPERTY_LIMIT } =
   await import('../src/lib/landlordAccess.ts')
