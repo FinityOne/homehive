@@ -94,6 +94,7 @@ export default function LandlordLeasesPage() {
         .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid; }
         .tenant-pill { display: inline-block; background: #f1f5f9; border-radius: 20px; padding: 2px 8px; font-size: 12px; color: #475569; margin: 2px 2px 2px 0; }
         .prop-name { font-weight: 500; }
+        .demo-pill { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; color: #a16207; background: rgba(234,179,8,0.12); border: 1px solid rgba(234,179,8,0.3); vertical-align: middle; }
         .unit-text { font-size: 12px; color: #94a3b8; margin-top: 2px; }
         .rent-text { font-size: 14px; font-weight: 500; color: #10b981; }
 
@@ -144,7 +145,13 @@ export default function LandlordLeasesPage() {
                 return (
                   <tr key={lease.id} onClick={() => router.push(`/landlord/leases/${lease.id}`)}>
                     <td>
-                      <div className="prop-name">{lease.property?.name || '—'}</div>
+                      <div className="prop-name">
+                        {lease.property?.name || '—'}
+                        {/* A demo lease is a rehearsal — no rent is collected on it and it
+                            is absent from Financials. Said here so the row is never read
+                            as a tenancy that is simply behind on its paperwork. */}
+                        {lease.is_demo && <span className="demo-pill" title="Demo lease — no rent is collected and it stays out of Financials">DEMO</span>}
+                      </div>
                       {lease.unit_number && <div className="unit-text">Unit {lease.unit_number}</div>}
                     </td>
                     <td>
@@ -158,9 +165,11 @@ export default function LandlordLeasesPage() {
                     <td>{formatLeaseDate(lease.start_date)}</td>
                     <td>{formatLeaseDate(lease.end_date)}</td>
                     <td>
-                      {lease.rent_amount
-                        ? <span className="rent-text">${lease.rent_amount.toLocaleString()}</span>
-                        : <span style={{ color: '#cbd5e1' }}>—</span>
+                      {lease.is_demo
+                        ? <span style={{ color: '#94a3b8', fontSize: '13px' }}>Not charged</span>
+                        : lease.rent_amount
+                          ? <span className="rent-text">${lease.rent_amount.toLocaleString()}</span>
+                          : <span style={{ color: '#cbd5e1' }}>—</span>
                       }
                     </td>
                     <td>

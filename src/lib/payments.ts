@@ -130,7 +130,7 @@ export type PaymentPlan = {
   created_at: string
   updated_at: string
   property?: { id: string; name: string; slug: string }
-  lease?: { id: string; start_date: string; end_date: string; rent_amount: number | null }
+  lease?: { id: string; start_date: string; end_date: string; rent_amount: number | null; is_demo?: boolean }
   tenants: PaymentPlanTenant[]
   late_fee_rule?: LateFeeRule | null
   scheduled_payments?: ScheduledPayment[]
@@ -438,7 +438,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
     .select(`
       *,
       property:properties(id, name, slug),
-      lease:leases(id, start_date, end_date, rent_amount),
+      lease:leases(id, start_date, end_date, rent_amount, is_demo),
       tenants:payment_plan_tenants(id, name, email, monthly_total, status),
       late_fee_rule:late_fee_rules(*),
       scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, payment_method, processing_fee),
@@ -449,7 +449,13 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
 
   if (error || !data) { console.error('getPlansForOwner:', error); return [] }
 
-  return data.map((row: any) => {
+  // A demo lease is a rehearsal, and money owed on a rehearsal is not money.
+  // The database forbids a plan on one, so this should find nothing — it is
+  // here for the lease that gets flagged after the fact, so a stale plan can
+  // never slip into the portfolio's billed, outstanding or collection figures.
+  const real = data.filter((row: any) => !row.lease?.is_demo)
+
+  return real.map((row: any) => {
     const tenants = (row.tenants || []).map((t: any) => ({ ...t, line_items: [] }))
     // Who a charge belongs to, resolved here rather than with a second join:
     // the rollup names the person on every open deposit and one-off charge.
@@ -480,7 +486,7 @@ export async function getPlanById(planId: string): Promise<PaymentPlan | null> {
     .select(`
       *,
       property:properties(id, name, slug),
-      lease:leases(id, start_date, end_date, rent_amount),
+      lease:leases(id, start_date, end_date, rent_amount, is_demo),
       tenants:payment_plan_tenants(*, line_items:payment_line_items(*)),
       late_fee_rule:late_fee_rules(*),
       scheduled_payments(*),

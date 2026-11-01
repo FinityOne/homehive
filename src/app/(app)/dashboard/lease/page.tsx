@@ -26,6 +26,8 @@ type Tenancy = {
   lease: {
     id: string; start_date: string; end_date: string; unit_number: string | null
     rent_amount: number | null
+    /** A demo tenancy: no rent is collected on it and nothing here is payable. */
+    is_demo?: boolean
     property: { id: string; name: string; address: string; slug: string } | null
   }
   plan: { id: string; due_day: number; name: string } | null
@@ -280,7 +282,16 @@ export default function MyLeasePage() {
             recognisably this tenant. Saying "no lease" would be a lie, and
             silently showing zeros would be worse — name the problem and give
             them the one action that fixes it. */}
-        {t.unmatchedPlan && (
+        {/* A demo lease carries no schedule at all, so the page would otherwise
+            show a tenancy with an unexplained blank ledger. */}
+        {t.lease.is_demo && (
+          <div className="info-note">
+            <strong>This is a demo lease.</strong> No rent is collected on it — nothing here is
+            due, and nothing can be charged to you.
+          </div>
+        )}
+
+        {!t.lease.is_demo && t.unmatchedPlan && (
           <div className="warn">
             <strong>We can&apos;t match your account to this lease.</strong> Your landlord has a rent
             schedule for this home, but none of the payers on it is recorded under{' '}
@@ -545,6 +556,8 @@ function ord(n: number) {
 }
 
 const CSS = `
+  .info-note { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; border-radius: 9px; padding: 12px 15px; font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
+  .info-note strong { color: #0f172a; }
   .warn { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; color: #92400e; border-radius: 9px; padding: 12px 15px; font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
 
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');

@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
 
   const planIds = [...new Set([...schedRows, ...specialRows].map(r => r.plan_id).filter(Boolean))]
   const [{ data: plans }, { data: payers }, { data: rules }] = await Promise.all([
-    supabaseAdmin.from('payment_plans').select('id, owner_id, property:properties ( name )').in('id', planIds),
+    supabaseAdmin.from('payment_plans').select('id, owner_id, lease:leases ( is_demo ), property:properties ( name )').in('id', planIds),
     supabaseAdmin.from('payment_plan_tenants').select('id, plan_id, name, email, status').in('plan_id', planIds),
     supabaseAdmin.from('late_fee_rules')
       .select('plan_id, grace_period_days, fee_amount, frequency_days, max_total_fees')
@@ -159,6 +159,13 @@ export async function GET(req: NextRequest) {
     if (existing) return existing
 
     const plan = planById.get(planId)
+    // Never chase rent on a demo lease. A plan should not exist on one at all
+    // (the database forbids it), but a lease flagged after the fact leaves a
+    // live schedule behind, and emailing a tenant about rehearsal rent is the
+    // one failure here that reaches a real person.
+    const leaseRaw = (plan as { lease?: unknown } | undefined)?.lease
+    const leaseRow = Array.isArray(leaseRaw) ? leaseRaw[0] : leaseRaw
+    if ((leaseRow as { is_demo?: boolean } | null)?.is_demo) return null
     const profile = plan ? profileById.get(plan.owner_id) : undefined
     const t: Target = {
       tenantId: payerId,

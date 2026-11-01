@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 
   const { data: leases } = await supabaseAdmin
     .from('leases')
-    .select('id, property_id, start_date, end_date, rent_amount, unit_number, notes, property:properties ( id, name, address, slug )')
+    .select('id, property_id, start_date, end_date, rent_amount, unit_number, notes, is_demo, property:properties ( id, name, address, slug )')
     .in('id', leaseIds)
 
   const { data: plans } = await supabaseAdmin
@@ -46,7 +46,11 @@ export async function GET(req: NextRequest) {
   const tenancies = []
 
   for (const lease of leases ?? []) {
-    const plan = (plans ?? []).find((p: any) => p.lease_id === lease.id)
+    // A demo lease never bills. It keeps its place in the tenant's list — the
+    // tenancy itself is real to them — but no plan, schedule or charge is
+    // carried through, so there is nothing on the page to pay and nothing to
+    // mistake for a balance.
+    const plan = lease.is_demo ? null : (plans ?? []).find((p: any) => p.lease_id === lease.id)
 
     // Which payer on this plan is *me*? Email, then an exact full-name match on
     // this lease. Nothing looser — see src/lib/tenantIdentity.ts.
@@ -87,6 +91,7 @@ export async function GET(req: NextRequest) {
         end_date: lease.end_date,
         unit_number: lease.unit_number,
         rent_amount: lease.rent_amount,
+        is_demo: !!lease.is_demo,
         property: lease.property,
       },
       plan: plan ? { id: plan.id, due_day: plan.due_day, name: plan.name } : null,

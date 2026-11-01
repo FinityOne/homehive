@@ -77,6 +77,23 @@ export async function POST(req: NextRequest) {
   )
   if (mine.size === 0) return Response.json({ error: 'No rent account found for you.' }, { status: 404 })
 
+  // Charges on a demo lease are never payable, whatever a stale page offers.
+  // The database forbids a plan on such a lease, so this normally finds
+  // nothing — but a lease flagged after its plan existed must not be chargeable
+  // for the minutes before someone deletes the plan.
+  const { data: demoLeases } = await supabaseAdmin
+    .from('leases').select('id').eq('is_demo', true)
+  const demoPlanIds = new Set<string>()
+  if ((demoLeases ?? []).length > 0) {
+    const { data: demoPlans } = await supabaseAdmin
+      .from('payment_plans').select('id').in('lease_id', (demoLeases ?? []).map(l => l.id))
+    for (const p of demoPlans ?? []) demoPlanIds.add(p.id)
+  }
+  const demoRefusal = () => Response.json(
+    { error: 'That lease is a demo lease — nothing is charged on it.' },
+    { status: 409 }
+  )
+
   // Load the rows and confirm every one belongs to this tenant.
   const rows: { kind: 'scheduled' | 'special'; id: string; due: number; lateFee: number; label: string; dueDate: string | null }[] = []
 
@@ -105,6 +122,7 @@ export async function POST(req: NextRequest) {
       if (!mine.has(r.plan_tenant_id)) {
         return Response.json({ error: 'That payment isn\'t yours.' }, { status: 403 })
       }
+      if (demoPlanIds.has(r.plan_id)) return demoRefusal()
       if (r.status === 'paid' || r.status === 'processing') continue
       const due = amountDue({ amount: Number(r.amount), paid_amount: Number(r.paid_amount ?? 0) })
       const lateFee = lateFeeDue(ruleByPlan.get(r.plan_id), {
@@ -121,12 +139,13 @@ export async function POST(req: NextRequest) {
   if (specialIds.length > 0) {
     const { data } = await supabaseAdmin
       .from('special_payments')
-      .select('id, plan_tenant_id, amount, status, label, due_date')
+      .select('id, plan_id, plan_tenant_id, amount, status, label, due_date')
       .in('id', specialIds)
     for (const r of data ?? []) {
       if (!r.plan_tenant_id || !mine.has(r.plan_tenant_id)) {
         return Response.json({ error: 'That charge isn\'t yours.' }, { status: 403 })
       }
+      if (demoPlanIds.has(r.plan_id)) return demoRefusal()
       if (r.status !== 'pending') continue
       const due = Number(r.amount)
       // One-off charges carry no late fee: the rule is written against rent.
