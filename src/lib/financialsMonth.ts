@@ -17,11 +17,13 @@
  * Everything here is pure. Give it plans and a date; it returns numbers. The
  * page renders them and owns no arithmetic of its own.
  */
-import { type PaymentPlan, type ScheduledPayment, type SpecialPayment } from '@/lib/payments'
+import {
+  type PaymentLineItem, type PaymentPlan, type ScheduledPayment, type SpecialPayment,
+} from '@/lib/payments'
 import {
   iso, inRange, liveRent, stageOf, daysBetweenDates,
-  rentTotals, chargeTotals, sumTotals, lateFeeDue, catLabel,
-  type Range, type Totals, type LeaseStage,
+  rentTotals, chargeTotals, sumTotals, lateFeeDue, lateFeeCappedByCharge, catLabel,
+  type Range, type Totals, type LeaseStage, type SettleMethod,
 } from '@/lib/financialsRollup'
 
 // ─── MONTHS AS ADDRESSES ─────────────────────────────────────────────────────
@@ -166,6 +168,44 @@ export const CHARGE_STATE_META: Record<ChargeState, { label: string; tone: 'good
   scheduled: { label: 'Scheduled', tone: 'quiet' },
 }
 
+/**
+ * One line of what a charge is made of.
+ *
+ * A rent charge is almost never just rent: it is rent plus the utilities riding
+ * on the payer's line items. Summing them into one figure is what made the old
+ * page impossible to argue with a tenant about — "$1,450" answers nothing when
+ * the tenant asks which part is the water bill.
+ */
+export type ChargeLine = {
+  label: string
+  amount: number
+  kind: 'rent' | 'utility' | 'fee' | 'other'
+}
+
+/** One payment that actually arrived against a charge. */
+export type ChargeSettlement = {
+  /** Rent (or charge) credited to the landlord. */
+  net: number
+  /** Late-fee money received on top. */
+  lateFee: number
+  /** Surcharge the tenant paid the processor — never the landlord's money. */
+  surcharge: number
+  paidDate: string | null
+  settledAt: string | null
+  method: SettleMethod | null
+  /** Days between the due date and the money landing. Negative = paid early. */
+  daysLate: number | null
+  recordedBy: 'tenant' | 'landlord' | null
+}
+
+/** Chases sent about a charge — rent and its late fee counted separately. */
+export type ChargeChases = {
+  count: number
+  lastAt: string | null
+  feeCount: number
+  feeLastAt: string | null
+}
+
 /** One rent charge or one-off charge, flattened with everything needed to show it. */
 export type Charge = {
   id: string
@@ -190,8 +230,32 @@ export type Charge = {
   state: ChargeState
   /** Days past due, for a charge still owed. 0 for anything settled or future. */
   daysLate: number
-  /** Late fee this charge has genuinely accrued, derived from the rule. */
+  /** Late fee this charge has genuinely accrued and not yet paid off. */
   lateFee: number
+  /** Late-fee money that genuinely arrived against this charge. */
+  lateFeePaid: number
+  /**
+   * What is actually owed on this charge today: the shortfall **plus** the late
+   * fee it has accrued.
+   *
+   * The page used to show `outstanding` and mention fees separately, which
+   * meant no figure anywhere was the number a landlord would put in front of a
+   * tenant. A fee the rule has assessed is money owed, so it belongs in the
+   * total — and every "due" figure above a charge sums this, not `outstanding`.
+   */
+  totalDue: number
+  /** What the charge is made of. Empty when we only know the single amount. */
+  lines: ChargeLine[]
+  /** The late-fee rule in words, so the fee can be explained, not just shown. */
+  feeRule: string | null
+  /** True when an uncapped rule was held down to the size of the charge. */
+  feeCapped: boolean
+  /** The money that arrived, if any. */
+  settlement: ChargeSettlement | null
+  chases: ChargeChases
+  /** Category, for a one-off charge. Null on rent. */
+  categoryLabel: string | null
+  notes: string | null
 }
 
 function rentState(sp: ScheduledPayment, todayStr: string): ChargeState {
@@ -218,6 +282,43 @@ function chargeState(sp: SpecialPayment, todayStr: string): ChargeState {
  * caller: they were cancelled, so they are not money, and a single omission
  * downstream would quietly inflate what a tenant appears to owe.
  */
+/** The late-fee rule in one sentence, so a fee on screen can be explained. */
+function feeRuleText(rule: PaymentPlan['late_fee_rule']): string | null {
+  if (!rule || rule.fee_amount <= 0) return null
+  const every = rule.frequency_days === 1 ? 'day' : `${rule.frequency_days} days`
+  const grace = rule.grace_period_days > 0
+    ? `${rule.grace_period_days} day${rule.grace_period_days !== 1 ? 's' : ''} after the due date`
+    : 'the due date'
+  const cap = rule.max_total_fees != null
+    ? `, up to ${money(rule.max_total_fees)}`
+    : ', capped at the size of the charge'
+  return `${money(rule.fee_amount)} every ${every} from ${grace}${cap}`
+}
+
+const money = (n: number) =>
+  `$${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
+
+/** What a rent charge is made of, from the payer's line items.
+ *
+ *  Rent is billed as the payer's whole monthly obligation, so the utilities
+ *  riding on it are invisible in the charge amount. Line items are the only
+ *  record of the split, so they are carried onto the charge — and only when
+ *  they actually add up to it, because a stale line item set would otherwise
+ *  present a breakdown that contradicts the figure above it. */
+function rentLines(items: PaymentLineItem[], amount: number): ChargeLine[] {
+  if (items.length === 0) return []
+  const sum = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100
+  if (Math.abs(sum - amount) > 0.01) return []
+  return items.map(i => ({
+    label: i.label || i.category,
+    amount: i.amount,
+    kind: i.category === 'rent' ? 'rent' : i.utility_id ? 'utility' : 'other',
+  }))
+}
+
+const settleMethod = (m: string | null): SettleMethod | null =>
+  m === 'card' || m === 'ach' || m === 'manual_zelle' || m === 'manual_other' ? m : null
+
 export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
   const todayStr = iso(now)
   const out: Charge[] = []
@@ -232,6 +333,15 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
       if (!liveRent(sp)) continue
       const payer = payers.get(sp.plan_tenant_id)
       const state = rentState(sp, todayStr)
+      const outstanding = Math.max(0, sp.amount - sp.paid_amount)
+      // Derived from the rule, never read from `late_fees_applied` — that
+      // column is corrupt and has held fees on rent that was paid early. Fee
+      // money that already arrived is netted off: `lateFeeDue` reports what
+      // the rule *assessed*, and a tenant who has paid part of their fee does
+      // not still owe that part.
+      const lateFee = Math.max(
+        0, Math.round((lateFeeDue(rule, sp, now) - (sp.late_fee_paid ?? 0)) * 100) / 100,
+      )
       out.push({
         id: sp.id,
         kind: 'rent',
@@ -247,15 +357,33 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
         dueDate: sp.due_date,
         amount: sp.amount,
         paid: sp.paid_amount,
-        outstanding: Math.max(0, sp.amount - sp.paid_amount),
+        outstanding,
         state,
         daysLate: state === 'overdue' ? Math.max(0, daysBetweenDates(sp.due_date, todayStr)) : 0,
-        // Derived from the rule, never read from `late_fees_applied` — that
-        // column is corrupt and has held fees on rent that was paid early. Fee
-        // money that already arrived is netted off: `lateFeeDue` reports what
-        // the rule *assessed*, and a tenant who has paid part of their fee does
-        // not still owe that part.
-        lateFee: Math.max(0, Math.round((lateFeeDue(rule, sp, now) - (sp.late_fee_paid ?? 0)) * 100) / 100),
+        lateFee,
+        lateFeePaid: sp.late_fee_paid ?? 0,
+        totalDue: Math.round((outstanding + lateFee) * 100) / 100,
+        lines: rentLines(payer?.line_items ?? [], sp.amount),
+        feeRule: feeRuleText(rule),
+        feeCapped: lateFeeCappedByCharge(rule, sp, now),
+        settlement: sp.paid_amount > 0 || sp.status === 'processing' ? {
+          net: sp.paid_amount,
+          lateFee: sp.late_fee_paid ?? 0,
+          surcharge: sp.processing_fee ?? 0,
+          paidDate: sp.paid_date,
+          settledAt: sp.settled_at,
+          method: settleMethod(sp.payment_method),
+          daysLate: sp.paid_date ? daysBetweenDates(sp.due_date, sp.paid_date) : null,
+          recordedBy: sp.recorded_by,
+        } : null,
+        chases: {
+          count: sp.reminder_count ?? 0,
+          lastAt: sp.reminder_sent_at,
+          feeCount: sp.late_fee_reminder_count ?? 0,
+          feeLastAt: sp.late_fee_reminder_sent_at,
+        },
+        categoryLabel: null,
+        notes: sp.notes,
       })
     }
 
@@ -282,6 +410,29 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
         daysLate: state === 'overdue' ? Math.max(0, daysBetweenDates(sp.due_date, todayStr)) : 0,
         // A late-fee rule is written against rent, not against a one-off.
         lateFee: 0,
+        lateFeePaid: 0,
+        totalDue: sp.status === 'paid' ? 0 : sp.amount,
+        lines: [],
+        feeRule: null,
+        feeCapped: false,
+        settlement: sp.status === 'paid' || sp.status === 'processing' ? {
+          net: sp.status === 'paid' ? sp.amount : 0,
+          lateFee: 0,
+          surcharge: sp.processing_fee ?? 0,
+          paidDate: sp.paid_date,
+          settledAt: sp.settled_at,
+          method: settleMethod(sp.payment_method),
+          daysLate: sp.paid_date ? daysBetweenDates(sp.due_date, sp.paid_date) : null,
+          recordedBy: null,
+        } : null,
+        chases: {
+          count: sp.reminder_count ?? 0,
+          lastAt: sp.reminder_sent_at,
+          feeCount: 0,
+          feeLastAt: null,
+        },
+        categoryLabel: catLabel(sp.category),
+        notes: sp.notes,
       })
     }
   }
@@ -300,6 +451,10 @@ export type MonthPayer = {
   billed: number
   paid: number
   outstanding: number
+  /** Late fees accrued and unpaid on these charges. */
+  lateFees: number
+  /** outstanding + lateFees — what this person actually owes for the month. */
+  totalDue: number
   /** The worst state among their charges — what the row should be coloured by. */
   state: ChargeState
 }
@@ -317,6 +472,9 @@ export type MonthLease = {
   billed: number
   paid: number
   outstanding: number
+  lateFees: number
+  /** outstanding + lateFees. */
+  totalDue: number
 }
 
 export type MonthView = {
@@ -327,6 +485,19 @@ export type MonthView = {
   totals: Totals
   rent: Totals
   charges: Totals
+  /**
+   * Late fees accrued and unpaid on this month's charges.
+   *
+   * `Totals` deliberately knows nothing about fees — a collection rate has to
+   * stay rent against rent. But "still due" is a different question, and a fee
+   * the rule has assessed is part of its answer, so it is carried alongside and
+   * added into `totalDue` / `overdueDue` below.
+   */
+  feesDue: number
+  /** Outstanding rent and charges **plus** the fees on them. */
+  totalDue: number
+  /** The overdue slice, fees included — the figure worth chasing. */
+  overdueDue: number
   leases: MonthLease[]
   /** Everything due in the month, soonest first. */
   rows: Charge[]
@@ -336,6 +507,8 @@ export type MonthView = {
 
 /** The worst of a set of states — a payer who paid two charges and missed one
  *  has missed one, and the row must say so rather than averaging to "fine". */
+const round2 = (n: number) => Math.round(n * 100) / 100
+
 const WORST_FIRST: ChargeState[] = ['overdue', 'due', 'part', 'clearing', 'scheduled', 'paid']
 const worstState = (states: ChargeState[]): ChargeState =>
   WORST_FIRST.find(s => states.includes(s)) ?? 'paid'
@@ -353,7 +526,7 @@ export function monthView(plans: PaymentPlan[], key: MonthKey, now = new Date())
     .filter(c => inRange(c.dueDate, range))
     .sort((a, b) =>
       a.dueDate.localeCompare(b.dueDate) ||
-      b.outstanding - a.outstanding ||
+      b.totalDue - a.totalDue ||
       (a.who ?? '').localeCompare(b.who ?? '')
     )
 
@@ -391,9 +564,11 @@ export function monthView(plans: PaymentPlan[], key: MonthKey, now = new Date())
       billed: pcs.reduce((s, c) => s + c.amount, 0),
       paid: pcs.reduce((s, c) => s + c.paid, 0),
       outstanding: pcs.reduce((s, c) => s + c.outstanding, 0),
+      lateFees: round2(pcs.reduce((s, c) => s + c.lateFee, 0)),
+      totalDue: round2(pcs.reduce((s, c) => s + c.totalDue, 0)),
       state: worstState(pcs.map(c => c.state)),
     })).sort((a, b) =>
-      b.outstanding - a.outstanding || a.name.localeCompare(b.name)
+      b.totalDue - a.totalDue || a.name.localeCompare(b.name)
     )
 
     leases.push({
@@ -408,22 +583,33 @@ export function monthView(plans: PaymentPlan[], key: MonthKey, now = new Date())
       billed: cs.reduce((s, c) => s + c.amount, 0),
       paid: cs.reduce((s, c) => s + c.paid, 0),
       outstanding: cs.reduce((s, c) => s + c.outstanding, 0),
+      lateFees: round2(cs.reduce((s, c) => s + c.lateFee, 0)),
+      totalDue: round2(cs.reduce((s, c) => s + c.totalDue, 0)),
     })
   }
 
   leases.sort((a, b) =>
-    b.outstanding - a.outstanding ||
+    b.totalDue - a.totalDue ||
     a.propertyName.localeCompare(b.propertyName) ||
     a.leaseName.localeCompare(b.leaseName)
+  )
+
+  const totals = sumTotals([rent, charges])
+  const feesDue = round2(rows.reduce((s, c) => s + c.lateFee, 0))
+  const overdueFees = round2(
+    rows.filter(c => c.state === 'overdue').reduce((s, c) => s + c.lateFee, 0),
   )
 
   return {
     key,
     label: monthLabel(key),
     position: monthPosition(key, now),
-    totals: sumTotals([rent, charges]),
+    totals,
     rent,
     charges,
+    feesDue,
+    totalDue: round2(totals.outstanding + feesDue),
+    overdueDue: round2(totals.overdue + overdueFees),
     leases,
     rows,
     empty: rows.length === 0,
@@ -440,8 +626,16 @@ export type UpcomingMonth = {
   position: MonthPosition
   billed: number
   paid: number
-  /** Still to come in for that month. The figure the strip is really about. */
+  /**
+   * Still to come in for that month, **including** late fees accrued on it.
+   *
+   * A landlord reading the strip is asking how much money is still outstanding
+   * against that month; a fee the rule has assessed is part of that, and
+   * leaving it out made the strip disagree with every other figure on the page.
+   */
   expected: number
+  /** The fee slice of `expected`, so it can be named rather than buried. */
+  feesDue: number
   count: number
   /** How many of those charges are already past their due date. */
   overdueCount: number
@@ -474,7 +668,8 @@ export function upcomingMonths(
       position: monthPosition(key, now),
       billed: mine.reduce((s, c) => s + c.amount, 0),
       paid: mine.reduce((s, c) => s + c.paid, 0),
-      expected: mine.reduce((s, c) => s + c.outstanding, 0),
+      expected: round2(mine.reduce((s, c) => s + c.totalDue, 0)),
+      feesDue: round2(mine.reduce((s, c) => s + c.lateFee, 0)),
       count: mine.length,
       overdueCount: mine.filter(c => c.state === 'overdue').length,
     }
@@ -489,7 +684,10 @@ export function dueWithin(plans: PaymentPlan[], days: number, now = new Date()):
     c.outstanding > 0 && c.dueDate >= todayStr && c.dueDate <= until
   )
   return {
-    amount: rows.reduce((s, c) => s + c.outstanding, 0),
+    // Charges in this window are not yet due, so no fee can have accrued —
+    // `totalDue` is used anyway so the figure stays the same shape as every
+    // other "due" figure on the page, whatever the rule does later.
+    amount: round2(rows.reduce((s, c) => s + c.totalDue, 0)),
     count: rows.length,
   }
 }
