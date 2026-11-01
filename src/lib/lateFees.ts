@@ -109,6 +109,17 @@ export type ChargeBreakdown = {
   lateFeeAssessed: number
   /** Fee money that genuinely arrived (`late_fee_paid`). */
   lateFeeCollected: number
+  /**
+   * Fee money that arrived recorded as *rent*, i.e. paid above the charge.
+   *
+   * Two charges here were overpaid by exactly one and four days' worth of the
+   * daily fee: the tenant paid the fee and it landed in `paid_amount`. It is
+   * credited against the fee because nothing else on the row could explain it,
+   * and leaving it out bills the tenant twice for the same money. The tenant
+   * portal applies the identical credit — see `lateFeeOutstanding` in
+   * `rentPayments.ts` — so both sides quote one figure.
+   */
+  lateFeeOverpaid: number
   /** Fee the landlord has written off. */
   lateFeeWaived: number
   /** Still owed in fees: assessed − collected − waived, never negative. */
@@ -160,6 +171,7 @@ export function chargeBreakdown(
   const voided = sp.status === 'voided'
   const assessed = voided ? 0 : lateFeeDue(rule, sp, now)
   const collectedFee = Number(sp.late_fee_paid ?? 0)
+  const overpaid = Math.max(0, round2(Number(sp.paid_amount ?? 0) - billed))
   const waived = waiver ? Math.min(assessed, Number(waiver.amount)) : 0
   const settled = rentIsSettled(sp)
   const asOf = lateFeeAsOf(sp, now)
@@ -176,8 +188,9 @@ export function chargeBreakdown(
     split: splitKnown ? 'known' : 'unknown',
     lateFeeAssessed: assessed,
     lateFeeCollected: collectedFee,
+    lateFeeOverpaid: Math.min(assessed, overpaid),
     lateFeeWaived: waived,
-    lateFeeOutstanding: Math.max(0, round2(assessed - collectedFee - waived)),
+    lateFeeOutstanding: Math.max(0, round2(assessed - collectedFee - overpaid - waived)),
     lateFeeCapped: voided ? false : lateFeeCappedByCharge(rule, sp, now),
     expected,
     collected,
