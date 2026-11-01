@@ -35,18 +35,18 @@ function StepBar({ step, total }: { step: number; total: number }) {
               <div style={{
                 width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '12px', fontWeight: 700,
-                background: done ? '#10b981' : current ? '#0f172a' : '#e2e8f0',
-                color: done || current ? '#fff' : '#94a3b8',
+                background: done ? '#1d8a4e' : current ? '#0071e3' : '#e5e5ea',
+                color: done || current ? '#fff' : '#8e8e93',
                 transition: 'all 0.2s',
               }}>
                 {done ? '✓' : n}
               </div>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: current ? '#0f172a' : '#94a3b8', marginTop: 4, whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: current ? '#1d1d1f' : '#8e8e93', marginTop: 4, whiteSpace: 'nowrap' }}>
                 {label}
               </div>
             </div>
             {n < total && (
-              <div style={{ flex: 1, height: '2px', background: done ? '#10b981' : '#e2e8f0', margin: '0 6px', marginBottom: 16, transition: 'background 0.2s' }} />
+              <div style={{ flex: 1, height: '2px', background: done ? '#1d8a4e' : '#e5e5ea', margin: '0 6px', marginBottom: 16, transition: 'background 0.2s' }} />
             )}
           </div>
         )
@@ -60,9 +60,9 @@ function StepBar({ step, total }: { step: number; total: number }) {
 function Field({ label, note, children }: { label: string; note?: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: 6 }}>
+      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#6e6e73', marginBottom: 6 }}>
         {label}
-        {note && <span style={{ fontWeight: 400, color: '#94a3b8', marginLeft: 6 }}>{note}</span>}
+        {note && <span style={{ fontWeight: 400, color: '#8e8e93', marginLeft: 6 }}>{note}</span>}
       </label>
       {children}
     </div>
@@ -71,9 +71,9 @@ function Field({ label, note, children }: { label: string; note?: string; childr
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', fontSize: '14px',
-  border: '1.5px solid #e2e8f0', borderRadius: '8px',
+  border: '1.5px solid #e5e5ea', borderRadius: '8px',
   outline: 'none', fontFamily: "'DM Sans', sans-serif",
-  background: '#fff', color: '#0f172a', boxSizing: 'border-box',
+  background: '#fff', color: '#0071e3', boxSizing: 'border-box',
 }
 
 const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' }
@@ -365,20 +365,20 @@ export default function NewPaymentPlanPage() {
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
   const CARD: React.CSSProperties = {
-    background: '#fff', borderRadius: '14px', border: '1px solid #e2e8f0',
+    background: '#fff', borderRadius: '14px', border: '1px solid #e5e5ea',
     padding: '28px 30px', marginBottom: 0,
     boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f0f4f8', fontFamily: "'DM Sans', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Fraunces:ital,wght@0,300;1,300&display=swap'); input:focus, select:focus, textarea:focus { border-color: #0f172a !important; box-shadow: 0 0 0 3px rgba(15,23,42,0.07); } .toggle-btn { cursor:pointer; transition: all 0.15s; } .toggle-btn:hover { filter: brightness(0.95); }`}</style>
+    <div style={{ minHeight: '100vh', background: '#fafafb', fontFamily: "'DM Sans', sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Fraunces:ital,wght@0,300;1,300&display=swap'); input:focus, select:focus, textarea:focus { border-color: #0071e3 !important; box-shadow: 0 0 0 3px rgba(0,113,227,0.14); } .toggle-btn { cursor:pointer; transition: all 0.15s; } .toggle-btn:hover { filter: brightness(0.95); }`}</style>
 
       {/* Header */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <a href="/landlord/financials" style={{ color: '#64748b', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}>← Financials</a>
-        <span style={{ color: '#cbd5e1' }}>/</span>
-        <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>New Payment Plan</span>
+      <div style={{ background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <a href="/landlord/financials" style={{ color: '#6e6e73', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}>← Financials</a>
+        <span style={{ color: '#d6d6db' }}>/</span>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: '#1d1d1f' }}>New Payment Plan</span>
       </div>
 
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 20px' }}>
@@ -387,8 +387,8 @@ export default function NewPaymentPlanPage() {
         {/* ── STEP 1: Property & Lease ── */}
         {step === 1 && (
           <div style={CARD}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Property & Lease</h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: 24, marginTop: 0 }}>Select the property and lease this payment plan is tied to.</p>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Property & Lease</h2>
+            <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: 24, marginTop: 0 }}>Select the property and lease this payment plan is tied to.</p>
 
             <Field label="Property">
               <select style={selectStyle} value={selectedPropId} onChange={e => onSelectProp(e.target.value)}>
@@ -400,8 +400,8 @@ export default function NewPaymentPlanPage() {
             {selectedPropId && (
               <Field label="Lease">
                 {leases.length === 0
-                  ? <div style={{ fontSize: '13px', color: '#94a3b8', padding: '10px 0' }}>
-                      No leases found. <a href="/landlord/leases/new" style={{ color: '#0f172a', fontWeight: 600 }}>Create one →</a>
+                  ? <div style={{ fontSize: '13px', color: '#8e8e93', padding: '10px 0' }}>
+                      No leases found. <a href="/landlord/leases/new" style={{ color: '#1d1d1f', fontWeight: 600 }}>Create one →</a>
                     </div>
                   : <select style={selectStyle} value={selectedLeaseId} onChange={e => onSelectLease(e.target.value)}>
                       <option value="">Select a lease…</option>
@@ -418,7 +418,7 @@ export default function NewPaymentPlanPage() {
 
             {selectedLease && (
               <>
-                <div style={{ background: '#f8fafc', borderRadius: '9px', padding: '14px 16px', marginBottom: 18, border: '1px solid #e2e8f0', display: 'flex', gap: 24 }}>
+                <div style={{ background: '#fafafb', borderRadius: '9px', padding: '14px 16px', marginBottom: 18, border: '1px solid #e5e5ea', display: 'flex', gap: 24 }}>
                   <LabelVal label="Start"   value={fmtDate(selectedLease.start_date)} />
                   <LabelVal label="End"     value={fmtDate(selectedLease.end_date)} />
                   <LabelVal label="Monthly" value={selectedLease.rent_amount ? fmtCurrency(selectedLease.rent_amount) : 'Not set'} />
@@ -434,34 +434,34 @@ export default function NewPaymentPlanPage() {
         {/* ── STEP 2: Payers ── */}
         {step === 2 && (
           <div style={CARD}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Payers</h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: 20, marginTop: 0 }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Payers</h2>
+            <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: 20, marginTop: 0 }}>
               Configure who pays and how much. Line items break down the monthly total (rent, utilities, etc.).
             </p>
 
             {/* People already on the lease — pick instead of retype */}
             {leaseTenants.length > 0 && (
-              <div style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '14px 16px', marginBottom: 20, background: '#fafbfc' }}>
+              <div style={{ border: '1.5px solid #e5e5ea', borderRadius: '10px', padding: '14px 16px', marginBottom: 20, background: '#fafbfc' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>
                       Tenants on this lease ({leaseTenants.length})
                     </div>
-                    <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: 2 }}>
+                    <div style={{ fontSize: '11.5px', color: '#8e8e93', marginTop: 2 }}>
                       Tap anyone who pays rent directly — their name and email come across.
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       onClick={addAllLeaseTenants}
-                      style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                      style={{ background: '#fff', border: '1.5px solid #e5e5ea', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#6e6e73', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
                     >
                       Add all as payers
                     </button>
                     {leaseRent > 0 && tenants.length > 1 && (
                       <button
                         onClick={splitRentEvenly}
-                        style={{ background: '#0f172a', border: 'none', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#34d399', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
+                        style={{ background: '#0071e3', border: 'none', borderRadius: '980px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
                       >
                         Split {fmtCurrency(leaseRent)} evenly
                       </button>
@@ -479,9 +479,9 @@ export default function NewPaymentPlanPage() {
                         title={lt.email ?? undefined}
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: 7,
-                          border: `1.5px solid ${on ? '#10b981' : '#e2e8f0'}`,
-                          background: on ? '#ecfdf5' : '#fff',
-                          color: on ? '#065f46' : '#334155',
+                          border: `1.5px solid ${on ? '#1d8a4e' : '#e5e5ea'}`,
+                          background: on ? '#e8f5ed' : '#fff',
+                          color: on ? '#1d8a4e' : '#6e6e73',
                           fontWeight: on ? 700 : 500,
                           borderRadius: '20px', padding: '7px 13px', fontSize: '13px',
                           cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
@@ -510,9 +510,9 @@ export default function NewPaymentPlanPage() {
                   }}
                   style={{
                     flex: 1, padding: '12px 16px', borderRadius: '9px', cursor: 'pointer', border: '1.5px solid',
-                    borderColor: splitType === t ? '#0f172a' : '#e2e8f0',
-                    background: splitType === t ? '#0f172a' : '#fff',
-                    color: splitType === t ? '#fff' : '#475569',
+                    borderColor: splitType === t ? '#0071e3' : '#e5e5ea',
+                    background: splitType === t ? '#0071e3' : '#fff',
+                    color: splitType === t ? '#fff' : '#6e6e73',
                     fontSize: '13px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
                   }}
                 >
@@ -524,45 +524,45 @@ export default function NewPaymentPlanPage() {
             {/* Amount validation */}
             {leaseRent > 0 && (
               <div style={{
-                background: amountMatch ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${amountMatch ? '#bbf7d0' : '#fca5a5'}`,
+                background: amountMatch ? '#e8f5ed' : '#fdeceb',
+                border: `1px solid ${amountMatch ? '#e8f5ed' : '#f3c6c2'}`,
                 borderRadius: '8px', padding: '10px 14px', marginBottom: 20,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 fontSize: '13px',
               }}>
-                <span style={{ color: amountMatch ? '#166534' : '#991b1b', fontWeight: 600 }}>
+                <span style={{ color: amountMatch ? '#1d8a4e' : '#d13b30', fontWeight: 600 }}>
                   {amountMatch ? `✓ Totals match: ${fmtCurrency(grandTotal)}/mo` : `⚠ Total ${fmtCurrency(grandTotal)} ≠ lease ${fmtCurrency(leaseRent)}/mo`}
                 </span>
-                {!amountMatch && <span style={{ color: '#b91c1c', fontSize: '12px' }}>Difference: {fmtCurrency(Math.abs(grandTotal - leaseRent))}</span>}
+                {!amountMatch && <span style={{ color: '#d13b30', fontSize: '12px' }}>Difference: {fmtCurrency(Math.abs(grandTotal - leaseRent))}</span>}
               </div>
             )}
 
             {/* Tenant rows */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {tenants.map((t, ti) => (
-                <div key={ti} style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px 18px', background: '#fafafa', position: 'relative' }}>
+                <div key={ti} style={{ border: '1.5px solid #e5e5ea', borderRadius: '10px', padding: '16px 18px', background: '#fafafb', position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1d1d1f' }}>
                       {splitType === 'single' ? 'Payer' : `Tenant ${ti + 1}`}
                     </span>
                     {splitType === 'multi' && tenants.length > 1 && (
-                      <button onClick={() => removeTenant(ti)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '2px 6px', borderRadius: '4px' }}>×</button>
+                      <button onClick={() => removeTenant(ti)} style={{ background: 'none', border: 'none', color: '#8e8e93', cursor: 'pointer', fontSize: '16px', padding: '2px 6px', borderRadius: '4px' }}>×</button>
                     )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                     <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>NAME *</label>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>NAME *</label>
                       <input style={inputStyle} value={t.name} onChange={e => updateTenant(ti, 'name', e.target.value)} placeholder="Full name" />
                     </div>
                     <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>EMAIL (optional)</label>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>EMAIL (optional)</label>
                       <input style={inputStyle} type="email" value={t.email} onChange={e => updateTenant(ti, 'email', e.target.value)} placeholder="email@example.com" />
                     </div>
                   </div>
 
                   {/* Line items */}
                   <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: 8 }}>LINE ITEMS</div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', marginBottom: 8 }}>LINE ITEMS</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {t.lineItems.map((li, lidx) => (
                         <div key={lidx} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px 28px', gap: 6, alignItems: 'center' }}>
@@ -572,7 +572,7 @@ export default function NewPaymentPlanPage() {
                           <input style={{ ...inputStyle, padding: '7px 10px', fontSize: '12px' }} value={li.label} onChange={e => updateLineItem(ti, lidx, 'label', e.target.value)} placeholder="Label" />
                           <input style={{ ...inputStyle, padding: '7px 10px', fontSize: '12px' }} type="number" min="0" step="0.01" value={li.amount} onChange={e => updateLineItem(ti, lidx, 'amount', e.target.value)} placeholder="$0" />
                           {t.lineItems.length > 1 && (
-                            <button onClick={() => removeLineItem(ti, lidx)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '15px', padding: 0 }}>×</button>
+                            <button onClick={() => removeLineItem(ti, lidx)} style={{ background: 'none', border: 'none', color: '#8e8e93', cursor: 'pointer', fontSize: '15px', padding: 0 }}>×</button>
                           )}
                         </div>
                       ))}
@@ -580,11 +580,11 @@ export default function NewPaymentPlanPage() {
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <button onClick={() => addLineItem(ti)} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: '4px 0', fontFamily: "'DM Sans', sans-serif" }}>
+                    <button onClick={() => addLineItem(ti)} style={{ background: 'none', border: 'none', color: '#6e6e73', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: '4px 0', fontFamily: "'DM Sans', sans-serif" }}>
                       + Add line item
                     </button>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
-                      {fmtCurrency(tenantTotal(t))}<span style={{ fontSize: '11px', fontWeight: 400, color: '#64748b' }}>/mo</span>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1d1d1f' }}>
+                      {fmtCurrency(tenantTotal(t))}<span style={{ fontSize: '11px', fontWeight: 400, color: '#6e6e73' }}>/mo</span>
                     </div>
                   </div>
                 </div>
@@ -592,7 +592,7 @@ export default function NewPaymentPlanPage() {
             </div>
 
             {splitType === 'multi' && (
-              <button onClick={addTenant} style={{ marginTop: 12, width: '100%', padding: '10px', border: '1.5px dashed #cbd5e1', borderRadius: '9px', background: 'none', color: '#64748b', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+              <button onClick={addTenant} style={{ marginTop: 12, width: '100%', padding: '10px', border: '1.5px dashed #d6d6db', borderRadius: '9px', background: 'none', color: '#6e6e73', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
                 + Add tenant
               </button>
             )}
@@ -602,8 +602,8 @@ export default function NewPaymentPlanPage() {
         {/* ── STEP 3: Schedule & Late Fees ── */}
         {step === 3 && (
           <div style={CARD}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Schedule & Late Fees</h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: 24, marginTop: 0 }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Schedule & Late Fees</h2>
+            <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: 24, marginTop: 0 }}>
               Set the payment due date and optionally configure late fee penalties.
             </p>
 
@@ -613,12 +613,12 @@ export default function NewPaymentPlanPage() {
                   style={{ ...inputStyle, width: 80 }} type="number" min={1} max={28}
                   value={dueDay} onChange={e => setDueDay(Math.min(28, Math.max(1, parseInt(e.target.value) || 1)))}
                 />
-                <span style={{ fontSize: '14px', color: '#475569' }}>{fmtOrdinal(dueDay)} of every month</span>
+                <span style={{ fontSize: '14px', color: '#6e6e73' }}>{fmtOrdinal(dueDay)} of every month</span>
               </div>
             </Field>
 
             {selectedLease && (
-              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px 14px', marginBottom: prorationApplies ? 12 : 20, fontSize: '13px', color: '#475569', border: '1px solid #e2e8f0' }}>
+              <div style={{ background: '#fafafb', borderRadius: '8px', padding: '12px 14px', marginBottom: prorationApplies ? 12 : 20, fontSize: '13px', color: '#6e6e73', border: '1px solid #e5e5ea' }}>
                 📅 Will generate <strong>{generateScheduleDates(selectedLease.start_date, selectedLease.end_date, dueDay).length}</strong> monthly payments
                 — {fmtDate(selectedLease.start_date)} through {fmtDate(selectedLease.end_date)}
               </div>
@@ -626,7 +626,7 @@ export default function NewPaymentPlanPage() {
 
             {/* Mid-month proration notice */}
             {proration?.applies && (
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 14px', marginBottom: 20, fontSize: '12.5px', color: '#1e40af', lineHeight: 1.5 }}>
+              <div style={{ background: '#e8f1fd', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 14px', marginBottom: 20, fontSize: '12.5px', color: '#005bb8', lineHeight: 1.5 }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>↺ Mid-month start — rent prorated</div>
                 The lease starts mid-month, so the full first month&apos;s rent ({fmtCurrency(proration.moveInAmount)})
                 is due on <strong>{fmtDate(proration.moveInDate)}</strong>. The tenant only owes prorated rent of{' '}
@@ -640,18 +640,18 @@ export default function NewPaymentPlanPage() {
             )}
 
             {/* Late fee toggle */}
-            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20 }}>
+            <div style={{ borderTop: '1px solid #f0f0f2', paddingTop: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: lateFeeEnabled ? 20 : 0 }}>
                 <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>Late fee penalties</div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: 2 }}>Automatically track accruing fees on overdue payments</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#1d1d1f' }}>Late fee penalties</div>
+                  <div style={{ fontSize: '12px', color: '#8e8e93', marginTop: 2 }}>Automatically track accruing fees on overdue payments</div>
                 </div>
                 <button
                   className="toggle-btn"
                   onClick={() => setLateFeeEnabled(v => !v)}
                   style={{
                     width: 44, height: 24, borderRadius: '99px', border: 'none', cursor: 'pointer',
-                    background: lateFeeEnabled ? '#10b981' : '#cbd5e1', position: 'relative', flexShrink: 0,
+                    background: lateFeeEnabled ? '#1d8a4e' : '#d6d6db', position: 'relative', flexShrink: 0,
                   }}
                 >
                   <div style={{
@@ -682,7 +682,7 @@ export default function NewPaymentPlanPage() {
                     <input style={inputStyle} type="number" min={0} step="0.01" value={feeMax} onChange={e => setFeeMax(e.target.value)} placeholder="No cap" />
                   </Field>
                   {feeAmount && (
-                    <div style={{ gridColumn: '1/-1', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: '#c2410c' }}>
+                    <div style={{ gridColumn: '1/-1', background: '#fdf1e3', border: '1px solid #f6dcc0', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: '#b25000' }}>
                       After {graceDays} day{graceDays !== 1 ? 's' : ''} grace: {fmtCurrency(parseFloat(feeAmount) || 0)} added every {feeFreqDays} day{feeFreqDays !== 1 ? 's' : ''}
                       {feeMax ? ` (max ${fmtCurrency(parseFloat(feeMax))})` : ''}
                     </div>
@@ -696,8 +696,8 @@ export default function NewPaymentPlanPage() {
         {/* ── STEP 4: Special Charges ── */}
         {step === 4 && (
           <div style={CARD}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Special Charges</h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: 20, marginTop: 0 }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Special Charges</h2>
+            <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: 20, marginTop: 0 }}>
               Add a security deposit or any one-time charges. These are tracked separately from monthly rent.
             </p>
 
@@ -710,7 +710,7 @@ export default function NewPaymentPlanPage() {
                   dueDate: selectedLease?.start_date ?? '',
                   forTenant: 'all',
                 }])}
-                style={{ marginBottom: 16, padding: '10px 16px', border: '1.5px dashed #cbd5e1', borderRadius: '9px', background: 'none', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", width: '100%' }}
+                style={{ marginBottom: 16, padding: '10px 16px', border: '1.5px dashed #d6d6db', borderRadius: '9px', background: 'none', color: '#6e6e73', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", width: '100%' }}
               >
                 + Add security deposit
               </button>
@@ -718,33 +718,33 @@ export default function NewPaymentPlanPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {specials.map((sc, idx) => (
-                <div key={idx} style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px 18px', background: '#fafafa' }}>
+                <div key={idx} style={{ border: '1.5px solid #e5e5ea', borderRadius: '10px', padding: '16px 18px', background: '#fafafb' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>Special Charge {idx + 1}</span>
-                    <button onClick={() => setSpecials(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}>×</button>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#1d1d1f' }}>Special Charge {idx + 1}</span>
+                    <button onClick={() => setSpecials(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#8e8e93', cursor: 'pointer', fontSize: '16px' }}>×</button>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>TYPE</label>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>TYPE</label>
                       <select style={{ ...selectStyle, fontSize: '12px', padding: '7px 10px' }} value={sc.category} onChange={e => setSpecials(prev => prev.map((s, i) => i === idx ? { ...s, category: e.target.value as SpecialCategory, label: SPECIAL_CATEGORIES.find(c => c.value === e.target.value)?.label ?? s.label } : s))}>
                         {SPECIAL_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>LABEL</label>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>LABEL</label>
                       <input style={{ ...inputStyle, fontSize: '12px', padding: '7px 10px' }} value={sc.label} onChange={e => setSpecials(prev => prev.map((s, i) => i === idx ? { ...s, label: e.target.value } : s))} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>AMOUNT ($)</label>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>AMOUNT ($)</label>
                       <input style={{ ...inputStyle, fontSize: '12px', padding: '7px 10px' }} type="number" min={0} step="0.01" value={sc.amount} onChange={e => setSpecials(prev => prev.map((s, i) => i === idx ? { ...s, amount: e.target.value } : s))} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>DUE DATE</label>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>DUE DATE</label>
                       <input style={{ ...inputStyle, fontSize: '12px', padding: '7px 10px' }} type="date" value={sc.dueDate} onChange={e => setSpecials(prev => prev.map((s, i) => i === idx ? { ...s, dueDate: e.target.value } : s))} />
                     </div>
                     {tenants.length > 1 && (
                       <div style={{ gridColumn: '1/-1' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>APPLIES TO</label>
+                        <label style={{ fontSize: '11px', fontWeight: 600, color: '#6e6e73', display: 'block', marginBottom: 4 }}>APPLIES TO</label>
                         <select style={{ ...selectStyle, fontSize: '12px', padding: '7px 10px' }} value={sc.forTenant === 'all' ? 'all' : String(sc.forTenant)} onChange={e => setSpecials(prev => prev.map((s, i) => i === idx ? { ...s, forTenant: e.target.value === 'all' ? 'all' : parseInt(e.target.value) } : s))}>
                           <option value="all">All tenants</option>
                           {tenants.map((t, ti) => <option key={ti} value={ti}>{t.name || `Tenant ${ti + 1}`}</option>)}
@@ -758,7 +758,7 @@ export default function NewPaymentPlanPage() {
 
             <button
               onClick={() => setSpecials(prev => [...prev, { category: 'special', label: 'Special Charge', amount: '', dueDate: selectedLease?.start_date ?? '', forTenant: 'all' }])}
-              style={{ marginTop: 12, padding: '10px 16px', border: '1.5px dashed #cbd5e1', borderRadius: '9px', background: 'none', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", width: '100%' }}
+              style={{ marginTop: 12, padding: '10px 16px', border: '1.5px dashed #d6d6db', borderRadius: '9px', background: 'none', color: '#6e6e73', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", width: '100%' }}
             >
               + Add another charge
             </button>
@@ -768,11 +768,11 @@ export default function NewPaymentPlanPage() {
         {/* ── STEP 5: Review ── */}
         {step === 5 && selectedLease && (
           <div style={CARD}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Review & Create</h2>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: 24, marginTop: 0 }}>Review your payment plan before generating the full schedule.</p>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1d1d1f', marginBottom: 4 }}>Review & Create</h2>
+            <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: 24, marginTop: 0 }}>Review your payment plan before generating the full schedule.</p>
 
             {/* Summary */}
-            <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '18px 20px', marginBottom: 20, border: '1px solid #e2e8f0' }}>
+            <div style={{ background: '#fafafb', borderRadius: '10px', padding: '18px 20px', marginBottom: 20, border: '1px solid #e5e5ea' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <LabelVal label="Plan"        value={planName} />
                 <LabelVal label="Property"    value={selectedProp?.name ?? '—'} />
@@ -789,42 +789,42 @@ export default function NewPaymentPlanPage() {
 
             {/* Amount mismatch warning */}
             {!amountMatch && leaseRent > 0 && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px 14px', marginBottom: 16, fontSize: '13px', color: '#991b1b' }}>
+              <div style={{ background: '#fdeceb', border: '1px solid #f3c6c2', borderRadius: '8px', padding: '12px 14px', marginBottom: 16, fontSize: '13px', color: '#d13b30' }}>
                 ⚠️ Payer totals ({fmtCurrency(grandTotal)}) don't match the lease rent ({fmtCurrency(leaseRent)}). You can proceed, but verify this is intentional.
               </div>
             )}
 
             {/* Tenant breakdown */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>PAYER BREAKDOWN</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>PAYER BREAKDOWN</div>
               {tenants.map((t, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < tenants.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < tenants.length - 1 ? '1px solid #f0f0f2' : 'none' }}>
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>{t.name || `Tenant ${i + 1}`}</div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>{t.lineItems.filter(li => li.amount).map(li => `${li.label}: ${fmtCurrency(parseFloat(li.amount) || 0)}`).join(' · ')}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#1d1d1f' }}>{t.name || `Tenant ${i + 1}`}</div>
+                    <div style={{ fontSize: '12px', color: '#8e8e93' }}>{t.lineItems.filter(li => li.amount).map(li => `${li.label}: ${fmtCurrency(parseFloat(li.amount) || 0)}`).join(' · ')}</div>
                   </div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{fmtCurrency(tenantTotal(t))}/mo</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#1d1d1f' }}>{fmtCurrency(tenantTotal(t))}/mo</div>
                 </div>
               ))}
             </div>
 
             {/* Sample months */}
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>FIRST {Math.min(3, previewEntries.length)} PAYMENTS</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>FIRST {Math.min(3, previewEntries.length)} PAYMENTS</div>
               {previewEntries.slice(0, 3).map((e, i) => (
-                <div key={`${e.due_date}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: e.kind === 'regular' ? '#f8fafc' : '#eff6ff', border: e.kind === 'regular' ? 'none' : '1px solid #bfdbfe', borderRadius: '8px', marginBottom: 6 }}>
-                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
+                <div key={`${e.due_date}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: e.kind === 'regular' ? '#fafafb' : '#e8f1fd', border: e.kind === 'regular' ? 'none' : '1px solid #bfdbfe', borderRadius: '8px', marginBottom: 6 }}>
+                  <span style={{ fontSize: '13px', color: '#1d1d1f', fontWeight: 500 }}>
                     Due {fmtDate(e.due_date)}
-                    {e.kind === 'move_in' && <span style={{ fontSize: '11px', color: '#1e40af', fontWeight: 600, marginLeft: 6 }}>· move-in (full)</span>}
-                    {e.kind === 'prorated_credit' && <span style={{ fontSize: '11px', color: '#1e40af', fontWeight: 600, marginLeft: 6 }}>· rent − prorate</span>}
+                    {e.kind === 'move_in' && <span style={{ fontSize: '11px', color: '#005bb8', fontWeight: 600, marginLeft: 6 }}>· move-in (full)</span>}
+                    {e.kind === 'prorated_credit' && <span style={{ fontSize: '11px', color: '#005bb8', fontWeight: 600, marginLeft: 6 }}>· rent − prorate</span>}
                   </span>
-                  <span style={{ fontSize: '13px', color: '#64748b' }}>{fmtCurrency(e.amount)} across {tenants.length} payer{tenants.length !== 1 ? 's' : ''}</span>
+                  <span style={{ fontSize: '13px', color: '#6e6e73' }}>{fmtCurrency(e.amount)} across {tenants.length} payer{tenants.length !== 1 ? 's' : ''}</span>
                 </div>
               ))}
-              {previewEntries.length > 3 && <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', paddingTop: 4 }}>+ {previewEntries.length - 3} more payments</div>}
+              {previewEntries.length > 3 && <div style={{ fontSize: '12px', color: '#8e8e93', textAlign: 'center', paddingTop: 4 }}>+ {previewEntries.length - 3} more payments</div>}
             </div>
 
-            {error && <div style={{ marginTop: 16, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#991b1b' }}>{error}</div>}
+            {error && <div style={{ marginTop: 16, background: '#fdeceb', border: '1px solid #f3c6c2', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#d13b30' }}>{error}</div>}
           </div>
         )}
 
@@ -832,7 +832,7 @@ export default function NewPaymentPlanPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
           <button
             onClick={() => step > 1 ? setStep(s => s - 1) : window.location.href = '/landlord/financials'}
-            style={{ padding: '10px 20px', border: '1.5px solid #e2e8f0', borderRadius: '9px', background: '#fff', color: '#475569', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+            style={{ padding: '11px 20px', border: '1px solid #e5e5ea', borderRadius: 980, background: '#fff', color: '#6e6e73', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', minHeight: 44 }}
           >
             {step === 1 ? 'Cancel' : '← Back'}
           </button>
@@ -840,7 +840,7 @@ export default function NewPaymentPlanPage() {
             <button
               onClick={() => canNext[step] && setStep(s => s + 1)}
               disabled={!canNext[step]}
-              style={{ padding: '10px 24px', borderRadius: '9px', border: 'none', background: canNext[step] ? '#0f172a' : '#e2e8f0', color: canNext[step] ? '#fff' : '#94a3b8', fontSize: '13px', fontWeight: 600, cursor: canNext[step] ? 'pointer' : 'not-allowed', fontFamily: "'DM Sans', sans-serif", transition: 'background 0.15s' }}
+              style={{ padding: '11px 24px', borderRadius: 980, border: 'none', background: canNext[step] ? '#0071e3' : '#e5e5ea', color: canNext[step] ? '#fff' : '#8e8e93', fontSize: '14px', fontWeight: 500, cursor: canNext[step] ? 'pointer' : 'not-allowed', fontFamily: 'inherit', minHeight: 44, transition: 'background 0.15s' }}
             >
               Next →
             </button>
@@ -848,7 +848,8 @@ export default function NewPaymentPlanPage() {
             <button
               onClick={handleSubmit}
               disabled={saving}
-              style={{ padding: '10px 28px', borderRadius: '9px', border: 'none', background: saving ? '#64748b' : '#10b981', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+              aria-busy={saving}
+              style={{ padding: '11px 28px', borderRadius: 980, border: 'none', background: saving ? '#8e8e93' : '#0071e3', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: saving ? 'progress' : 'pointer', fontFamily: 'inherit', minHeight: 44 }}
             >
               {saving ? 'Creating…' : 'Create plan →'}
             </button>
@@ -862,8 +863,8 @@ export default function NewPaymentPlanPage() {
 function LabelVal({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{value}</div>
+      <div style={{ fontSize: '10px', fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1d1d1f' }}>{value}</div>
     </div>
   )
 }

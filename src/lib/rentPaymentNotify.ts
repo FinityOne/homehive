@@ -347,7 +347,7 @@ async function deliverRentPaymentEmails(input: {
       await logPaymentEmail({
         planId: ctx.planId, planTenantId: null,
         recipientEmail: ctx.landlordEmail, recipientName: ctx.landlordName,
-        subject, kind: `receipt_landlord_${event}`, trigger,
+        subject, kind: `receipt_landlord_${event}`, audience: 'landlord', trigger,
         status: sendErr ? 'failed' : 'sent',
         error: sendErr?.message ?? null,
         providerId: sendData?.id ?? null,

@@ -22,6 +22,7 @@ import { NextRequest } from 'next/server'
 import { buildRentReminderEmail, type ReminderRow } from '@/lib/rentReminderEmails'
 import { getSiteUrl } from '@/lib/siteUrl'
 import { amountDue, lateFeeRuleRisk, fmtMoney, type LateFeeRuleLike } from '@/lib/rentPayments'
+import { logPaymentEmail, type PaymentEmailItem } from '@/lib/paymentEmailLog'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,6 +52,11 @@ type Target = {
   /** Charge ids to claim once the email is away. */
   scheduledIds: string[]
   specialIds: string[]
+  /** The same charges, shaped for the email history — see `logPaymentEmail`.
+   *  Kept alongside the claim ids rather than rebuilt afterwards, because the
+   *  history records what the tenant was *shown*, and that is only knowable
+   *  here, where the rows are assembled. */
+  logItems: PaymentEmailItem[]
 }
 
 export async function GET(req: NextRequest) {
@@ -179,6 +185,7 @@ export async function GET(req: NextRequest) {
       rows: [],
       scheduledIds: [],
       specialIds: [],
+      logItems: [],
     }
     byTenant.set(payerId, t)
     return t
@@ -200,6 +207,14 @@ export async function GET(req: NextRequest) {
       kind: 'rent',
     })
     t.scheduledIds.push(r.id)
+    t.logItems.push({
+      scheduledPaymentId: r.id,
+      specialPaymentId: null,
+      label: t.rows[t.rows.length - 1].label,
+      dueDate: r.due_date,
+      amount: due,
+      kind: 'rent',
+    })
   }
 
   for (const r of specialRows) {
@@ -209,6 +224,14 @@ export async function GET(req: NextRequest) {
     if (!t) continue
     t.rows.push({ label: r.label, dueDate: r.due_date, amount: Number(r.amount), daysLate: 0, kind: 'charge' })
     t.specialIds.push(r.id)
+    t.logItems.push({
+      scheduledPaymentId: null,
+      specialPaymentId: r.id,
+      label: r.label,
+      dueDate: r.due_date,
+      amount: Number(r.amount),
+      kind: 'charge',
+    })
   }
 
   const targets = [...byTenant.values()].filter(t => t.rows.length > 0)
@@ -259,10 +282,35 @@ export async function GET(req: NextRequest) {
         lateFeeNote,
       })
 
-      const { error } = await resend.emails.send({
+      const { data: sendData, error } = await resend.emails.send({
         from: FROM, to: t.email, subject, html, text,
         ...(t.landlordEmail ? { replyTo: t.landlordEmail } : {}),
       })
+
+      // Automatic notices go into the same history as the ones a landlord
+      // sends by hand. Without this the log said "nobody has chased this
+      // tenant" about rent they had already been written to — and a landlord
+      // reading that would quite reasonably chase them again. The claim rows in
+      // `rent_reminder_sends` are not a substitute: they exist to stop a second
+      // send, hold no recipient, subject, outcome or amount, and are invisible
+      // to every screen in the app.
+      await logPaymentEmail({
+        planId: t.planId,
+        planTenantId: t.tenantId,
+        recipientEmail: t.email,
+        recipientName: t.tenantName,
+        subject,
+        kind: KIND,
+        audience: 'tenant',
+        trigger: 'auto',
+        status: error ? 'failed' : 'sent',
+        error: error?.message ?? null,
+        providerId: sendData?.id ?? null,
+        // Nobody pressed a button: a cron send has no sender to attribute.
+        sentBy: null,
+        items: t.logItems,
+      })
+
       if (error) {
         failed.push({ to: t.email, reason: error.message })
         continue
@@ -299,7 +347,25 @@ export async function GET(req: NextRequest) {
       sent.push(t.email)
       if (risk) console.warn('[rent-reminders] uncapped late-fee rule on plan', t.planId, '—', risk)
     } catch (e) {
-      failed.push({ to: t.email, reason: e instanceof Error ? e.message : String(e) })
+      const reason = e instanceof Error ? e.message : String(e)
+      failed.push({ to: t.email, reason })
+      // A throw on the way to the send is still a reminder that did not reach
+      // the tenant, and the landlord's log is the only place they would ever
+      // learn that: a cron's HTTP response is read by nobody.
+      await logPaymentEmail({
+        planId: t.planId,
+        planTenantId: t.tenantId,
+        recipientEmail: t.email,
+        recipientName: t.tenantName,
+        subject: `Rent due in ${DAYS_AHEAD} days`,
+        kind: KIND,
+        audience: 'tenant',
+        trigger: 'auto',
+        status: 'failed',
+        error: reason,
+        sentBy: null,
+        items: t.logItems,
+      })
     }
   }
 

@@ -22,6 +22,11 @@ export type PaymentEmailItem = {
   kind: 'rent' | 'charge' | 'late_fee'
 }
 
+/** Who the message was written for. A log of "reminders sent to tenants" that
+ *  silently includes the landlord's own copy of a receipt is a log that lies,
+ *  and `kind` only carried this by convention. */
+export type EmailAudience = 'tenant' | 'landlord' | 'admin'
+
 export type PaymentEmailRecord = {
   planId: string
   planTenantId: string | null
@@ -29,6 +34,9 @@ export type PaymentEmailRecord = {
   recipientName: string | null
   subject: string
   kind?: string
+  /** Defaults to 'tenant' — the overwhelming majority, and the safe reading of
+   *  a caller that forgot to say. */
+  audience?: EmailAudience
   trigger?: 'manual' | 'auto'
   status: 'sent' | 'failed'
   error?: string | null
@@ -57,7 +65,11 @@ export async function logPaymentEmail(rec: PaymentEmailRecord): Promise<string |
         recipient_name:  rec.recipientName,
         subject:         rec.subject,
         kind:            rec.kind ?? 'rent_request',
+        audience:        rec.audience ?? 'tenant',
         trigger:         rec.trigger ?? 'manual',
+        // An accepted send is not an observed delivery, so `delivered_at` stays
+        // null until the provider's webhook says otherwise. See
+        // `/api/webhooks/resend`.
         status:          rec.status,
         error:           rec.error ?? null,
         provider_id:     rec.providerId ?? null,
