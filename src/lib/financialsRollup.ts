@@ -42,7 +42,7 @@ export const SCOPES: { id: Scope; label: string; hint: string }[] = [
   { id: 'term',   label: 'Full term',    hint: 'The whole contracted life of every lease, including rent not yet due' },
 ]
 
-const iso = (d: Date) =>
+export const iso = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 /** Inclusive due-date bounds for a scope. `null` on a side means unbounded. */
@@ -61,9 +61,9 @@ export function scopeRange(scope: Scope, now = new Date()): { from: string | nul
 
 export type Range = { from: string | null; to: string | null }
 
-const ALL_TIME: Range = { from: null, to: null }
+export const ALL_TIME: Range = { from: null, to: null }
 
-const inRange = (date: string, r: Range) =>
+export const inRange = (date: string, r: Range) =>
   (r.from === null || date >= r.from) && (r.to === null || date <= r.to)
 
 // ─── TOTALS ──────────────────────────────────────────────────────────────────
@@ -151,14 +151,14 @@ export function sumTotals(parts: Totals[]): Totals {
 }
 
 /** Whole days from one ISO date to another. */
-function daysBetweenDates(from: string, to: string): number {
+export function daysBetweenDates(from: string, to: string): number {
   return Math.round(
     (new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86_400_000
   )
 }
 
 /** Rent that is still live money — a voided row was cancelled, not collected. */
-const liveRent = (sp: ScheduledPayment) => sp.status !== 'voided'
+export const liveRent = (sp: ScheduledPayment) => sp.status !== 'voided'
 
 /**
  * Past its due date with money still owed.
@@ -174,7 +174,7 @@ const liveRent = (sp: ScheduledPayment) => sp.status !== 'voided'
  * `processing` is the one exception — ACH already in flight is money on its
  * way, and chasing it would be chasing a payment the tenant has made.
  */
-function pastDue(sp: ScheduledPayment, todayStr: string): boolean {
+export function pastDue(sp: ScheduledPayment, todayStr: string): boolean {
   if (sp.status === 'voided' || sp.status === 'processing') return false
   return sp.due_date < todayStr && sp.amount - sp.paid_amount > 0
 }
@@ -431,7 +431,7 @@ export type LeaseSummary = {
  *  a manager starts chasing renewal, deposit return and a move-out inspection. */
 const ENDING_SOON_DAYS = 60
 
-function stageOf(start: string | null, end: string | null, today: string): LeaseStage {
+export function stageOf(start: string | null, end: string | null, today: string): LeaseStage {
   if (!start || !end) return 'unknown'
   if (today < start) return 'upcoming'
   if (today > end) return 'ended'
