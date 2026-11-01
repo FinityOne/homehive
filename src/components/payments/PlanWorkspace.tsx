@@ -17,6 +17,7 @@ import PaymentEmailHistory, { emailsForCharge, fmtWhen, type PlanEmail } from '.
 import UtilitiesPanel from './UtilitiesPanel'
 import PaymentDetailModal from './PaymentDetailModal'
 import { getUtilitiesForPlan, reapplyPlanUtilities, type PlanUtility } from '@/lib/utilities'
+import { chargeBreakdown, type ChargeBreakdown, type LateFeeWaiver } from '@/lib/lateFees'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,55 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── PAYMENT ROW (schedule) ───────────────────────────────────────────────────
 
-const ROW_COLS = '1fr 88px 88px 110px 68px 96px'
+/**
+ * The schedule's columns.
+ *
+ * It used to read `Tenant · Expected · Collected · Status · Days Late · Late
+ * Fee`, and the first two could not be reconciled with each other. "Expected"
+ * was `scheduled_payments.amount` — rent only — while "Collected" counted rent
+ * *plus* late-fee money that had genuinely arrived. Subtracting one from the
+ * other therefore compared two different quantities: a tenant who paid $736 of
+ * rent and a $105 fee appeared to have overpaid, and a tenant who still owed a
+ * $105 fee showed a balance of nothing.
+ *
+ * It also could not say what a rent figure was made of. A utility is folded
+ * into the rent charge by `apply_plan_utility` rather than billed separately,
+ * so a payer's $766 was silently $749 of rent and $17 of internet, with nothing
+ * on the page to say so.
+ *
+ * So the columns now name the parts and then total them: rent and utilities
+ * compose the charge, the late fee is added to it, and `Due` is what the tenant
+ * actually owes. `Balance` closes the loop — `Due − Collected` — and every
+ * figure on the row adds up in the direction it is read.
+ */
+const ROW_COLS = '1fr 78px 80px 86px 92px 92px 90px 100px'
+
+const COL_HEADS = ['Tenant', 'Rent', 'Utilities', 'Late fee', 'Due', 'Collected', 'Balance', 'Status'] as const
+
+/** A money cell: tabular figures, right-aligned, em dash when there is nothing. */
+function Amt({
+  value, bold, color, zero = '—', title, sub,
+}: {
+  value: number
+  bold?: boolean
+  color?: string
+  zero?: string
+  title?: string
+  sub?: React.ReactNode
+}) {
+  return (
+    <div style={{ textAlign: 'right' }} title={title}>
+      {value > 0.005 ? (
+        <span style={{ fontSize: '13px', fontWeight: bold ? 700 : 600, color: color ?? '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+          {fmtCurrency(value)}
+        </span>
+      ) : (
+        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>{zero}</span>
+      )}
+      {sub}
+    </div>
+  )
+}
 
 /**
  * One line of the schedule. Reading it is this component's whole job — the
@@ -86,31 +135,25 @@ const ROW_COLS = '1fr 88px 88px 110px 68px 96px'
  * a panel almost none of them would ever show.
  */
 function PaymentRow({
-  payment, rule, onOpen,
+  payment, rule, tenant, waiver, onOpen,
 }: {
   payment: ScheduledPayment
   rule?: { grace_period_days: number; fee_amount: number; frequency_days: number; max_total_fees: number | null } | null
+  /** The payer, for the rent/utility split — their line items say what the
+   *  charge is actually made of. */
+  tenant?: PaymentPlanTenant
+  waiver?: LateFeeWaiver | null
   onOpen: (p: ScheduledPayment) => void
 }) {
   const effStatus = getEffectiveStatus(payment)
-
-  // Days late: from paid_date once it is settled, from today while it is not.
-  const dlRow = payment.paid_date
-    ? daysLateByDate(payment.due_date, payment.paid_date)
-    : daysLate(payment.due_date)
-
-  const lateFeeRow = rule
-    ? (payment.paid_date
-        ? computeLateFeesByDate(rule, payment.due_date, payment.paid_date)
-        : (dlRow > 0 ? computeLateFees(rule, payment.due_date) : 0))
-    : 0
-
-  // Money in, which is rent *plus* any late fee that was actually collected —
-  // the fee is real income and was previously invisible here.
-  const received = payment.paid_amount + payment.late_fee_paid
-  const shortfall = (payment.amount + lateFeeRow) - received
-
   const isVoided = payment.status === 'voided'
+
+  // One source for every figure on the row, so the columns cannot disagree with
+  // each other the way they used to. `lateFeeDue` underneath is also the only
+  // sanctioned way to value a fee — this row previously called `computeLateFees`
+  // directly, which skips the cap that stops an uncapped rule billing a tenant
+  // more than the rent charge itself is worth.
+  const b = chargeBreakdown(payment, rule, tenant, waiver ?? null)
 
   return (
     <div style={{ borderBottom: '1px solid #f1f5f9', opacity: isVoided ? 0.55 : 1 }}>
@@ -138,28 +181,71 @@ function PaymentRow({
           </div>
         </div>
 
-        {/* Expected */}
-        <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', textAlign: 'right' }}>
-          {fmtCurrency(payment.amount)}
-        </div>
+        {/* Rent — the charge less any utility share folded inside it */}
+        <Amt value={b.baseRent} />
 
-        {/* Collected — rent plus late fees that genuinely arrived */}
-        <div style={{ textAlign: 'right' }}>
-          {received > 0 ? (
-            <>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: shortfall > 0.01 ? '#d97706' : '#16a34a' }}>
-                {fmtCurrency(received)}
-              </span>
-              {payment.late_fee_paid > 0 && (
-                <div style={{ fontSize: '10px', color: '#15803d' }}>
-                  incl. {fmtCurrency(payment.late_fee_paid)} fee
-                </div>
-              )}
-            </>
-          ) : (
-            <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
-          )}
-        </div>
+        {/* Utilities inside this charge. An em dash means none; a bare dash
+            means the split is genuinely unknown for this row — it predates the
+            utility, or the amount was hand-edited — rather than zero. */}
+        <Amt
+          value={b.utilities}
+          color="#0e7490"
+          zero={b.split === 'unknown' && !isVoided ? '–' : '—'}
+          title={
+            b.utilities > 0
+              ? b.utilityLines.map(l => `${l.label}: ${fmtCurrency(l.amount)}`).join(', ')
+              : b.split === 'unknown'
+                ? 'This charge does not match the payer\'s current monthly make-up, so how much of it is a utility share cannot be established.'
+                : 'No utility share is folded into this charge.'
+          }
+        />
+
+        {/* Late fee assessed on this charge, and what became of it */}
+        <Amt
+          value={b.lateFeeAssessed}
+          color={b.lateFeeOutstanding > 0.005 ? '#c2410c' : '#15803d'}
+          title={b.lateFeeCapped ? 'Trimmed to the size of this charge — the rule has no maximum.' : undefined}
+          sub={
+            b.lateFeeAssessed > 0.005 ? (
+              <div style={{ fontSize: '10px', color: b.lateFeeWaived > 0.005 ? '#64748b' : b.lateFeeOutstanding > 0.005 ? '#c2410c' : '#15803d' }}>
+                {b.lateFeeWaived > 0.005
+                  ? 'written off'
+                  : b.lateFeeOutstanding > 0.005
+                    ? `${b.daysLate}d late · unpaid`
+                    : `${b.daysLate}d late · paid`}
+              </div>
+            ) : undefined
+          }
+        />
+
+        {/* Due — rent plus the fee it actually carries. What "Expected" should
+            always have been. */}
+        <Amt value={b.expected} bold />
+
+        {/* Collected — rent plus fee money that genuinely arrived */}
+        <Amt
+          value={b.collected}
+          bold
+          color="#16a34a"
+          sub={
+            b.lateFeeCollected > 0.005 ? (
+              <div style={{ fontSize: '10px', color: '#15803d' }}>incl. {fmtCurrency(b.lateFeeCollected)} fee</div>
+            ) : undefined
+          }
+        />
+
+        {/* Balance — what is left, fees and all */}
+        <Amt
+          value={b.balance}
+          bold
+          color={isVoided ? '#94a3b8' : effStatus === 'late' ? '#dc2626' : '#d97706'}
+          zero={isVoided ? '—' : '✓'}
+          sub={
+            b.lateFeeWaived > 0.005 ? (
+              <div style={{ fontSize: '10px', color: '#64748b' }}>{fmtCurrency(b.lateFeeWaived)} waived</div>
+            ) : undefined
+          }
+        />
 
         {/* Status */}
         <div style={{ textAlign: 'center' }}>
@@ -170,30 +256,6 @@ function PaymentRow({
             </div>
           )}
         </div>
-
-        {/* Days late (from paid_date, not today) */}
-        <div style={{ textAlign: 'right' }}>
-          {dlRow > 0
-            ? <span style={{ fontSize: '11px', fontWeight: 700, color: payment.paid_date ? '#d97706' : '#ef4444', background: payment.paid_date ? '#fff7ed' : '#fef2f2', padding: '2px 6px', borderRadius: '5px' }}>{dlRow}d</span>
-            : <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>}
-        </div>
-
-        {/* Late fee — accrued, and whether it was taken */}
-        <div style={{ textAlign: 'right' }}>
-          {lateFeeRow > 0 ? (
-            payment.late_fee_paid >= lateFeeRow - 0.01 ? (
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '2px 7px', borderRadius: '5px' }}>
-                ✓ {fmtCurrency(lateFeeRow)}
-              </span>
-            ) : (
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', padding: '2px 7px', borderRadius: '5px' }}>
-                🚩 {fmtCurrency(lateFeeRow)}
-              </span>
-            )
-          ) : (
-            <span style={{ fontSize: '12px', color: '#cbd5e1' }}>—</span>
-          )}
-        </div>
       </div>
     </div>
   )
@@ -202,30 +264,43 @@ function PaymentRow({
 // ─── MONTH GROUP ──────────────────────────────────────────────────────────────
 
 function MonthGroup({
-  month, payments, rule, onOpen, defaultOpen,
+  month, payments, rule, tenants, waivers, onOpen, defaultOpen,
 }: {
   month: string
   payments: ScheduledPayment[]
   rule: PaymentPlan['late_fee_rule']
+  /** Payers on the plan, so each row can decompose its own charge. */
+  tenants: PaymentPlanTenant[]
+  waivers: Record<string, LateFeeWaiver>
   /** Rows are read-only; the modal owns recording and chasing. */
   onOpen: (payment: ScheduledPayment) => void
   defaultOpen: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const active   = payments.filter(p => p.status !== 'voided')
-  const paid     = active.filter(p => p.status === 'paid').length
-  const overdue  = active.filter(p => isOverdue(p)).length
-  const expected = active.reduce((s, p) => s + p.amount, 0)
-  // Every dollar received against this month, not just the rows that settled in
-  // full: counting only `paid` rows reported $0 collected for a month where a
-  // part-payment had plainly arrived, which is the fastest way to make a ledger
-  // look wrong. Partial and processing money is money.
-  // ...and late fees that genuinely arrived are money too, so the month's
-  // collected figure counts them exactly as each row now does.
-  const collected = active.reduce((s, p) => s + p.paid_amount + p.late_fee_paid, 0)
-  const feesCollected = active.reduce((s, p) => s + p.late_fee_paid, 0)
-  const outstanding = Math.max(0, expected - collected)
-  const voided   = payments.filter(p => p.status === 'voided').length
+  const byId = new Map(tenants.map(t => [t.id, t]))
+  const active = payments.filter(p => p.status !== 'voided')
+
+  // The month's figures are the sum of the rows', computed the same way, so the
+  // footer and the rows above it can never disagree. They used to: `expected`
+  // was rent alone while `collected` included late-fee money, which made the
+  // month's "outstanding" wrong in both directions at once.
+  const sums = active.reduce((acc, p) => {
+    const b = chargeBreakdown(p, rule ?? null, byId.get(p.plan_tenant_id), waivers[p.id] ?? null)
+    return {
+      rent:      acc.rent + b.baseRent,
+      utilities: acc.utilities + b.utilities,
+      fees:      acc.fees + b.lateFeeAssessed,
+      due:       acc.due + b.expected,
+      collected: acc.collected + b.collected,
+      balance:   acc.balance + b.balance,
+      feesPaid:  acc.feesPaid + b.lateFeeCollected,
+      waived:    acc.waived + b.lateFeeWaived,
+    }
+  }, { rent: 0, utilities: 0, fees: 0, due: 0, collected: 0, balance: 0, feesPaid: 0, waived: 0 })
+
+  const paid    = active.filter(p => p.status === 'paid').length
+  const overdue = active.filter(p => isOverdue(p)).length
+  const voided  = payments.filter(p => p.status === 'voided').length
 
   return (
     <div style={{ marginBottom: 6, border: '1px solid #e2e8f0', borderRadius: '11px', overflow: 'hidden', background: '#fff' }}>
@@ -233,15 +308,22 @@ function MonthGroup({
         onClick={() => setOpen(v => !v)}
         style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: open ? '#fff' : '#fafafa' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{fmtMonth(month)}</span>
           {overdue > 0 && <span style={{ background: '#fee2e2', color: '#991b1b', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{overdue} overdue</span>}
           {overdue === 0 && paid === active.length && active.length > 0 && <span style={{ background: '#dcfce7', color: '#166534', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>All paid ✓</span>}
+          {/* A month can be fully paid and still owe fees. Saying "All paid"
+              and nothing else is how $4,050 of fees went unnoticed. */}
+          {sums.balance > 0.005 && paid === active.length && active.length > 0 && (
+            <span style={{ background: '#fff7ed', color: '#c2410c', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
+              {fmtCurrency(sums.balance)} in fees owed
+            </span>
+          )}
           {voided > 0 && <span style={{ background: '#f1f5f9', color: '#94a3b8', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>{voided} voided</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ fontSize: '12px', color: '#64748b' }}>
-            {paid}/{active.length} paid · {fmtCurrency(collected)}/{fmtCurrency(expected)}
+            {paid}/{active.length} paid · {fmtCurrency(sums.collected)}/{fmtCurrency(sums.due)}
           </span>
           <span style={{ fontSize: '11px', color: '#94a3b8', transition: 'transform 0.2s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0)' }}>▾</span>
         </div>
@@ -251,8 +333,8 @@ function MonthGroup({
         <div style={{ borderTop: '1px solid #f1f5f9' }}>
           {/* Table header */}
           <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '8px 16px', background: '#f8fafc' }}>
-            {['Tenant', 'Expected', 'Collected', 'Status', 'Days Late', 'Late Fee'].map(h => (
-              <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: h !== 'Tenant' ? 'right' : 'left', ...(h === 'Status' ? { textAlign: 'center' } : {}) }}>
+            {COL_HEADS.map(h => (
+              <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: h === 'Tenant' ? 'left' : h === 'Status' ? 'center' : 'right' }}>
                 {h}
               </div>
             ))}
@@ -262,6 +344,8 @@ function MonthGroup({
               key={p.id}
               payment={p}
               rule={rule ?? undefined}
+              tenant={byId.get(p.plan_tenant_id)}
+              waiver={waivers[p.id] ?? null}
               onOpen={onOpen}
             />
           ))}
@@ -272,19 +356,25 @@ function MonthGroup({
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
               {fmtMonth(month)} total
             </div>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-              {fmtCurrency(expected)}
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>
-                {fmtCurrency(collected)}
-              </div>
-              {feesCollected > 0 && (
-                <div style={{ fontSize: '10px', color: '#15803d' }}>incl. {fmtCurrency(feesCollected)} fees</div>
-              )}
-            </div>
-            <div style={{ gridColumn: 'span 3', textAlign: 'right', fontSize: '12px', fontWeight: 600, color: outstanding > 0 ? (overdue > 0 ? '#dc2626' : '#d97706') : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-              {outstanding > 0 ? `${fmtCurrency(outstanding)} outstanding` : 'Fully collected'}
+            <Amt value={sums.rent} bold />
+            <Amt value={sums.utilities} bold color="#0e7490" />
+            <Amt value={sums.fees} bold color={sums.fees - sums.feesPaid - sums.waived > 0.005 ? '#c2410c' : '#15803d'} />
+            <Amt value={sums.due} bold />
+            <Amt
+              value={sums.collected}
+              bold
+              color="#16a34a"
+              sub={sums.feesPaid > 0.005 ? <div style={{ fontSize: '10px', color: '#15803d' }}>incl. {fmtCurrency(sums.feesPaid)} fees</div> : undefined}
+            />
+            <Amt
+              value={sums.balance}
+              bold
+              color={overdue > 0 ? '#dc2626' : '#d97706'}
+              zero="✓"
+              sub={sums.waived > 0.005 ? <div style={{ fontSize: '10px', color: '#64748b' }}>{fmtCurrency(sums.waived)} waived</div> : undefined}
+            />
+            <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, color: sums.balance > 0.005 ? (overdue > 0 ? '#dc2626' : '#d97706') : '#94a3b8' }}>
+              {sums.balance > 0.005 ? 'outstanding' : 'settled'}
             </div>
           </div>
         </div>
@@ -1635,11 +1725,35 @@ export default function PlanWorkspace({
   const [utilities, setUtilities] = useState<PlanUtility[]>([])
   /** The charge whose detail sheet is open. One modal, not one per row. */
   const [openPayment, setOpenPayment] = useState<ScheduledPayment | null>(null)
+  /**
+   * Late fees the landlord has written off, keyed by the rent row they sat on.
+   *
+   * Needed in the ledger as well as in Financials: a fee shown as owed here
+   * when it has already been forgiven would contradict a decision the landlord
+   * made on the other page, and they would have no way to tell which page was
+   * lying.
+   */
+  const [waivers, setWaivers] = useState<Record<string, LateFeeWaiver>>({})
+
+  const loadWaivers = async () => {
+    // RLS keys this table on plan ownership, so the plan filter is for volume,
+    // not for safety.
+    const { data } = await supabase
+      .from('late_fee_waivers')
+      .select('scheduled_payment_id, amount, reason, created_at')
+      .eq('plan_id', planId)
+    const next: Record<string, LateFeeWaiver> = {}
+    for (const w of data ?? []) {
+      next[w.scheduled_payment_id] = { ...w, amount: Number(w.amount) }
+    }
+    setWaivers(next)
+  }
 
   const load = () => {
     setLoading(true)
     getPlanById(planId).then(p => { setPlan(p); setLoading(false) })
     getUtilitiesForPlan(planId).then(setUtilities)
+    loadWaivers()
   }
 
   /** A utility changed: its shares and everyone's totals moved with it, so the
@@ -2001,7 +2115,7 @@ export default function PlanWorkspace({
                   return (
                     <>
                       {future.map(k => (
-                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onOpen={setOpenPayment} defaultOpen={k === currentMonthKey} />
+                        <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} tenants={plan.tenants} waivers={waivers} onOpen={setOpenPayment} defaultOpen={k === currentMonthKey} />
                       ))}
                       {past.length > 0 && (
                         <details style={{ marginTop: 12 }}>
@@ -2010,7 +2124,7 @@ export default function PlanWorkspace({
                           </summary>
                           <div style={{ marginTop: 8, opacity: 0.7 }}>
                             {past.slice().reverse().map(k => (
-                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} onOpen={setOpenPayment} defaultOpen={false} />
+                              <MonthGroup key={k} month={k + '-01'} payments={byMonth[k]} rule={plan.late_fee_rule} tenants={plan.tenants} waivers={waivers} onOpen={setOpenPayment} defaultOpen={false} />
                             ))}
                           </div>
                         </details>

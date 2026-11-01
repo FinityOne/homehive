@@ -16,7 +16,13 @@ import {
   type Arrears, type Charge,
 } from '@/lib/financialsMonth'
 
+import {
+  lateFeeLedger, withReminderHistory, EMPTY_LEDGER,
+  type LateFeeLedger as FeeLedger, type LateFeeWaiver,
+} from '@/lib/lateFees'
+
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
+const LateFeesPanel = dynamic(() => import('@/components/payments/LateFeesPanel'), { ssr: false })
 
 /**
  * Financials — the one place money lives.
@@ -146,6 +152,11 @@ export default function FinancialsPage({
   const [openProps, setOpenProps] = useState<Set<string> | null>(null)
   const [openLeases, setOpenLeases] = useState<Set<string>>(new Set())
 
+  // Waivers are the landlord's recorded decisions not to collect a fee. They
+  // live outside the plan rows, so they are fetched alongside and netted off
+  // the derived fees — see `lateFeeLedger`.
+  const [waivers, setWaivers] = useState<LateFeeWaiver[]>([])
+
   const [emails, setEmails] = useState<SentEmail[] | null>(null)
   // A ref, not state: this only guards against a second fetch, and flipping
   // state synchronously inside the effect would cascade a render for nothing.
@@ -170,14 +181,32 @@ export default function FinancialsPage({
     }
   }, [])
 
+  const loadWaivers = useCallback(async () => {
+    // RLS keys this table on plan ownership, so no owner filter is needed here
+    // and none would be trustworthy if it were.
+    const { data } = await supabase
+      .from('late_fee_waivers')
+      .select('scheduled_payment_id, amount, reason, created_at')
+    setWaivers((data ?? []).map(w => ({ ...w, amount: Number(w.amount) })))
+  }, [])
+
+  /** After a fee is chased or written off, both halves have moved. */
+  const reloadMoney = useCallback(async () => {
+    const user = await getCurrentUser()
+    if (!user) return
+    const [data] = await Promise.all([getPlansForOwner(user.id), loadWaivers()])
+    setPlans(data)
+  }, [loadWaivers])
+
   useEffect(() => {
     getCurrentUser().then(user => {
       if (!user) return
       getPlansForOwner(user.id).then(data => { setPlans(data); setLoading(false) })
+      loadWaivers()
       // Deep-linked straight to the log — nothing will click for us.
       if (viewParam === 'activity') loadEmails()
     })
-  }, [viewParam, loadEmails])
+  }, [viewParam, loadEmails, loadWaivers])
 
   // ── Everything the page renders, derived in one place ────────────────────
 
@@ -201,6 +230,23 @@ export default function FinancialsPage({
     const ids = new Set(scoped.map(p => p.id))
     return arrears(plans.filter(p => !ids.has(p.id)))
   }, [plans, scoped])
+
+  // Late fees still owed, across the whole of each lease — like arrears, bound
+  // to no window, because a fee assessed in August is still unpaid in November.
+  // Reminder history rides on the rent rows, so it is folded in here rather
+  // than costing a second round trip.
+  const feeLedger = useMemo<FeeLedger>(() => {
+    if (scoped.length === 0) return EMPTY_LEDGER
+    const history: Record<string, { count: number; lastAt: string | null }> = {}
+    for (const p of scoped) {
+      for (const sp of p.scheduled_payments ?? []) {
+        if (sp.late_fee_reminder_count > 0) {
+          history[sp.id] = { count: sp.late_fee_reminder_count, lastAt: sp.late_fee_reminder_sent_at }
+        }
+      }
+    }
+    return withReminderHistory(lateFeeLedger(scoped, waivers), history)
+  }, [scoped, waivers])
 
   // The named month, and the months either side of it.
   const ledger    = useMemo(() => monthView(scoped, month), [scoped, month])
@@ -483,6 +529,17 @@ export default function FinancialsPage({
               filter={leaseFilter}
               onShowAll={() => selectLeaseFilter('all')}
               onOpen={openLeaseLedger}
+            />
+
+            {/* ══ 2b. LATE FEES — assessed by the lease, never collected ══
+                Its own section rather than a line inside arrears: a fee on rent
+                that has *already settled* is not arrears at all, and that is
+                where nearly all of this money is. It also needs actions arrears
+                does not have — writing a fee off is a legitimate outcome. */}
+            <LateFeesPanel
+              ledger={feeLedger}
+              onReload={reloadMoney}
+              onOpenLease={openLeaseLedger}
             />
 
             {/* ══ 3. WHAT IS COMING ══ */}

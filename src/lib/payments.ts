@@ -99,6 +99,13 @@ export type ScheduledPayment = {
   /** Manual rent reminders sent by the landlord about this charge. */
   reminder_sent_at: string | null
   reminder_count: number
+  /**
+   * Reminders sent about this charge's *late fee*, kept apart from the rent
+   * chases above. A tenant reminded four times to pay August rent has not been
+   * asked once about the fee, and one counter cannot say both things.
+   */
+  late_fee_reminder_sent_at: string | null
+  late_fee_reminder_count: number
   created_at: string
   updated_at: string
   tenant?: { name: string; email: string | null }
@@ -463,10 +470,10 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       *,
       property:properties(id, name, slug),
       lease:leases(id, start_date, end_date, rent_amount, is_demo),
-      tenants:payment_plan_tenants(id, name, email, monthly_total, status),
+      tenants:payment_plan_tenants(id, name, email, monthly_total, status, line_items:payment_line_items(id, plan_tenant_id, category, label, amount, utility_id)),
       late_fee_rule:late_fee_rules(*),
       utilities:plan_utilities(id, label, category, amount, cadence, split),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee),
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee, late_fee_reminder_sent_at, late_fee_reminder_count),
       special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
     `)
     .eq('owner_id', ownerId)
@@ -482,7 +489,10 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
 
   return real.map((row: any) => {
     const utilities = (row.utilities || []).map((u: any) => ({ ...u, amount: Number(u.amount) }))
-    const tenants = (row.tenants || []).map((t: any) => ({ ...t, line_items: [] }))
+    // Line items come along now: they are what says how much of a rent figure
+    // is actually a utility share, and Financials cannot decompose a charge it
+    // cannot see the make-up of.
+    const tenants = (row.tenants || []).map((t: any) => ({ ...t, line_items: t.line_items || [] }))
     // Who a charge belongs to, resolved here rather than with a second join:
     // the rollup names the person on every open deposit and one-off charge.
     const names = new Map<string, string>(tenants.map((t: any) => [t.id, t.name]))
