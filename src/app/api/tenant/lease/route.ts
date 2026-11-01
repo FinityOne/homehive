@@ -67,13 +67,17 @@ export async function GET(req: NextRequest) {
     let lineItems: any[] = []
     let scheduled: any[] = []
     let specials: any[] = []
+    let waivers: any[] = []
 
     if (me) {
       const [li, sp, spec] = await Promise.all([
         supabaseAdmin.from('payment_line_items')
           .select('id, category, label, amount').eq('plan_tenant_id', me.id),
         supabaseAdmin.from('scheduled_payments')
-          .select('id, due_date, amount, status, paid_amount, paid_date, late_fees_applied, payment_method, processing_fee, notes')
+          // `late_fees_applied` is deliberately absent: it is the stale column,
+          // and the only safe thing to do with it is not ship it. The fee is
+          // derived from the rule; `late_fee_paid` is fee money that arrived.
+          .select('id, due_date, amount, status, paid_amount, paid_date, late_fee_paid, payment_method, processing_fee, notes')
           .eq('plan_tenant_id', me.id).order('due_date'),
         supabaseAdmin.from('special_payments')
           .select('id, category, label, amount, due_date, status, paid_date, payment_method, processing_fee')
@@ -82,6 +86,18 @@ export async function GET(req: NextRequest) {
       lineItems = li.data ?? []
       scheduled = sp.data ?? []
       specials = spec.data ?? []
+
+      // Fees the landlord has written off. Without these the tenant's page
+      // would quote — and the pay sheet would ask for — a fee that has already
+      // been forgiven.
+      const ids = scheduled.map((s: any) => s.id)
+      if (ids.length > 0) {
+        const { data: w } = await supabaseAdmin
+          .from('late_fee_waivers')
+          .select('scheduled_payment_id, amount')
+          .in('scheduled_payment_id', ids)
+        waivers = w ?? []
+      }
     }
 
     tenancies.push({
@@ -104,7 +120,10 @@ export async function GET(req: NextRequest) {
         ...s,
         amount: Number(s.amount),
         paid_amount: Number(s.paid_amount ?? 0),
-        late_fees_applied: Number(s.late_fees_applied ?? 0),
+        late_fee_paid: Number(s.late_fee_paid ?? 0),
+        late_fee_waived: Number(
+          waivers.find((w: any) => w.scheduled_payment_id === s.id)?.amount ?? 0
+        ),
         processing_fee: Number(s.processing_fee ?? 0),
       })),
       specials: specials.map(s => ({

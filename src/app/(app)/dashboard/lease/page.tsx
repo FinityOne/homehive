@@ -15,7 +15,11 @@ const PayRentModal = dynamic(() => import('@/components/tenant/PayRentModal'), {
 
 type Scheduled = {
   id: string; due_date: string; amount: number; status: string
-  paid_amount: number; paid_date: string | null; late_fees_applied: number
+  paid_amount: number; paid_date: string | null
+  /** Fee money that genuinely arrived on this row. */
+  late_fee_paid: number
+  /** Fee the landlord has written off on this row. */
+  late_fee_waived: number
   payment_method: string | null; processing_fee: number; notes: string | null
 }
 type Special = {
@@ -46,6 +50,14 @@ const fmtDate = (d: string | null) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
 const isSettled = (s: string) => s === 'paid' || s === 'processing'
+/**
+ * Rent that was cancelled rather than paid.
+ *
+ * Written on every future month when a landlord terminates a tenancy early. It
+ * is not owed, it is not upcoming, and it must never appear as something this
+ * tenant can be charged for.
+ */
+const isVoided = (s: string) => s === 'voided'
 
 /**
  * The tenant's own view of their tenancy: what they owe, what they've paid, and
@@ -149,19 +161,26 @@ export default function MyLeasePage() {
     const today = new Date().toISOString().split('T')[0]
 
     for (const s of t.scheduled) {
-      if (isSettled(s.status)) continue
+      if (isSettled(s.status) || isVoided(s.status)) continue
       const due = amountDue(s)
       if (due <= 0) continue
       // Derived from the rule, not read from `late_fees_applied` — that column
       // is stale and has been seen carrying fees on rent that was paid early.
       // The server recomputes this identically before charging anything.
-      const lateFee = lateFeeDue(t.lateFeeRule, {
+      const assessed = lateFeeDue(t.lateFeeRule, {
         status: s.status,
         due_date: s.due_date,
         paid_date: s.paid_date,
         amount: s.amount,
         paid_amount: s.paid_amount,
       })
+      // Net of fee money already received and anything the landlord wrote off —
+      // the same subtraction the server does before it creates the intent, so
+      // the figure quoted here is the figure charged.
+      const lateFee = Math.max(
+        0,
+        Math.round((assessed - s.late_fee_paid - Math.min(assessed, s.late_fee_waived)) * 100) / 100,
+      )
       const daysLate = s.due_date < today
         ? Math.round((new Date(today + 'T00:00:00').getTime() - new Date(s.due_date + 'T00:00:00').getTime()) / 86_400_000)
         : 0
@@ -192,23 +211,46 @@ export default function MyLeasePage() {
     setPaying(owed)
   }, [loading, owed])
 
-  const totalOwed = owed.reduce((s, r) => s + r.amount, 0)
-  const totalUpcoming = upcoming.reduce((s, r) => s + r.amount, 0)
+  /**
+   * What a set of charges actually comes to.
+   *
+   * Rent and late fees are summed together because that is what the tenant is
+   * asked for. Quoting rent alone put a figure on the Pay button that the
+   * payment sheet then disagreed with — the sheet has always charged the fee,
+   * so the button was simply understating the bill.
+   */
+  const sumOf = (rows: Payable[]) => {
+    const rent = rows.reduce((s, r) => s + r.amount, 0)
+    const fees = rows.reduce((s, r) => s + (r.lateFee ?? 0), 0)
+    return {
+      rent: Math.round(rent * 100) / 100,
+      fees: Math.round(fees * 100) / 100,
+      total: Math.round((rent + fees) * 100) / 100,
+    }
+  }
+
+  const owedSum = sumOf(owed)
+  const totalOwed = owedSum.total
+  const totalUpcoming = sumOf(upcoming).total
   // Paying ahead is allowed, but only ever by explicit choice.
   const selectedRows = [...owed, ...upcoming].filter(r => selected.has(`${r.kind}-${r.id}`))
-  const selectedTotal = selectedRows.reduce((s, r) => s + r.amount, 0)
+  const selectedTotal = sumOf(selectedRows).total
 
   const history = useMemo(() => {
     if (!t) return []
     return [
       ...t.scheduled.filter(s => isSettled(s.status)).map(s => ({
         id: s.id, kind: 'Rent', label: `Rent — ${fmtDate(s.due_date)}`,
-        amount: s.paid_amount || s.amount, date: s.paid_date, status: s.status,
+        // Rent received plus any late fee received: what actually left the
+        // tenant's account, so the row reconciles against their statement.
+        amount: Math.round(((s.paid_amount || s.amount) + s.late_fee_paid) * 100) / 100,
+        lateFee: s.late_fee_paid,
+        date: s.paid_date, status: s.status,
         method: s.payment_method as SettledMethod | null, fee: s.processing_fee,
       })),
       ...t.specials.filter(s => isSettled(s.status)).map(s => ({
         id: s.id, kind: s.category === 'security_deposit' ? 'Deposit' : 'Charge', label: s.label,
-        amount: s.amount, date: s.paid_date, status: s.status,
+        amount: s.amount, lateFee: 0, date: s.paid_date, status: s.status,
         method: s.payment_method as SettledMethod | null, fee: s.processing_fee,
       })),
     ].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
@@ -245,7 +287,7 @@ export default function MyLeasePage() {
     )
   }
 
-  const nextDue = t.scheduled.find(s => !isSettled(s.status))
+  const nextDue = t.scheduled.find(s => !isSettled(s.status) && !isVoided(s.status))
 
   return (
     <>
@@ -360,8 +402,16 @@ export default function MyLeasePage() {
                 <div className="card-bd">
                   {owed.map(r => (
                     <div key={`${r.kind}-${r.id}`} className="row">
-                      <span>{r.label}</span>
-                      <span className="row-amt">{fmtMoney(r.amount)}</span>
+                      <span>
+                        {r.label}
+                        {/* The fee is named on its own, never folded into the
+                            rent figure — a larger rent line is indistinguishable
+                            from a rent increase. */}
+                        {(r.lateFee ?? 0) > 0 && (
+                          <em className="lf"> + {fmtMoney(r.lateFee!)} late fee</em>
+                        )}
+                      </span>
+                      <span className="row-amt">{fmtMoney(r.amount + (r.lateFee ?? 0))}</span>
                     </div>
                   ))}
                   <button className="btn-dark" style={{ marginTop: 14 }}
@@ -424,8 +474,13 @@ export default function MyLeasePage() {
                   return (
                     <label key={key} className="pick">
                       <input type="checkbox" checked={selected.has(key)} onChange={() => toggle(r)} />
-                      <span style={{ flex: 1 }}>{r.label}</span>
-                      <span className="row-amt">{fmtMoney(r.amount)}</span>
+                      <span style={{ flex: 1 }}>
+                        {r.label}
+                        {(r.lateFee ?? 0) > 0 && (
+                          <em className="lf"> + {fmtMoney(r.lateFee!)} late fee</em>
+                        )}
+                      </span>
+                      <span className="row-amt">{fmtMoney(r.amount + (r.lateFee ?? 0))}</span>
                     </label>
                   )
                 })}
@@ -476,7 +531,8 @@ export default function MyLeasePage() {
                         <div className="hist-sub">
                           {h.status === 'processing' ? 'Clearing — bank transfer in progress' : `Paid ${fmtDate(h.date)}`}
                           {m ? ` · ${m.label}` : ''}
-                          {h.fee > 0 ? ` · incl. ${fmtMoney(h.fee)} fee` : ''}
+                          {h.lateFee > 0 ? ` · incl. ${fmtMoney(h.lateFee)} late fee` : ''}
+                          {h.fee > 0 ? ` · incl. ${fmtMoney(h.fee)} processing fee` : ''}
                         </div>
                       </div>
                       <div className="hist-amt">
@@ -599,6 +655,7 @@ const CSS = `
   .pick { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid #f8fafc; font-size: 13.5px; color: #334155; cursor: pointer; }
   .pick:last-child { border-bottom: none; }
   .pick input { accent-color: #0f172a; width: 16px; height: 16px; cursor: pointer; }
+  .lf { font-style: normal; font-size: 11.5px; font-weight: 600; color: #b45309; }
   .pick.upcoming { color: #94a3b8; }
   .pick.upcoming .row-amt { color: #64748b; font-weight: 500; }
 
