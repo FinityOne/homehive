@@ -74,9 +74,9 @@ const faqSchema = {
 }
 
 export const metadata: Metadata = {
-  title: 'Pricing — Free for ASU Students, Free for Landlords in 2026',
+  title: 'Pricing — Free for ASU Students, Landlord Plans from $19.99/mo',
   description:
-    'HomeHive is 100% free for ASU students — browse listings, find roommates, sign leases, and pay rent at no cost. Landlords list free through end of 2026.',
+    'HomeHive is 100% free for ASU students — browse listings, find roommates, sign leases, and pay rent at no cost. Landlords pay a flat monthly plan starting at $19.99.',
   keywords: [
     'free student housing platform ASU',
     'no broker fee housing Tempe',
@@ -84,7 +84,7 @@ export const metadata: Metadata = {
     'student housing no fees Arizona State',
   ],
   openGraph: {
-    title: 'HomeHive Pricing — Free for Students, Free for Landlords',
+    title: 'HomeHive Pricing — Free for Students, Plans from $19.99/mo for Landlords',
     description:
       'ASU students pay nothing — ever. Landlord plans start at $19.99/month for one property. No broker fees, no per-lead charges, no commission.',
     url: `${SITE_URL}/pricing`,
