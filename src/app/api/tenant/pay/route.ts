@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
   if (scheduledIds.length > 0) {
     const { data } = await supabaseAdmin
       .from('scheduled_payments')
-      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date')
+      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, late_fee_paid')
       .in('id', scheduledIds)
 
     // Late fees are a property of the plan's rule, so fetch the rules for just
@@ -118,20 +118,46 @@ export async function POST(req: NextRequest) {
       (ruleRows ?? []).map(r => [r.plan_id, r as LateFeeRuleLike])
     )
 
+    // A fee the landlord has written off is not owed, and a fee already paid has
+    // already been paid. The assessed figure alone is neither — it is what the
+    // rule says before either of those decisions is applied. Charging it raw
+    // bills a waived fee and double-bills a collected one, so subtract both,
+    // exactly as `chargeBreakdown` and the late-fee reminder already do.
+    const { data: waiverRows } = await supabaseAdmin
+      .from('late_fee_waivers')
+      .select('scheduled_payment_id, amount')
+      .in('scheduled_payment_id', scheduledIds)
+    const waivedBy = new Map<string, number>(
+      (waiverRows ?? []).map(w => [w.scheduled_payment_id, Number(w.amount ?? 0)])
+    )
+
     for (const r of data ?? []) {
       if (!mine.has(r.plan_tenant_id)) {
         return Response.json({ error: 'That payment isn\'t yours.' }, { status: 403 })
       }
       if (demoPlanIds.has(r.plan_id)) return demoRefusal()
+      // A voided row is rent that was *cancelled* — the terminate flow writes it
+      // on every future month when a tenant leaves early. Every landlord surface
+      // and every reminder query already excludes it; billing it here would take
+      // money for a tenancy that no longer exists.
+      if (r.status === 'voided') continue
       if (r.status === 'paid' || r.status === 'processing') continue
       const due = amountDue({ amount: Number(r.amount), paid_amount: Number(r.paid_amount ?? 0) })
-      const lateFee = lateFeeDue(ruleByPlan.get(r.plan_id), {
+      const assessed = lateFeeDue(ruleByPlan.get(r.plan_id), {
         status: r.status,
         due_date: r.due_date,
         paid_date: r.paid_date ?? null,
         amount: Number(r.amount),
         paid_amount: Number(r.paid_amount ?? 0),
       })
+      // A waiver is frozen at the amount written off; an uncapped fee on still
+      // unpaid rent can grow past it, and the part above the waiver is genuinely
+      // owed again. `min` is wrong here for the same reason it is right there.
+      const waived = Math.min(assessed, waivedBy.get(r.id) ?? 0)
+      const lateFee = Math.max(
+        0,
+        Math.round((assessed - Number(r.late_fee_paid ?? 0) - waived) * 100) / 100,
+      )
       if (due > 0) rows.push({ kind: 'scheduled', id: r.id, due, lateFee, label: `Rent due ${r.due_date}`, dueDate: r.due_date })
     }
   }
