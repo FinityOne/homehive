@@ -30,6 +30,13 @@ export type Lease = {
   rent_amount: number | null
   unit_number: string | null
   notes: string | null
+  /**
+   * A rehearsal, not a tenancy — built to see what the flow does and then kept
+   * around. Nothing is ever charged on it: Financials leaves it out, and the
+   * database forbids a payment plan from pointing at it. See the
+   * `20261031000000_demo_leases` migration.
+   */
+  is_demo: boolean
   document_url: string | null  // legacy — kept for DB compat, not used in UI
   tenants: LeaseTenant[]
   documents: LeaseDocument[]
@@ -108,6 +115,7 @@ export type LeaseFormData = {
   rent_amount: number | null
   unit_number: string | null
   notes: string | null
+  is_demo: boolean
   document_url: string | null  // always null going forward; kept for DB column compat
 }
 

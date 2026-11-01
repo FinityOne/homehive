@@ -25,6 +25,7 @@ export default function NewLeasePage() {
     end_date: '',
     rent_amount: '',
     notes: '',
+    is_demo: false,
   })
 
   const [pendingDocs, setPendingDocs] = useState<{ file: File; name: string }[]>([])
@@ -92,6 +93,7 @@ export default function NewLeasePage() {
         rent_amount: form.rent_amount ? parseInt(form.rent_amount) : null,
         unit_number: form.unit_number || null,
         notes: form.notes || null,
+        is_demo: form.is_demo,
         document_url: null,
       },
       tenants
@@ -137,6 +139,11 @@ export default function NewLeasePage() {
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .section-divider { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
         .section-label { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 14px; }
+        .demo-toggle { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; cursor: pointer; }
+        .demo-toggle:hover { border-color: #94a3b8; }
+        .demo-toggle input { margin-top: 2px; flex-shrink: 0; }
+        .demo-toggle strong { display: block; font-size: 14px; color: #0f172a; }
+        .demo-hint { display: block; font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 4px; }
         .section-sub { font-size: 12px; color: #94a3b8; margin-bottom: 14px; }
 
         .tenant-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -262,6 +269,24 @@ export default function NewLeasePage() {
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
             placeholder="Any additional notes about this lease..."
           />
+        </div>
+
+        <div className="form-group">
+          <label className="demo-toggle">
+            <input
+              type="checkbox"
+              checked={form.is_demo}
+              onChange={e => setForm(f => ({ ...f, is_demo: e.target.checked }))}
+            />
+            <span>
+              <strong>This is a demo lease</strong>
+              <span className="demo-hint">
+                For trying the product out. No rent is ever collected on it and it stays out of
+                Financials, so your real numbers keep meaning something. You can&apos;t set up rent
+                collection on a demo lease.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="form-group">

@@ -141,11 +141,17 @@ export default function NewPaymentPlanPage() {
 
     supabase
       .from('leases')
-      .select('id, property_id, start_date, end_date, rent_amount')
+      .select('id, property_id, start_date, end_date, rent_amount, is_demo')
       .eq('id', leaseParam)
       .maybeSingle()
       .then(({ data: lease }) => {
         if (!lease) return
+        // Rent cannot be collected on a demo lease — the database rejects the
+        // plan outright, so say so now rather than after a filled-in wizard.
+        if (lease.is_demo) {
+          setError('That lease is marked as a demo lease, so rent can\'t be collected on it. Turn off the demo flag on the lease first if it is a real tenancy.')
+          return
+        }
         const prop = properties.find(p => p.id === lease.property_id)
         if (!prop) return
         setSelectedPropId(lease.property_id)
@@ -169,7 +175,8 @@ export default function NewPaymentPlanPage() {
     setSelectedLeaseId('')
     setLeases([])
     if (!id) return
-    supabase.from('leases').select('id, start_date, end_date, rent_amount').eq('property_id', id).order('start_date', { ascending: false })
+    // Demo leases are left out: they can't hold a payment plan at all.
+    supabase.from('leases').select('id, start_date, end_date, rent_amount').eq('property_id', id).eq('is_demo', false).order('start_date', { ascending: false })
       .then(({ data }) => setLeases(data ?? []))
     const prop = properties.find(p => p.id === id)
     if (prop) setPlanName(`Rent – ${prop.name}`)

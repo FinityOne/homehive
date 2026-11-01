@@ -210,6 +210,7 @@ export default function LeaseHubPage({
               </div>
             </div>
             <div className="lh-head-actions">
+              {lease.is_demo && <span className="lh-demo-chip">DEMO</span>}
               <span className="lh-status" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
                 {meta.label}
               </span>
@@ -250,11 +251,28 @@ export default function LeaseHubPage({
                 )}
               </button>
             ))}
-            <a href={financialsHref} className="lh-tab lh-tab-out">
-              Financials ↗
-            </a>
+            {!lease.is_demo && (
+              <a href={financialsHref} className="lh-tab lh-tab-out">
+                Financials ↗
+              </a>
+            )}
           </div>
         </div>
+
+        {/* A demo lease is a rehearsal of the product, not a tenancy. Said here
+            rather than only in the money card, because every figure below —
+            rent on the lease, the term, the move-out — reads differently once
+            you know nobody is being billed. */}
+        {lease.is_demo && (
+          <div className="lh-demo">
+            <strong>Demo lease.</strong> Nothing is charged on this tenancy: it collects no rent,
+            can&apos;t hold a payment plan, and is left out of Financials so it doesn&apos;t move
+            your real numbers. It is here to try the lease flow out.
+            <a href={`/landlord/leases/${leaseId}/edit`} className="lnk" style={{ marginLeft: 6 }}>
+              Make it a real lease
+            </a>
+          </div>
+        )}
 
         {pageError && <div className="alert-err">{pageError}</div>}
 
@@ -315,7 +333,17 @@ export default function LeaseHubPage({
               <div className="card">
                 <div className="card-hd"><span className="card-title">Money</span></div>
                 <div className="card-bd">
-                  {!planChecked ? (
+                  {lease.is_demo ? (
+                    <div className="empty-inline">
+                      No money is tracked on a demo lease, and none can be: rent collection is
+                      blocked for it and it is excluded from Financials, so the portfolio totals
+                      stay true to the leases that really bill. Turn off the demo flag on the
+                      lease if rent should actually be collected here.
+                      <a href={`/landlord/leases/${leaseId}/edit`} className="btn-ghost" style={{ marginTop: 12, display: 'inline-block' }}>
+                        Edit lease
+                      </a>
+                    </div>
+                  ) : !planChecked ? (
                     <div className="empty-inline">Checking rent setup…</div>
                   ) : planId ? (
                     <div className="empty-inline">
@@ -412,11 +440,15 @@ export default function LeaseHubPage({
               <div className="card-hd"><span className="card-title">Who pays</span></div>
               <div className="card-bd">
                 <div className="empty-inline">
-                  Payers, what each one owes each month, and ending someone&apos;s obligation
-                  early are all handled in Financials, alongside the schedule they affect.
-                  <a href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
-                    {planId ? 'Open the ledger \u2192' : 'Go to Financials \u2192'}
-                  </a>
+                  {lease.is_demo
+                    ? 'Nobody pays on a demo lease — the people above are recorded as tenants, but no rent is scheduled and no charge can be raised against them.'
+                    : <>Payers, what each one owes each month, and ending someone&apos;s obligation
+                       early are all handled in Financials, alongside the schedule they affect.</>}
+                  {!lease.is_demo && (
+                    <a href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                      {planId ? 'Open the ledger \u2192' : 'Go to Financials \u2192'}
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -587,6 +619,9 @@ const CSS = `
   .lh-unit { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: #eef2f7; color: #475569; padding: 2px 8px; border-radius: 5px; }
   .lh-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .lh-status { font-size: 12px; font-weight: 700; padding: 4px 13px; border-radius: 20px; border: 1px solid; }
+  .lh-demo-chip { font-size: 11px; font-weight: 700; letter-spacing: 0.3px; padding: 4px 11px; border-radius: 20px; color: #a16207; background: rgba(234,179,8,0.12); border: 1px solid rgba(234,179,8,0.3); }
+  .lh-demo { background: #fffbeb; border: 1px solid rgba(234,179,8,0.35); color: #713f12; border-radius: 9px; padding: 12px 15px; font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
+  .lh-demo strong { font-weight: 700; }
 
   .lh-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 18px 0 4px; }
   .fig { border-left: 2px solid #e2e8f0; padding-left: 12px; }

@@ -27,6 +27,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
     end_date: '',
     rent_amount: '',
     notes: '',
+    is_demo: false,
   })
 
   const [existingDocs, setExistingDocs] = useState<LeaseDocument[]>([])
@@ -60,6 +61,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           end_date: leaseData.end_date,
           rent_amount: leaseData.rent_amount?.toString() || '',
           notes: leaseData.notes || '',
+          is_demo: leaseData.is_demo ?? false,
         })
         setExistingDocs(leaseData.documents || [])
         // Generate signed URLs for all existing docs
@@ -130,6 +132,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         rent_amount: form.rent_amount ? parseInt(form.rent_amount) : null,
         unit_number: form.unit_number || null,
         notes: form.notes || null,
+        is_demo: form.is_demo,
         document_url: null,
       },
       tenants
@@ -137,7 +140,14 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
 
     if (error) {
       setSaving(false)
-      setErrorMsg('Failed to save changes. Please try again.')
+      // The database refuses to mark a lease demo while its rent schedule is
+      // still live — otherwise the lease would look inert here while the
+      // reminder cron kept chasing the tenant. Say which action clears it.
+      setErrorMsg(
+        /demo lease/i.test(error?.message ?? '')
+          ? 'This lease still has rent set up. Delete its payment plan in Financials first, then mark it a demo lease — that removes the schedule, charges and late-fee rule with it.'
+          : 'Failed to save changes. Please try again.'
+      )
       return
     }
 
@@ -196,6 +206,11 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .section-divider { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
         .section-label { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 14px; }
+        .demo-toggle { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; cursor: pointer; }
+        .demo-toggle:hover { border-color: #94a3b8; }
+        .demo-toggle input { margin-top: 2px; flex-shrink: 0; }
+        .demo-toggle strong { display: block; font-size: 14px; color: #0f172a; }
+        .demo-hint { display: block; font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 4px; }
         .section-sub { font-size: 12px; color: #94a3b8; margin-bottom: 14px; }
 
         .tenant-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -326,6 +341,24 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
             placeholder="Any additional notes about this lease..."
           />
+        </div>
+
+        <div className="form-group">
+          <label className="demo-toggle">
+            <input
+              type="checkbox"
+              checked={form.is_demo}
+              onChange={e => setForm(f => ({ ...f, is_demo: e.target.checked }))}
+            />
+            <span>
+              <strong>This is a demo lease</strong>
+              <span className="demo-hint">
+                For trying the product out. No rent is ever collected on it and it stays out of
+                Financials, so your real numbers keep meaning something. A lease that already has
+                rent set up has to have its payment plan deleted first.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="form-group">
