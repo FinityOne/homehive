@@ -25,6 +25,8 @@ export async function GET() {
     hasAccess: state.hasAccess,
     propertyCount: state.propertyCount,
     propertyLimit: state.propertyLimit,
+    propertyAllowance: state.propertyAllowance,
     canAddProperty: state.canAddProperty,
+    canPublish: state.canPublish,
   })
 }

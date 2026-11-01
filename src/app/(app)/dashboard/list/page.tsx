@@ -122,15 +122,21 @@ export default function ListYourPlacePage() {
           <div className="lp-status approved">
             <div className="lp-status-title">🎉 You&apos;re approved as a landlord!</div>
             <div className="lp-status-sub" style={{ marginBottom: 14 }}>
-              One step left: pick a plan and your listing publishes immediately — no review
-              queue. Then manage leads, tours, screening and rent from your portal.
+              Add your place now — building the listing is free, and there is no review queue.
+              A plan is what publishes it to students and switches on leads, tours, screening
+              and rent.
             </div>
-            {/* Straight to the plan rather than the dashboard. The portal gate
-                would bounce them to this same page anyway, and an unexplained
-                redirect reads as a bug rather than as a price. */}
-            <a href="/landlord/subscribe?from=upgrade" className="lp-cta lp-cta-green">
-              Choose a plan &amp; list my place →
+            {/* Into the work, not into the price. The listing builder is free
+                now, so sending them to checkout first would ask for a card
+                before they have anything to publish. */}
+            <a href="/landlord/listings/new" className="lp-cta lp-cta-green">
+              Add my place — free →
             </a>
+            <div style={{ marginTop: 10 }}>
+              <a href="/landlord/subscribe?from=upgrade" style={{ fontSize: 13, fontWeight: 600, color: '#8C1D40', textDecoration: 'none', borderBottom: '1px solid #e9b7c6' }}>
+                Or see the plans first →
+              </a>
+            </div>
           </div>
 
         /* ── PENDING ── */

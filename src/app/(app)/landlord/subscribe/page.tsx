@@ -137,6 +137,10 @@ function SubscribeInner() {
   }
 
   const hasStats = stats.topListingLeads > 0 || stats.distinctRenters > 0 || stats.siteVisits > 0
+  // A landlord who has already built listings is not being sold a product, they
+  // are being asked to finish something. That is a different, much easier ask,
+  // so the page leads with their own work rather than with our pitch.
+  const built = state?.propertyCount ?? 0
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '36px 24px 80px', fontFamily: "'DM Sans', sans-serif" }}>
@@ -151,15 +155,25 @@ function SubscribeInner() {
           ASU &amp; Tempe only · 2026–27
         </div>
         <h1 style={{ margin: 0, fontSize: 33, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-1px', lineHeight: 1.18 }}>
-          {fromUpgrade
-            ? 'You’re approved. Now get your place in front of students.'
-            : 'Put your place in front of students who are actually looking'}
+          {built > 0
+            ? built === 1
+              ? 'Your listing is built. Publish it.'
+              : `Your ${built} listings are built. Publish them.`
+            : fromUpgrade
+              ? 'You’re approved. Now get your place in front of students.'
+              : 'Put your place in front of students who are actually looking'}
         </h1>
         <p style={{ margin: '12px auto 0', fontSize: 15, color: '#5a5a5a', lineHeight: 1.7, maxWidth: 600 }}>
+          {built > 0 && (
+            <>
+              {built === 1 ? 'It is' : 'They are'} finished and waiting — nothing is in a
+              review queue. HomeHive only shows a listing to students while your plan is
+              active, so {built === 1 ? 'it goes' : 'they go'} live the minute you pick one.{' '}
+            </>
+          )}
           HomeHive is built for one rental market: students near ASU in Tempe. Your
           listing is not competing for attention across a whole metro — it reaches
-          the renters who can sign a lease near campus. Pick a plan and your listing
-          goes live immediately, with no review queue to wait on.
+          the renters who can sign a lease near campus.
         </p>
       </div>
 

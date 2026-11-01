@@ -5,6 +5,8 @@ import { supabase, getCurrentUser } from '@/lib/supabase'
 import { usePathname, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import Icon, { type IconName } from '@/components/NavIcons'
+import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import { navItemLocked } from '@/lib/landlordAccess'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function getInitials(email: string, fullName?: string): string {
@@ -391,6 +393,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     .filter(p => p !== currentPortal && canSeePortals[p])
   const PORTAL_HREF  = { tenant: '/dashboard', landlord: '/landlord/dashboard', admin: '/admin' }
 
+  // Which nav items need a plan. A landlord on the free tier keeps the whole
+  // menu — hiding paid sections would leave them thinking the product is a
+  // listing form, when the sections they cannot open yet are the reason to pay.
+  // The lock is the honest version: visible, labelled, and one click from the
+  // screen that explains it.
+  const plan = useLandlordPlan(role === 'landlord' && currentPortal === 'landlord')
+  const onFreeTier = plan?.hasAccess === false
+  const isLocked = (href: string) => onFreeTier && navItemLocked(href)
+
   const isActive = (item: NavItem) =>
     pathname === item.href ||
     (!item.exact && item.href !== '/' && pathname.startsWith(item.href + '/'))
@@ -684,6 +695,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           padding: 1px 6px; border-radius: 10px; flex-shrink: 0;
           font-family: 'DM Sans', sans-serif; line-height: 1.5;
         }
+        /* Free tier: a locked row stays readable and clickable — dimming it to
+           grey would make the product look broken rather than purchasable. */
+        .sb-nav-item.locked { color: var(--nav-color); opacity: 0.82; }
+        .sb-nav-item.locked:hover { opacity: 1; }
+        .sb-nav-lock { margin-left: auto; font-size: 10px; flex-shrink: 0; opacity: 0.75; }
+        .app-sidebar.railed .sb-nav-lock {
+          position: absolute; top: 4px; right: 6px; font-size: 8px;
+        }
+
+        /* ── FREE-TIER UPSELL ── */
+        .sb-upsell {
+          margin: 10px 10px 0; padding: 12px 13px;
+          background: var(--nav-active-bg); border: 1px solid var(--divider);
+          border-radius: 10px; font-family: 'DM Sans', sans-serif;
+          text-decoration: none; display: block;
+        }
+        .sb-upsell:hover { border-color: var(--nav-active-color); }
+        .sb-upsell-title {
+          font-size: 12px; font-weight: 700; color: var(--nav-active-color);
+          line-height: 1.35; margin-bottom: 4px;
+        }
+        .sb-upsell-body { font-size: 11.5px; color: var(--user-sub); line-height: 1.45; }
+        .sb-upsell-cta {
+          font-size: 11.5px; font-weight: 700; color: var(--nav-active-color);
+          margin-top: 7px; display: block;
+        }
+        .app-sidebar.railed .sb-upsell { display: none; }
 
         /* ── RAIL MODE ── */
         .app-sidebar.railed .sb-nav { padding: 10px 8px 8px; }
@@ -962,22 +1000,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       <div>
                         {group.items.map(item => {
                           const badge = badgeFor(item.href)
+                          const locked = isLocked(item.href)
                           return (
                             <a
                               key={item.href}
                               href={item.href}
-                              className={`sb-nav-item${isActive(item) ? ' active' : ''}`}
-                              aria-label={item.label}
+                              className={`sb-nav-item${isActive(item) ? ' active' : ''}${locked ? ' locked' : ''}`}
+                              aria-label={locked ? `${item.label} — included with a plan` : item.label}
                               aria-current={isActive(item) ? 'page' : undefined}
                             >
                               <Icon name={item.icon} size={17} />
                               <span className="sb-nav-label">{item.label}</span>
-                              {badge && (
+                              {badge ? (
                                 <span className="sb-nav-badge" style={{ background: badge.color }}>
                                   {badge.prefix ?? ''}{badge.count}
                                 </span>
-                              )}
-                              <span className="sb-tip" aria-hidden="true">{item.label}</span>
+                              ) : locked ? (
+                                <span className="sb-nav-lock" aria-hidden="true">🔒</span>
+                              ) : null}
+                              <span className="sb-tip" aria-hidden="true">
+                                {locked ? `${item.label} — with a plan` : item.label}
+                              </span>
                             </a>
                           )
                         })}
@@ -986,6 +1029,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                 )
               })}
+              {/* Free tier: the standing reason to pay, phrased as the thing
+                  they already did. It sits under the nav rather than above it
+                  — a landlord who came here to edit a listing should reach the
+                  listing first and the ask second. */}
+              {onFreeTier && currentPortal === 'landlord' && (
+                <a href="/landlord/subscribe" className="sb-upsell">
+                  <div className="sb-upsell-title">
+                    {(plan?.propertyCount ?? 0) > 0
+                      ? `${plan?.propertyCount === 1 ? 'Your listing is' : 'Your listings are'} ready to publish`
+                      : 'Building is free'}
+                  </div>
+                  <div className="sb-upsell-body">
+                    {(plan?.propertyCount ?? 0) > 0
+                      ? 'HomeHive shows a listing to students while your plan is active. Nothing is in a review queue.'
+                      : 'Add a property and set it up for free. A plan is what puts it in front of students.'}
+                  </div>
+                  <span className="sb-upsell-cta">See plans →</span>
+                </a>
+              )}
+
               {/* Landlord portal link for tenants who've been upgraded */}
               {currentPortal === 'tenant' && (role === 'landlord' || role === 'admin') && (
                 <a href="/landlord/dashboard" className="sb-nav-item" style={{ borderTop: '1px solid var(--sb-border)', marginTop: '6px', paddingTop: '12px' }}>
@@ -1035,11 +1098,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <span className="mob-tab-icon"><Icon name={item.icon} size={19} /></span>
                 <span className="mob-tab-label">{item.short ?? item.label}</span>
-                {badge && (
+                {badge ? (
                   <span style={{ position: 'absolute', top: 6, right: '50%', marginRight: -18, background: badge.color, color: '#fff', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', minWidth: 16, textAlign: 'center' }}>
                     {badge.prefix ?? ''}{badge.count}
                   </span>
-                )}
+                ) : isLocked(item.href) ? (
+                  <span aria-hidden="true" style={{ position: 'absolute', top: 5, right: '50%', marginRight: -16, fontSize: 9, opacity: 0.8 }}>🔒</span>
+                ) : null}
               </a>
             )
           })}

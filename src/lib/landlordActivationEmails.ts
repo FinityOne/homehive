@@ -269,7 +269,8 @@ export function renderActivationEmail(opts: ActivationEmailOpts): { subject: str
       ? `<p style="font-size:14px;color:#4a4a4a;line-height:1.7;margin:0 0 20px;">
       You made a landlord account on HomeHive but haven't put a place up yet, so I wanted to
       show you what you're sitting out of. These are our real numbers, not a projection —
-      every one of them is counted from the platform as it stands today.
+      every one of them is counted from the platform as it stands today. Building the
+      listing costs nothing, so it is worth the ten minutes either way.
     </p>`
       : opts.step === 2
       ? (stats.topListingLeads
@@ -289,8 +290,9 @@ export function renderActivationEmail(opts: ActivationEmailOpts): { subject: str
       : `<p style="font-size:14px;color:#4a4a4a;line-height:1.7;margin:0 0 20px;">
       This is the last one of these I'll send. If you're not renting out a place near ASU right
       now, ignore it with my blessing. If you are, and the only thing stopping you was
-      not getting round to it: a listing takes a few minutes and
-      ${esc(formatMonthly(PLANS.starter.priceCents))} a month, cancelled whenever you like.
+      not getting round to it: building the listing is free and takes a few minutes. It is
+      only ${esc(formatMonthly(PLANS.starter.priceCents))} a month when you want students
+      to see it, cancelled whenever you like.
     </p>`
 
   return {
@@ -310,8 +312,8 @@ export function renderActivationEmail(opts: ActivationEmailOpts): { subject: str
       lease — not a general rental audience three states away.
     </p>
     ${planBlock(0)}
-    <div style="margin-bottom:10px;">${emailButton({ label: 'List my place', url: subscribe })}</div>
-    <div>${emailButton({ label: 'See what students see', url: `${site}/homes`, secondary: true })}</div>
+    <div style="margin-bottom:10px;">${emailButton({ label: 'Add my place — free', url: `${site}/landlord/listings/new` })}</div>
+    <div>${emailButton({ label: 'See the plans', url: subscribe, secondary: true })}</div>
     ${footer(opts)}`,
     }),
   }

@@ -5,12 +5,19 @@ import { sendListingLiveEmail } from '@/lib/listingEmails'
 import { getPlatformStats } from '@/lib/platformStats'
 
 /**
- * Create a property, inside the landlord's plan.
+ * Create a property. Free, up to a ceiling.
  *
- * Listing creation used to be a direct insert from the browser. The plan cap
- * is the whole business model, so the count and the insert have to happen in
- * one place the landlord cannot reach around — here, where the count is read
- * and the row is written under the service key in the same request.
+ * Listing creation used to require a plan. It no longer does: building is the
+ * work, publishing is the product, and asking for a card before any work is
+ * done is asking at the one moment the landlord has nothing invested. They can
+ * now build up to `FREE_PROPERTY_LIMIT` properties, finish them completely,
+ * and publish by paying — the listing goes live on its own when the plan
+ * starts, because `owner_plan_active` is trigger-maintained.
+ *
+ * Listing creation used to be a direct insert from the browser. The ceiling is
+ * the whole business model, so the count and the insert have to happen in one
+ * place the landlord cannot reach around — here, where the count is read and
+ * the row is written under the service key in the same request.
  *
  * Listings are created `active`, not `pending`. The review queue used to stand
  * between a landlord and their own listing, which meant the worst wait on the
@@ -66,26 +73,24 @@ export async function POST(req: Request) {
   const db = supabaseAdmin()
   const state = await loadPlanState(db, user.id)
 
-  if (!state.hasAccess) {
-    return Response.json({
-      error: 'Choose a plan to start listing properties.',
-      reason: 'no_plan',
-    }, { status: 402 })
-  }
-
+  // Building is free — no plan check here. The gate is the ceiling, and which
+  // ceiling applies depends on whether they are paying (see landlordAccess.ts).
   if (!state.canAddProperty) {
-    // Name the tier that would fix it. A landlord at their cap is the most
+    // Name the tier that would fix it. A landlord at their ceiling is the most
     // qualified upgrade prospect on the platform; telling them "limit reached"
     // and nothing else wastes the moment.
     const suggested = smallestTierFor(state.propertyCount + 1)
+    const n = state.propertyAllowance
     return Response.json({
-      error:
-        `Your plan covers ${formatPropertyLimit(state.propertyLimit)} ` +
-        `propert${state.propertyLimit === 1 ? 'y' : 'ies'} and all of them are in use. ` +
-        `Upgrade to ${PLANS[suggested].name} to add another.`,
-      reason: 'limit_reached',
+      error: state.hasAccess
+        ? `Your plan covers ${formatPropertyLimit(n)} propert${n === 1 ? 'y' : 'ies'} ` +
+          `and all of them are in use. Upgrade to ${PLANS[suggested].name} to add another.`
+        : `You can build ${formatPropertyLimit(n)} propert${n === 1 ? 'y' : 'ies'} for free, ` +
+          `and ${n === 1 ? 'it is' : 'they are'} all set up. ` +
+          `Start a plan to publish ${n === 1 ? 'it' : 'them'} and add more.`,
+      reason: state.hasAccess ? 'limit_reached' : 'free_limit_reached',
       propertyCount: state.propertyCount,
-      propertyLimit: state.propertyLimit,
+      propertyLimit: state.propertyAllowance,
       suggestedPlan: suggested,
     }, { status: 402 })
   }
@@ -148,9 +153,10 @@ export async function POST(req: Request) {
         to: email,
         propertyName: body.name.trim(),
         propertySlug: slug,
-        // Creation requires a plan, so this is normally `live`. Derived rather
-        // than assumed so the email stays honest if that gate ever loosens.
-        state: state.hasAccess ? 'live' : 'needs_plan',
+        // Free landlords get the `needs_plan` version: the listing is finished
+        // and one payment away from students, which is the most persuasive
+        // thing we can truthfully say at this exact moment.
+        state: state.canPublish ? 'live' : 'needs_plan',
         stats,
       })
     }

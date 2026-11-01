@@ -16,6 +16,7 @@ import {
 } from '@/lib/properties'
 import type { Lead } from '@/lib/leads'
 import { LISTING_STATUS_META, isPublicStatus, type ListingStatus } from '@/lib/listingStatus'
+import { useLandlordPlan } from '@/lib/useLandlordPlan'
 
 const ListingStatusControl = dynamic(() => import('@/components/listings/ListingStatusControl'), { ssr: false })
 const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
@@ -189,6 +190,11 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
   const [leadsPage, setLeadsPage]   = useState(1)
   const [leadsTotal, setLeadsTotal] = useState(0)
   const [leadsLoading, setLeadsLoading] = useState(false)
+  // Managing the listing is free; the two things on this page that are not —
+  // the inquiries it produces and tour scheduling — say so in place rather
+  // than looking broken or empty.
+  const plan = useLandlordPlan()
+  const canPublish = plan?.canPublish !== false
   const LEADS_PAGE_SIZE = 20
   const [loading, setLoading]       = useState(true)
   const [activeTab, setActiveTab]   = useState<Tab>('overview')
@@ -704,6 +710,21 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                 )}
               </div>
               <div className="lp-card-body" style={{ padding: 0, position: 'relative' }}>
+                {!canPublish && leadsTotal === 0 && (
+                  <div style={{ padding: '18px 16px', fontFamily: "'DM Sans', sans-serif" }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a', marginBottom: 5 }}>
+                      No students can see this listing yet
+                    </div>
+                    <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+                      Inquiries land here with the student&apos;s name, email, phone and move-in
+                      date. The listing is finished — a plan is what puts it in front of
+                      renters and turns this into a pipeline.
+                    </div>
+                    <a href="/landlord/subscribe" style={{ display: 'inline-block', marginTop: 11, fontSize: 12.5, fontWeight: 700, color: '#8C1D40', textDecoration: 'none', borderBottom: '1px solid #e9b7c6' }}>
+                      Publish this listing →
+                    </a>
+                  </div>
+                )}
                 {leadsLoading && (
                   <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.6)', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ fontSize: 13, color: '#9b9b9b', fontFamily: "'DM Sans', sans-serif" }}>Loading…</div>
@@ -1145,15 +1166,33 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               <p style={{ fontSize: '14px', color: '#4a4a4a', lineHeight: 1.7, marginBottom: '20px' }}>
                 Set your available time slots for the next 7 days. Tenants you invite will be able to pick a 30-minute window to tour <strong>{property.name}</strong>.
               </p>
-              <a
-                href={`/landlord/listings/${property.slug}/calendar`}
-                style={{ display: 'inline-block', background: '#1a1a1a', color: '#FFC627', textDecoration: 'none', fontSize: '15px', fontWeight: 700, padding: '14px 32px', borderRadius: '10px' }}
-              >
-                📅 Open Tour Calendar →
-              </a>
-              <p style={{ marginTop: '14px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
-                The calendar opens in a focused view for easy drag-and-select scheduling. Come back here when done.
-              </p>
+              {canPublish ? (
+                <>
+                  <a
+                    href={`/landlord/listings/${property.slug}/calendar`}
+                    style={{ display: 'inline-block', background: '#1a1a1a', color: '#FFC627', textDecoration: 'none', fontSize: '15px', fontWeight: 700, padding: '14px 32px', borderRadius: '10px' }}
+                  >
+                    📅 Open Tour Calendar →
+                  </a>
+                  <p style={{ marginTop: '14px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
+                    The calendar opens in a focused view for easy drag-and-select scheduling. Come back here when done.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <a
+                    href="/landlord/subscribe"
+                    style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', textDecoration: 'none', fontSize: '15px', fontWeight: 700, padding: '14px 32px', borderRadius: '10px' }}
+                  >
+                    🔒 Tours come with a plan →
+                  </a>
+                  <p style={{ marginTop: '14px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
+                    Students book their own viewings from the slots you publish, and the
+                    confirmations and reminders go out for you. It needs a plan for the same
+                    reason leads do — there is nobody to book while the listing is hidden.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}
