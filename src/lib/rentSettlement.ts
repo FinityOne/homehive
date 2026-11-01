@@ -19,7 +19,15 @@ export function idsFromMetadata(pi: Stripe.PaymentIntent) {
     scheduledIds: (m.scheduledIds ?? '').split(',').filter(Boolean),
     specialIds: (m.specialIds ?? '').split(',').filter(Boolean),
     feeDollars: Number(m.feeCents ?? 0) / 100,
-    /** Late fees the tenant was actually charged on this intent, in dollars. */
+    /**
+     * Late fees the tenant was charged on this intent, in dollars — the whole
+     * payment's total, for display and reconciliation only.
+     *
+     * Settlement deliberately does not apply this figure anywhere: it is the
+     * sum of `lateFeeRows`, and that loop applies each fee to the charge that
+     * actually owed it. Writing this onto a rent row instead (as it once did)
+     * books the same money twice and credits the wrong month.
+     */
     lateFeeDollars: Number(m.lateFeeCents ?? 0) / 100,
     /**
      * Late fees paid *on their own*, as [chargeId, dollars] pairs.
@@ -90,7 +98,7 @@ export async function settleRentPayment(
   lateFeeTotal: number
   conflicts: string[]
 }> {
-  const { scheduledIds, specialIds, feeDollars, lateFeeDollars, lateFeeRows, method } =
+  const { scheduledIds, specialIds, feeDollars, lateFeeRows, method } =
     idsFromMetadata(pi)
   const paidDate = new Date().toISOString().split('T')[0]
   // `paid_date` is a DATE, so it loses the time of day. A landlord reconciling
@@ -99,12 +107,6 @@ export async function settleRentPayment(
   const settledAt = status === 'paid' ? new Date().toISOString() : null
 
   let feeApplied = false
-  // Late fees ride on the first rent row for the same reason the surcharge does:
-  // they belong to the payment, not to any one month, and splitting them would
-  // make every row's figures wrong. Writing it here also corrects the stale
-  // `late_fees_applied` value that row may be carrying, and records the same
-  // figure in `late_fee_paid`, which is the one totals are allowed to read.
-  let lateFeeApplied = false
   let scheduled = 0
   let special = 0
   // Rows already settled by a *different* intent: the tenant has been charged
@@ -140,20 +142,20 @@ export async function settleRentPayment(
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
       settled_at: settledAt,
-      ...(status === 'paid'
-        ? {
-            late_fees_applied: lateFeeApplied ? 0 : lateFeeDollars,
-            // The fee the tenant was actually charged on this intent, recorded
-            // as money *received*. Without this the landlord's collected total
-            // silently omits late fees they have genuinely been paid, because
-            // `paid_amount` above is deliberately the rent alone.
-            late_fee_paid: lateFeeApplied ? 0 : lateFeeDollars,
-          }
-        : {}),
+      // Deliberately no late-fee column here. A rent row carries *no* fee money:
+      // paying rent and paying a late fee have been separate selections since
+      // fees became their own charge, so everything in `lateFeeCents` belongs to
+      // the charges in `lateFeeRows` and is applied by that loop below.
+      //
+      // Writing it here as well counted the same money twice in the landlord's
+      // collected total, and attributed it to a month that was never charged a
+      // fee. Worse, it *overwrote* `late_fee_paid` — so settling a charge's rent
+      // after its fee had already been paid wiped that collected fee, putting it
+      // back on the tenant. `late_fee_paid` is the authoritative running total;
+      // only the claim loop may touch it.
     }).eq('id', id)
     if (isTransition(row.status)) movedScheduled.push(id)
     feeApplied = true
-    lateFeeApplied = true
     scheduled++
   }
 
@@ -218,13 +220,34 @@ export async function settleRentPayment(
     })
 
     if (claimErr) {
-      // 23505 = unique violation: already applied by the other caller.
+      // 23505 = unique violation: this charge/intent pair is already claimed.
       if (claimErr.code !== '23505') {
         console.error('[rent] late fee claim failed', row.id, claimErr.message)
+        continue
       }
-      continue
+
+      // An ACH debit claims the fee while it is still clearing, and that claim
+      // deliberately adds nothing to `late_fee_paid` — the money has not landed.
+      // When it does land we arrive here, blocked by our own `processing` claim,
+      // so the claim has to be *promoted* or the fee is never recorded at all:
+      // Stripe has the money, the landlord's books do not, and the tenant keeps
+      // being chased for a fee they already paid.
+      //
+      // The promotion is the claim: `.eq('status', 'processing')` means only one
+      // caller can move the row, so the webhook and the browser's confirm call
+      // still race safely and only the winner counts the money.
+      if (status !== 'paid') continue
+      const { data: promoted } = await db
+        .from('late_fee_payments')
+        .update({ status: 'paid', settled_at: settledAt })
+        .eq('scheduled_payment_id', row.id)
+        .eq('stripe_payment_intent_id', pi.id)
+        .eq('status', 'processing')
+        .select('id')
+      if (!promoted || promoted.length === 0) continue
+    } else {
+      lateFeeSurchargeLeft = 0
     }
-    lateFeeSurchargeLeft = 0
 
     // Only now is the money ours to count. `late_fee_paid` is the running
     // total every landlord total reads, so it is incremented rather than
@@ -325,8 +348,13 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
       status: 'pending', paid_amount: 0, paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
       settled_at: null,
-      // The fee came back with the rent — it was never collected after all.
-      late_fee_paid: 0,
+      // `late_fee_paid` is deliberately left alone. This payment's rent is what
+      // bounced; no rent payment records fee money any more, so there is nothing
+      // of this intent's to take back here. Any fee money sitting on the row was
+      // collected by a *separate* fee payment, and zeroing it destroyed that
+      // record — the landlord lost the money from their books and the tenant was
+      // billed for the fee a second time. Fees this intent did collect are
+      // reversed by the claim loop above, by their own recorded amount.
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
       .in('status', ['paid', 'processing'])
       .select('id')
