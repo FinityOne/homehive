@@ -174,6 +174,51 @@ const check = (name, got, want) => {
   check('…not the seven days it took to clear', x.asOfDate, '2026-10-03')
 }
 
+// ── 8. Rent due on the 1st: paid OR initiated by the 1st owes nothing ─────
+//
+// The live plan's contract (`payment_plans.due_day = 1`, grace 0): a tenant who
+// acts on the 1st is on time, by every route money can arrive. This is one
+// block rather than scattered cases because it is the promise made to the
+// tenant, and it should fail as a unit if any route stops honouring it.
+{
+  const due = '2026-12-01'
+  const base = { due_date: due, amount: 800, late_fee_paid: 0 }
+
+  // Card, pressed at 23:59 local on the 1st. Settlement writes the UTC date.
+  check('card on the 1st, settled past UTC midnight', lateFeeOutstanding(DAILY, {
+    ...base, status: 'paid', paid_date: '2026-12-02', paid_amount: 800,
+    submitted_at: '2026-12-02T06:59:00Z',
+  }, 0), 0)
+
+  // ACH initiated on the 1st, still clearing a week later.
+  check('ACH initiated on the 1st, still clearing', lateFeeOutstanding(DAILY, {
+    ...base, status: 'processing', paid_date: null, paid_amount: 0,
+    submitted_at: '2026-12-01T20:00:00Z',
+  }, 0, new Date('2026-12-08T12:00:00Z')), 0)
+
+  // ACH initiated on the 1st, cleared on the 9th.
+  check('ACH initiated on the 1st, cleared the 9th', lateFeeOutstanding(DAILY, {
+    ...base, status: 'paid', paid_date: '2026-12-09', paid_amount: 800,
+    submitted_at: '2026-12-01T15:00:00Z',
+  }, 0), 0)
+
+  // Zelle the landlord recorded against the 1st — no submission instant exists.
+  check('manual payment recorded on the 1st', lateFeeOutstanding(DAILY, {
+    ...base, status: 'paid', paid_date: due, paid_amount: 800,
+    submitted_at: null, payment_method: 'manual_zelle',
+  }, 0), 0)
+
+  // Unpaid, and it is still the 1st where the property is.
+  check('unpaid but the 1st is not over yet', lateFeeOutstanding(DAILY, {
+    ...base, status: 'pending', paid_date: null, paid_amount: 0,
+  }, 0, new Date('2026-12-02T06:00:00Z')), 0)
+
+  // And the boundary: nothing on the 1st, one day's fee on the 2nd.
+  check('the 2nd is one day late', lateFeeOutstanding(DAILY, {
+    ...base, status: 'pending', paid_date: null, paid_amount: 0,
+  }, 0, new Date('2026-12-02T08:00:00Z')), 15)
+}
+
 console.log(`${pass.length} passed`)
 for (const p of pass) console.log('  ok   ' + p)
 if (fail.length) {
