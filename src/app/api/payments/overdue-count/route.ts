@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { billingToday } from '@/lib/rentPayments'
 
 export async function GET() {
   const cookieStore = await cookies()
@@ -25,7 +26,7 @@ export async function GET() {
 
   if (!plans || plans.length === 0) return NextResponse.json({ count: 0 })
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = billingToday()
   const { count } = await supabase
     .from('scheduled_payments')
     .select('id', { count: 'exact', head: true })

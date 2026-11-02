@@ -13,7 +13,7 @@ import { createHash } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import {
-  computeFee, amountDue, MIN_CHARGE_CENTS, lateFeeOutstanding,
+  computeFee, amountDue, MIN_CHARGE_CENTS, lateFeeOutstanding, billingToday,
   type PayMethod, type LateFeeRuleLike,
 } from '@/lib/rentPayments'
 import { stripeSecretKey, stripeMode } from '@/lib/stripeEnv'
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
   if (scheduledIds.length > 0) {
     const { data } = await supabaseAdmin
       .from('scheduled_payments')
-      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, late_fee_paid')
+      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, submitted_at, late_fee_paid')
       .in('id', scheduledIds)
 
     for (const r of data ?? []) {
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
   if (lateFeeIds.length > 0) {
     const { data } = await supabaseAdmin
       .from('scheduled_payments')
-      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, late_fee_paid')
+      .select('id, plan_id, plan_tenant_id, amount, paid_amount, status, due_date, paid_date, submitted_at, late_fee_paid')
       .in('id', lateFeeIds)
 
     const planIds = [...new Set((data ?? []).map(r => r.plan_id).filter(Boolean))]
@@ -205,6 +205,10 @@ export async function POST(req: NextRequest) {
           status: r.status,
           due_date: r.due_date,
           paid_date: r.paid_date ?? null,
+          // The date the fee is judged against. Omitting it here would bill the
+          // tenant for however long their bank took to clear a debit they sent
+          // on time — this is the figure the card is actually charged.
+          submitted_at: r.submitted_at ?? null,
           amount: Number(r.amount),
           paid_amount: Number(r.paid_amount ?? 0),
           late_fee_paid: Number(r.late_fee_paid ?? 0),
@@ -242,7 +246,7 @@ export async function POST(req: NextRequest) {
   // *required* to pay what has reached its due date. Paying ahead is allowed,
   // but it must be a deliberate selection of specific future months — never a
   // "pay everything" sweep, and never more than a year out.
-  const today = new Date().toISOString().split('T')[0]
+  const today = billingToday()
   const dueNow = rows.filter(r => !r.dueDate || r.dueDate <= today)
   const ahead = rows.filter(r => r.dueDate && r.dueDate > today)
   const YEAR_AHEAD = new Date(Date.now() + 365 * 86_400_000).toISOString().split('T')[0]

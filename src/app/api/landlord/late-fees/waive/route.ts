@@ -33,7 +33,7 @@ async function authorizeCharge(req: NextRequest, scheduledPaymentId: string) {
 
   const { data: charge } = await supabaseAdmin
     .from('scheduled_payments')
-    .select('id, plan_id, due_date, amount, paid_amount, paid_date, status, late_fee_paid')
+    .select('id, plan_id, due_date, amount, paid_amount, paid_date, submitted_at, status, late_fee_paid')
     .eq('id', scheduledPaymentId)
     .maybeSingle()
   if (!charge) return { error: Response.json({ error: 'Charge not found' }, { status: 404 }) }

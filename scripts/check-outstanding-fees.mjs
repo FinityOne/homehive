@@ -24,7 +24,7 @@ const wanted = nameArgs.join(' ').trim().toLowerCase()
 
 const { data: charges } = await db
   .from('scheduled_payments')
-  .select('id, plan_id, plan_tenant_id, due_date, amount, paid_amount, status, paid_date, late_fee_paid')
+  .select('id, plan_id, plan_tenant_id, due_date, amount, paid_amount, status, paid_date, submitted_at, payment_method, late_fee_paid')
   .neq('status', 'voided')
 
 const { data: rules } = await db
@@ -53,6 +53,9 @@ for (const c of charges ?? []) {
       status: c.status,
       due_date: c.due_date,
       paid_date: c.paid_date,
+      // The date the fee is judged against — without it this script reports the
+      // clearing date and disagrees with every surface the tenant sees.
+      submitted_at: c.submitted_at,
       amount: Number(c.amount),
       paid_amount: Number(c.paid_amount ?? 0),
       late_fee_paid: Number(c.late_fee_paid ?? 0),

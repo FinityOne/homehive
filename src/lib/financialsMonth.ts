@@ -23,6 +23,7 @@ import {
 import {
   iso, inRange, liveRent, stageOf, daysBetweenDates,
   rentTotals, chargeTotals, sumTotals, lateFeeDue, lateFeeCappedByCharge, catLabel,
+  billingToday,
   type Range, type Totals, type LeaseStage, type SettleMethod,
 } from '@/lib/financialsRollup'
 
@@ -111,7 +112,7 @@ export const LEASE_FILTERS: { id: LeaseFilter; label: string; hint: string }[] =
 export const isLiveStage = (s: LeaseStage) => s === 'active' || s === 'ending'
 
 export function planStage(plan: PaymentPlan, now = new Date()): LeaseStage {
-  return stageOf(plan.lease?.start_date ?? null, plan.lease?.end_date ?? null, iso(now))
+  return stageOf(plan.lease?.start_date ?? null, plan.lease?.end_date ?? null, billingToday(now))
 }
 
 export function stageMatchesFilter(stage: LeaseStage, filter: LeaseFilter): boolean {
@@ -320,7 +321,7 @@ const settleMethod = (m: string | null): SettleMethod | null =>
   m === 'card' || m === 'ach' || m === 'manual_zelle' || m === 'manual_other' ? m : null
 
 export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
-  const todayStr = iso(now)
+  const todayStr = billingToday(now)
   const out: Charge[] = []
 
   for (const plan of plans) {
@@ -678,7 +679,7 @@ export function upcomingMonths(
 
 /** Rent landing in the next `days` days — the "what's about to arrive" figure. */
 export function dueWithin(plans: PaymentPlan[], days: number, now = new Date()): { amount: number; count: number } {
-  const todayStr = iso(now)
+  const todayStr = billingToday(now)
   const until = iso(new Date(now.getTime() + days * 86_400_000))
   const rows = allCharges(plans, now).filter(c =>
     c.outstanding > 0 && c.dueDate >= todayStr && c.dueDate <= until

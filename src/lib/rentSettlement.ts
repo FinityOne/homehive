@@ -13,6 +13,20 @@ import { notifyRentPayment, rowsForIntent } from './rentPaymentNotify'
 /** Whichever service-role client the caller already has. */
 type DB = SupabaseClient
 
+/**
+ * When the tenant pressed pay, from the intent itself.
+ *
+ * `created` is seconds since the epoch on every real PaymentIntent, but this
+ * returns null rather than throwing if it is absent or nonsensical: settlement
+ * must never fail over a date, and an invented one would mis-bill a late fee.
+ */
+function submissionInstant(pi: Stripe.PaymentIntent): string | null {
+  const seconds = Number(pi.created)
+  if (!Number.isFinite(seconds) || seconds <= 0) return null
+  const d = new Date(seconds * 1000)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 export function idsFromMetadata(pi: Stripe.PaymentIntent) {
   const m = pi.metadata ?? {}
   return {
@@ -105,6 +119,19 @@ export async function settleRentPayment(
   // a bank statement needs the instant, so record it alongside — and only when
   // the money actually landed, never for an ACH debit still in flight.
   const settledAt = status === 'paid' ? new Date().toISOString() : null
+  // When the tenant actually pressed pay. Stripe's `created` on the intent, not
+  // this run's clock: this function runs again when an ACH debit clears days
+  // later, and `new Date()` there is the bank's date, not the tenant's.
+  //
+  // This is the date every late fee is judged against — see `lateFeeAsOf`. It
+  // is written on the `processing` pass as well, which is the point: the fee
+  // freezes the moment the debit is sent instead of climbing while it clears.
+  //
+  // Guarded rather than trusted: if the instant is missing or unparseable we
+  // write null and the row falls back to `paid_date`, which is the behaviour
+  // from before this column existed. A wrong submission date is worse than
+  // none — it would silently forgive or invent a late fee.
+  const submittedAt = submissionInstant(pi)
 
   let feeApplied = false
   let scheduled = 0
@@ -142,6 +169,7 @@ export async function settleRentPayment(
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
       settled_at: settledAt,
+      submitted_at: submittedAt,
       // Deliberately no late-fee column here. A rent row carries *no* fee money:
       // paying rent and paying a late fee have been separate selections since
       // fees became their own charge, so everything in `lateFeeCents` belongs to
@@ -179,6 +207,7 @@ export async function settleRentPayment(
       processing_fee: feeApplied ? 0 : feeDollars,
       stripe_payment_intent_id: pi.id,
       settled_at: settledAt,
+      submitted_at: submittedAt,
     }).eq('id', id)
     if (isTransition(row.status)) movedSpecial.push(id)
     feeApplied = true
@@ -348,6 +377,13 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
       status: 'pending', paid_amount: 0, paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
       settled_at: null,
+      // The grace the submission bought is withdrawn with it. While the debit
+      // was in flight its late fee was frozen at the day the tenant sent it;
+      // the money never arrived, so there is nothing to have been on time, and
+      // the fee resumes accruing from the due date as if it had never been
+      // submitted. Leaving this set would hand a tenant a permanent amnesty for
+      // a payment that bounced.
+      submitted_at: null,
       // `late_fee_paid` is deliberately left alone. This payment's rent is what
       // bounced; no rent payment records fee money any more, so there is nothing
       // of this intent's to take back here. Any fee money sitting on the row was
@@ -365,6 +401,7 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
       status: 'pending', paid_date: null,
       payment_method: null, recorded_by: null, processing_fee: 0,
       settled_at: null,
+      submitted_at: null,
     }).eq('id', id).eq('stripe_payment_intent_id', pi.id)
       .in('status', ['paid', 'processing'])
       .select('id')

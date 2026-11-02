@@ -141,15 +141,51 @@ export default function LateFeeDetailSheet({
                 </div>
               </li>
             )}
+            {/*
+              When the tenant *sent* it — the step the fee is actually counted
+              to. Without this the timeline read "Rent arrived Sep 10 · 1 day
+              past due" and contradicted itself, because the fee is measured to
+              submission and the rent landed eight clearing days later. Showing
+              both dates is what makes "1 day" an explanation rather than an
+              apparent mistake.
+            */}
+            {x.submittedAt && (
+              <li>
+                <span className="lfd-dot done" />
+                <div>
+                  <div className="lfd-t-l">You sent the payment</div>
+                  <div className="lfd-t-v">
+                    {fmtDay(x.asOfDate)}
+                    <em className="lfd-late">
+                      {x.daysPastDue} {plural(x.daysPastDue, 'day')} past due
+                    </em>
+                  </div>
+                </div>
+              </li>
+            )}
             <li>
               <span className={`lfd-dot${x.rentSettled ? ' done' : ' open'}`} />
               <div>
-                <div className="lfd-t-l">{x.rentSettled ? 'Rent arrived' : 'Rent still unpaid'}</div>
+                <div className="lfd-t-l">
+                  {x.rentSettled
+                    ? 'Rent arrived'
+                    : x.submittedAt ? 'Still clearing' : 'Rent still unpaid'}
+                </div>
                 <div className="lfd-t-v">
                   {x.rentSettled ? fmtDay(x.paidDate) : `as of ${fmtDay(x.asOfDate)}`}
-                  <em className="lfd-late">
-                    {x.daysPastDue} {plural(x.daysPastDue, 'day')} past due
-                  </em>
+                  {/*
+                    The lateness badge belongs to the submission step when there
+                    is one: a bank taking six days to clear money sent on time
+                    is not the tenant being six days late.
+                  */}
+                  {!x.submittedAt && (
+                    <em className="lfd-late">
+                      {x.daysPastDue} {plural(x.daysPastDue, 'day')} past due
+                    </em>
+                  )}
+                  {x.submittedAt && x.rentSettled && x.paidDate !== x.asOfDate && (
+                    <em className="lfd-clear">no fee for the clearing time</em>
+                  )}
                 </div>
               </div>
             </li>
@@ -262,6 +298,12 @@ const CSS = `
   .lfd-t-v { font-size: 13.5px; font-weight: 600; color: #0f172a; margin-top: 1px; }
   .lfd-late { display: inline-block; font-style: normal; font-size: 11px; font-weight: 700;
     color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 20px;
+    padding: 1px 8px; margin-left: 7px; vertical-align: 1px; }
+
+  /* Same badge shape as lfd-late, in the reassuring colour: this one is
+     telling the tenant they were NOT charged for something. */
+  .lfd-clear { display: inline-block; font-style: normal; font-size: 11px; font-weight: 700;
+    color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 20px;
     padding: 1px 8px; margin-left: 7px; vertical-align: 1px; }
 
   .lfd-math { border: 1px solid #eef2f7; border-radius: 10px; overflow: hidden; }

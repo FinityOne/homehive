@@ -2,9 +2,9 @@ import {
   SPECIAL_CATEGORIES,
   type PaymentPlan, type ScheduledPayment, type SpecialPayment,
 } from '@/lib/payments'
-import { lateFeeDue, lateFeeRuleRisk } from '@/lib/rentPayments'
+import { lateFeeDue, lateFeeRuleRisk, billingToday } from '@/lib/rentPayments'
 
-export { lateFeeDue, lateFeeRuleRisk, lateFeeCappedByCharge } from '@/lib/rentPayments'
+export { lateFeeDue, lateFeeRuleRisk, lateFeeCappedByCharge, billingToday } from '@/lib/rentPayments'
 export type { LateFeeRuleLike } from '@/lib/rentPayments'
 
 /**
@@ -47,7 +47,7 @@ export const iso = (d: Date) =>
 
 /** Inclusive due-date bounds for a scope. `null` on a side means unbounded. */
 export function scopeRange(scope: Scope, now = new Date()): { from: string | null; to: string | null } {
-  const today = iso(now)
+  const today = billingToday(now)
   switch (scope) {
     case 'month': {
       const y = now.getFullYear(), m = now.getMonth()
@@ -197,7 +197,7 @@ export function pastDue(sp: ScheduledPayment, todayStr: string): boolean {
 }
 
 export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date()): Totals {
-  const todayStr = iso(now)
+  const todayStr = billingToday(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
   let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
@@ -236,7 +236,7 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
  *  either, so it must be carved out before the past-due test or a tenant who
  *  paid by bank transfer gets chased for money already on its way. */
 export function chargeTotals(specials: SpecialPayment[], range: Range, now = new Date()): Totals {
-  const todayStr = iso(now)
+  const todayStr = billingToday(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
   let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
@@ -475,7 +475,7 @@ export const catLabel = (c: string) =>
 
 export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()): LeaseSummary {
   const range = scopeRange(scope, now)
-  const todayStr = iso(now)
+  const todayStr = billingToday(now)
   const sps = plan.scheduled_payments ?? []
   const specials = plan.special_payments ?? []
 
@@ -812,7 +812,7 @@ export type ActionItem = {
 }
 
 export function actionQueue(plans: PaymentPlan[], now = new Date()): ActionItem[] {
-  const todayStr = iso(now)
+  const todayStr = billingToday(now)
   const todayMs = new Date(todayStr + 'T00:00:00').getTime()
   const lateBy = (due: string) =>
     Math.max(0, Math.floor((todayMs - new Date(due + 'T00:00:00').getTime()) / 86_400_000))
