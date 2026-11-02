@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase'
 
+import { billingToday } from './rentPayments'
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type WorkKind =
@@ -86,7 +88,7 @@ export const isOpen = (item: WorkItem) => STATUS_META[item.status].open
  * bottom of the list.
  */
 export function sortWorkItems(items: WorkItem[], today = new Date()): WorkItem[] {
-  const stamp = today.toISOString().split('T')[0]
+  const stamp = billingToday(today)
   const overdue = (i: WorkItem) =>
     isOpen(i) && !!i.target_date && i.target_date < stamp ? 0 : 1
 
@@ -101,7 +103,10 @@ export function sortWorkItems(items: WorkItem[], today = new Date()): WorkItem[]
 
 export function isOverdue(item: WorkItem, today = new Date()): boolean {
   if (!isOpen(item) || !item.target_date) return false
-  return item.target_date < today.toISOString().split('T')[0]
+  // The whole target day belongs to the job, judged on the local calendar
+  // rather than UTC — which in Tempe rolls over at 5pm and marked work overdue
+  // on the afternoon it was due. Same rule as rent: see `isPastDue`.
+  return item.target_date < billingToday(today)
 }
 
 // ── Money ────────────────────────────────────────────────────────────────────

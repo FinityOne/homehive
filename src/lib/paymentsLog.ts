@@ -24,6 +24,7 @@
  */
 
 import { type PaymentPlan } from './payments'
+import { billingToday, daysPastDueOn } from './rentPayments'
 import { METHOD_META } from './financialsRollup'
 import { allCharges, type Charge } from './financialsMonth'
 
@@ -132,8 +133,15 @@ function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000)
 }
 
-/** The calendar date of an instant, in the viewer's own zone. */
-const dayOf = (iso: string) => new Date(iso).toISOString().slice(0, 10)
+/**
+ * The calendar date of an instant, where the rent is due.
+ *
+ * Not `toISOString()`. A tenant who pays at 6pm in Tempe on the day rent is
+ * due has already crossed into tomorrow in UTC, so a UTC date would print
+ * their on-time payment as a day late — and the whole point of this log is
+ * that the clearing lag and the clock are never charged to the tenant.
+ */
+const dayOf = (iso: string) => billingToday(new Date(iso))
 
 /**
  * Every settled or in-flight payment on these plans.
@@ -165,7 +173,9 @@ function fromCharges(charges: Charge[]): PaymentEntry[] {
     // Judged on when the tenant sent it. For a manual entry there is no
     // submission, so the landlord's own paid date is the best fact available.
     const sentOn = submitted ? dayOf(submitted) : st.paidDate
-    const daysLate = sentOn && c.dueDate ? daysBetween(c.dueDate, sentOn) : null
+    // Zero all the way through the due day: rent due on the 1st sent at any
+    // hour of the 1st is on time. `daysPastDueOn` is the one definition.
+    const daysLate = sentOn && c.dueDate ? daysPastDueOn(c.dueDate, sentOn) : null
 
     out.push({
       key: `${c.kind}-${c.id}`,
@@ -252,7 +262,7 @@ function fromAttempts(attempts: AttemptRow[], plans: PaymentPlan[]): PaymentEntr
         clearingDays: a.submitted_at && a.failed_at
           ? Math.max(0, daysBetween(dayOf(a.submitted_at), dayOf(a.failed_at)))
           : null,
-        daysLate: sentOn && item.due_date ? daysBetween(item.due_date, sentOn) : null,
+        daysLate: sentOn && item.due_date ? daysPastDueOn(item.due_date, sentOn) : null,
         byHand: false,
         intentId: a.payment_intent_id,
         at: a.failed_at ?? a.submitted_at ?? new Date(0).toISOString(),

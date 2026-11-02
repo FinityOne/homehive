@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { isPastDue, daysPastDue, billingToday } from '@/lib/rentPayments'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -188,10 +189,10 @@ export function getEffectiveStatus(
 ): PaymentStatus {
   if (payment.status === 'voided') return 'voided'
   if (payment.status !== 'pending') return payment.status
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const due = new Date(payment.due_date + 'T00:00:00')
-  return due < today ? 'late' : 'pending'
+  // The tenant has the whole of the due day. `isPastDue` is the one definition
+  // of late in the app, and it reads the calendar where the rent is owed —
+  // never the reader's own timezone, and never from midnight of the due date.
+  return isPastDue(payment.due_date) ? 'late' : 'pending'
 }
 
 export function isOverdue(payment: Pick<ScheduledPayment, 'status' | 'due_date'>): boolean {
@@ -200,19 +201,17 @@ export function isOverdue(payment: Pick<ScheduledPayment, 'status' | 'due_date'>
   return s === 'late' || s === 'missed'
 }
 
-// How many days late a payment is (0 if not late)
+// How many days late a payment is — 0 all through the due day itself.
 export function daysLate(dueDate: string): number {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const due = new Date(dueDate + 'T00:00:00')
-  if (due >= today) return 0
-  return Math.floor((today.getTime() - due.getTime()) / 86_400_000)
+  return daysPastDue(dueDate)
 }
 
 // Compute accrued late fees for a given payment, as of today
 export function computeLateFees(rule: Pick<LateFeeRule, 'grace_period_days' | 'fee_amount' | 'frequency_days' | 'max_total_fees'>, dueDate: string): number {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // Today where the rent is due, not where the landlord is reading. A fee that
+  // appears at 5pm on the due date because the clock is in UTC is a fee the
+  // tenant does not owe.
+  const today = new Date(billingToday() + 'T00:00:00')
   const due = new Date(dueDate + 'T00:00:00')
   const cutoff = new Date(due)
   cutoff.setDate(cutoff.getDate() + rule.grace_period_days)
@@ -874,7 +873,9 @@ export async function getOverduePaymentCount(ownerId: string): Promise<number> {
 
   if (!plans || plans.length === 0) return 0
 
-  const today = new Date().toISOString().split('T')[0]
+  // The billing day, so nothing counts as overdue while it is still the due
+  // date in Tempe — `toISOString()` here made the badge appear at 5pm.
+  const today = billingToday()
   const { count } = await supabase
     .from('scheduled_payments')
     .select('id', { count: 'exact', head: true })

@@ -220,6 +220,51 @@ function daysBetweenDates(from: string, to: string): number {
 }
 
 /**
+ * Is this charge actually late?
+ *
+ * One definition, for every surface that says the word. A due date is a
+ * calendar *day*, and the tenant has the whole of it: rent due on 1 November
+ * is on time at 11:59pm on 1 November and late at 12:01am on 2 November.
+ * Nothing may read as late, overdue, or carry a fee before that moment.
+ *
+ * Two mistakes this replaces, both of which were live:
+ *
+ *   • Comparing the due date's *midnight* to `now` — `new Date(due + 'T00:00:00')
+ *     < new Date()` — which is true from one second into the due day itself, so
+ *     a charge was flagged overdue in red for the entire day it was due,
+ *     before the tenant could possibly have missed it.
+ *   • Comparing against the *reader's* day instead of the property's.
+ *     `new Date()` with `setHours(0,0,0,0)` is midnight wherever the landlord
+ *     happens to be, and `toISOString()` is midnight in UTC — which in Tempe
+ *     arrives at 5pm the previous afternoon. Either one calls a payment late
+ *     while it is still the due date where the rent is owed.
+ *
+ * So both ends are calendar dates in the billing timezone, and the comparison
+ * is strict: equal dates are never late. See `billingToday`.
+ */
+export function isPastDue(dueDate: string, now = new Date()): boolean {
+  return billingToday(now) > dueDate
+}
+
+/**
+ * Whole days past the due date, counted where the rent is due.
+ *
+ * Zero all the way through the due day, 1 the day after. A payment date may be
+ * passed in place of `now` to ask the same question of money that has already
+ * arrived — "was this late when it was sent?" — which is the only fair way to
+ * judge an ACH debit, since the bank's clearing lag is not the tenant's doing.
+ */
+export function daysPastDue(dueDate: string, now = new Date()): number {
+  const today = billingToday(now)
+  return today > dueDate ? daysBetweenDates(dueDate, today) : 0
+}
+
+/** The same question about a date we already hold, e.g. a payment's own day. */
+export function daysPastDueOn(dueDate: string, onDate: string): number {
+  return onDate > dueDate ? daysBetweenDates(dueDate, onDate) : 0
+}
+
+/**
  * What a late fee on one rent row is actually worth.
  *
  * Derived, never read from `scheduled_payments.late_fees_applied`. That column

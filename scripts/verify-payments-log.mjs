@@ -25,6 +25,8 @@
 const {
   paymentLog, filterPayments, paymentTotals, stateCounts, leaseOptions, paymentsCsv,
 } = await import('../src/lib/paymentsLog.ts')
+const { isPastDue, daysPastDue, daysPastDueOn, lateFeeDue } =
+  await import('../src/lib/rentPayments.ts')
 
 const pass = []
 const fail = []
@@ -145,8 +147,23 @@ check('a card payment has no lag', byKey('rent-card-oct').clearingDays, 0)
 // Sent on the 1st, released on the 6th. Judged on the 1st, so: on time.
 check('ACH is judged on the day it was sent, not the day it landed',
   byKey('rent-ach-oct').daysLate, 0)
-check('an in-flight debit sent a day late says one day',
-  byKey('rent-ach-nov').daysLate, 1)
+// Submitted 2026-11-02T01:08Z — which is 6:08pm on 1 November in Phoenix, the
+// day it was due. On time. Reading that instant in UTC (as this did before)
+// called it a day late, which is precisely what the whole-due-day rule forbids;
+// the three ACH debits in flight on the live database all look like this.
+check('an in-flight debit sent on the evening of the due date is on time',
+  byKey('rent-ach-nov').daysLate, 0)
+
+// A debit that genuinely missed the day: 12:30am Phoenix on 3 November against
+// rent due on the 1st.
+{
+  const late = paymentLog([plan([rent({
+    id: 'truly-late', due_date: '2026-11-01', status: 'processing', amount: 800,
+    paid_amount: 0, submitted_at: '2026-11-03T07:30:00Z', payment_method: 'ach',
+    processing_fee: 16, recorded_by: 'tenant', stripe_payment_intent_id: 'pi_late',
+  })])], [])[0]
+  check('a debit sent two days after the due date says two days', late.daysLate, 2)
+}
 
 // ── Money ──────────────────────────────────────────────────────────────────
 const t = paymentTotals(rows)
@@ -199,6 +216,64 @@ check('the export is exactly the rows in view', lines.length, 2)
 check('the export names the state', lines[1].startsWith('Failed,Rent,'), true)
 check('the export quotes a reason containing a comma',
   csv.includes('"The bank account has insufficient funds, so the debit was returned."'), true)
+
+// ── Nothing is late until the whole due day has passed ────────────────────
+//
+// Rent due on 1 November is on time at 11:59pm on 1 November and late at
+// 12:01am on 2 November — judged in America/Phoenix, where the properties are.
+// Two ways this was wrong before, both of which showed a tenant as late while
+// they still had time: comparing the due date's midnight to `now` (red all
+// through the due day), and reading the day in UTC or in the landlord's own
+// timezone (which in Tempe rolls over at 5pm the day before).
+{
+  const DUE = '2026-11-01'
+  // Phoenix is UTC-7 with no daylight saving, so these are 1 Nov local.
+  const dueDayMorning = new Date('2026-11-01T15:00:00Z') //  8:00am Phoenix, 1 Nov
+  const dueDayEvening = new Date('2026-11-02T01:00:00Z') //  6:00pm Phoenix, 1 Nov
+  const dueDayLastMin = new Date('2026-11-02T06:58:00Z') // 11:58pm Phoenix, 1 Nov
+  const justAfter     = new Date('2026-11-02T07:02:00Z') // 12:02am Phoenix, 2 Nov
+
+  check('not late on the morning rent is due',       isPastDue(DUE, dueDayMorning), false)
+  // The one that mattered: UTC has already rolled over to the 2nd here.
+  check('not late at 6pm on the due date',           isPastDue(DUE, dueDayEvening), false)
+  check('not late one minute before midnight',       isPastDue(DUE, dueDayLastMin), false)
+  check('late just after midnight the day after',    isPastDue(DUE, justAfter),     true)
+
+  check('no days late during the due day',           daysPastDue(DUE, dueDayEvening), 0)
+  check('one day late the day after',                daysPastDue(DUE, justAfter),     1)
+  check('a payment sent on the due date is on time', daysPastDueOn(DUE, '2026-11-01'), 0)
+  check('a payment sent the next day is one day late', daysPastDueOn(DUE, '2026-11-02'), 1)
+
+  // And the money follows the same line: no fee may exist during the due day.
+  const DAILY = { grace_period_days: 0, fee_amount: 15, frequency_days: 1, max_total_fees: null }
+  const unpaid = {
+    status: 'pending', due_date: DUE, paid_date: null, submitted_at: null,
+    amount: 800, paid_amount: 0,
+  }
+  check('no late fee at 6pm on the due date',   lateFeeDue(DAILY, unpaid, dueDayEvening), 0)
+  check('no late fee one minute before midnight', lateFeeDue(DAILY, unpaid, dueDayLastMin), 0)
+  check('one period of fee the day after',      lateFeeDue(DAILY, unpaid, justAfter),     15)
+
+  // A tenant who paid at 6pm on the due date: on time, and no fee, even though
+  // UTC calls it the 2nd.
+  const sentOnDueDay = {
+    status: 'paid', due_date: DUE, paid_date: '2026-11-01',
+    submitted_at: '2026-11-02T01:00:00Z', amount: 800, paid_amount: 800,
+  }
+  check('paying at 6pm on the due date owes nothing',
+    lateFeeDue(DAILY, sentOnDueDay, justAfter), 0)
+
+  // The payments log itself, on the same facts.
+  const evening = paymentLog([plan([rent({
+    id: 'evening', due_date: DUE, status: 'paid', paid_amount: 800,
+    paid_date: '2026-11-01', submitted_at: '2026-11-02T01:00:00Z',
+    settled_at: '2026-11-02T01:00:00Z', payment_method: 'card',
+    processing_fee: 40, recorded_by: 'tenant', stripe_payment_intent_id: 'pi_eve',
+  })])], [])[0]
+  check('the log reads a 6pm due-day payment as on time', evening.daysLate, 0)
+  check('and does not count it among late arrivals',
+    paymentTotals([evening]).lateCount, 0)
+}
 
 console.log(`${pass.length} passed`)
 for (const p of pass) console.log('  ok   ' + p)
