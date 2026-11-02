@@ -30,10 +30,11 @@ const supabaseAdmin = createClient(
 )
 
 /** Categories a link may unsubscribe from. Transactional mail is not on this list and never will be. */
-const ALLOWED = new Set(['landlord_activation'])
+const ALLOWED = new Set(['landlord_activation', 'lead_followup'])
 
 const LABELS: Record<string, string> = {
   landlord_activation: 'emails about getting your property listed',
+  lead_followup: 'reminders about homes you asked about',
 }
 
 type Outcome = 'done' | 'invalid' | 'error'

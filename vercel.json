@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/landlord-activation",
       "schedule": "0 17 * * 2"
+    },
+    {
+      "path": "/api/cron/lead-followups",
+      "schedule": "0 18 * * *"
     }
   ]
 }

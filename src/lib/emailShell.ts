@@ -27,6 +27,18 @@ export type EmailShellOpts = {
   tone?: 'good' | 'action' | 'bad'
   /** Pre-rendered HTML for the card body. */
   body: string
+  /**
+   * Optional photo between the header and the banner.
+   *
+   * Only worth it when the email is *about* a place — a tenant deciding whether
+   * to go back to a listing recognises the picture before they read the name.
+   * Rendered as a plain fixed-height `img`: no overlay text, because absolutely
+   * positioned captions are dropped by Outlook and the name is already in the
+   * banner underneath.
+   */
+  hero?: string
+  /** Alt text for `hero`. Required reading when images are blocked, which is often. */
+  heroAlt?: string
 }
 
 const TONES = {
@@ -88,6 +100,10 @@ export function emailShell(opts: EmailShellOpts): string {
       Home<span style="color:#FFC627;font-style:italic;">Hive</span>
     </div>
   </div>
+
+  ${opts.hero ? `<div style="line-height:0;">
+    <img src="${opts.hero}" alt="${esc(opts.heroAlt ?? '')}" width="540" style="display:block;width:100%;max-width:540px;height:200px;object-fit:cover;border:0;" />
+  </div>` : ''}
 
   <div style="background:${tone.bg};border-left:4px solid ${tone.border};padding:16px 28px;">
     <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:${tone.text};margin-bottom:4px;">${esc(opts.banner)}</div>

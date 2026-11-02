@@ -27,6 +27,10 @@ export type EmailType =
   | 'tour_cancellation_landlord'
   | 'prescreen_done_followup'
   | 'reservation_sent'
+  // The automatic two-day follow-ups (FIN-17). Non-transactional, so both are
+  // suppressed by the `lead_followup` opt-out category.
+  | 'lead_followup_prescreen'
+  | 'lead_followup_tour'
 
 /**
  * Record an email we sent.
