@@ -18,6 +18,11 @@ You are an expert in real estate apps especially with platforms like Zillow and 
   an ungranted table answers `permission denied` to supabase-js no matter how
   permissive its RLS is. `grant all on public.<table> to anon, authenticated,
   service_role;` matches what the rest of the schema holds. `npm run
-  verify:grants` fails if one is missed.
+  verify:grants` fails if one is missed. A deliberately narrower grant is
+  allowed — `rent_payment_attempts` gives `select` to `authenticated` only,
+  because a logged-out visitor must never read a landlord's payment history,
+  and `lead_followup_sends` is service-role only — and the check reports those
+  rather than failing them. It still fails on a table with *no* grant, which
+  is the one that ships broken.
 
 <!-- Every time you create a new feature, automatically create a new branch and pr. use the /commit-push-pr skill -->
