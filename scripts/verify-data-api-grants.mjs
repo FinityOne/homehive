@@ -45,32 +45,57 @@ for (const file of files) {
     if (!createdIn.has(m[1])) createdIn.set(m[1], file)
   }
 
-  // `grant <privs> on [table] public.x, public.y to <roles>;` — the role list
-  // has to name both API roles to count. Granting only to service_role leaves
-  // the table invisible to the app's own browser and SSR clients.
+  // `grant <privs> on [table] public.x, public.y to <roles>;`
+  //
+  // Every grant is collected, with the roles it names, rather than only the
+  // ones reaching both Data API roles. A narrower grant is a real answer to
+  // the question this script asks — the repo *did* ask for access — and two
+  // tables deliberately give one: `rent_payment_attempts` is readable by
+  // `authenticated` and never by `anon`, because a logged-out visitor must not
+  // read a landlord's payment history, and `lead_followup_sends` is
+  // service-role only because nothing in a browser reads it.
+  //
+  // Treating those as ungranted was worse than a false alarm: the failure
+  // text said "NEVER granted" about migrations that grant on the line below
+  // the policy, and the fix it printed would have widened a payment ledger and
+  // an email log to `anon`. So the hard failure is reserved for a table with no
+  // grant at all, which is the bug that actually ships broken, and anything
+  // narrower than the Data API roles is reported for a human to judge.
   for (const m of sql.matchAll(
     /grant\s+[^;]*?\son\s+(?:table\s+)?((?:public\.[a-z0-9_]+\s*,?\s*)+)to\s+([^;]+);/gi,
   )) {
     const roles = m[2].toLowerCase()
-    if (!roles.includes('anon') || !roles.includes('authenticated')) continue
+    const reachesApi = roles.includes('anon') && roles.includes('authenticated')
     for (const t of m[1].matchAll(/public\.([a-z0-9_]+)/gi)) {
-      if (!grantedIn.has(t[1])) grantedIn.set(t[1], file)
+      const table = t[1]
+      const prev = grantedIn.get(table)
+      // The widest grant a table has is the one worth reporting, so a later
+      // broad grant supersedes an earlier narrow one.
+      if (!prev || (reachesApi && !prev.reachesApi)) {
+        grantedIn.set(table, { file, roles: roles.trim(), reachesApi })
+      }
     }
   }
 }
 
 const pass = []
 const fail = []
+/** Granted, but not to both Data API roles. Deliberate here; stated, not hidden. */
+const narrow = []
 
 // ── Every table the repo creates is granted somewhere in the repo ──────────
 for (const [table, file] of [...createdIn].sort()) {
   const grant = grantedIn.get(table)
-  if (grant) pass.push(`${table} — created in ${file}, granted in ${grant}`)
-  else
+  if (!grant) {
     fail.push(
       `${table} — created in ${file}, NEVER granted. Add to that migration:\n` +
         `      grant all on public.${table} to anon, authenticated, service_role;`,
     )
+  } else if (grant.reachesApi) {
+    pass.push(`${table} — created in ${file}, granted in ${grant.file}`)
+  } else {
+    narrow.push(`${table} — granted in ${grant.file} to ${grant.roles} only`)
+  }
 }
 
 // ── The catch-up migration is still here and still covers the schema ───────
@@ -80,7 +105,7 @@ if (!files.includes(CATCH_UP)) {
     `${CATCH_UP} is missing — the 54 tables that predate this directory lose their declared grants`,
   )
 } else {
-  const n = [...grantedIn.values()].filter((f) => f === CATCH_UP).length
+  const n = [...grantedIn.values()].filter((g) => g.file === CATCH_UP).length
   if (n >= 62) pass.push(`${CATCH_UP} declares grants for ${n} tables`)
   else fail.push(`${CATCH_UP} declares grants for only ${n} tables, expected at least 62`)
 }
@@ -88,6 +113,17 @@ if (!files.includes(CATCH_UP)) {
 // ── Report ────────────────────────────────────────────────────────────────
 console.log(`\n${pass.length} passed`)
 for (const p of pass) console.log(`  ✓ ${p}`)
+if (narrow.length) {
+  console.log(
+    `\n${narrow.length} granted narrowly — intended, but check it is still what you want:`,
+  )
+  for (const n of narrow) console.log(`  · ${n}`)
+  console.log(
+    '  A table the browser reads needs `authenticated` at least; one it never\n' +
+      '  reads needs no Data API grant at all. RLS decides who sees which rows,\n' +
+      '  the grant decides whether PostgREST will look.',
+  )
+}
 if (fail.length) {
   console.log(`\n${fail.length} FAILED:`)
   for (const f of fail) console.log(`  ✗ ${f}`)
