@@ -193,10 +193,27 @@ export type ChargeSettlement = {
   surcharge: number
   paidDate: string | null
   settledAt: string | null
+  /**
+   * When the tenant *sent* it — the Stripe intent's own creation time.
+   *
+   * Distinct from `settledAt` by days on every ACH debit, which is the whole
+   * reason a late fee is judged on this and not on the date the money landed
+   * (see `lateFeeAsOf`). The payments log shows both, because the gap between
+   * them is the bank's, not the tenant's.
+   */
+  submittedAt: string | null
   method: SettleMethod | null
   /** Days between the due date and the money landing. Negative = paid early. */
   daysLate: number | null
   recordedBy: 'tenant' | 'landlord' | null
+  /**
+   * The Stripe payment this money arrived on, when it arrived online.
+   *
+   * Carried so a log can say "these three months were one payment" — a tenant
+   * who clears an arrears in a single press should not read as three unrelated
+   * events the landlord has to reconcile by eye.
+   */
+  intentId: string | null
 }
 
 /** Chases sent about a charge — rent and its late fee counted separately. */
@@ -373,9 +390,11 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
           surcharge: sp.processing_fee ?? 0,
           paidDate: sp.paid_date,
           settledAt: sp.settled_at,
+          submittedAt: sp.submitted_at ?? null,
           method: settleMethod(sp.payment_method),
           daysLate: sp.paid_date ? daysBetweenDates(sp.due_date, sp.paid_date) : null,
           recordedBy: sp.recorded_by,
+          intentId: sp.stripe_payment_intent_id ?? null,
         } : null,
         chases: {
           count: sp.reminder_count ?? 0,
@@ -422,9 +441,11 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
           surcharge: sp.processing_fee ?? 0,
           paidDate: sp.paid_date,
           settledAt: sp.settled_at,
+          submittedAt: sp.submitted_at ?? null,
           method: settleMethod(sp.payment_method),
           daysLate: sp.paid_date ? daysBetweenDates(sp.due_date, sp.paid_date) : null,
           recordedBy: null,
+          intentId: sp.stripe_payment_intent_id ?? null,
         } : null,
         chases: {
           count: sp.reminder_count ?? 0,

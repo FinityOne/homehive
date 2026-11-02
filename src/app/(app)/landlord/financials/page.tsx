@@ -1190,6 +1190,12 @@ function RecentPayments({
                   {all ? `Show latest ${RECENT_SHOWN}` : `Show all ${rows.length}`}
                 </button>
               )}
+              {/* This panel answers "has anything landed?". Reconciling against
+                  a bank statement — with the clearing and bounced payments this
+                  list deliberately leaves out — is the Payments tab's job. */}
+              <a className="btn-quiet sm" href="/landlord/financials/payments">
+                Open the payments log
+              </a>
             </div>
           </>
         )}
