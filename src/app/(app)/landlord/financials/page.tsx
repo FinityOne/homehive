@@ -1085,10 +1085,10 @@ const RECENT_SHOWN = 8
  * reporting period rolled over — and each row opens the same detail sheet as
  * every other payment line on the page.
  *
- * The surcharge is explained rather than subtracted: the tenant pays it to the
- * processor on top of the rent, so the landlord still receives the full amount.
- * A "fee" column beside a "net" column invites exactly the wrong arithmetic, so
- * the note underneath says so outright.
+ * Card and bank surcharges are deliberately absent: the tenant pays those to
+ * the processor, they are never the landlord's money, and a fee figure beside a
+ * received figure invites exactly the wrong arithmetic. They live in the admin
+ * books only.
  */
 function RecentPayments({
   charges, onInspect,
@@ -1106,7 +1106,6 @@ function RecentPayments({
   )
 
   const received = rows.reduce((n, c) => n + c.settlement!.net + c.settlement!.lateFee, 0)
-  const surcharges = rows.reduce((n, c) => n + c.settlement!.surcharge, 0)
   const lateCount = rows.filter(c => (c.settlement!.daysLate ?? 0) > 0).length
   const shown = all ? rows : rows.slice(0, RECENT_SHOWN)
 
@@ -1181,9 +1180,8 @@ function RecentPayments({
             })}
             <div className="pay-ft">
               <span>
-                You receive the <strong>full</strong> amount above. Tenants paid{' '}
-                {fmtCurrency(surcharges)} in card and bank surcharges on top, which goes to the
-                payment processor and is never taken out of your rent.
+                These are the <strong>full</strong> amounts credited to you — rent, utilities and
+                any late fees.
               </span>
               {rows.length > RECENT_SHOWN && (
                 <button className="btn-quiet sm" onClick={() => setAll(v => !v)}>
@@ -1393,17 +1391,6 @@ function ChargeDetail({
                   <div className="sline">
                     <span className="sline-lbl">Late fee received</span>
                     <span className="sline-amt num good">{fmtCurrency(st.lateFee)}</span>
-                  </div>
-                )}
-                {st.surcharge > 0 && (
-                  <div className="sline">
-                    <span className="sline-lbl">
-                      Surcharge the tenant paid
-                      <span className="sline-note">
-                        Paid on top to the payment processor — never deducted from you
-                      </span>
-                    </span>
-                    <span className="sline-amt num quiet">{fmtCurrency(st.surcharge)}</span>
                   </div>
                 )}
                 <div className="sline sub">

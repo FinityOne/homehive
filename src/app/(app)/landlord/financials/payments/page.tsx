@@ -93,14 +93,13 @@ export default function PaymentsLogPage({
     // and none would be trustworthy if it were.
     const { data: rows, error } = await supabase
       .from('rent_payment_attempts')
-      .select('plan_id, payment_intent_id, method, status, amount, surcharge, submitted_at, cleared_at, failed_at, failure_code, failure_message, items')
+      .select('plan_id, payment_intent_id, method, status, amount, submitted_at, cleared_at, failed_at, failure_code, failure_message, items')
       .order('submitted_at', { ascending: false })
     if (error) { setAttemptsError(true); return }
     setAttemptsError(false)
     setAttempts((rows ?? []).map(r => ({
       ...r,
       amount: Number(r.amount),
-      surcharge: Number(r.surcharge),
       items: Array.isArray(r.items) ? r.items : [],
     })) as AttemptRow[])
   }, [])
@@ -242,7 +241,6 @@ export default function PaymentsLogPage({
               {totals.lateCount > 0
                 ? 'sent after the due date'
                 : 'every payment was sent on time'}
-              {totals.surcharges > 0 && <> · tenants paid {fmtCurrency(totals.surcharges)} in card and bank fees</>}
             </div>
           </div>
         </section>
@@ -357,7 +355,6 @@ export default function PaymentsLogPage({
                   <th>Method</th>
                   <Th label="Amount"   k="amount"   sort={sort} onSort={sortBy} align="right" />
                   <th className="num">Late fee</th>
-                  <th className="num">Tenant fee</th>
                   <th aria-label="Detail" />
                 </tr>
               </thead>
@@ -379,7 +376,6 @@ export default function PaymentsLogPage({
                   </td>
                   <td className="num total">{fmtCurrency(totals.cleared + totals.clearing)}</td>
                   <td className="num">{totals.lateFees > 0 ? fmtCurrency(totals.lateFees) : '—'}</td>
-                  <td className="num">{totals.surcharges > 0 ? fmtCurrency(totals.surcharges) : '—'}</td>
                   <td />
                 </tr>
               </tfoot>
@@ -391,8 +387,8 @@ export default function PaymentsLogPage({
           A card payment clears the moment it is made; a bank transfer (ACH) is sent straight away
           but takes three to five business days to land, and shows as <em>clearing</em> until it
           does. Late fees are judged on the day the tenant <em>sent</em> the money, never on the day
-          the bank released it. The tenant fee column is the card or bank surcharge they paid on
-          top — it never comes out of your rent.
+          the bank released it. Every figure here is money credited to you — rent, utilities and
+          late fees.
           {attemptsError && (
             <> <strong>Failed payments could not be loaded just now</strong>, so this list may be
             showing only what cleared.</>
@@ -513,13 +509,12 @@ function Row({ row: r, open, onToggle }: { row: PaymentEntry; open: boolean; onT
           {fmtCurrency(r.amount + r.lateFee)}
         </td>
         <td className="num">{r.lateFee > 0 ? fmtCurrency(r.lateFee) : <span className="dim">—</span>}</td>
-        <td className="num">{r.surcharge > 0 ? fmtCurrency(r.surcharge) : <span className="dim">—</span>}</td>
         <td className="col-twist"><span className={`twist${open ? ' open' : ''}`} aria-hidden="true" /></td>
       </tr>
 
       {open && (
         <tr className="detail-row">
-          <td colSpan={11}>
+          <td colSpan={10}>
             <div className="detail">
               {r.state === 'failed' && (
                 <p className="note bad">
@@ -562,10 +557,6 @@ function Row({ row: r, open, onToggle }: { row: PaymentEntry; open: boolean; onT
                 <Fact label="Method" value={method?.label ?? '—'} />
                 <Fact label="Rent and charges" value={fmtCurrency(r.amount)} />
                 <Fact label="Late fee collected" value={r.lateFee > 0 ? fmtCurrency(r.lateFee) : '—'} />
-                <Fact
-                  label="Surcharge the tenant paid"
-                  value={r.surcharge > 0 ? `${fmtCurrency(r.surcharge)} — paid to the processor, not deducted from your rent` : '—'}
-                />
                 {r.intentId && <Fact label="Stripe payment" value={r.intentId} mono />}
               </div>
 

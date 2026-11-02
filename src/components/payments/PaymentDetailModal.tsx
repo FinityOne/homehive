@@ -286,7 +286,7 @@ export default function PaymentDetailModal({
           </div>
 
           {/* ── How it was paid, when there is anything to say ── */}
-          {(payment.payment_method || feeCollected > 0 || payment.processing_fee > 0 || payment.settled_at) && (
+          {(payment.payment_method || feeCollected > 0 || payment.settled_at) && (
             <div style={{ marginBottom: 18, background: '#f8fafc', borderRadius: '10px', padding: '12px 14px' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.02em', marginBottom: 8 }}>
                 HOW IT WAS PAID
@@ -308,12 +308,6 @@ export default function PaymentDetailModal({
                 {feeCollected > 0 && (
                   <div style={{ color: '#15803d', fontWeight: 600 }}>
                     Includes {fmtCurrency(feeCollected)} of late fees collected
-                  </div>
-                )}
-                {payment.processing_fee > 0 && (
-                  <div style={{ color: '#64748b' }}>
-                    The tenant also paid {fmtCurrency(payment.processing_fee)} in processing fees — that
-                    went to the processor, not to you, and is not part of the figures above.
                   </div>
                 )}
               </div>

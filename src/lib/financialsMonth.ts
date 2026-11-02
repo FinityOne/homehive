@@ -189,8 +189,6 @@ export type ChargeSettlement = {
   net: number
   /** Late-fee money received on top. */
   lateFee: number
-  /** Surcharge the tenant paid the processor — never the landlord's money. */
-  surcharge: number
   paidDate: string | null
   settledAt: string | null
   /**
@@ -387,7 +385,6 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
         settlement: sp.paid_amount > 0 || sp.status === 'processing' ? {
           net: sp.paid_amount,
           lateFee: sp.late_fee_paid ?? 0,
-          surcharge: sp.processing_fee ?? 0,
           paidDate: sp.paid_date,
           settledAt: sp.settled_at,
           submittedAt: sp.submitted_at ?? null,
@@ -438,7 +435,6 @@ export function allCharges(plans: PaymentPlan[], now = new Date()): Charge[] {
         settlement: sp.status === 'paid' || sp.status === 'processing' ? {
           net: sp.status === 'paid' ? sp.amount : 0,
           lateFee: 0,
-          surcharge: sp.processing_fee ?? 0,
           paidDate: sp.paid_date,
           settledAt: sp.settled_at,
           submittedAt: sp.submitted_at ?? null,
