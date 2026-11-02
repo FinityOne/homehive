@@ -63,13 +63,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
       : Promise.resolve({ data: [] as never[] }),
     specialIds.length
       ? supabaseAdmin.from('special_payments')
-          .select('id, amount, label, status, payment_method, processing_fee, stripe_payment_intent_id, settled_at, submitted_at, paid_date')
+          .select('id, amount, label, due_date, status, payment_method, processing_fee, stripe_payment_intent_id, settled_at, submitted_at, paid_date')
           .eq('plan_id', planId).in('id', specialIds)
       : Promise.resolve({ data: [] as never[] }),
   ])
 
   type Row = {
     id: string; amount: number; label: string; status: string
+    /** Carried through so a resent receipt reports the same timing as the
+     *  original — a landlord comparing the two should see one story. */
+    dueDate: string | null
+    /** When the money actually landed, for dating the receipt honestly. */
+    settledAt: string | null
     payment_method: string | null; processing_fee: number | null
     stripe_payment_intent_id: string | null
     /** When the money moved, so a resend doesn't date an old payment today. */
@@ -85,6 +90,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
   const rows: Row[] = [
     ...((schedRes.data ?? []) as Record<string, unknown>[]).map(r => ({
       id: r.id as string, amount: Number(r.amount), label: monthLabel(r.due_date as string),
+      dueDate: (r.due_date as string) ?? null,
+      settledAt: (r.settled_at as string) ?? (r.paid_date as string) ?? null,
       status: r.status as string, payment_method: (r.payment_method as string) ?? null,
       processing_fee: r.processing_fee as number | null,
       stripe_payment_intent_id: (r.stripe_payment_intent_id as string) ?? null,
@@ -93,6 +100,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
     })),
     ...((specRes.data ?? []) as Record<string, unknown>[]).map(r => ({
       id: r.id as string, amount: Number(r.amount), label: r.label as string,
+      dueDate: (r.due_date as string) ?? null,
+      settledAt: (r.settled_at as string) ?? (r.paid_date as string) ?? null,
       status: r.status as string, payment_method: (r.payment_method as string) ?? null,
       processing_fee: r.processing_fee as number | null,
       stripe_payment_intent_id: (r.stripe_payment_intent_id as string) ?? null,
@@ -120,6 +129,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
   const event: PayEvent = lead.status === 'processing' ? 'processing' : 'paid'
   const method: PayMethod = lead.payment_method === 'ach' ? 'ach' : 'card'
 
+  // Date the resent receipt to when the money actually landed, not to now. A
+  // row settled by hand may have neither column, and "today" is then the only
+  // answer available — but it must not be the answer when a real one exists.
+  const settledOn = settled.map(r => r.settledAt).find(Boolean)
+  const paidOn = settledOn ? new Date(settledOn) : undefined
+
   const result = await resendRentPaymentEmails({
     db: supabaseAdmin,
     // Offline payments have no Stripe intent; the receipt still needs a
@@ -128,8 +143,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
     event,
     method,
     fee: Number(lead.processing_fee ?? 0),
-    rows: settled.map(r => ({ kind: r.kind, id: r.id, amount: r.amount, label: r.label })),
+    rows: settled.map(r => ({
+      kind: r.kind, id: r.id, amount: r.amount, label: r.label, dueDate: r.dueDate,
+    })),
     audience,
+    paidOn,
     sentBy: user.id,
     // Date the receipt when the money moved, not when the landlord asked for a
     // copy — a resend weeks later must not look like a second payment.
