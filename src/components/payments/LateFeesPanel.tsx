@@ -31,6 +31,7 @@ import {
   BUCKET_META, ruleSentence,
   type LateFeeLedger, type LateFeePayer, type PendingLateFee,
 } from '@/lib/lateFees'
+import type { WaivedLedger, WaivedPayerGroup, WaivedLateFee } from '@/lib/lateFeeWaivers'
 
 const C = {
   ink: '#1d1d1f', dim: '#6e6e73', faint: '#8e8e93', line: '#e5e5ea', wash: '#fafafb',
@@ -46,14 +47,18 @@ const daysAgo = (d: string) =>
   Math.max(0, Math.round((Date.now() - new Date(d + 'T00:00:00').getTime()) / 86_400_000))
 
 export default function LateFeesPanel({
-  ledger, onReload, onOpenLease,
+  ledger, waived, onReload, onOpenLease,
 }: {
   ledger: LateFeeLedger
+  /** What has already been written off — the other half of this story. */
+  waived: WaivedLedger
   /** Re-fetch plans and waivers after a send or a waiver changes anything. */
   onReload: () => void
   onOpenLease: (planId: string) => void
 }) {
   const [remindPayer, setRemindPayer] = useState<LateFeePayer | null>(null)
+  /** The write-off being composed: a payer and the fees of theirs it covers. */
+  const [waiving, setWaiving] = useState<{ payer: LateFeePayer; fees: PendingLateFee[] } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
 
@@ -65,11 +70,14 @@ export default function LateFeesPanel({
     }
   }
 
-  async function waive(fee: PendingLateFee, undo: boolean) {
+  /** Put a waived fee back. Deliberately undoable, and deliberately silent —
+   *  see the DELETE handler: a tenant told a fee was forgiven should hear about
+   *  its return from their landlord, not from an automated reversal notice. */
+  async function restore(fee: WaivedLateFee) {
     setBusyId(fee.scheduledPaymentId)
     try {
       const res = await fetch('/api/landlord/late-fees/waive', {
-        method: undo ? 'DELETE' : 'POST',
+        method: 'DELETE',
         headers: await authHeaders(),
         body: JSON.stringify({ scheduledPaymentId: fee.scheduledPaymentId }),
       })
@@ -77,10 +85,40 @@ export default function LateFeesPanel({
       if (!res.ok) throw new Error(json.error || 'That did not work.')
       setFlash({
         tone: 'good',
-        text: undo
-          ? 'Fee restored — it is owed again.'
-          : `Wrote off ${fmtCurrency(fee.amount)} on ${fee.label}.`,
+        text: `${fee.label} is owed again — ${fee.payerName} has not been told, so tell them yourself if they were.`,
       })
+      onReload()
+    } catch (e) {
+      setFlash({ tone: 'bad', text: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  /** Announce a write-off that was recorded without telling the tenant. */
+  async function announce(group: WaivedPayerGroup) {
+    const silent = group.fees.filter(f => !f.tenantNotifiedAt)
+    setBusyId(group.key)
+    try {
+      const res = await fetch('/api/landlord/late-fees/waive', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          scheduledPaymentIds: silent.map(f => f.scheduledPaymentId),
+          // Carry the notes forward so re-announcing does not blank the record
+          // the landlord already wrote against these waivers.
+          reason: silent.find(f => f.reason)?.reason ?? undefined,
+          tenantNote: silent.find(f => f.tenantNote)?.tenantNote ?? undefined,
+          notifyTenant: true,
+          notifyLandlord: false,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'That did not work.')
+      const failed = (json.notNotified ?? []) as { name: string; why: string }[]
+      setFlash(failed.length > 0
+        ? { tone: 'bad', text: `Not sent — ${failed[0].why}.` }
+        : { tone: 'good', text: `Told ${group.name} that ${fmtCurrency(group.unannouncedTotal)} was written off.` })
       onReload()
     } catch (e) {
       setFlash({ tone: 'bad', text: e instanceof Error ? e.message : String(e) })
@@ -93,6 +131,7 @@ export default function LateFeesPanel({
     return (
       <section style={{ marginBottom: 30 }} aria-label="Late fees">
         <Header ledger={ledger} />
+        {flash && <Flash flash={flash} />}
         <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 13, padding: '26px 22px', textAlign: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>No late fees outstanding</div>
           <p style={{ fontSize: 13, color: C.dim, margin: '6px auto 0', maxWidth: 440, lineHeight: 1.6 }}>
@@ -103,6 +142,16 @@ export default function LateFeesPanel({
               : <>Either rent is arriving on time, or no lease here has a late-fee rule.</>}
           </p>
         </div>
+
+        {/* Still shown when nothing is owed: a landlord at zero needs to know
+            whether that is because fees were collected or forgiven. */}
+        <WrittenOff
+          waived={waived}
+          busyId={busyId}
+          onRestore={restore}
+          onAnnounce={announce}
+          onOpenLease={onOpenLease}
+        />
       </section>
     )
   }
@@ -111,16 +160,7 @@ export default function LateFeesPanel({
     <section style={{ marginBottom: 30 }} aria-label="Late fees">
       <Header ledger={ledger} />
 
-      {flash && (
-        <div style={{
-          marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-          background: flash.tone === 'good' ? C.goodBg : C.badBg,
-          color: flash.tone === 'good' ? C.good : C.bad,
-          border: `1px solid ${flash.tone === 'good' ? '#e8f5ed' : C.badLine}`,
-        }}>
-          {flash.text}
-        </div>
-      )}
+      {flash && <Flash flash={flash} />}
 
       {/* An uncapped rule is the reason these numbers are the size they are.
           Saying so here turns an alarming total into an explicable one. */}
@@ -155,13 +195,21 @@ export default function LateFeesPanel({
               key={payer.key}
               payer={payer}
               busyId={busyId}
-              onWaive={waive}
+              onWaive={fees => setWaiving({ payer, fees })}
               onRemind={() => setRemindPayer(payer)}
               onOpenLease={onOpenLease}
             />
           ))}
         </div>
       ))}
+
+      <WrittenOff
+        waived={waived}
+        busyId={busyId}
+        onRestore={restore}
+        onAnnounce={announce}
+        onOpenLease={onOpenLease}
+      />
 
       {remindPayer && (
         <RemindModal
@@ -171,7 +219,33 @@ export default function LateFeesPanel({
           authHeaders={authHeaders}
         />
       )}
+
+      {waiving && (
+        <WaiveModal
+          payer={waiving.payer}
+          fees={waiving.fees}
+          onClose={() => setWaiving(null)}
+          onDone={msg => { setWaiving(null); setFlash(msg); onReload() }}
+          authHeaders={authHeaders}
+        />
+      )}
     </section>
+  )
+}
+
+function Flash({ flash }: { flash: { tone: 'good' | 'bad'; text: string } }) {
+  return (
+    <div
+      role="status"
+      style={{
+        marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+        background: flash.tone === 'good' ? C.goodBg : C.badBg,
+        color: flash.tone === 'good' ? C.good : C.bad,
+        border: `1px solid ${flash.tone === 'good' ? '#e8f5ed' : C.badLine}`,
+      }}
+    >
+      {flash.text}
+    </div>
   )
 }
 
@@ -251,7 +325,8 @@ function PayerCard({
 }: {
   payer: LateFeePayer
   busyId: string | null
-  onWaive: (fee: PendingLateFee, undo: boolean) => void
+  /** Open the write-off step for these fees of this payer's. */
+  onWaive: (fees: PendingLateFee[]) => void
   onRemind: () => void
   onOpenLease: (planId: string) => void
 }) {
@@ -318,6 +393,15 @@ function PayerCard({
           >
             Ask for it
           </button>
+          {/* Waiving sits beside chasing as an equal action, not a per-row
+              escape hatch: for most of these fees it is the right answer, and
+              the decision is about the tenant rather than one month. */}
+          <button
+            onClick={() => onWaive(payer.fees)}
+            style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', background: '#fff', color: C.dim, border: `1px solid ${C.line}` }}
+          >
+            Waive{payer.fees.length > 1 ? ' fees' : ''}…
+          </button>
           <button
             onClick={() => onOpenLease(payer.planId)}
             style={{ fontSize: 12, fontWeight: 700, padding: '7px 11px', borderRadius: 8, cursor: 'pointer', background: '#fff', color: C.dim, border: `1px solid ${C.line}` }}
@@ -351,7 +435,7 @@ function PayerCard({
               key={fee.scheduledPaymentId}
               fee={fee}
               busy={busyId === fee.scheduledPaymentId}
-              onWaive={onWaive}
+              onWaive={() => onWaive([fee])}
             />
           ))}
           {payer.rentOutstanding > 0 && (
@@ -373,7 +457,7 @@ function FeeRow({
 }: {
   fee: PendingLateFee
   busy: boolean
-  onWaive: (fee: PendingLateFee, undo: boolean) => void
+  onWaive: () => void
 }) {
   const growing = fee.bucket === 'accruing'
   return (
@@ -424,8 +508,11 @@ function FeeRow({
         <div style={{ fontSize: 14.5, fontWeight: 800, color: growing ? C.bad : C.warn, fontVariantNumeric: 'tabular-nums' }}>
           {fmtCurrency(fee.amount)}
         </div>
+        {/* Opens the step rather than writing the fee off on the spot. Giving
+            up money on one click, with no chance to say why and no chance to
+            tell the tenant, is how the feature became invisible to both. */}
         <button
-          onClick={() => onWaive(fee, false)}
+          onClick={onWaive}
           disabled={busy}
           style={{
             marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 9px', borderRadius: 6,
@@ -433,7 +520,7 @@ function FeeRow({
             cursor: busy ? 'wait' : 'pointer',
           }}
         >
-          {busy ? '…' : 'Write off'}
+          {busy ? '…' : 'Waive…'}
         </button>
       </div>
     </div>
@@ -581,6 +668,399 @@ function RemindModal({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── WAIVING IT ───────────────────────────────────────────────────────────────
+
+/**
+ * The write-off step.
+ *
+ * Waiving used to be one unlabelled click per row, and that is why it was both
+ * under-used and under-valued. Giving up money deserves the same care as asking
+ * for it, so this step does three things the click could not:
+ *
+ *   • **Lets the landlord pick which months.** The decision is usually "clear
+ *     this tenant's old frozen fees but keep the one still accruing" — which is
+ *     unreachable if the only unit is one row at a time, and unreachable if the
+ *     only unit is the whole tenant.
+ *   • **Separates the two notes.** `reason` is the landlord's own record and
+ *     never leaves the building. `tenantNote` is the sentence the tenant reads.
+ *     Collapsing them means either the tenant sees "not worth chasing" or the
+ *     books record nothing at all.
+ *   • **Makes telling the tenant the default, and visible.** A waiver the
+ *     tenant never hears about is money spent on nothing: it buys no goodwill,
+ *     and from their side a charge simply stopped being displayed.
+ */
+function WaiveModal({
+  payer, fees, onClose, onDone, authHeaders,
+}: {
+  payer: LateFeePayer
+  fees: PendingLateFee[]
+  onClose: () => void
+  onDone: (flash: { tone: 'good' | 'bad'; text: string }) => void
+  authHeaders: () => Promise<Record<string, string>>
+}) {
+  const [picked, setPicked] = useState<string[]>(fees.map(f => f.scheduledPaymentId))
+  const [reason, setReason] = useState('')
+  const [tenantNote, setTenantNote] = useState('')
+  const [notify, setNotify] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const chosen = useMemo(
+    () => fees.filter(f => picked.includes(f.scheduledPaymentId)),
+    [fees, picked],
+  )
+  const total = useMemo(() => chosen.reduce((s, f) => s + f.amount, 0), [chosen])
+  const stillGrowing = chosen.filter(f => f.bucket === 'accruing')
+  const alreadyAsked = chosen.filter(f => f.reminderCount > 0)
+  const canSend = Boolean(payer.email)
+
+  function toggle(id: string) {
+    setPicked(v => (v.includes(id) ? v.filter(x => x !== id) : [...v, id]))
+  }
+
+  async function submit() {
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch('/api/landlord/late-fees/waive', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          scheduledPaymentIds: chosen.map(f => f.scheduledPaymentId),
+          reason: reason.trim() || undefined,
+          tenantNote: tenantNote.trim() || undefined,
+          notifyTenant: notify && canSend,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'The write-off could not be recorded.')
+
+      const waived = fmtCurrency(Number(json.waived ?? total))
+      const failed = (json.notNotified ?? []) as { name: string; why: string }[]
+      // The waiver is recorded either way, so a failed notice is reported as
+      // exactly that rather than as a failure of the whole action.
+      onDone(notify && canSend && failed.length > 0
+        ? { tone: 'bad', text: `Wrote off ${waived}, but ${payer.name} was not emailed — ${failed[0].why}.` }
+        : { tone: 'good', text: notify && canSend
+            ? `Wrote off ${waived} and told ${payer.name}.`
+            : `Wrote off ${waived}. ${payer.name} has not been told.` })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Waive late fees for ${payer.name}`}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 60 }}
+      onClick={e => { if (e.target === e.currentTarget && !busy) onClose() }}
+    >
+      <div style={{ background: '#fff', borderRadius: 15, maxWidth: 540, width: '100%', maxHeight: '88vh', overflowY: 'auto', padding: '22px 22px 20px' }}>
+        <div style={{ fontSize: 16.5, fontWeight: 800, color: C.ink, letterSpacing: '-0.3px' }}>
+          Waive {fmtCurrency(total)} for {payer.name}
+        </div>
+        <div style={{ fontSize: 12.5, color: C.dim, marginTop: 4, lineHeight: 1.55 }}>
+          {payer.leaseName}. A waived fee is recorded as written off, never as collected, so your
+          fee totals stay reconcilable — and it can be restored later.
+        </div>
+
+        {/* Which months. Defaulted to everything the landlord clicked from. */}
+        <div style={{ marginTop: 14, border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'hidden' }}>
+          {fees.map(f => {
+            const on = picked.includes(f.scheduledPaymentId)
+            return (
+              <label
+                key={f.scheduledPaymentId}
+                style={{
+                  display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 13px',
+                  borderBottom: `1px solid ${C.line}`, cursor: 'pointer',
+                  background: on ? '#fff' : C.wash,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => toggle(f.scheduledPaymentId)}
+                  style={{ marginTop: 2, accentColor: C.ink }}
+                />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? C.ink : C.faint }}>
+                      {f.label}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: on ? C.ink : C.faint, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtCurrency(f.amount)}
+                    </span>
+                  </span>
+                  <span style={{ display: 'block', fontSize: 11, color: C.faint, marginTop: 2, lineHeight: 1.5 }}>
+                    {f.bucket === 'accruing'
+                      ? `still growing ${fmtCurrency(f.perDay)} a day — rent unpaid ${plural(f.daysLate, 'day')}`
+                      : `frozen${f.frozenOn ? ` ${daysAgo(f.frozenOn)} days ago` : ''} — rent settled, fee never collected`}
+                    {f.reminderCount > 0 && ` · asked ${plural(f.reminderCount, 'time')}`}
+                  </span>
+                </span>
+              </label>
+            )
+          })}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 13px', fontSize: 12.5, fontWeight: 800, color: C.ink, background: C.wash }}>
+            <span>Writing off</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {fmtCurrency(total)} · {plural(chosen.length, 'charge')}
+            </span>
+          </div>
+        </div>
+
+        {/* A fee still accruing comes back tomorrow unless the rent is dealt
+            with. Saying so prevents a landlord waiving the same fee weekly. */}
+        {stillGrowing.length > 0 && (
+          <div style={{ marginTop: 11, background: C.warnBg, border: `1px solid ${C.warnLine}`, borderRadius: 10, padding: '10px 13px', fontSize: 12, color: C.warn, lineHeight: 1.6 }}>
+            <b>{stillGrowing.length === 1 ? 'One of these is still growing.' : `${stillGrowing.length} of these are still growing.`}</b>{' '}
+            The rent underneath is unpaid, so the rule starts charging again tomorrow. Waiving clears
+            what has built up so far — to stop it for good, collect the rent or change the lease&apos;s
+            late-fee rule.
+          </div>
+        )}
+
+        {alreadyAsked.length > 0 && (
+          <div style={{ marginTop: 11, background: C.goodBg, border: '1px solid #e8f5ed', borderRadius: 10, padding: '10px 13px', fontSize: 12, color: C.good, lineHeight: 1.6 }}>
+            {payer.name} was already asked to pay {alreadyAsked.length === 1 ? 'one of these' : `${alreadyAsked.length} of these`}.
+            The email below tells them to disregard that request — worth sending.
+          </div>
+        )}
+
+        <label style={{ display: 'block', marginTop: 14 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: C.dim }}>
+            Why, for your own records
+          </span>
+          <input
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            maxLength={300}
+            placeholder="Rent settled months ago — not worth pursuing"
+            style={{ width: '100%', marginTop: 5, padding: '9px 11px', fontSize: 13, border: `1px solid ${C.line}`, borderRadius: 9, fontFamily: 'inherit', color: C.ink }}
+          />
+          <span style={{ fontSize: 11, color: C.faint }}>
+            Private. Kept with the waiver and never shown to {payer.name}.
+          </span>
+        </label>
+
+        {/* Telling them. On by default — see the note at the top of this file. */}
+        <div style={{ marginTop: 14, border: `1px solid ${notify && canSend ? '#cfe8da' : C.line}`, borderRadius: 11, padding: '12px 13px', background: notify && canSend ? C.goodBg : C.wash }}>
+          <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: canSend ? 'pointer' : 'not-allowed' }}>
+            <input
+              type="checkbox"
+              checked={notify && canSend}
+              disabled={!canSend}
+              onChange={e => setNotify(e.target.checked)}
+              style={{ marginTop: 2, accentColor: C.good }}
+            />
+            <span>
+              <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: canSend ? C.ink : C.faint }}>
+                Email {payer.name} that {chosen.length > 1 ? 'these fees are' : 'this fee is'} cancelled
+              </span>
+              <span style={{ display: 'block', fontSize: 11.5, color: canSend ? C.dim : C.faint, marginTop: 2, lineHeight: 1.55 }}>
+                {canSend
+                  ? <>One email to {payer.email}, naming each month and the amount. It asks for nothing
+                      — a forgiveness email carrying a demand reads as a demand. You get a copy for
+                      your records.</>
+                  : <>No email address on file for this payer, so the write-off can only be recorded
+                      in your books.</>}
+              </span>
+            </span>
+          </label>
+
+          {notify && canSend && (
+            <label style={{ display: 'block', marginTop: 11 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: C.dim }}>
+                Add a line for them (optional)
+              </span>
+              <textarea
+                value={tenantNote}
+                onChange={e => setTenantNote(e.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="You've been on time all year — this one's on us."
+                style={{ width: '100%', marginTop: 5, padding: '9px 11px', fontSize: 13, border: `1px solid ${C.line}`, borderRadius: 9, resize: 'vertical', fontFamily: 'inherit', color: C.ink, background: '#fff' }}
+              />
+              <span style={{ fontSize: 11, color: C.faint }}>
+                This is the single most relationship-repairing email a landlord sends. One sentence
+                makes it a gesture rather than an adjustment.
+              </span>
+            </label>
+          )}
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 11, padding: '9px 12px', borderRadius: 9, background: C.badBg, border: `1px solid ${C.badLine}`, fontSize: 12.5, color: C.bad }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 9, marginTop: 16, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            style={{ fontSize: 13, fontWeight: 700, padding: '9px 15px', borderRadius: 9, background: '#fff', color: C.dim, border: `1px solid ${C.line}`, cursor: busy ? 'wait' : 'pointer' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy || chosen.length === 0}
+            style={{
+              fontSize: 13, fontWeight: 700, padding: '9px 17px', borderRadius: 9,
+              background: chosen.length === 0 ? C.wash : C.ink,
+              color: chosen.length === 0 ? C.faint : '#fff',
+              border: `1px solid ${chosen.length === 0 ? C.line : C.ink}`,
+              cursor: busy ? 'wait' : chosen.length === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {busy
+              ? 'Writing off…'
+              : notify && canSend ? `Waive ${fmtCurrency(total)} and tell them` : `Waive ${fmtCurrency(total)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── WHAT WAS WRITTEN OFF ─────────────────────────────────────────────────────
+
+/**
+ * The waiver history, below the fees still owed.
+ *
+ * Two readers need this. The landlord at the end of the year, reconciling fees
+ * assessed against fees collected, needs the gap to have names and reasons
+ * attached. And the landlord who wrote a fee off last week without telling
+ * anyone needs that stranded goodwill surfaced while it is still worth
+ * spending — which is why unannounced waivers sort to the top and carry the
+ * only action in the section.
+ */
+function WrittenOff({
+  waived, busyId, onRestore, onAnnounce, onOpenLease,
+}: {
+  waived: WaivedLedger
+  busyId: string | null
+  onRestore: (fee: WaivedLateFee) => void
+  onAnnounce: (group: WaivedPayerGroup) => void
+  onOpenLease: (planId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (waived.empty) return null
+
+  return (
+    <div style={{ marginTop: 16, border: `1px solid ${C.line}`, borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, padding: '13px 15px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: C.ink }}>
+            Written off
+          </span>
+          <span style={{ display: 'block', fontSize: 11.5, color: C.faint, marginTop: 1 }}>
+            {fmtCurrency(waived.total)} forgiven across {plural(waived.feeCount, 'charge')} ·{' '}
+            {plural(waived.payerCount, 'tenant')}
+            {waived.unannouncedCount > 0 && ` · ${waived.unannouncedCount} never announced`}
+          </span>
+        </span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.dim }}>{open ? 'Hide' : 'Show'}</span>
+      </button>
+
+      {/* The one thing in here that is still actionable. */}
+      {waived.unannouncedCount > 0 && (
+        <div style={{ margin: '0 15px 12px', background: C.warnBg, border: `1px solid ${C.warnLine}`, borderRadius: 9, padding: '10px 12px', fontSize: 12, color: C.warn, lineHeight: 1.6 }}>
+          <b>{fmtCurrency(waived.unannouncedTotal)} was forgiven without telling the tenant.</b>{' '}
+          From their side a charge simply stopped appearing, which buys no goodwill and looks like a
+          bug. Telling them now still counts.
+        </div>
+      )}
+
+      {open && (
+        <div style={{ borderTop: `1px solid ${C.line}`, background: C.wash }}>
+          {waived.groups.map(g => (
+            <div key={g.key} style={{ borderBottom: `1px solid ${C.line}`, padding: '11px 15px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{g.name}</span>
+                <span style={{ fontSize: 11.5, color: C.faint, flex: 1, minWidth: 0 }}>
+                  {g.leaseName} · {fmtCurrency(g.total)} across {plural(g.fees.length, 'charge')}
+                </span>
+                {g.unannounced > 0 && (
+                  <button
+                    onClick={() => onAnnounce(g)}
+                    disabled={busyId === g.key || !g.email}
+                    title={g.email ? undefined : 'No email address on file for this payer'}
+                    style={{
+                      fontSize: 11.5, fontWeight: 700, padding: '5px 11px', borderRadius: 7,
+                      background: g.email ? C.ink : C.wash, color: g.email ? '#fff' : C.faint,
+                      border: `1px solid ${g.email ? C.ink : C.line}`,
+                      cursor: busyId === g.key ? 'wait' : g.email ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    {busyId === g.key ? 'Sending…' : `Tell them (${fmtCurrency(g.unannouncedTotal)})`}
+                  </button>
+                )}
+                <button
+                  onClick={() => onOpenLease(g.planId)}
+                  style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 7, background: '#fff', color: C.dim, border: `1px solid ${C.line}`, cursor: 'pointer' }}
+                >
+                  Ledger
+                </button>
+              </div>
+
+              {g.fees.map(f => (
+                <div
+                  key={f.scheduledPaymentId}
+                  style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}
+                >
+                  <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>
+                      {f.label}
+                      <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '2px 6px', borderRadius: 5, background: f.tenantNotifiedAt ? C.goodBg : C.warnBg, color: f.tenantNotifiedAt ? C.good : C.warn }}>
+                        {f.tenantNotifiedAt ? 'tenant told' : 'not announced'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: C.faint, marginTop: 2, lineHeight: 1.55 }}>
+                      Waived {fmtDate(f.waivedOn.slice(0, 10))} · rent due {fmtDate(f.dueDate)}
+                      {f.tenantNotifiedAt && ` · emailed ${fmtDate(f.tenantNotifiedAt.slice(0, 10))}${f.tenantNotifiedEmail ? ` to ${f.tenantNotifiedEmail}` : ''}`}
+                    </div>
+                    {f.reason && (
+                      <div style={{ fontSize: 11, color: C.dim, marginTop: 2, lineHeight: 1.55 }}>
+                        Your note: {f.reason}
+                      </div>
+                    )}
+                    {f.tenantNote && (
+                      <div style={{ fontSize: 11, color: C.dim, marginTop: 2, lineHeight: 1.55 }}>
+                        Told them: &ldquo;{f.tenantNote}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtCurrency(f.amount)}
+                    </div>
+                    <button
+                      onClick={() => onRestore(f)}
+                      disabled={busyId === f.scheduledPaymentId}
+                      style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 9px', borderRadius: 6, background: '#fff', color: C.dim, border: `1px solid ${C.line}`, cursor: busyId === f.scheduledPaymentId ? 'wait' : 'pointer' }}
+                    >
+                      {busyId === f.scheduledPaymentId ? '…' : 'Restore'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

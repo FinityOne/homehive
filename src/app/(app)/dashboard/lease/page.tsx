@@ -23,7 +23,19 @@ type Scheduled = {
   late_fee_paid: number
   /** Fee the landlord has written off on this row. */
   late_fee_waived: number
+  /** The write-off itself, when there is one, so it can be shown as something
+   *  that happened rather than as a charge that quietly disappeared. */
+  late_fee_waiver?: { amount: number; waivedOn: string; note: string | null } | null
   payment_method: string | null; processing_fee: number; notes: string | null
+}
+/** A late fee the landlord forgave. Not payable, and that is the point. */
+type WaivedFee = {
+  id: string
+  label: string
+  amount: number
+  waivedOn: string
+  /** What the landlord wrote to them when they waived it, if anything. */
+  note: string | null
 }
 type Special = {
   id: string; category: string; label: string; amount: number; due_date: string
@@ -162,12 +174,13 @@ export default function MyLeasePage() {
    * whole remaining lease would ask a tenant to prepay a year of rent.
    * Future months are shown separately and can be paid early by choice.
    */
-  const { owed, upcoming, lateFees, explanations } = useMemo(() => {
+  const { owed, upcoming, lateFees, waived, explanations } = useMemo(() => {
     const owedRows: Payable[] = []
     const futureRows: Payable[] = []
     const feeRows: Payable[] = []
+    const waivedRows: WaivedFee[] = []
     const explanations = new Map<string, LateFeeExplanation>()
-    if (!t) return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, explanations }
+    if (!t) return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, waived: waivedRows, explanations }
 
     // The date where the rent is due, not the browser's — a tenant travelling
     // must not see yesterday's deadline, and a UTC server must not see
@@ -180,6 +193,23 @@ export default function MyLeasePage() {
 
     for (const s of t.scheduled) {
       if (isVoided(s.status)) continue
+
+      // ── A fee the landlord forgave ─────────────────────────────────────
+      //
+      // Collected before the arithmetic below, and deliberately *outside* the
+      // `outstanding > 0` test that governs everything else: a fully waived
+      // fee is owed nothing, so it drops out of every list on this page and
+      // the tenant sees a charge they were chased about simply stop existing.
+      // That reads as a bug and wastes the goodwill the landlord paid for.
+      if (s.late_fee_waiver && s.late_fee_waiver.amount > 0) {
+        waivedRows.push({
+          id: s.id,
+          label: `${fmtMonthYear(s.due_date)} rent`,
+          amount: s.late_fee_waiver.amount,
+          waivedOn: s.late_fee_waiver.waivedOn,
+          note: s.late_fee_waiver.note,
+        })
+      }
 
       // ── The late fee, as a charge in its own right ─────────────────────
       //
@@ -230,13 +260,15 @@ export default function MyLeasePage() {
       const row: Payable = { kind: 'special', id: s.id, label: s.label, amount: s.amount }
       ;(!s.due_date || s.due_date <= today ? owedRows : futureRows).push(row)
     }
+    // Most recently forgiven first — the one they were just emailed about.
+    waivedRows.sort((a, b) => b.waivedOn.localeCompare(a.waivedOn))
     // Oldest first: that is the order a person settles a backlog in, and it
     // puts the fee that has been owed longest at the top.
     // Chronological: a backlog reads as a story, and "which months was I
     // behind" is answered by scanning down the list in order.
     feeRows.sort((a, b) =>
       (explanations.get(a.id)?.dueDate ?? '').localeCompare(explanations.get(b.id)?.dueDate ?? ''))
-    return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, explanations }
+    return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, waived: waivedRows, explanations }
   }, [t])
 
   /**
@@ -528,6 +560,43 @@ export default function MyLeasePage() {
                     You can pay these on their own, one at a time from the Payments tab, or together
                     with your rent. Questions about a fee? Contact your landlord — they can waive it.
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Fees that were forgiven ─────────────────────────────────
+                Kept as a standing record rather than a disappearance. A tenant
+                who was chased for a $105 fee and then saw it vanish has no way
+                to know whether it was cancelled or is merely not being shown
+                this week, and the landlord gets no credit for a decision that
+                cost them real money. Stated plainly, with the date and their
+                landlord's own words, it is the most trust-building thing on
+                this screen — and it is the tenant's receipt if it is ever
+                raised again. */}
+            {waived.length > 0 && (
+              <div className="card waived-card">
+                <div className="card-hd">
+                  <span className="card-title">Late fees waived ({waived.length})</span>
+                  <span className="card-note good">
+                    {fmtMoney(waived.reduce((n, w) => n + w.amount, 0))} cleared
+                  </span>
+                </div>
+                <div className="card-bd">
+                  <div className="waived-why">
+                    Your landlord cancelled {waived.length === 1 ? 'this late fee' : 'these late fees'}.
+                    You owe nothing on {waived.length === 1 ? 'it' : 'them'} — this is your record of
+                    the change, kept here in case it ever comes up again.
+                  </div>
+                  {waived.map(w => (
+                    <div key={w.id} className="waived-row">
+                      <span className="waived-main">
+                        <span className="waived-label">{w.label}</span>
+                        <em className="waived-sub">Waived {fmtDate(w.waivedOn.slice(0, 10))}</em>
+                        {w.note && <em className="waived-note">&ldquo;{w.note}&rdquo;</em>}
+                      </span>
+                      <span className="waived-amt">{fmtMoney(w.amount)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -863,6 +932,24 @@ const CSS = `
   .fee-row-label { font-size: 13.5px; font-weight: 600; color: #0f172a; }
   .fee-row-right { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
   .fee-chev { font-size: 19px; color: #cbd5e1; line-height: 1; }
+
+  /* Forgiven fees. Green, and not styled like the orange fee card above it:
+     this is the one money card on the page that is good news. */
+  .waived-card { border-color: #bbf7d0; }
+  .waived-card .card-hd { background: #f6fef9; }
+  .card-note.good { color: #047857; }
+  .waived-why { font-size: 12.5px; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0;
+    border-radius: 8px; padding: 10px 13px; line-height: 1.55; margin-bottom: 12px; }
+  .waived-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 10px 2px; border-bottom: 1px solid #f8fafc; }
+  .waived-row:last-of-type { border-bottom: none; }
+  .waived-main { min-width: 0; }
+  .waived-label { font-size: 13.5px; font-weight: 600; color: #0f172a; }
+  .waived-sub { display: block; font-style: normal; font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  .waived-note { display: block; font-style: italic; font-size: 11.5px; color: #475569;
+    margin-top: 4px; line-height: 1.5; }
+  .waived-amt { font-size: 13.5px; font-weight: 700; color: #047857; white-space: nowrap;
+    text-decoration: line-through; text-decoration-color: #a7f3d0; }
   .hd-actions { display: flex; align-items: center; gap: 8px; }
   .btn-ghost { background: #fff; color: #0f172a; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 11px 18px; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
   .btn-ghost.sm { padding: 6px 12px; font-size: 12.5px; }

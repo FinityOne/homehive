@@ -61,6 +61,11 @@ export type LateFeeWaiver = {
   amount: number
   reason: string | null
   created_at: string
+  /** When the tenant was told. Null means the write-off was never announced. */
+  tenant_notified_at?: string | null
+  tenant_notified_email?: string | null
+  /** What the tenant was told, as distinct from the landlord's private reason. */
+  tenant_note?: string | null
 }
 
 // ─── WHAT ONE RENT CHARGE IS MADE OF ─────────────────────────────────────────

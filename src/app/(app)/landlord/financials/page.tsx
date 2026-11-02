@@ -24,6 +24,7 @@ import {
   lateFeeLedger, withReminderHistory, EMPTY_LEDGER,
   type LateFeeLedger as FeeLedger, type LateFeeWaiver,
 } from '@/lib/lateFees'
+import { waivedLedger, EMPTY_WAIVED_LEDGER } from '@/lib/lateFeeWaivers'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
 const LateFeesPanel = dynamic(() => import('@/components/payments/LateFeesPanel'), { ssr: false })
@@ -162,7 +163,7 @@ export default function FinancialsPage({
     // and none would be trustworthy if it were.
     const { data } = await supabase
       .from('late_fee_waivers')
-      .select('scheduled_payment_id, amount, reason, created_at')
+      .select('scheduled_payment_id, amount, reason, created_at, tenant_note, tenant_notified_at, tenant_notified_email')
     setWaivers((data ?? []).map(w => ({ ...w, amount: Number(w.amount) })))
   }, [])
 
@@ -228,6 +229,15 @@ export default function FinancialsPage({
     }
     return withReminderHistory(lateFeeLedger(scoped, waivers), history)
   }, [scoped, waivers])
+
+  // What has been forgiven on the leases in view. A waived fee leaves
+  // `feeLedger` by design — it is not owed — so without this the money would
+  // simply vanish from the page, and so would the fact that some of it was
+  // given up without the tenant ever being told.
+  const waivedLog = useMemo(
+    () => (scoped.length === 0 ? EMPTY_WAIVED_LEDGER : waivedLedger(scoped, waivers)),
+    [scoped, waivers],
+  )
 
   // The named month, and the months either side of it.
   const ledger    = useMemo(() => monthView(scoped, month), [scoped, month])
@@ -510,6 +520,7 @@ export default function FinancialsPage({
             <div id="fees">
               <LateFeesPanel
                 ledger={feeLedger}
+                waived={waivedLog}
                 onReload={reloadMoney}
                 onOpenLease={openLeaseLedger}
               />
