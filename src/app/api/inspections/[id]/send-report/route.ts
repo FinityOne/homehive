@@ -56,11 +56,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const { data: profile } = await supabaseAdmin
     .from('profiles')
-    .select('full_name, first_name, email')
+    .select('full_name, email')
     .eq('id', user.id)
     .maybeSingle()
 
-  const landlordName = profile?.full_name || profile?.first_name || null
+  const landlordName = profile?.full_name || null
   const landlordEmail = profile?.email || user.email || null
   // Resolve addresses at send time from the live tenant records. The party row
   // is a snapshot taken when the report was created; if the landlord has since

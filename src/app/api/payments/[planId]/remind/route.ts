@@ -148,8 +148,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
     : null
 
   const { data: profile } = await supabaseAdmin
-    .from('profiles').select('full_name, first_name, email').eq('id', user.id).maybeSingle()
-  const landlordName = profile?.full_name || profile?.first_name || null
+    .from('profiles').select('full_name, email').eq('id', user.id).maybeSingle()
+  const landlordName = profile?.full_name || null
   const landlordEmail = profile?.email || user.email || null
 
   // Tenants pay from their own portal; deep-link them straight into the payment

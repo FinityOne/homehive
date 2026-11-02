@@ -17,7 +17,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getSiteUrl } from './siteUrl'
 import { amountDue, fmtMoney as fmtUsd, type PayMethod } from './rentPayments'
-import { buildRentReceiptEmail, buildLandlordRentPaidEmail, buildAdminPaymentEmail, type PayEvent, type PaidRow } from './rentPaymentEmails'
+import { buildRentReceiptEmail, buildLandlordRentPaidEmail, buildAdminPaymentEmail, type PayEvent, type PaidRow, type ChargePart, type RowKind } from './rentPaymentEmails'
 import { logPaymentEmail, type PaymentEmailItem } from './paymentEmailLog'
 import { economics, STRIPE_RATES } from './platformFees'
 
@@ -33,7 +33,7 @@ export type Audience = 'tenant' | 'landlord' | 'both'
 const FROM = 'HomeHive <hello@homehive.live>'
 
 /** Rows already settled, in the shape the emails want. */
-type SettledRow = {
+export type SettledRow = {
   /**
    * `late_fee` is a fee collected on its own. Its `id` is still a
    * `scheduled_payments` id — the fee rides on the rent row it was assessed
@@ -44,6 +44,90 @@ type SettledRow = {
   id: string
   amount: number
   label: string
+}
+
+/**
+ * Work out what each settled charge was actually made of.
+ *
+ * Rent is billed as the payer's whole monthly obligation, so a $770.67 charge
+ * is really $749 rent plus a $21.67 share of the house internet, and until now
+ * every receipt showed only the total — which reads to a tenant like the rent
+ * went up, and to a landlord like utility money is rent income.
+ * `payment_line_items` holds the split, so it is read back here.
+ *
+ * Done at delivery time, in one place, so the automatic send, a manual resend
+ * and the backfill script all describe a payment identically.
+ *
+ * The reconciliation guard matters: line items are the *current* composition of
+ * the lease, so a charge from before the landlord last changed them may no
+ * longer add up to it. When the parts don't reconcile to the amount, the
+ * breakdown is dropped rather than shown — the email then says exactly what it
+ * said before, which is honest, instead of contradicting its own total.
+ */
+/** Exported for `scripts/verify-payment-email-breakdown.mjs`, which pins the
+ *  reconciliation guard — the one rule here that, if it broke, would produce a
+ *  confidently wrong breakdown rather than none. */
+export async function describeRows(db: SupabaseClient, rows: SettledRow[]): Promise<PaidRow[]> {
+  const scheduledIds = rows.filter(r => r.kind === 'scheduled').map(r => r.id)
+  const specialIds = rows.filter(r => r.kind === 'special').map(r => r.id)
+
+  // payer per rent charge → that payer's line items
+  const payerOf = new Map<string, string>()
+  if (scheduledIds.length > 0) {
+    const { data } = await db
+      .from('scheduled_payments').select('id, plan_tenant_id').in('id', scheduledIds)
+    for (const r of data ?? []) {
+      if (r.plan_tenant_id) payerOf.set(r.id as string, r.plan_tenant_id as string)
+    }
+  }
+  const partsByPayer = new Map<string, ChargePart[]>()
+  const payerIds = [...new Set(payerOf.values())]
+  if (payerIds.length > 0) {
+    const { data, error } = await db
+      .from('payment_line_items')
+      .select('plan_tenant_id, category, label, amount, utility_id')
+      .in('plan_tenant_id', payerIds)
+    if (error) {
+      // Not fatal: a receipt without a breakdown is still a correct receipt.
+      console.error('[rent] could not read line items for the breakdown', error.message)
+    }
+    for (const li of data ?? []) {
+      const list = partsByPayer.get(li.plan_tenant_id as string) ?? []
+      list.push({
+        label: (li.label as string) || (li.category as string) || 'Charge',
+        amount: Number(li.amount),
+        kind: li.category === 'rent' ? 'rent' : li.utility_id ? 'utility' : 'other',
+      })
+      partsByPayer.set(li.plan_tenant_id as string, list)
+    }
+  }
+
+  // A one-off charge is a utility only when it came from a declared one — the
+  // same rule the ledger uses, so the two can never disagree.
+  const specialKind = new Map<string, RowKind>()
+  if (specialIds.length > 0) {
+    const { data } = await db
+      .from('special_payments').select('id, utility_id').in('id', specialIds)
+    for (const r of data ?? []) {
+      specialKind.set(r.id as string, r.utility_id ? 'utility' : 'charge')
+    }
+  }
+
+  return rows.map(r => {
+    if (r.kind === 'late_fee') return { label: r.label, amount: r.amount, kind: 'late_fee' as RowKind }
+    if (r.kind === 'special') {
+      return { label: r.label, amount: r.amount, kind: specialKind.get(r.id) ?? 'charge' }
+    }
+    const parts = partsByPayer.get(payerOf.get(r.id) ?? '') ?? []
+    const sum = Math.round(parts.reduce((s, p) => s + p.amount, 0) * 100) / 100
+    const reconciles = parts.length > 0 && Math.abs(sum - r.amount) <= 0.01
+    return {
+      label: r.label,
+      amount: r.amount,
+      kind: 'rent' as RowKind,
+      ...(reconciles ? { parts } : {}),
+    }
+  })
 }
 
 /** Just the month and year, for a late-fee line. */
@@ -109,8 +193,16 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
     ? await db.from('payment_plan_tenants').select('id, name, email').eq('id', planTenantId).maybeSingle()
     : { data: null }
 
-  const { data: profile } = await db
-    .from('profiles').select('full_name, first_name, email').eq('id', plan.owner_id).maybeSingle()
+  // Only columns `profiles` actually has. Asking PostgREST for one it does not
+  // is not a null field — it fails the whole row, which is how the landlord's
+  // copy of every rent receipt went missing without a single error surfacing.
+  // The error is logged for the same reason: a landlord who cannot be looked up
+  // is a landlord who gets no email, and that must never be quiet again.
+  const { data: profile, error: profileErr } = await db
+    .from('profiles').select('full_name, email').eq('id', plan.owner_id).maybeSingle()
+  if (profileErr) {
+    console.error('[rent] could not read the landlord profile', plan.owner_id, profileErr.message)
+  }
 
   // Outstanding *after* this settlement — the writes have already landed, so a
   // fresh read is the honest number. 'processing' counts as settled here: an
@@ -148,7 +240,7 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
     propertyName: (property as { name?: string } | null)?.name ?? 'your home',
     tenantName: tenant?.name ?? 'Your tenant',
     tenantEmail: tenant?.email?.trim() || null,
-    landlordName: profile?.full_name || profile?.first_name || null,
+    landlordName: profile?.full_name || null,
     landlordEmail: profile?.email?.trim() || null,
     planOutstanding: Math.round(planOutstanding * 100) / 100,
     tenantOutstanding: Math.round(tenantOutstanding * 100) / 100,
@@ -261,6 +353,9 @@ export async function resendRentPaymentEmails(input: {
   rows: SettledRow[]
   audience: Audience
   sentBy?: string | null
+  /** When the money actually moved. Defaults to now; pass it when sending for a
+   *  payment that settled earlier, so the email doesn't date itself today. */
+  paidOn?: Date
 }): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
   return deliverRentPaymentEmails({ ...input, trigger: 'manual' })
 }
@@ -275,6 +370,7 @@ async function deliverRentPaymentEmails(input: {
   audience: Audience
   trigger: 'auto' | 'manual'
   sentBy?: string | null
+  paidOn?: Date
 }): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
   const { db, intent: pi, event, method, fee, rows, audience, trigger, sentBy } = input
   const sent: { to: string; role: 'tenant' | 'landlord' }[] = []
@@ -294,8 +390,8 @@ async function deliverRentPaymentEmails(input: {
     }
 
     const rent = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100
-    const paidOn = new Date()
-    const emailRows: PaidRow[] = rows.map(r => ({ label: r.label, amount: r.amount }))
+    const paidOn = input.paidOn ?? new Date()
+    const emailRows: PaidRow[] = await describeRows(db, rows)
     const resend = new Resend(process.env.RESEND_API_KEY)
 
     // Tenant receipt. `receipt_email` on the intent is the address the tenant
@@ -356,7 +452,13 @@ async function deliverRentPaymentEmails(input: {
     }
 
     // Landlord notification.
-    if (audience !== 'tenant' && !ctx.landlordEmail) skipped.push('no landlord email on file')
+    if (audience !== 'tenant' && !ctx.landlordEmail) {
+      // A payment nobody told the landlord about is the thing this module
+      // exists to prevent, so say so where it will be seen rather than only
+      // returning it to a caller that may not read `skipped`.
+      console.error('[rent] no landlord email on file for plan', ctx.planId, '— landlord copy not sent for', pi.id)
+      skipped.push('no landlord email on file')
+    }
     if (audience !== 'tenant' && ctx.landlordEmail) {
       const { subject, html, text } = buildLandlordRentPaidEmail({
         landlordName: ctx.landlordName,

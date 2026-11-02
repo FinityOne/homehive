@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "verify:late-fees": "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder SUPABASE_SERVICE_ROLE_KEY=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-late-fee-settlement.mjs && node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-late-fee-explanation.mjs && node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-late-fee-deadline.mjs && node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-late-fee-waivers.mjs",
+    "verify:payment-emails": "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder SUPABASE_SERVICE_ROLE_KEY=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-payment-email-breakdown.mjs",
     "verify:landlord-access": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-access.mjs"
   },
   "dependencies": {

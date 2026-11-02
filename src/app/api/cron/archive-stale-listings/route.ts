@@ -70,10 +70,10 @@ export async function GET(req: NextRequest) {
   if (ownerIds.length > 0) {
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, full_name, first_name')
+      .select('id, email, full_name')
       .in('id', ownerIds)
     for (const pr of profiles || []) {
-      profileById[pr.id] = { email: pr.email ?? null, name: pr.full_name || pr.first_name || null }
+      profileById[pr.id] = { email: pr.email ?? null, name: pr.full_name || null }
     }
   }
 

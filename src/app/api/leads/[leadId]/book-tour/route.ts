@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
 import { notifyLandlord } from '@/lib/notifyLandlord'
 import { NextRequest } from 'next/server'
+import { firstNameFrom } from '@/lib/names'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -191,8 +192,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
     if (lu?.email) landlordEmail = lu.email
   } catch (_) {}
   try {
-    const { data: lp } = await supabaseAdmin.from('profiles').select('first_name').eq('id', prop.owner_id).single()
-    if (lp?.first_name) landlordName = lp.first_name
+    const { data: lp } = await supabaseAdmin.from('profiles').select('full_name').eq('id', prop.owner_id).single()
+    const lpFirst = firstNameFrom(lp?.full_name)
+    if (lpFirst) landlordName = lpFirst
   } catch (_) {}
 
   // Email to landlord

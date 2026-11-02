@@ -135,8 +135,8 @@ export async function GET(req: NextRequest) {
 
   const ownerIds = [...new Set((plans ?? []).map(p => p.owner_id).filter(Boolean))]
   const { data: profiles } = ownerIds.length
-    ? await supabaseAdmin.from('profiles').select('id, full_name, first_name, email').in('id', ownerIds)
-    : { data: [] as { id: string; full_name: string | null; first_name: string | null; email: string | null }[] }
+    ? await supabaseAdmin.from('profiles').select('id, full_name, email').in('id', ownerIds)
+    : { data: [] as { id: string; full_name: string | null; email: string | null }[] }
 
   const planById = new Map((plans ?? []).map(p => [p.id, p]))
   const payerById = new Map((payers ?? []).map(t => [t.id, t]))
@@ -179,7 +179,7 @@ export async function GET(req: NextRequest) {
       email,
       propertyName: propertyNameOf(planId),
       planId,
-      landlordName: profile?.full_name || profile?.first_name || null,
+      landlordName: profile?.full_name || null,
       landlordEmail: profile?.email?.trim() || null,
       rule: ruleByPlan.get(planId) ?? null,
       rows: [],

@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
 import { notifyLandlord } from '@/lib/notifyLandlord'
 import { canReceiveLeads, type ListingStatus } from '@/lib/listingStatus'
+import { firstNameFrom } from '@/lib/names'
 
 // Anon key for public lead inserts (RLS allows)
 const supabase = createClient(
@@ -142,10 +143,11 @@ export async function POST(req: Request) {
         try {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('first_name')
+            .select('full_name')
             .eq('id', prop.owner_id)
             .single()
-          if (profile?.first_name) landlordFirstName = profile.first_name
+          const ownerFirst = firstNameFrom(profile?.full_name)
+          if (ownerFirst) landlordFirstName = ownerFirst
         } catch (_) {}
       }
     }

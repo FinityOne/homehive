@@ -199,8 +199,8 @@ export async function POST(req: NextRequest) {
   const waivedTotal = round2(waivable.reduce((s, w) => s + w.outstanding, 0))
 
   const { data: profile } = await supabaseAdmin
-    .from('profiles').select('full_name, first_name, email').eq('id', user.id).maybeSingle()
-  const landlordName = profile?.full_name || profile?.first_name || null
+    .from('profiles').select('full_name, email').eq('id', user.id).maybeSingle()
+  const landlordName = profile?.full_name || null
   const landlordEmail = profile?.email || user.email || null
 
   // One email per payer, covering however many of their charges this call

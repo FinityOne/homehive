@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('email, full_name, first_name')
+      .select('email, full_name')
       .eq('id', user.id)
       .maybeSingle()
 
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
         item: data as unknown as WorkItem,
         propertyName: property.name,
         listUrl: `${getSiteUrl()}/landlord/maintenance`,
-        landlordName: profile?.full_name || profile?.first_name || null,
+        landlordName: profile?.full_name || null,
       })
       await resend.emails.send({
         from: 'HomeHive <hello@homehive.live>',

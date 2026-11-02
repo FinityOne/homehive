@@ -149,8 +149,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: profile } = await supabaseAdmin
-    .from('profiles').select('full_name, first_name, email').eq('id', user.id).maybeSingle()
-  const landlordName = profile?.full_name || profile?.first_name || null
+    .from('profiles').select('full_name, email').eq('id', user.id).maybeSingle()
+  const landlordName = profile?.full_name || null
   const landlordEmail = profile?.email || user.email || null
 
   // Only offer the payment page when it can actually take the money. The tenant

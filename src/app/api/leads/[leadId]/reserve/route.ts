@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logEmail } from '@/lib/emailLog'
 import { NextRequest } from 'next/server'
+import { firstNameFrom } from '@/lib/names'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -118,8 +119,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ lea
   // Get landlord name
   let landlordFirstName = ''
   try {
-    const { data: profile } = await supabaseAdmin.from('profiles').select('first_name').eq('id', user.id).single()
-    if (profile?.first_name) landlordFirstName = profile.first_name
+    const { data: profile } = await supabaseAdmin.from('profiles').select('full_name').eq('id', user.id).single()
+    const profileFirst = firstNameFrom(profile?.full_name)
+    if (profileFirst) landlordFirstName = profileFirst
   } catch (_) {}
 
   // Create reservation record
