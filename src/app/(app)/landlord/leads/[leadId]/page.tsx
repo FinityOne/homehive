@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
 import { getNextBestPlan, actionKindTag, type LeadActionContext, type ReservationState, type RecommendedAction } from '@/lib/leadActions'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
+import { firstNameFrom } from '@/lib/names'
 
 // tour_scheduled is a legacy status — treated as qualified in the pipeline display
 const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'closed']
@@ -357,10 +358,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         const [profileRes, tmplRes] = await Promise.all([
-          supabase.from('profiles').select('first_name').eq('id', user.id).single(),
+          supabase.from('profiles').select('full_name').eq('id', user.id).single(),
           fetch('/api/sms-templates', { headers: { Authorization: `Bearer ${session.access_token}` } }),
         ])
-        if (profileRes.data?.first_name) setLandlordName(profileRes.data.first_name)
+        const landlordFirst = firstNameFrom(profileRes.data?.full_name)
+        if (landlordFirst) setLandlordName(landlordFirst)
         if (tmplRes.ok) { const { templates } = await tmplRes.json(); setSmsTemplates(templates || []) }
       }
 

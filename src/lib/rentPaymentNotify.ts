@@ -109,8 +109,16 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
     ? await db.from('payment_plan_tenants').select('id, name, email').eq('id', planTenantId).maybeSingle()
     : { data: null }
 
-  const { data: profile } = await db
-    .from('profiles').select('full_name, first_name, email').eq('id', plan.owner_id).maybeSingle()
+  // Only columns `profiles` actually has. Asking PostgREST for one it does not
+  // is not a null field — it fails the whole row, which is how the landlord's
+  // copy of every rent receipt went missing without a single error surfacing.
+  // The error is logged for the same reason: a landlord who cannot be looked up
+  // is a landlord who gets no email, and that must never be quiet again.
+  const { data: profile, error: profileErr } = await db
+    .from('profiles').select('full_name, email').eq('id', plan.owner_id).maybeSingle()
+  if (profileErr) {
+    console.error('[rent] could not read the landlord profile', plan.owner_id, profileErr.message)
+  }
 
   // Outstanding *after* this settlement — the writes have already landed, so a
   // fresh read is the honest number. 'processing' counts as settled here: an
@@ -148,7 +156,7 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
     propertyName: (property as { name?: string } | null)?.name ?? 'your home',
     tenantName: tenant?.name ?? 'Your tenant',
     tenantEmail: tenant?.email?.trim() || null,
-    landlordName: profile?.full_name || profile?.first_name || null,
+    landlordName: profile?.full_name || null,
     landlordEmail: profile?.email?.trim() || null,
     planOutstanding: Math.round(planOutstanding * 100) / 100,
     tenantOutstanding: Math.round(tenantOutstanding * 100) / 100,
@@ -261,6 +269,9 @@ export async function resendRentPaymentEmails(input: {
   rows: SettledRow[]
   audience: Audience
   sentBy?: string | null
+  /** When the money actually moved. Defaults to now; pass it when sending for a
+   *  payment that settled earlier, so the email doesn't date itself today. */
+  paidOn?: Date
 }): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
   return deliverRentPaymentEmails({ ...input, trigger: 'manual' })
 }
@@ -275,6 +286,7 @@ async function deliverRentPaymentEmails(input: {
   audience: Audience
   trigger: 'auto' | 'manual'
   sentBy?: string | null
+  paidOn?: Date
 }): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
   const { db, intent: pi, event, method, fee, rows, audience, trigger, sentBy } = input
   const sent: { to: string; role: 'tenant' | 'landlord' }[] = []
@@ -294,7 +306,7 @@ async function deliverRentPaymentEmails(input: {
     }
 
     const rent = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100
-    const paidOn = new Date()
+    const paidOn = input.paidOn ?? new Date()
     const emailRows: PaidRow[] = rows.map(r => ({ label: r.label, amount: r.amount }))
     const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -356,7 +368,13 @@ async function deliverRentPaymentEmails(input: {
     }
 
     // Landlord notification.
-    if (audience !== 'tenant' && !ctx.landlordEmail) skipped.push('no landlord email on file')
+    if (audience !== 'tenant' && !ctx.landlordEmail) {
+      // A payment nobody told the landlord about is the thing this module
+      // exists to prevent, so say so where it will be seen rather than only
+      // returning it to a caller that may not read `skipped`.
+      console.error('[rent] no landlord email on file for plan', ctx.planId, '— landlord copy not sent for', pi.id)
+      skipped.push('no landlord email on file')
+    }
     if (audience !== 'tenant' && ctx.landlordEmail) {
       const { subject, html, text } = buildLandlordRentPaidEmail({
         landlordName: ctx.landlordName,

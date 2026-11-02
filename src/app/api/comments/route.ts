@@ -55,13 +55,11 @@ export async function POST(req: NextRequest) {
   // Get author name + avatar from profile
   const { data: profile } = await supabase
     .from('profiles')
-    .select('first_name, last_name, avatar_url')
+    .select('full_name, avatar_url')
     .eq('id', user.id)
     .single()
 
-  const first = profile?.first_name || ''
-  const last = profile?.last_name || ''
-  const author_name = [first, last].filter(Boolean).join(' ') || user.email?.split('@')[0] || 'Anonymous'
+  const author_name = profile?.full_name?.trim() || user.email?.split('@')[0] || 'Anonymous'
   const avatar_url = profile?.avatar_url || null
 
   const { data, error } = await supabase
