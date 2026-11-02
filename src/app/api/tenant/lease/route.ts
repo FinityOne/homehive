@@ -97,7 +97,11 @@ export async function GET(req: NextRequest) {
       if (ids.length > 0) {
         const { data: w } = await supabaseAdmin
           .from('late_fee_waivers')
-          .select('scheduled_payment_id, amount')
+          // `reason` is deliberately absent: it is the landlord's private note
+          // ("not worth chasing"), and it is not for the tenant. `tenant_note`
+          // is the sentence the landlord wrote *to* them, so it is theirs to
+          // see again here rather than only in an email they may have lost.
+          .select('scheduled_payment_id, amount, created_at, tenant_note')
           .in('scheduled_payment_id', ids)
         waivers = w ?? []
       }
@@ -119,16 +123,29 @@ export async function GET(req: NextRequest) {
       housemateCount: plan ? Math.max(0, (plan.tenants ?? []).length - 1) : 0,
       unmatchedPlan,
       lineItems: lineItems.map(l => ({ ...l, amount: Number(l.amount) })),
-      scheduled: scheduled.map(s => ({
-        ...s,
-        amount: Number(s.amount),
-        paid_amount: Number(s.paid_amount ?? 0),
-        late_fee_paid: Number(s.late_fee_paid ?? 0),
-        late_fee_waived: Number(
-          waivers.find((w: any) => w.scheduled_payment_id === s.id)?.amount ?? 0
-        ),
-        processing_fee: Number(s.processing_fee ?? 0),
-      })),
+      scheduled: scheduled.map(s => {
+        const waiver = waivers.find(w => w.scheduled_payment_id === s.id) ?? null
+        return {
+          ...s,
+          amount: Number(s.amount),
+          paid_amount: Number(s.paid_amount ?? 0),
+          late_fee_paid: Number(s.late_fee_paid ?? 0),
+          late_fee_waived: Number(waiver?.amount ?? 0),
+          // The write-off as an event the tenant can see, not merely a number
+          // that nets a charge to zero. A fee that silently stops being shown
+          // reads as a bug; "your landlord waived this on October 4th" reads
+          // as what actually happened, and is their receipt if it is ever
+          // raised again.
+          late_fee_waiver: waiver
+            ? {
+                amount: Number(waiver.amount ?? 0),
+                waivedOn: waiver.created_at,
+                note: waiver.tenant_note ?? null,
+              }
+            : null,
+          processing_fee: Number(s.processing_fee ?? 0),
+        }
+      }),
       specials: specials.map(s => ({
         ...s,
         amount: Number(s.amount),

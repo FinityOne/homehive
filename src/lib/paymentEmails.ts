@@ -66,6 +66,10 @@ export const isProblem = (o: EmailOutcome) => o === 'bounced' || o === 'failed' 
  */
 export function kindLabel(kind: string): string {
   if (kind.startsWith('rent_request')) return 'Rent request'
+  // Before the `late_fee` test below, which this would otherwise match — and
+  // calling a write-off a "reminder" would state the opposite of what was sent.
+  if (kind.startsWith('late_fee_waived_receipt')) return 'Your copy of a waiver'
+  if (kind.startsWith('late_fee_waived')) return 'Late fee waived'
   if (kind.startsWith('late_fee')) return 'Late fee reminder'
   if (kind.startsWith('upcoming_')) {
     const days = kind.match(/^upcoming_(\d+)d$/)?.[1]
@@ -87,6 +91,7 @@ export const KIND_FILTERS: { id: string; label: string }[] = [
   { id: 'upcoming_',        label: 'Automatic notices' },
   { id: 'rent_request',     label: 'Rent requests' },
   { id: 'late_fee_request', label: 'Late fee reminders' },
+  { id: 'late_fee_waived',  label: 'Fees waived' },
   { id: 'receipt_tenant',   label: 'Receipts' },
 ]
 
