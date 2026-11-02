@@ -58,12 +58,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
   const [schedRes, specRes] = await Promise.all([
     scheduledIds.length
       ? supabaseAdmin.from('scheduled_payments')
-          .select('id, amount, due_date, status, payment_method, processing_fee, stripe_payment_intent_id')
+          .select('id, amount, due_date, status, payment_method, processing_fee, stripe_payment_intent_id, settled_at, submitted_at, paid_date')
           .eq('plan_id', planId).in('id', scheduledIds)
       : Promise.resolve({ data: [] as never[] }),
     specialIds.length
       ? supabaseAdmin.from('special_payments')
-          .select('id, amount, label, status, payment_method, processing_fee, stripe_payment_intent_id')
+          .select('id, amount, label, status, payment_method, processing_fee, stripe_payment_intent_id, settled_at, submitted_at, paid_date')
           .eq('plan_id', planId).in('id', specialIds)
       : Promise.resolve({ data: [] as never[] }),
   ])
@@ -72,14 +72,23 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
     id: string; amount: number; label: string; status: string
     payment_method: string | null; processing_fee: number | null
     stripe_payment_intent_id: string | null
+    /** When the money moved, so a resend doesn't date an old payment today. */
+    when: string | null
     kind: 'scheduled' | 'special'
   }
+
+  // Preferring the timestamps that actually mean "settled". `paid_date` is a
+  // DATE, so it is read at midday to keep it on its own day in any timezone.
+  const movedAt = (r: Record<string, unknown>): string | null =>
+    (r.settled_at as string) ?? (r.submitted_at as string) ??
+    (r.paid_date ? `${r.paid_date as string}T12:00:00` : null)
   const rows: Row[] = [
     ...((schedRes.data ?? []) as Record<string, unknown>[]).map(r => ({
       id: r.id as string, amount: Number(r.amount), label: monthLabel(r.due_date as string),
       status: r.status as string, payment_method: (r.payment_method as string) ?? null,
       processing_fee: r.processing_fee as number | null,
       stripe_payment_intent_id: (r.stripe_payment_intent_id as string) ?? null,
+      when: movedAt(r),
       kind: 'scheduled' as const,
     })),
     ...((specRes.data ?? []) as Record<string, unknown>[]).map(r => ({
@@ -87,6 +96,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
       status: r.status as string, payment_method: (r.payment_method as string) ?? null,
       processing_fee: r.processing_fee as number | null,
       stripe_payment_intent_id: (r.stripe_payment_intent_id as string) ?? null,
+      when: movedAt(r),
       kind: 'special' as const,
     })),
   ]
@@ -121,6 +131,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: st
     rows: settled.map(r => ({ kind: r.kind, id: r.id, amount: r.amount, label: r.label })),
     audience,
     sentBy: user.id,
+    // Date the receipt when the money moved, not when the landlord asked for a
+    // copy — a resend weeks later must not look like a second payment.
+    ...(lead.when ? { paidOn: new Date(lead.when) } : {}),
   })
 
   return Response.json({
