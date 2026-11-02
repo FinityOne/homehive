@@ -10,6 +10,7 @@ import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notifyRentPayment, rowsForIntent } from './rentPaymentNotify'
 import { recordPaymentAttempt } from './rentPaymentAttempts'
+import { billingToday } from './rentPayments'
 
 /** Whichever service-role client the caller already has. */
 type DB = SupabaseClient
@@ -115,7 +116,11 @@ export async function settleRentPayment(
 }> {
   const { scheduledIds, specialIds, feeDollars, lateFeeRows, method } =
     idsFromMetadata(pi)
-  const paidDate = new Date().toISOString().split('T')[0]
+  // The calendar date where the rent is due, not the server's. Vercel runs in
+  // UTC, so `toISOString()` stamps a payment made at 6pm in Tempe with
+  // *tomorrow's* date — and every surface that reads `paid_date` then shows an
+  // on-time payment as a day late. See `billingToday`.
+  const paidDate = billingToday()
   // `paid_date` is a DATE, so it loses the time of day. A landlord reconciling
   // a bank statement needs the instant, so record it alongside — and only when
   // the money actually landed, never for an ACH debit still in flight.

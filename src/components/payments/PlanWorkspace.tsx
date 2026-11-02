@@ -17,6 +17,7 @@ import PaymentEmailHistory, { emailsForCharge, fmtWhen, type PlanEmail } from '.
 import UtilitiesPanel from './UtilitiesPanel'
 import PaymentDetailModal from './PaymentDetailModal'
 import { getUtilitiesForPlan, reapplyPlanUtilities, type PlanUtility } from '@/lib/utilities'
+import { isPastDue } from '@/lib/rentPayments'
 import { chargeBreakdown, type ChargeBreakdown, type LateFeeWaiver } from '@/lib/lateFees'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -840,7 +841,10 @@ function SpecialChargeCard({
     setMode('view')
   }
 
-  const isOverdueCharge = sp.status === 'pending' && new Date(sp.due_date + 'T00:00:00') < new Date()
+  // Not `new Date(due + 'T00:00:00') < new Date()`, which is true from one
+  // second into the due day — this box turned red on the morning rent was due.
+  // The tenant has the whole day; late starts the day after. See `isPastDue`.
+  const isOverdueCharge = sp.status === 'pending' && isPastDue(sp.due_date)
   const [showHistory, setShowHistory] = useState(false)
   // Sends recorded on the charge itself cover the era before the email log.
   const requestCount = Math.max(history.length, sp.reminder_count ?? 0)
@@ -1134,8 +1138,9 @@ function AddChargeForm({ planId, tenants, onAdded }: { planId: string; tenants: 
 // ─── TENANT RATING HELPERS ────────────────────────────────────────────────────
 
 function computeTenantRating(sps: ScheduledPayment[]) {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const evaluable = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') < today)
+  // A charge is only history once its due day is over, judged where the rent
+  // is due rather than wherever the landlord is reading from.
+  const evaluable = sps.filter(sp => isPastDue(sp.due_date))
   if (evaluable.length === 0) return { score: null, grade: 'No history', color: '#8e8e93', label: 'N/A' }
 
   const paid    = evaluable.filter(sp => ['paid', 'partial'].includes(sp.status))
@@ -1183,13 +1188,13 @@ function TenantDetailView({
   onBack: () => void
   onUpdatePayment: (id: string, updates: Parameters<typeof updateScheduledPayment>[1]) => void
 }) {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-
   // ── Computed metrics ──────────────────────────────────────────────────────
-  const pastDue   = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') < today)
-  const upcoming  = sps.filter(sp => new Date(sp.due_date + 'T00:00:00') >= today && sp.status === 'pending')
+  // Rent due today is `upcoming`, never `pastDue`: the tenant has until the
+  // end of the day, where the property is. See `isPastDue`.
+  const pastDue   = sps.filter(sp => isPastDue(sp.due_date))
+  const upcoming  = sps.filter(sp => !isPastDue(sp.due_date) && sp.status === 'pending')
   const paid      = sps.filter(sp => ['paid', 'partial'].includes(sp.status))
-  const overdue   = sps.filter(sp => ['pending', 'late'].includes(sp.status) && new Date(sp.due_date + 'T00:00:00') < today)
+  const overdue   = sps.filter(sp => ['pending', 'late'].includes(sp.status) && isPastDue(sp.due_date))
   const missed    = sps.filter(sp => sp.status === 'missed')
 
   const totalCollected    = paid.reduce((s, sp) => s + sp.paid_amount, 0)
