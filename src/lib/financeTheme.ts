@@ -336,4 +336,4 @@ export const FINANCE_THEME = `
 `
 
 /** Where a money screen sits, for the hub header's tabs. */
-export type HubTab = 'overview' | 'reminders'
+export type HubTab = 'overview' | 'payments' | 'reminders'

@@ -4,7 +4,7 @@
  * The header every money screen wears.
  *
  * Financials, a single lease's ledger and the reminders log are one place in a
- * landlord's head — "the money" — but they used to be three pages that each
+ * landlord's head — "the money" — but they used to be pages that each
  * restated their own identity, with the global sidebar as the only route
  * between them. So they now share this: the same title row, the same tabs, a
  * breadcrumb when you are deeper than the top, and exactly one primary action,
@@ -70,6 +70,13 @@ export default function MoneyHub({
         <nav className="hub-tabs" aria-label="Money">
           <a className={`hub-tab${tab === 'overview' ? ' on' : ''}`} href="/landlord/financials">
             Financials
+          </a>
+          <a
+            className={`hub-tab${tab === 'payments' ? ' on' : ''}`}
+            href="/landlord/financials/payments"
+            title="Every payment collected: what cleared, what is still clearing, what bounced"
+          >
+            Payments
           </a>
           <a
             className={`hub-tab${tab === 'reminders' ? ' on' : ''}${alarmCount ? ' alarm' : ''}`}

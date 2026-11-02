@@ -134,10 +134,14 @@ export type SpecialPayment = {
   paid_date: string | null
   /** Exact instant the charge settled; null when recorded by hand. */
   settled_at: string | null
+  /** When the tenant submitted it — see `scheduled_payments.submitted_at`. */
+  submitted_at: string | null
   /** How it settled — matches `scheduled_payments.payment_method`. */
   payment_method: 'card' | 'ach' | 'manual_zelle' | 'manual_other' | null
   /** Surcharge the tenant paid on top — the platform's, never the landlord's. */
   processing_fee: number
+  /** The Stripe payment that settled it, when one did. */
+  stripe_payment_intent_id: string | null
   notes: string | null
   /** Requests the landlord has emailed about this charge — same history rent keeps. */
   reminder_sent_at: string | null
@@ -482,8 +486,8 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       tenants:payment_plan_tenants(id, name, email, monthly_total, status, line_items:payment_line_items(id, plan_tenant_id, category, label, amount, utility_id)),
       late_fee_rule:late_fee_rules(*),
       utilities:plan_utilities(id, label, category, amount, cadence, split),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, submitted_at, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee, late_fee_reminder_sent_at, late_fee_reminder_count),
-      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, submitted_at, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee, recorded_by, stripe_payment_intent_id, late_fee_reminder_sent_at, late_fee_reminder_count),
+      special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, submitted_at, settled_at, payment_method, processing_fee, stripe_payment_intent_id)
     `)
     .eq('owner_id', ownerId)
     .order('created_at', { ascending: false })

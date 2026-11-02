@@ -9,6 +9,7 @@
 import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notifyRentPayment, rowsForIntent } from './rentPaymentNotify'
+import { recordPaymentAttempt } from './rentPaymentAttempts'
 
 /** Whichever service-role client the caller already has. */
 type DB = SupabaseClient
@@ -307,6 +308,15 @@ export async function settleRentPayment(
     console.error('[rent] DUPLICATE PAYMENT — intent', pi.id, 'covers rows already paid:', conflicts)
   }
 
+  // The landlord's payments log. Written on every pass, including the repeat
+  // runs that move nothing, because the row is keyed on the intent and the
+  // second pass is what turns "clearing" into "cleared".
+  await recordPaymentAttempt({
+    db, pi, status: status === 'paid' ? 'cleared' : 'processing',
+    method, surcharge: feeDollars,
+    scheduledIds, specialIds, lateFeeRows, submittedAt,
+  })
+
   // A fee-only payment moves no rent row, so the old condition stayed silent
   // and the landlord was never told the money had arrived. The fees this run
   // actually applied count as news in their own right.
@@ -407,6 +417,16 @@ export async function revertRentPayment(db: DB, pi: Stripe.PaymentIntent) {
       .select('id')
     if (data && data.length > 0) revertedSpecial.push(id)
   }
+
+  // The bounce, recorded where the landlord can read it. Written even when no
+  // row moved — a repeat webhook for a payment already reverted still belongs
+  // in the log, and the row is keyed on the intent so it cannot be doubled.
+  // This is the only record that the attempt ever happened: the charges it
+  // touched have just been wiped clean of it.
+  await recordPaymentAttempt({
+    db, pi, status: 'failed', method, surcharge: feeDollars,
+    scheduledIds, specialIds, lateFeeRows, submittedAt: submissionInstant(pi),
+  })
 
   if (revertedScheduled.length > 0 || revertedSpecial.length > 0) {
     await notifyRentPayment({
