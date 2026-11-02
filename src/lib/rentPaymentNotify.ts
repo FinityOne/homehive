@@ -44,6 +44,12 @@ export type SettledRow = {
   id: string
   amount: number
   label: string
+  /**
+   * When the charge was due. Optional only because the manual resend path used
+   * to build these rows without it; every automatic send carries one, and the
+   * landlord email degrades to the old amount-only line when it is missing.
+   */
+  dueDate?: string | null
 }
 
 /**
@@ -114,9 +120,15 @@ export async function describeRows(db: SupabaseClient, rows: SettledRow[]): Prom
   }
 
   return rows.map(r => {
-    if (r.kind === 'late_fee') return { label: r.label, amount: r.amount, kind: 'late_fee' as RowKind }
+    // The due date rides on every row: the breakdown says what a charge was
+    // made of, this says whether it arrived on time, and the landlord email
+    // wants both — neither answers the other's question.
+    const dueDate = r.dueDate ?? null
+    if (r.kind === 'late_fee') {
+      return { label: r.label, amount: r.amount, kind: 'late_fee' as RowKind, dueDate }
+    }
     if (r.kind === 'special') {
-      return { label: r.label, amount: r.amount, kind: specialKind.get(r.id) ?? 'charge' }
+      return { label: r.label, amount: r.amount, kind: specialKind.get(r.id) ?? 'charge', dueDate }
     }
     const parts = partsByPayer.get(payerOf.get(r.id) ?? '') ?? []
     const sum = Math.round(parts.reduce((s, p) => s + p.amount, 0) * 100) / 100
@@ -125,6 +137,7 @@ export async function describeRows(db: SupabaseClient, rows: SettledRow[]): Prom
       label: r.label,
       amount: r.amount,
       kind: 'rent' as RowKind,
+      dueDate,
       ...(reconciles ? { parts } : {}),
     }
   })
@@ -209,27 +222,57 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
   // ACH debit in flight isn't something to chase the tenant for.
   const { data: openScheduled } = await db
     .from('scheduled_payments')
-    .select('plan_tenant_id, amount, paid_amount')
+    .select('plan_tenant_id, amount, paid_amount, due_date')
     .eq('plan_id', planId)
     .not('status', 'in', '(paid,processing,voided)')
   const { data: openSpecial } = await db
     .from('special_payments')
-    .select('plan_tenant_id, amount')
+    .select('plan_tenant_id, amount, due_date, label')
     .eq('plan_id', planId)
     .eq('status', 'pending')
 
+  // Everyone on the lease, so a split balance can be reported by name. A plan
+  // with one payer skips the breakdown entirely in the email.
+  const { data: planTenants } = await db
+    .from('payment_plan_tenants')
+    .select('id, name')
+    .eq('plan_id', planId)
+
   let planOutstanding = 0
   let tenantOutstanding = 0
+  /** Open balance per payer id, for the split breakdown. */
+  const byTenant = new Map<string, number>()
+  const bump = (id: string | null, amount: number) => {
+    if (!id) return
+    byTenant.set(id, (byTenant.get(id) ?? 0) + amount)
+  }
+  /** Earliest still-open charge on the lease — what falls due next. */
+  let next: { label: string; dueDate: string; amount: number } | null = null
+  const considerNext = (label: string, dueDate: string | null, amount: number) => {
+    if (!dueDate || amount <= 0) return
+    if (!next || dueDate < next.dueDate) next = { label, dueDate, amount }
+  }
+
   for (const r of openScheduled ?? []) {
     const due = amountDue({ amount: Number(r.amount), paid_amount: Number(r.paid_amount ?? 0) })
     planOutstanding += due
     if (r.plan_tenant_id === planTenantId) tenantOutstanding += due
+    bump(r.plan_tenant_id as string | null, due)
+    considerNext(monthLabel(r.due_date as string), r.due_date as string, due)
   }
   for (const r of openSpecial ?? []) {
     const due = Number(r.amount)
     planOutstanding += due
     if (r.plan_tenant_id === planTenantId) tenantOutstanding += due
+    bump(r.plan_tenant_id as string | null, due)
+    considerNext(String(r.label), r.due_date as string | null, due)
   }
+
+  const tenantBalances = (planTenants ?? []).map(pt => ({
+    name: (pt.name as string) || 'Tenant',
+    outstanding: Math.round((byTenant.get(pt.id as string) ?? 0) * 100) / 100,
+    isPayer: pt.id === planTenantId,
+  }))
 
   const rawProperty = (plan as { property?: unknown }).property
   const property = Array.isArray(rawProperty) ? rawProperty[0] : rawProperty
@@ -244,7 +287,52 @@ async function loadContext(db: SupabaseClient, rows: SettledRow[]) {
     landlordEmail: profile?.email?.trim() || null,
     planOutstanding: Math.round(planOutstanding * 100) / 100,
     tenantOutstanding: Math.round(tenantOutstanding * 100) / 100,
+    tenantBalances,
+    nextCharge: next as { label: string; dueDate: string; amount: number } | null,
+    payerHistory: await payerHistory(db, planId, planTenantId),
   }
+}
+
+/**
+ * This payer's recent punctuality, over their settled rent.
+ *
+ * Only rows with a `paid_date` are counted. A landlord who marks a row paid by
+ * hand often leaves that blank, and treating a missing date as "late" would
+ * invent a bad record out of the landlord's own bookkeeping.
+ *
+ * The payment that triggered this email is already settled by the time we read,
+ * so it is included — which is what "their last 6 charges" should mean.
+ */
+async function payerHistory(
+  db: SupabaseClient,
+  planId: string,
+  planTenantId: string | null
+): Promise<{ settled: number; onTime: number; streak: number } | null> {
+  if (!planTenantId) return null
+  const { data } = await db
+    .from('scheduled_payments')
+    .select('due_date, paid_date')
+    .eq('plan_id', planId)
+    .eq('plan_tenant_id', planTenantId)
+    .in('status', ['paid', 'processing'])
+    .not('paid_date', 'is', null)
+    .order('due_date', { ascending: false })
+    .limit(12)
+
+  const rows = data ?? []
+  if (rows.length === 0) return null
+
+  let onTime = 0
+  let streak = 0
+  let streakOpen = true
+  for (const r of rows) {
+    const punctual = String(r.paid_date) <= String(r.due_date)
+    if (punctual) onTime++
+    // Rows arrive newest first, so the streak is however many hold from the top.
+    if (streakOpen && punctual) streak++
+    else streakOpen = false
+  }
+  return { settled: rows.length, onTime, streak }
 }
 
 /** The rows an intent covered, read back for their labels and amounts. */
@@ -271,6 +359,11 @@ export async function rowsForIntent(
         id: r.id,
         amount: paid.amount,
         label: 'Late fee — ' + feeMonthLabel(r.due_date) + ' rent',
+        // A fee has no due date of its own; this is the rent it was assessed
+        // against, which is what the email history should file it under. The
+        // landlord email prints it but never calls a *fee* late — it exists
+        // because the rent was, so the timing would be circular.
+        dueDate: r.due_date,
       })
     }
   }
@@ -278,14 +371,20 @@ export async function rowsForIntent(
     const { data } = await db
       .from('scheduled_payments').select('id, amount, due_date').in('id', scheduledIds)
     for (const r of data ?? []) {
-      out.push({ kind: 'scheduled', id: r.id, amount: Number(r.amount), label: monthLabel(r.due_date) })
+      out.push({
+        kind: 'scheduled', id: r.id, amount: Number(r.amount),
+        label: monthLabel(r.due_date), dueDate: r.due_date,
+      })
     }
   }
   if (specialIds.length > 0) {
     const { data } = await db
-      .from('special_payments').select('id, amount, label').in('id', specialIds)
+      .from('special_payments').select('id, amount, label, due_date').in('id', specialIds)
     for (const r of data ?? []) {
-      out.push({ kind: 'special', id: r.id, amount: Number(r.amount), label: r.label })
+      out.push({
+        kind: 'special', id: r.id, amount: Number(r.amount),
+        label: r.label, dueDate: r.due_date,
+      })
     }
   }
   return out
@@ -352,10 +451,13 @@ export async function resendRentPaymentEmails(input: {
   fee: number
   rows: SettledRow[]
   audience: Audience
-  sentBy?: string | null
-  /** When the money actually moved. Defaults to now; pass it when sending for a
-   *  payment that settled earlier, so the email doesn't date itself today. */
+  /**
+   * When the payment actually settled. Required in practice for a resend: the
+   * default of "now" would date a receipt for August rent to today, and the
+   * timing the landlord email reports would be measured from the wrong end.
+   */
   paidOn?: Date
+  sentBy?: string | null
 }): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
   return deliverRentPaymentEmails({ ...input, trigger: 'manual' })
 }
@@ -369,8 +471,8 @@ async function deliverRentPaymentEmails(input: {
   rows: SettledRow[]
   audience: Audience
   trigger: 'auto' | 'manual'
-  sentBy?: string | null
   paidOn?: Date
+  sentBy?: string | null
 }): Promise<{ sent: { to: string; role: 'tenant' | 'landlord' }[]; skipped: string[] }> {
   const { db, intent: pi, event, method, fee, rows, audience, trigger, sentBy } = input
   const sent: { to: string; role: 'tenant' | 'landlord' }[] = []
@@ -390,8 +492,17 @@ async function deliverRentPaymentEmails(input: {
     }
 
     const rent = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100
+    // "Now" is right for the automatic path, which runs as the money settles.
     const paidOn = input.paidOn ?? new Date()
+    // `describeRows` rather than a plain map: it reads the payer's line items so
+    // a rent charge splits into rent, utilities and the rest, and it carries
+    // each charge's due date, which is what says whether the money was on time.
     const emailRows: PaidRow[] = await describeRows(db, rows)
+    // Late fees are the landlord's income, so their share of the total is worth
+    // naming separately — the surcharge in the same payment is not theirs.
+    const lateFeeCollected = Math.round(
+      rows.filter(r => r.kind === 'late_fee').reduce((s, r) => s + r.amount, 0) * 100
+    ) / 100
     const resend = new Resend(process.env.RESEND_API_KEY)
 
     // Tenant receipt. `receipt_email` on the intent is the address the tenant
@@ -403,7 +514,9 @@ async function deliverRentPaymentEmails(input: {
       scheduledPaymentId: r.kind === 'special' ? null : r.id,
       specialPaymentId:   r.kind === 'special' ? r.id : null,
       label: r.label,
-      dueDate: new Date().toISOString().slice(0, 10),
+      // The charge's own due date. This used to record *today*, which made every
+      // row in the landlord's email history look due on the day it was emailed.
+      dueDate: r.dueDate ?? new Date().toISOString().slice(0, 10),
       amount: r.amount,
       kind: r.kind === 'special' ? 'charge' : r.kind === 'late_fee' ? 'late_fee' : 'rent',
     }))
@@ -464,13 +577,18 @@ async function deliverRentPaymentEmails(input: {
         landlordName: ctx.landlordName,
         tenantName: ctx.tenantName,
         propertyName: ctx.propertyName,
+        planName: ctx.planName,
         event,
         rows: emailRows,
         rent,
+        lateFeeCollected: event === 'failed' ? 0 : lateFeeCollected,
         method,
         paidOn,
         tenantOutstanding: ctx.tenantOutstanding,
         planOutstanding: ctx.planOutstanding,
+        tenantBalances: ctx.tenantBalances,
+        nextCharge: ctx.nextCharge,
+        payerHistory: ctx.payerHistory,
         planUrl: `${getSiteUrl()}/landlord/financials?plan=${ctx.planId}`,
         reference: pi.id,
       })
