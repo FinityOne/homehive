@@ -116,7 +116,6 @@ const attempts = [{
   method: 'ach',
   status: 'failed',
   amount: 800,
-  surcharge: 16,
   submitted_at: '2026-08-31T18:00:00Z',
   cleared_at: null,
   failed_at: '2026-09-05T11:00:00Z',
@@ -170,7 +169,7 @@ const t = paymentTotals(rows)
 check('collected counts only what landed', t.cleared, 2400)
 check('money in flight is reported apart', t.clearing, 870)
 check('a bounced payment is never collected', t.failed, 800)
-check('surcharges are the tenants\' and are counted apart', t.surcharges, 56)
+check('no processor surcharge reaches the landlord\'s books', 'surcharges' in t, false)
 // One cleared ACH debit, held five days. Card payments are deliberately not in
 // the average: they have no lag to average.
 check('the average ACH lag', t.avgClearingDays, 5)

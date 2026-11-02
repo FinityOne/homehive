@@ -103,7 +103,7 @@ const base = {
       { label: 'Late fee — October 2026 rent', amount: 75, dueDate: '2026-10-01', kind: 'late_fee' },
     ],
   })
-  has('fee: called out as the landlord\'s money', e.html, 'that part is your money')
+  has('fee: called out as the landlord\'s money', e.html, 'your money')
   has('fee: amount named', e.html, '<strong>$75.00</strong>')
   has('fee: text part says it', e.text, 'Includes $75.00 of late fees')
   // A fee is late by definition; saying so would be circular.

@@ -432,8 +432,8 @@ export function buildLandlordRentPaidEmail(input: {
   rows: PaidRow[]
   /** Rent received — the fee is the tenant's cost, never landlord income. */
   rent: number
-  /** The slice of `rent` that is a late fee. Called out because, unlike the
-   *  processing surcharge, a late fee *is* the landlord's money. */
+  /** The slice of `rent` that is a late fee. Called out because a late fee is
+   *  the landlord's money, not rent. */
   lateFeeCollected?: number
   method: PayMethod
   paidOn: Date
@@ -613,8 +613,8 @@ export function buildLandlordRentPaidEmail(input: {
     </div>` : ''}`}
     ${lateFeeCollected > 0 ? `
     <div style="margin-top:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#92400e;line-height:1.6;">
-      <strong>${fmtMoney(lateFeeCollected)}</strong> of this is late fees. Unlike the
-      processing surcharge, that part is your money.
+      <strong>${fmtMoney(lateFeeCollected)}</strong> of this is late fees — your money,
+      on top of the rent.
     </div>` : ''}
 
     <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#94a3b8;margin-top:22px;">
@@ -649,8 +649,7 @@ export function buildLandlordRentPaidEmail(input: {
     </div>
 
     <div style="margin-top:22px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11.5px;color:#94a3b8;line-height:1.7;">
-      The tenant paid a processing surcharge on top of this — it goes to the card
-      or bank network, not to you, so your ledger shows the rent only.
+      Your ledger shows the rent, utilities and late fees you are credited.
       ${reference ? `Reference ${esc(reference)}.` : ''}
     </div>
 ${SHELL_CLOSE}`

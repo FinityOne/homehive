@@ -109,12 +109,6 @@ export type Totals = {
   /** The worst lateness among them, in days. */
   maxDaysLate: number
   /**
-   * Surcharge the *tenant* paid on top (5% card / 2% ACH). Never deducted from
-   * the landlord — it is tracked here only so the page can say so explicitly,
-   * because "fees" is otherwise assumed to come out of rent.
-   */
-  tenantFees: number
-  /**
    * Late-fee money that genuinely arrived, from `late_fee_paid`.
    *
    * The tenant pay route bills rent *plus* the derived late fee, but settlement
@@ -135,7 +129,7 @@ export type Totals = {
 export const EMPTY_TOTALS: Totals = {
   billed: 0, collected: 0, outstanding: 0, overdue: 0,
   overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0,
-  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0,
+  collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0,
   lateFeesCollected: 0, received: 0, rate: null,
 }
 
@@ -162,9 +156,8 @@ export function sumTotals(parts: Totals[]): Totals {
     collectedLate: a.collectedLate + b.collectedLate,
     collectedLateCount: a.collectedLateCount + b.collectedLateCount,
     maxDaysLate:   Math.max(a.maxDaysLate, b.maxDaysLate),
-    tenantFees:    a.tenantFees + b.tenantFees,
     lateFeesCollected: a.lateFeesCollected + b.lateFeesCollected,
-  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, tenantFees: 0, lateFeesCollected: 0 }))
+  }), { billed: 0, collected: 0, overdue: 0, overdueCount: 0, count: 0, settledCount: 0, inFlight: 0, inFlightCount: 0, collectedLate: 0, collectedLateCount: 0, maxDaysLate: 0, lateFeesCollected: 0 }))
 }
 
 /** Whole days from one ISO date to another. */
@@ -200,14 +193,13 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
   const todayStr = billingToday(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
-  let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
+  let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0
   let lateFeesCollected = 0
   for (const sp of sps) {
     if (!liveRent(sp) || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
     collected += sp.paid_amount
-    tenantFees += sp.processing_fee ?? 0
     // Money in, not a derived figure — see Totals.lateFeesCollected.
     lateFeesCollected += sp.late_fee_paid ?? 0
     if (sp.paid_amount >= sp.amount) settledCount++
@@ -227,7 +219,7 @@ export function rentTotals(sps: ScheduledPayment[], range: Range, now = new Date
       overdueCount++
     }
   }
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees, lateFeesCollected })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, lateFeesCollected })
 }
 
 /** A one-off charge has no partial state on `special_payments` — paid means the
@@ -239,12 +231,11 @@ export function chargeTotals(specials: SpecialPayment[], range: Range, now = new
   const todayStr = billingToday(now)
   let billed = 0, collected = 0, overdue = 0, overdueCount = 0, count = 0, settledCount = 0
   let inFlight = 0, inFlightCount = 0
-  let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0, tenantFees = 0
+  let collectedLate = 0, collectedLateCount = 0, maxDaysLate = 0
   for (const sp of specials) {
     if (sp.status === 'waived' || !inRange(sp.due_date, range)) continue
     count++
     billed += sp.amount
-    tenantFees += sp.processing_fee ?? 0
     if (sp.status === 'paid') { collected += sp.amount; settledCount++ }
     else if (sp.status === 'processing') { inFlight += sp.amount; inFlightCount++ }
     else if (sp.due_date < todayStr) { overdue += sp.amount; overdueCount++ }
@@ -255,7 +246,7 @@ export function chargeTotals(specials: SpecialPayment[], range: Range, now = new
     }
   }
   // A late-fee rule is written against rent, so a one-off never carries one.
-  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, tenantFees, lateFeesCollected: 0 })
+  return finish({ billed, collected, overdue, overdueCount, count, settledCount, inFlight, inFlightCount, collectedLate, collectedLateCount, maxDaysLate, lateFeesCollected: 0 })
 }
 
 // ─── HOW MONEY ARRIVED ───────────────────────────────────────────────────────
@@ -352,11 +343,9 @@ export type PayerSummary = {
 /**
  * One payment that actually arrived, as a landlord needs to read it.
  *
- * Carries both halves of the "how much did I really get" question: what the
- * tenant was charged, the surcharge they paid on top, and the net credited to
- * the landlord. The surcharge is *not* subtracted — the tenant pays it over and
- * above rent — and saying so on every row is the only way to stop the figure
- * being read as a deduction.
+ * Carries only what the landlord is owed and received — rent or charge, plus
+ * any late fee. Card and bank surcharges are the tenant's payment to the
+ * processor, never the landlord's money, and are an admin concern only.
  */
 export type SettledPayment = {
   id: string
@@ -371,10 +360,6 @@ export type SettledPayment = {
   daysLate: number
   /** Rent (or charge) credited to the landlord. */
   net: number
-  /** Surcharge the tenant paid on top, to the processor — not a deduction. */
-  tenantFee: number
-  /** What left the tenant's account: net + tenantFee. */
-  chargedToTenant: number
   /** Late fee this row genuinely accrued, derived from the rule. */
   lateFee: number
   method: SettleMethod | null
@@ -544,7 +529,6 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     ...sps
       .filter(sp => liveRent(sp) && sp.paid_amount > 0 && sp.paid_date)
       .map((sp): SettledPayment => {
-        const fee = sp.processing_fee ?? 0
         return {
           id: sp.id, kind: 'rent',
           label: new Date(sp.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + ' rent',
@@ -554,8 +538,6 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
           settledAt: sp.settled_at ?? null,
           daysLate: Math.max(0, daysBetweenDates(sp.due_date, sp.paid_date as string)),
           net: sp.paid_amount,
-          tenantFee: fee,
-          chargedToTenant: Math.round((sp.paid_amount + fee) * 100) / 100,
           lateFee: lateFeeDue(rule, sp, now),
           method: (sp.payment_method as SettleMethod | null) ?? null,
         }
@@ -563,7 +545,6 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
     ...specials
       .filter(sp => sp.status === 'paid' && sp.paid_date)
       .map((sp): SettledPayment => {
-        const fee = sp.processing_fee ?? 0
         return {
           id: sp.id, kind: 'charge',
           label: sp.label,
@@ -573,8 +554,6 @@ export function summarizeLease(plan: PaymentPlan, scope: Scope, now = new Date()
           settledAt: sp.settled_at ?? null,
           daysLate: Math.max(0, daysBetweenDates(sp.due_date, sp.paid_date as string)),
           net: sp.amount,
-          tenantFee: fee,
-          chargedToTenant: Math.round((sp.amount + fee) * 100) / 100,
           lateFee: 0,
           method: (sp.payment_method as SettleMethod | null) ?? null,
         }

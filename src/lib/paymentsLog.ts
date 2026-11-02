@@ -79,8 +79,6 @@ export type PaymentEntry = {
   amount: number
   /** Late-fee money inside this payment. */
   lateFee: number
-  /** The surcharge the tenant paid the processor — never the landlord's money. */
-  surcharge: number
   /** card / ach / manual_zelle / manual_other. */
   method: string | null
   /** When the tenant pressed pay. Null for rent recorded by hand. */
@@ -114,7 +112,6 @@ export type AttemptRow = {
   method: string | null
   status: 'processing' | 'cleared' | 'failed'
   amount: number
-  surcharge: number
   submitted_at: string | null
   cleared_at: string | null
   failed_at: string | null
@@ -189,7 +186,6 @@ function fromCharges(charges: Charge[]): PaymentEntry[] {
       dueDate: c.dueDate,
       amount: cents(money),
       lateFee: cents(st.lateFee),
-      surcharge: cents(st.surcharge),
       method: st.method,
       submittedAt: submitted,
       clearedAt: cleared,
@@ -214,9 +210,7 @@ function fromCharges(charges: Charge[]): PaymentEntry[] {
  *
  * One row per thing the payment covered, so a bounced debit that was paying
  * three months of rent reads as three unpaid months — which is what the
- * landlord now has to chase. The attempt's own surcharge rides on the first
- * item only, exactly as settlement records it, so a total cannot be inflated by
- * splitting one payment into its parts.
+ * landlord now has to chase.
  */
 function fromAttempts(attempts: AttemptRow[], plans: PaymentPlan[]): PaymentEntry[] {
   const byPlan = new Map(plans.map(p => [p.id, p]))
@@ -234,7 +228,7 @@ function fromAttempts(attempts: AttemptRow[], plans: PaymentPlan[]): PaymentEntr
       ? a.items
       : [{ kind: 'rent', id: a.payment_intent_id, label: 'Payment', due_date: null, amount: a.amount }]
 
-    items.forEach((item, i) => {
+    items.forEach(item => {
       const kind: PayKind = item.kind === 'late_fee' ? 'late_fee'
         : item.kind === 'charge' ? 'charge' : 'rent'
       const sentOn = a.submitted_at ? dayOf(a.submitted_at) : null
@@ -252,7 +246,6 @@ function fromAttempts(attempts: AttemptRow[], plans: PaymentPlan[]): PaymentEntr
         dueDate: item.due_date,
         amount: kind === 'late_fee' ? 0 : cents(Number(item.amount) || 0),
         lateFee: kind === 'late_fee' ? cents(Number(item.amount) || 0) : 0,
-        surcharge: i === 0 ? cents(Number(a.surcharge) || 0) : 0,
         method: a.method,
         submittedAt: a.submitted_at,
         clearedAt: null,
@@ -357,8 +350,6 @@ export type PayTotals = {
   /** What bounced. Still owed by the tenant. */
   failed: number
   failedCount: number
-  /** Surcharges the tenants paid the processor on cleared money. */
-  surcharges: number
   /** Late-fee money inside `cleared`. */
   lateFees: number
   /** Cleared payments the tenant sent after the due date. */
@@ -370,7 +361,7 @@ export type PayTotals = {
 export function paymentTotals(rows: PaymentEntry[]): PayTotals {
   const t: PayTotals = {
     cleared: 0, clearedCount: 0, clearing: 0, clearingCount: 0,
-    failed: 0, failedCount: 0, surcharges: 0, lateFees: 0, lateCount: 0,
+    failed: 0, failedCount: 0, lateFees: 0, lateCount: 0,
     avgClearingDays: null,
   }
   let lagDays = 0
@@ -380,7 +371,6 @@ export function paymentTotals(rows: PaymentEntry[]): PayTotals {
     if (r.state === 'cleared') {
       t.cleared += r.amount + r.lateFee
       t.clearedCount++
-      t.surcharges += r.surcharge
       t.lateFees += r.lateFee
       if ((r.daysLate ?? 0) > 0) t.lateCount++
       if (r.method === 'ach' && r.clearingDays !== null) { lagDays += r.clearingDays; lagged++ }
@@ -396,7 +386,6 @@ export function paymentTotals(rows: PaymentEntry[]): PayTotals {
   t.cleared = cents(t.cleared)
   t.clearing = cents(t.clearing)
   t.failed = cents(t.failed)
-  t.surcharges = cents(t.surcharges)
   t.lateFees = cents(t.lateFees)
   t.avgClearingDays = lagged > 0 ? Math.round((lagDays / lagged) * 10) / 10 : null
 
@@ -438,7 +427,7 @@ const csvCell = (v: string | number | null) => {
 export function paymentsCsv(rows: PaymentEntry[]): string {
   const head = [
     'Status', 'Kind', 'Property', 'Lease', 'Payer', 'What', 'Due date',
-    'Amount', 'Late fee', 'Tenant surcharge', 'Method',
+    'Amount', 'Late fee', 'Method',
     'Sent', 'Cleared', 'Failed', 'Days to clear', 'Days late', 'Reason', 'Stripe payment',
   ]
   const lines = [head.join(',')]
@@ -454,7 +443,6 @@ export function paymentsCsv(rows: PaymentEntry[]): string {
       r.dueDate ?? '',
       r.amount.toFixed(2),
       r.lateFee.toFixed(2),
-      r.surcharge.toFixed(2),
       r.method ? (METHOD_META[r.method as keyof typeof METHOD_META]?.label ?? r.method) : '',
       r.submittedAt ?? '',
       r.clearedAt ?? (r.paidDate ?? ''),
