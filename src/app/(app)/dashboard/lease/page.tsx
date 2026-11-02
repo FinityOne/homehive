@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-  amountDue, fmtMoney, METHOD_META, explainLateFee,
+  amountDue, fmtMoney, METHOD_META, explainLateFee, billingToday,
   type SettledMethod, type LateFeeExplanation,
 } from '@/lib/rentPayments'
 import type { Payable } from '@/components/tenant/PayRentModal'
@@ -169,7 +169,10 @@ export default function MyLeasePage() {
     const explanations = new Map<string, LateFeeExplanation>()
     if (!t) return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, explanations }
 
-    const today = new Date().toISOString().split('T')[0]
+    // The date where the rent is due, not the browser's — a tenant travelling
+    // must not see yesterday's deadline, and a UTC server must not see
+    // tomorrow's. See `billingToday`.
+    const today = billingToday()
     const daysSince = (d: string) =>
       Math.max(0, Math.round(
         (new Date(today + 'T00:00:00').getTime() - new Date(d + 'T00:00:00').getTime()) / 86_400_000,

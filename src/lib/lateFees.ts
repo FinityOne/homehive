@@ -43,15 +43,13 @@
  */
 import {
   lateFeeDue, lateFeeCappedByCharge, lateFeeRuleRisk, rentIsSettled, lateFeeAsOf,
+  lateFeeFrozen, billingToday,
   type LateFeeRuleLike,
 } from '@/lib/rentPayments'
 import type { PaymentPlan, PaymentPlanTenant, ScheduledPayment } from '@/lib/payments'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 const DAY = 86_400_000
-
-const iso = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 const daysBetween = (from: string, to: string) =>
   Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / DAY)
@@ -135,9 +133,12 @@ export type ChargeBreakdown = {
   /** expected − collected − waived, never negative. */
   balance: number
   settled: boolean
-  /** Days past due: to `paid_date` once settled, to today while it is not. */
+  /** Days past due, measured to `asOf` — see `lateFeeAsOf` for which date that is. */
   daysLate: number
-  /** The fee has stopped growing, because the rent landed. */
+  /**
+   * The fee has stopped growing. True once the rent lands, and also true for an
+   * ACH debit that is still clearing: it was submitted, so the fee froze there.
+   */
   frozen: boolean
   /** The date the fee is measured to. */
   asOf: string
@@ -198,7 +199,7 @@ export function chargeBreakdown(
     balance: Math.max(0, round2(expected - collected - waived)),
     settled,
     daysLate: Math.max(0, daysBetween(sp.due_date, asOf)),
-    frozen: settled,
+    frozen: lateFeeFrozen(sp),
     asOf,
   }
 }
@@ -358,8 +359,9 @@ function cautionsFor(fees: PendingLateFee[], now: Date): string[] {
   const rent = round2(fees.reduce((s, f) => s + f.rentAmount, 0))
 
   if (settled.length === fees.length && fees.length > 0) {
-    const oldest = settled.reduce((m, f) => (f.frozenOn && f.frozenOn < m ? f.frozenOn : m), iso(now))
-    const age = Math.max(0, daysBetween(oldest, iso(now)))
+    const today = billingToday(now)
+    const oldest = settled.reduce((m, f) => (f.frozenOn && f.frozenOn < m ? f.frozenOn : m), today)
+    const age = Math.max(0, daysBetween(oldest, today))
     if (age > 60) out.push(
       `The rent these fees sit on was settled ${age} days ago. Billing a fee this long after accepting rent in full is often unenforceable — check your state's rules first.`
     )
@@ -414,7 +416,11 @@ export function lateFeeLedger(
       waived += b.lateFeeWaived
       if (b.lateFeeOutstanding <= 0.005) continue
 
-      const bucket: LateFeeBucket = b.settled ? 'uncollected' : 'accruing'
+      // Keyed on `frozen`, not `settled`: an ACH debit still clearing has not
+      // landed, but it was submitted, so its fee stopped there. Calling that
+      // "still growing" would tell the landlord to chase a fee that cannot get
+      // any bigger and bill a tenant whose money is already on its way.
+      const bucket: LateFeeBucket = b.frozen ? 'uncollected' : 'accruing'
       const perDay = bucket === 'accruing' ? perDayOf(rule) : 0
 
       fees.push({
@@ -444,7 +450,9 @@ export function lateFeeLedger(
           ? b.lateFeeOutstanding
           : round2(b.lateFeeOutstanding + perDay * 30),
         capped: b.lateFeeCapped,
-        frozenOn: b.settled ? sp.paid_date : null,
+        // The day it froze — submission for an in-flight debit, otherwise the
+        // day the rent landed. `asOf` is already exactly that date.
+        frozenOn: b.frozen ? b.asOf : null,
         rule,
         reminderCount: 0,
         lastReminderAt: null,

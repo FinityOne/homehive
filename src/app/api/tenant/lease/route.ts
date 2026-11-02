@@ -77,10 +77,13 @@ export async function GET(req: NextRequest) {
           // `late_fees_applied` is deliberately absent: it is the stale column,
           // and the only safe thing to do with it is not ship it. The fee is
           // derived from the rule; `late_fee_paid` is fee money that arrived.
-          .select('id, due_date, amount, status, paid_amount, paid_date, late_fee_paid, payment_method, processing_fee, notes')
+          // `submitted_at` is what the late fee is actually judged against, so
+          // leaving it out would quote the tenant a fee for the days their ACH
+          // debit spent clearing.
+          .select('id, due_date, amount, status, paid_amount, paid_date, submitted_at, late_fee_paid, payment_method, processing_fee, notes')
           .eq('plan_tenant_id', me.id).order('due_date'),
         supabaseAdmin.from('special_payments')
-          .select('id, category, label, amount, due_date, status, paid_date, payment_method, processing_fee')
+          .select('id, category, label, amount, due_date, status, paid_date, submitted_at, payment_method, processing_fee')
           .eq('plan_tenant_id', me.id).order('due_date'),
       ])
       lineItems = li.data ?? []

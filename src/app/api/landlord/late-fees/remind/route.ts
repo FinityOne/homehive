@@ -19,7 +19,7 @@ import { Resend } from 'resend'
 import { NextRequest } from 'next/server'
 import { getSiteUrl } from '@/lib/siteUrl'
 import { buildLateFeeEmail, type LateFeeEmailRow } from '@/lib/lateFeeEmails'
-import { lateFeeDue, lateFeeCappedByCharge, rentIsSettled, type LateFeeRuleLike } from '@/lib/rentPayments'
+import { lateFeeDue, lateFeeCappedByCharge, rentIsSettled, billingToday, type LateFeeRuleLike } from '@/lib/rentPayments'
 import { logPaymentEmail, type PaymentEmailItem } from '@/lib/paymentEmailLog'
 
 const supabaseAdmin = createClient(
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
 
   let q = supabaseAdmin
     .from('scheduled_payments')
-    .select('id, due_date, amount, paid_amount, paid_date, status, late_fee_paid, late_fee_reminder_count')
+    .select('id, due_date, amount, paid_amount, paid_date, submitted_at, status, late_fee_paid, late_fee_reminder_count')
     .eq('plan_id', planId)
     .eq('plan_tenant_id', planTenantId)
     .neq('status', 'voided')
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
       dueDate: sp.due_date,
       rentAmount: sp.amount,
       fee: outstanding,
-      daysLate: Math.max(0, daysBetween(sp.due_date, settled && sp.paid_date ? sp.paid_date : new Date().toISOString().split('T')[0])),
+      daysLate: Math.max(0, daysBetween(sp.due_date, settled && sp.paid_date ? sp.paid_date : billingToday())),
       rentOutstanding: Math.max(0, round2(sp.amount - sp.paid_amount)),
       paidOn: settled ? sp.paid_date : null,
       capped: lateFeeCappedByCharge(rule, sp),

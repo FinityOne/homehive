@@ -72,6 +72,44 @@ export const MIN_CHARGE_CENTS = 50
 // browser Supabase client — importing that into a route handler would create a
 // client on the server for no reason. This file has no imports at all.
 
+/**
+ * The timezone every rent deadline is read in.
+ *
+ * A due date is a calendar date, and "late" means the calendar date rolled over
+ * *where the property is*. The server does not run there: Vercel runs in UTC,
+ * so `new Date()` on the 1st at 7pm in Tempe is already the 2nd, and the whole
+ * portfolio watched a $15 fee appear at five in the afternoon on the day rent
+ * was due. Three tenants were being charged for it as this was written.
+ *
+ * Arizona because that is where the properties are, and it has no daylight
+ * saving — the offset never moves, so a deadline never shifts by an hour in
+ * March. This is a single constant rather than a column because every property
+ * is in Tempe; the day there is more than one timezone in the portfolio, this
+ * becomes `properties.time_zone` and every caller already goes through
+ * `billingToday`.
+ */
+export const BILLING_TIME_ZONE = 'America/Phoenix'
+
+/**
+ * Today's date where the rent is due, as `YYYY-MM-DD`.
+ *
+ * Every late-fee calculation measures to this rather than to the server's own
+ * idea of the date, which is what makes "the fee starts after midnight on the
+ * due date" true for the tenant instead of true for UTC.
+ */
+export function billingToday(now = new Date(), timeZone = BILLING_TIME_ZONE): string {
+  // `en-CA` formats as YYYY-MM-DD, which is the shape every date here uses.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now)
+}
+
+/** That same instant as a calendar date in the billing timezone. */
+function billingDateOf(ts: string, timeZone = BILLING_TIME_ZONE): string | null {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? null : billingToday(d, timeZone)
+}
+
 /** Just the fields a late fee is computed from. */
 export type LateFeeChargeLike = {
   status: string
@@ -79,6 +117,13 @@ export type LateFeeChargeLike = {
   paid_date: string | null
   amount: number
   paid_amount: number
+  /**
+   * When the tenant submitted the payment, if they paid through the platform.
+   *
+   * Optional only because plenty of callers select a narrower row; when it is
+   * present it *wins*, because it is the fact the deadline is actually about.
+   */
+  submitted_at?: string | null
 }
 
 /**
@@ -100,9 +145,56 @@ export function rentIsSettled(sp: Pick<LateFeeChargeLike, 'status' | 'amount' | 
   return sp.status === 'paid' || sp.paid_amount >= sp.amount
 }
 
-/** The date a late fee is measured to: when it stopped, or today. */
+/**
+ * The date a late fee is measured to.
+ *
+ * In priority order:
+ *
+ *   1. **When the tenant submitted the payment**, if they paid on the platform.
+ *      This is the one that matters and the one that used to be missing. A card
+ *      settles instantly so submission and arrival are the same moment, but an
+ *      ACH debit submitted on the 1st clears on the 5th or the 10th — and
+ *      measuring to the clearing date billed the tenant for the US banking
+ *      system's clearing window at $15 a day. Six payments on the current lease
+ *      were sent on or before their deadline and charged $585 between them for
+ *      exactly that. Submission is the act the deadline asks about; what the
+ *      bank does afterwards is not the tenant's to be charged for.
+ *
+ *      It applies to an *in-flight* debit too, which is the second half of the
+ *      fix: a `processing` row has no `paid_date`, so the fee used to be
+ *      measured against today and climbed every day the bank took, on rent the
+ *      tenant had already sent. Freezing it at submission stops that. If the
+ *      debit bounces, `revertRentPayment` clears `submitted_at` and the fee
+ *      resumes from the due date — failed money never bought any grace.
+ *
+ *   2. **`paid_date` on a settled row**, for rent recorded by hand. There is no
+ *      submission instant for a Zelle transfer the landlord typed in; their own
+ *      verdict about when it arrived is the best fact available.
+ *
+ *   3. **Today**, in the property's timezone, for rent that has not been paid
+ *      at all — which is what makes the fee start after midnight where the
+ *      tenant lives rather than at 5pm on the due date.
+ */
 export function lateFeeAsOf(sp: LateFeeChargeLike, now = new Date()): string {
-  return sp.paid_date && rentIsSettled(sp) ? sp.paid_date : isoDate(now)
+  if (sp.submitted_at) {
+    const submitted = billingDateOf(sp.submitted_at)
+    if (submitted) return submitted
+  }
+  return sp.paid_date && rentIsSettled(sp) ? sp.paid_date : billingToday(now)
+}
+
+/**
+ * Has the fee on this charge stopped growing?
+ *
+ * Not the same question as `rentIsSettled`, and the difference is the ACH
+ * clearing window. A debit submitted on the 1st and still in flight on the 4th
+ * is *not* settled — the money has not landed and `processing` deliberately
+ * keeps the row open — but its fee is frozen at the submission date and will
+ * not grow another cent while the bank works. Saying "still growing" there
+ * would be a lie to the one person watching it.
+ */
+export function lateFeeFrozen(sp: LateFeeChargeLike): boolean {
+  return Boolean(sp.submitted_at) || rentIsSettled(sp)
 }
 
 export type LateFeeRuleLike = {
@@ -239,7 +331,12 @@ export type LateFeeExplanation = {
   /** The date the fee is measured to: when the rent landed, or today. */
   asOfDate: string
   paidDate: string | null
-  /** Whether the fee has stopped growing. */
+  /** When the tenant submitted the payment, if they paid on the platform. */
+  submittedAt: string | null
+  /**
+   * Whether the fee has stopped growing — true for an in-flight ACH debit
+   * that was already submitted, even though its rent has not landed yet.
+   */
   frozen: boolean
 
   /** The rule, in the pieces a sentence needs. */
@@ -336,7 +433,8 @@ export function explainLateFee(
     graceEndDate: graceEnd,
     asOfDate: asOf,
     paidDate: sp.paid_date ?? null,
-    frozen: settled,
+    submittedAt: sp.submitted_at ?? null,
+    frozen: lateFeeFrozen(sp),
     graceDays, perPeriod, frequencyDays,
     ruleCap: rule?.max_total_fees != null ? Number(rule.max_total_fees) : null,
     daysPastDue: voided ? 0 : Math.max(0, daysBetweenDates(sp.due_date, asOf)),

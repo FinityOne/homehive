@@ -17,7 +17,7 @@
 //     on this database — it carries the same figure for every row sharing a due
 //     date, including rows that were paid early.
 
-import { lateFeeDue, lateFeeRuleRisk, type LateFeeRuleLike } from './rentPayments'
+import { lateFeeDue, lateFeeRuleRisk, billingToday, type LateFeeRuleLike } from './rentPayments'
 import {
   emptyEconomics, addEconomics, stripeCostCents,
   type Economics, type SettleMethod,
@@ -256,7 +256,9 @@ export function buildLandlordBooks(input: LandlordBooksInput): {
   totals: Books
 } {
   const now = input.now ?? new Date()
-  const today = isoDate(now)
+  // The property's date, not the server's: in UTC a Phoenix landlord's rent
+  // reads overdue from 5pm on the day it is due. See `billingToday`.
+  const today = billingToday(now)
 
   const planById = new Map(input.plans.map(p => [p.id, p]))
   const profileById = new Map(input.profiles.map(p => [p.id, p]))

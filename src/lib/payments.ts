@@ -78,6 +78,15 @@ export type ScheduledPayment = {
    *  of day; this is null for rows a landlord ticked off by hand, where no
    *  settlement instant was ever observed. */
   settled_at: string | null
+  /**
+   * The instant the tenant *submitted* the payment (Stripe's
+   * `PaymentIntent.created`), which is the date every late fee is judged
+   * against — see `lateFeeAsOf`. Deliberately distinct from `settled_at`: an
+   * ACH debit sent on the 1st settles on the 10th, and charging the tenant for
+   * those nine days was charging them for the bank's clearing window. Null for
+   * rent recorded by hand, and cleared again if an ACH debit bounces.
+   */
+  submitted_at: string | null
   late_fees_applied: number
   notes: string | null
   void_reason: string | null
@@ -473,7 +482,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       tenants:payment_plan_tenants(id, name, email, monthly_total, status, line_items:payment_line_items(id, plan_tenant_id, category, label, amount, utility_id)),
       late_fee_rule:late_fee_rules(*),
       utilities:plan_utilities(id, label, category, amount, cadence, split),
-      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee, late_fee_reminder_sent_at, late_fee_reminder_count),
+      scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, submitted_at, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee, late_fee_reminder_sent_at, late_fee_reminder_count),
       special_payments(id, plan_id, plan_tenant_id, category, label, amount, due_date, status, paid_date, settled_at, payment_method, processing_fee)
     `)
     .eq('owner_id', ownerId)
