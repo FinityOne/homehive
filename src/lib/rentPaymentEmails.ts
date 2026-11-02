@@ -11,7 +11,82 @@
 
 import { fmtMoney, METHOD_META, type PayMethod } from './rentPayments'
 
-export type PaidRow = { label: string; amount: number }
+/**
+ * What a charge is made of.
+ *
+ * Rent is billed as the payer's whole monthly obligation, so the utilities
+ * riding on it are invisible in the amount — a $770.67 charge is really $749
+ * rent and $21.67 internet, and an email showing only the total is how a tenant
+ * comes to believe their rent went up. `payment_line_items` is the only record
+ * of that split, so it is carried onto the charge here.
+ */
+export type ChargePart = {
+  label: string
+  amount: number
+  /** `other` is a line that is neither rent nor a declared utility. */
+  kind: 'rent' | 'utility' | 'other'
+}
+
+/** Which bucket a whole charge belongs to when it isn't broken down. */
+export type RowKind = 'rent' | 'utility' | 'charge' | 'late_fee'
+
+export type PaidRow = {
+  label: string
+  amount: number
+  /** Defaults to `rent`, which is what an unlabelled scheduled charge is. */
+  kind?: RowKind
+  /**
+   * The charge's composition. Only ever populated when the parts reconcile to
+   * `amount` — a breakdown that contradicts the figure above it is worse than
+   * no breakdown — and only rendered when there are at least two of them, since
+   * "Rent $770.67" printed under "Rent $770.67" tells nobody anything.
+   */
+  parts?: ChargePart[]
+}
+
+/** What a payment was made of, totalled by category. */
+export type Buckets = { rent: number; utilities: number; charges: number; fees: number }
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * Split a payment into rent, utilities, other charges and late fees.
+ *
+ * A row carrying `parts` is split by them, so utilities buried inside a rent
+ * charge land in the utilities bucket where the reader expects them. A row with
+ * no parts counts whole, under its own kind.
+ */
+export function bucketsOf(rows: PaidRow[]): Buckets {
+  const b: Buckets = { rent: 0, utilities: 0, charges: 0, fees: 0 }
+  for (const r of rows) {
+    if (r.kind === 'late_fee') { b.fees += r.amount; continue }
+    if (r.kind === 'utility')  { b.utilities += r.amount; continue }
+    if (r.kind === 'charge')   { b.charges += r.amount; continue }
+    const parts = r.parts ?? []
+    if (parts.length === 0) { b.rent += r.amount; continue }
+    for (const part of parts) {
+      if (part.kind === 'rent') b.rent += part.amount
+      else if (part.kind === 'utility') b.utilities += part.amount
+      else b.charges += part.amount
+    }
+  }
+  return {
+    rent: round2(b.rent), utilities: round2(b.utilities),
+    charges: round2(b.charges), fees: round2(b.fees),
+  }
+}
+
+/** The non-zero buckets, in reading order. */
+export function bucketLines(b: Buckets): { label: string; amount: number }[] {
+  const some = [
+    { label: 'Rent', amount: b.rent },
+    { label: 'Utilities', amount: b.utilities },
+    { label: 'Other charges', amount: b.charges },
+    { label: 'Late fees', amount: b.fees },
+  ].filter(l => l.amount > 0)
+  // An all-rent payment still needs its one line.
+  return some.length > 0 ? some : [{ label: 'Rent', amount: b.rent }]
+}
 
 /** What happened to the money. ACH sits in `processing` for days before either. */
 export type PayEvent = 'paid' | 'processing' | 'failed'
@@ -43,19 +118,75 @@ const SHELL_CLOSE = `  </div>
 </body>
 </html>`
 
-/** Rows table shared by both emails. */
+/** A breakdown is only worth printing when it says more than the total does. */
+const shownParts = (r: PaidRow): ChargePart[] => ((r.parts ?? []).length > 1 ? r.parts! : [])
+
+/** The indented "what this charge is made of" lines under one row. */
+function partsBlock(parts: ChargePart[]): string {
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+            ${parts.map(p => `
+            <tr>
+              <td style="padding:2px 0 2px 12px;font-size:12.5px;color:#64748b;">
+                ${esc(p.label)}${p.kind === 'utility' ? ' <span style="color:#94a3b8;">· utility</span>' : ''}
+              </td>
+              <td style="padding:2px 0;text-align:right;font-size:12.5px;color:#64748b;white-space:nowrap;">
+                ${fmtMoney(p.amount)}
+              </td>
+            </tr>`).join('')}
+          </table>`
+}
+
+/** Rows table shared by all three emails. */
 function rowsTable(rows: PaidRow[]): string {
   return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:18px;">
-      ${rows.map(r => `
+      ${rows.map(r => {
+        const parts = shownParts(r)
+        // With a breakdown, the charge's own border moves to the bottom of the
+        // parts underneath it, so the group reads as one block.
+        const edge = parts.length > 0 ? 'none' : '1px solid #f1f5f9'
+        const pad = parts.length > 0 ? '9px 0 3px' : '9px 0'
+        return `
       <tr>
-        <td style="padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13.5px;color:#0f172a;font-weight:600;">
+        <td style="padding:${pad};border-bottom:${edge};font-size:13.5px;color:#0f172a;font-weight:600;">
           ${esc(r.label)}
         </td>
-        <td style="padding:9px 0;border-bottom:1px solid #f1f5f9;text-align:right;font-size:14px;font-weight:700;color:#0f172a;white-space:nowrap;">
+        <td style="padding:${pad};border-bottom:${edge};text-align:right;font-size:14px;font-weight:700;color:#0f172a;white-space:nowrap;">
           ${fmtMoney(r.amount)}
         </td>
-      </tr>`).join('')}
+      </tr>${parts.length > 0 ? `
+      <tr>
+        <td colspan="2" style="padding:0 0 9px;border-bottom:1px solid #f1f5f9;">
+          ${partsBlock(parts)}
+        </td>
+      </tr>` : ''}`
+      }).join('')}
     </table>`
+}
+
+/** The same rows as plain text, with any breakdown indented beneath. */
+function rowsText(rows: PaidRow[]): string[] {
+  const out: string[] = []
+  for (const r of rows) {
+    out.push(`${r.label} — ${fmtMoney(r.amount)}`)
+    for (const p of shownParts(r)) {
+      out.push(`    ${p.label}${p.kind === 'utility' ? ' (utility)' : ''} — ${fmtMoney(p.amount)}`)
+    }
+  }
+  return out
+}
+
+/**
+ * Rent / Utilities / Other charges / Late fees, as table rows.
+ *
+ * Shared so the tenant's receipt and the landlord's notification can never
+ * disagree about what a payment was made of.
+ */
+function bucketTableRows(rows: PaidRow[]): string {
+  return bucketLines(bucketsOf(rows)).map(l => `
+      <tr>
+        <td style="padding:5px 0;font-size:13px;color:#64748b;">${esc(l.label)}</td>
+        <td style="padding:5px 0;text-align:right;font-size:13px;color:#0f172a;font-weight:600;">${fmtMoney(l.amount)}</td>
+      </tr>`).join('')
 }
 
 const TONE: Record<PayEvent, { accent: string; bg: string; border: string }> = {
@@ -118,9 +249,9 @@ export function buildRentReceiptEmail(input: {
     `Hi ${first},`,
     lead,
     '',
-    ...rows.map(r => `${r.label} — ${fmtMoney(r.amount)}`),
+    ...rowsText(rows),
     '',
-    `Rent: ${fmtMoney(rent)}`,
+    ...bucketLines(bucketsOf(rows)).map(l => `${l.label}: ${fmtMoney(l.amount)}`),
     `Processing fee (${methodLabel}): ${fmtMoney(fee)}`,
     `Total ${event === 'paid' ? 'charged' : 'requested'}: ${fmtMoney(total)}`,
     `Date: ${fmtDateTime(paidOn)}`,
@@ -160,10 +291,7 @@ export function buildRentReceiptEmail(input: {
     ${rowsTable(rows)}
 
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:14px;">
-      <tr>
-        <td style="padding:5px 0;font-size:13px;color:#64748b;">Rent</td>
-        <td style="padding:5px 0;text-align:right;font-size:13px;color:#0f172a;font-weight:600;">${fmtMoney(rent)}</td>
-      </tr>
+      ${bucketTableRows(rows)}
       <tr>
         <td style="padding:5px 0;font-size:13px;color:#64748b;">Processing fee (${esc(methodLabel)})</td>
         <td style="padding:5px 0;text-align:right;font-size:13px;color:#0f172a;font-weight:600;">${fmtMoney(fee)}</td>
@@ -227,6 +355,13 @@ export function buildLandlordRentPaidEmail(input: {
   const methodLabel = METHOD_META[method].label
   const first = landlordName ? firstNameOf(landlordName) : 'there'
 
+  // What the money was actually made of. A payment that is only partly rent
+  // must not be announced as "rent received" — the landlord reconciles against
+  // this figure, and utilities they've billed on are not their income.
+  const buckets = bucketsOf(rows)
+  const lines = bucketLines(buckets)
+  const rentOnly = lines.length === 1 && lines[0].label === 'Rent'
+
   const heading =
     event === 'paid' ? `${tenantName} paid rent`
     : event === 'processing' ? `${tenantName} submitted a bank transfer`
@@ -257,7 +392,12 @@ export function buildLandlordRentPaidEmail(input: {
     ...(reference ? [`Reference: ${reference}`] : []),
     '',
     'Covered:',
-    ...rows.map(r => `  ${r.label} — ${fmtMoney(r.amount)}`),
+    ...rowsText(rows).map(l => '  ' + l),
+    '',
+    ...lines.map(l => `${l.label}: ${fmtMoney(l.amount)}`),
+    ...(buckets.utilities > 0
+      ? ['', `Of that, ${fmtMoney(buckets.utilities)} is utilities you've billed on — it arrives with the rent but it isn't rent.`]
+      : []),
     '',
     `Still owed by ${tenantName}: ${fmtMoney(tenantOutstanding)}`,
     `Still outstanding across the plan: ${fmtMoney(planOutstanding)}`,
@@ -275,7 +415,8 @@ export function buildLandlordRentPaidEmail(input: {
 
     <div style="margin-top:20px;background:${t.bg};border:1px solid ${t.border};border-radius:12px;padding:18px 20px;text-align:center;">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:${t.accent};">
-        ${event === 'paid' ? 'Rent received' : event === 'processing' ? 'Clearing' : 'Returned'}
+        ${event === 'paid' ? (rentOnly ? 'Rent received' : 'Payment received')
+          : event === 'processing' ? 'Clearing' : 'Returned'}
       </div>
       <div style="font-size:32px;font-weight:800;color:${t.accent};margin-top:5px;letter-spacing:-1px;">
         ${fmtMoney(rent)}
@@ -289,6 +430,24 @@ export function buildLandlordRentPaidEmail(input: {
       What it covered
     </div>
     ${rowsTable(rows)}
+
+    ${rentOnly ? '' : `
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#94a3b8;margin-top:22px;">
+      Where it goes
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;">
+      ${bucketTableRows(rows)}
+      <tr>
+        <td style="padding:9px 0 0;border-top:1px solid #e2e8f0;font-size:13.5px;color:#0f172a;font-weight:700;">Total received</td>
+        <td style="padding:9px 0 0;border-top:1px solid #e2e8f0;text-align:right;font-size:14px;color:#0f172a;font-weight:800;">${fmtMoney(rent)}</td>
+      </tr>
+    </table>
+    ${buckets.utilities > 0 ? `
+    <div style="margin-top:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;font-size:12.5px;color:#334155;line-height:1.6;">
+      <strong style="color:#0f172a;">${fmtMoney(buckets.utilities)}</strong> of this is utilities you've
+      billed on. It arrives with the rent, but it isn't rent — it's the bill you're
+      recovering, so keep it apart when you reconcile.
+    </div>` : ''}`}
 
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:16px;">
       <tr>
@@ -418,7 +577,7 @@ export function buildAdminPaymentEmail(input: {
     ...(reference ? [`Reference: ${reference}`] : []),
     '',
     'Covered:',
-    ...rows.map(r => `  ${r.label} — ${fmtMoney(r.amount)}`),
+    ...rowsText(rows).map(l => '  ' + l),
     '',
     'Economics:',
     ...money.map(m => `  ${m.label}: ${m.value}`),
