@@ -15,7 +15,7 @@ export type IconName =
   | 'fileText' | 'creditCard' | 'wrench' | 'clipboardCheck' | 'zap' | 'sparkles'
   | 'receipt' | 'arrowUpCircle' | 'megaphone' | 'eye' | 'bell' | 'settings'
   | 'logOut' | 'menu' | 'chevronDown' | 'chevronRight' | 'arrowRight'
-  | 'arrowLeft' | 'panelLeft' | 'swap' | 'dot'
+  | 'arrowLeft' | 'panelLeft' | 'swap' | 'dot' | 'refresh'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   grid: <><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></>,
@@ -52,6 +52,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   panelLeft: <><rect x="3.5" y="4" width="17" height="16" rx="2" /><path d="M9.75 4v16" /></>,
   swap: <><path d="M4.5 8.5h12M13 5l3.5 3.5L13 12" /><path d="M19.5 15.5h-12M11 12l-3.5 3.5L11 19" /></>,
   dot: <><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" /></>,
+  // A renewal is a loop, not an arrow: the same tenancy coming round again.
+  refresh: <><path d="M20 11.5a8 8 0 1 0-2.6 6.4" /><path d="M20.5 5.5v6h-6" /></>,
 }
 
 export default function Icon({

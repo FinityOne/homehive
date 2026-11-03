@@ -93,6 +93,18 @@ const PAID_SECTIONS: Array<{ base: string; feature: LockedFeature }> = [
     },
   },
   {
+    base: '/landlord/performance',
+    feature: {
+      title: 'Performance',
+      promise: 'Who looked at your listing, who left, and whether the rent is why.',
+      points: [
+        'Views, unique viewers and traffic sources per listing',
+        'Your rent against comparable live listings near ASU',
+        'A named reason a listing is not leasing, and what to change',
+      ],
+    },
+  },
+  {
     base: '/landlord/comments',
     feature: {
       title: 'Comments',
@@ -149,6 +161,18 @@ const PAID_SECTIONS: Array<{ base: string; feature: LockedFeature }> = [
         'Generate a lease and send it for e-signature',
         'Every document kept on the tenancy',
         'Move-out and deposit return run from the same place',
+      ],
+    },
+  },
+  {
+    base: '/landlord/renewals',
+    feature: {
+      title: 'Renewals',
+      promise: 'Re-sign the tenants you already have before the turnover window closes.',
+      points: [
+        'Every lease ending, ranked by how little time is left',
+        'Renewal offers your tenant accepts or declines in one click',
+        'What a vacancy would cost you against what a rent rise would earn',
       ],
     },
   },

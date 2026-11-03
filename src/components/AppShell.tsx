@@ -74,6 +74,7 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
       label: 'Leasing',
       items: [
         { href: '/landlord/listings',          label: 'Listings',         icon: 'building',    primary: true },
+        { href: '/landlord/performance',       label: 'Performance',      icon: 'eye',         primary: true },
         { href: '/landlord/leads',             label: 'Leads',            icon: 'target',      primary: true },
         { href: '/landlord/comments',          label: 'Comments',         icon: 'message' },
         { href: '/landlord/calendar',          label: 'Tours & Calendar', icon: 'calendar',    short: 'Tours' },
@@ -87,6 +88,7 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
       label: 'Residents',
       items: [
         { href: '/landlord/leases',      label: 'Leases',      icon: 'fileText',       primary: true },
+        { href: '/landlord/renewals',    label: 'Renewals',    icon: 'refresh',        primary: true },
         { href: '/landlord/tenants',     label: 'Tenants',     icon: 'userCheck' },
         { href: '/landlord/financials',  label: 'Financials',  icon: 'creditCard',     primary: true },
         { href: '/landlord/reminders',   label: 'Reminders',   icon: 'bell' },

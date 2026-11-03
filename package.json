@@ -13,7 +13,9 @@
     "verify:payments-log": "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder SUPABASE_SERVICE_ROLE_KEY=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-payments-log.mjs",
     "verify:landlord-access": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-access.mjs",
     "verify:lead-followups": "EMAIL_UNSUBSCRIBE_SECRET=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-lead-followups.mjs",
-    "verify:landlord-email": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-payment-email.mjs"
+    "verify:landlord-email": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-payment-email.mjs",
+    "verify:listing-perf": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-listing-performance.mjs",
+    "verify:renewals": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-renewals.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.1.0",
