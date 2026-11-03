@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import {
-  amountDue, fmtMoney, METHOD_META, explainLateFee, billingToday,
-  type SettledMethod, type LateFeeExplanation,
-} from '@/lib/rentPayments'
+import { fmtMoney, METHOD_META, type SettledMethod } from '@/lib/rentPayments'
+import { tenantCharges } from '@/lib/tenantCharges'
 import type { Payable } from '@/components/tenant/PayRentModal'
 import StripeModeBanner from '@/components/StripeModeBanner'
 
@@ -19,6 +17,17 @@ const LateFeeDetailSheet = dynamic(
 type Scheduled = {
   id: string; due_date: string; amount: number; status: string
   paid_amount: number; paid_date: string | null
+  /**
+   * When the tenant submitted the payment through the platform.
+   *
+   * The date every late fee is judged against — see `lateFeeAsOf`. It has to
+   * travel all the way to `explainLateFee` below: an ACH debit submitted on
+   * the due date and still clearing has no `paid_date`, so without this the
+   * fee is measured to *today* and the tenant watches a fee grow on rent they
+   * already sent on time. The server charges the frozen figure, so dropping
+   * this field also made the portal quote a number the card never took.
+   */
+  submitted_at: string | null
   /** Fee money that genuinely arrived on this row. */
   late_fee_paid: number
   /** Fee the landlord has written off on this row. */
@@ -27,15 +36,6 @@ type Scheduled = {
    *  that happened rather than as a charge that quietly disappeared. */
   late_fee_waiver?: { amount: number; waivedOn: string; note: string | null } | null
   payment_method: string | null; processing_fee: number; notes: string | null
-}
-/** A late fee the landlord forgave. Not payable, and that is the point. */
-type WaivedFee = {
-  id: string
-  label: string
-  amount: number
-  waivedOn: string
-  /** What the landlord wrote to them when they waived it, if anything. */
-  note: string | null
 }
 type Special = {
   id: string; category: string; label: string; amount: number; due_date: string
@@ -174,102 +174,13 @@ export default function MyLeasePage() {
    * whole remaining lease would ask a tenant to prepay a year of rent.
    * Future months are shown separately and can be paid early by choice.
    */
-  const { owed, upcoming, lateFees, waived, explanations } = useMemo(() => {
-    const owedRows: Payable[] = []
-    const futureRows: Payable[] = []
-    const feeRows: Payable[] = []
-    const waivedRows: WaivedFee[] = []
-    const explanations = new Map<string, LateFeeExplanation>()
-    if (!t) return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, waived: waivedRows, explanations }
-
-    // The date where the rent is due, not the browser's — a tenant travelling
-    // must not see yesterday's deadline, and a UTC server must not see
-    // tomorrow's. See `billingToday`.
-    const today = billingToday()
-    const daysSince = (d: string) =>
-      Math.max(0, Math.round(
-        (new Date(today + 'T00:00:00').getTime() - new Date(d + 'T00:00:00').getTime()) / 86_400_000,
-      ))
-
-    for (const s of t.scheduled) {
-      if (isVoided(s.status)) continue
-
-      // ── A fee the landlord forgave ─────────────────────────────────────
-      //
-      // Collected before the arithmetic below, and deliberately *outside* the
-      // `outstanding > 0` test that governs everything else: a fully waived
-      // fee is owed nothing, so it drops out of every list on this page and
-      // the tenant sees a charge they were chased about simply stop existing.
-      // That reads as a bug and wastes the goodwill the landlord paid for.
-      if (s.late_fee_waiver && s.late_fee_waiver.amount > 0) {
-        waivedRows.push({
-          id: s.id,
-          label: `${fmtMonthYear(s.due_date)} rent`,
-          amount: s.late_fee_waiver.amount,
-          waivedOn: s.late_fee_waiver.waivedOn,
-          note: s.late_fee_waiver.note,
-        })
-      }
-
-      // ── The late fee, as a charge in its own right ─────────────────────
-      //
-      // Computed for *every* row, settled or not. This is the whole point: a
-      // fee stops growing when the rent lands but it does not stop being owed,
-      // and keying this on `isSettled` is exactly why none of these fees has
-      // ever been visible to the person who owes them. The arithmetic is
-      // `lateFeeOutstanding`, the same function the payment API prices with.
-      const x = explainLateFee(
-        t.lateFeeRule,
-        {
-          status: s.status,
-          due_date: s.due_date,
-          paid_date: s.paid_date,
-          amount: s.amount,
-          paid_amount: s.paid_amount,
-          late_fee_paid: s.late_fee_paid,
-        },
-        s.late_fee_waived,
-      )
-      if (x.outstanding > 0) {
-        feeRows.push({
-          kind: 'late_fee',
-          id: s.id,
-          label: `${fmtMonthYear(s.due_date)} rent`,
-          amount: 0,
-          lateFee: x.outstanding,
-          daysLate: x.daysPastDue,
-          rentSettled: x.rentSettled,
-        })
-        // The full working, kept next to the row so opening the sheet costs
-        // nothing and can never disagree with the figure on the line.
-        explanations.set(s.id, x)
-      }
-
-      // ── The rent itself ───────────────────────────────────────────────
-      if (isSettled(s.status)) continue
-      const due = amountDue(s)
-      if (due <= 0) continue
-      const row: Payable = {
-        kind: 'scheduled', id: s.id, label: `Rent — ${fmtDate(s.due_date)}`,
-        amount: due, lateFee: 0, daysLate: s.due_date < today ? daysSince(s.due_date) : 0,
-      }
-      ;(s.due_date <= today ? owedRows : futureRows).push(row)
-    }
-    for (const s of t.specials) {
-      if (s.status !== 'pending' || s.amount <= 0) continue
-      const row: Payable = { kind: 'special', id: s.id, label: s.label, amount: s.amount }
-      ;(!s.due_date || s.due_date <= today ? owedRows : futureRows).push(row)
-    }
-    // Most recently forgiven first — the one they were just emailed about.
-    waivedRows.sort((a, b) => b.waivedOn.localeCompare(a.waivedOn))
-    // Oldest first: that is the order a person settles a backlog in, and it
-    // puts the fee that has been owed longest at the top.
-    // Chronological: a backlog reads as a story, and "which months was I
-    // behind" is answered by scanning down the list in order.
-    feeRows.sort((a, b) =>
-      (explanations.get(a.id)?.dueDate ?? '').localeCompare(explanations.get(b.id)?.dueDate ?? ''))
-    return { owed: owedRows, upcoming: futureRows, lateFees: feeRows, waived: waivedRows, explanations }
-  }, [t])
+  const { owed, upcoming, lateFees, waived, explanations } = useMemo(
+    // One calculation, shared with the dashboard's balance tile and matching
+    // what `POST /api/tenant/pay` prices — see src/lib/tenantCharges.ts for
+    // the five rules it applies and why each one exists.
+    () => tenantCharges(t?.scheduled ?? [], t?.specials ?? [], t?.lateFeeRule ?? null),
+    [t],
+  )
 
   /**
    * Arriving from a reminder with `pay=1`: open the sheet on what is actually
