@@ -709,10 +709,16 @@ export default function LandlordDashboard() {
                 </div>
               ) : (
                 <>
+                  {/* This warning used to be a dead end: it named the problem
+                      and offered nowhere to go. Renewals is where it is solved. */}
                   {expiringSoon.length > 0 && (
-                    <div style={{ background: '#fef3cd', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#92400e', fontWeight: 500 }}>
+                    <Link
+                      href="/landlord/renewals"
+                      style={{ display: 'block', background: '#fef3cd', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#92400e', fontWeight: 500, textDecoration: 'none' }}
+                    >
                       ⚠ {expiringSoon.length} lease{expiringSoon.length !== 1 ? 's' : ''} expiring within 60 days
-                    </div>
+                      <span style={{ float: 'right', fontWeight: 700 }}>Send renewals →</span>
+                    </Link>
                   )}
 
                   {[...currentLeases].slice(0, 5).map(lease => {

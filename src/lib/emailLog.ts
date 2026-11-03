@@ -31,6 +31,11 @@ export type EmailType =
   // suppressed by the `lead_followup` opt-out category.
   | 'lead_followup_prescreen'
   | 'lead_followup_tour'
+  // Renewals. All three are transactional: two are caused by somebody acting,
+  // and the window nudge is about a term the landlord signed themselves.
+  | 'renewal_offer_tenant'
+  | 'renewal_response_landlord'
+  | 'renewal_window_landlord'
 
 /**
  * Record an email we sent.
