@@ -86,21 +86,6 @@ export async function getLeadsForSlugs(slugs: string[]): Promise<Lead[]> {
   return data as Lead[]
 }
 
-export async function getLeadById(leadId: string): Promise<Lead | null> {
-  const { data, error } = await supabase
-    .from('leads')
-    .select('*')
-    .eq('id', leadId)
-    .single()
-
-  if (error || !data) {
-    console.error('Error fetching lead by id:', error)
-    return null
-  }
-
-  return data as Lead
-}
-
 export async function getAllLeads(): Promise<Lead[]> {
   const { data, error } = await supabase
     .from('leads')
@@ -133,40 +118,4 @@ export async function updateLeadStatus(
     .eq('id', leadId)
 
   return { error }
-}
-
-export async function savePrescreen(
-  leadId: string,
-  data: PrescreenData
-): Promise<{ error: any }> {
-  // Upsert into separate pre_screens table (idempotent if re-submitted)
-  const { error: insertError } = await supabase
-    .from('pre_screens')
-    .upsert(
-      [{
-        lead_id: leadId,
-        is_student: data.is_student,
-        university: data.is_student ? data.university : null,
-        birthdate: data.birthdate || null,
-        gender: data.gender,
-        move_in_date: data.move_in_date,
-        group_size: data.group_size,
-        about: data.about,
-        monthly_budget: data.monthly_budget || null,
-        lease_length: data.lease_length,
-        lifestyle: data.lifestyle,
-        notes: data.notes || null,
-      }],
-      { onConflict: 'lead_id' }
-    )
-
-  if (insertError) return { error: insertError }
-
-  // Advance lead status to qualified
-  const { error: statusError } = await supabase
-    .from('leads')
-    .update({ status: 'qualified' })
-    .eq('id', leadId)
-
-  return { error: statusError }
 }

@@ -1,7 +1,7 @@
 import { getSiteUrl } from '@/lib/siteUrl'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { getLeadById } from '@/lib/leads'
+import type { Lead } from '@/lib/leads'
 import { logEmail } from '@/lib/emailLog'
 import { notifyLandlord } from '@/lib/notifyLandlord'
 
@@ -13,13 +13,23 @@ const supabase = createClient(
 
 const resend = new Resend(process.env.RESEND_API_KEY!)
 
+// `leads` has RLS now, and this route is reached by a renter who is not signed
+// in — they arrive on a tokenless /pre-screen/<leadId> link from their welcome
+// email. The shared `getLeadById` helper in @/lib/leads runs on the browser
+// (anon) client, so it would read nothing here. Read with the service role the
+// route already holds instead.
+async function fetchLead(leadId: string): Promise<Lead | null> {
+  const { data } = await supabase.from('leads').select('*').eq('id', leadId).single()
+  return (data as Lead) ?? null
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ leadId: string }> }
 ) {
   const { leadId } = await params
 
-  const lead = await getLeadById(leadId)
+  const lead = await fetchLead(leadId)
 
   if (!lead) {
     return Response.json({ error: 'Lead not found' }, { status: 404 })
@@ -115,7 +125,7 @@ export async function POST(
     .eq('id', leadId)
 
   // 3. Fetch lead + property for notification email
-  const lead = await getLeadById(leadId)
+  const lead = await fetchLead(leadId)
   let propertyName = lead?.property || 'Property'
   let propertyAddress = ''
   let propertyHeroImage = ''
