@@ -13,6 +13,7 @@ import {
   getInspectionsForLease, createInspectionFromLease, computeTotals, fmtMoney,
   type Inspection,
 } from '@/lib/inspections'
+import Link from 'next/link'
 
 const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: string; border: string }> = {
   upcoming: { label: 'Upcoming', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
@@ -195,7 +196,7 @@ export default function LeaseHubPage({
       <div className="lh-wrap">
         {/* ── Breadcrumb ── */}
         <div className="lh-crumb">
-          <a href="/landlord/leases">Leases</a> › {lease.property?.name || 'Lease'}
+          <Link href="/landlord/leases">Leases</Link> › {lease.property?.name || 'Lease'}
         </div>
 
         {/* ── Sticky identity header ── */}
@@ -214,7 +215,7 @@ export default function LeaseHubPage({
               <span className="lh-status" style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
                 {meta.label}
               </span>
-              <a href={`/landlord/leases/${leaseId}/edit`} className="btn-ghost">Edit lease</a>
+              <Link href={`/landlord/leases/${leaseId}/edit`} className="btn-ghost">Edit lease</Link>
             </div>
           </div>
 
@@ -252,9 +253,9 @@ export default function LeaseHubPage({
               </button>
             ))}
             {!lease.is_demo && (
-              <a href={financialsHref} className="lh-tab lh-tab-out">
+              <Link href={financialsHref} className="lh-tab lh-tab-out">
                 Financials ↗
-              </a>
+              </Link>
             )}
           </div>
         </div>
@@ -268,9 +269,9 @@ export default function LeaseHubPage({
             <strong>Demo lease.</strong> Nothing is charged on this tenancy: it collects no rent,
             can&apos;t hold a payment plan, and is left out of Financials so it doesn&apos;t move
             your real numbers. It is here to try the lease flow out.
-            <a href={`/landlord/leases/${leaseId}/edit`} className="lnk" style={{ marginLeft: 6 }}>
+            <Link href={`/landlord/leases/${leaseId}/edit`} className="lnk" style={{ marginLeft: 6 }}>
               Make it a real lease
-            </a>
+            </Link>
           </div>
         )}
 
@@ -320,7 +321,7 @@ export default function LeaseHubPage({
                 <div className="card-bd">
                   <Row label="Property" value={
                     lease.property
-                      ? <a href={`/landlord/listings/${lease.property.slug}`} className="lnk">{lease.property.name}</a>
+                      ? <Link href={`/landlord/listings/${lease.property.slug}`} className="lnk">{lease.property.name}</Link>
                       : '—'
                   } />
                   <Row label="Unit / room" value={lease.unit_number || '—'} />
@@ -339,9 +340,9 @@ export default function LeaseHubPage({
                       blocked for it and it is excluded from Financials, so the portfolio totals
                       stay true to the leases that really bill. Turn off the demo flag on the
                       lease if rent should actually be collected here.
-                      <a href={`/landlord/leases/${leaseId}/edit`} className="btn-ghost" style={{ marginTop: 12, display: 'inline-block' }}>
+                      <Link href={`/landlord/leases/${leaseId}/edit`} className="btn-ghost" style={{ marginTop: 12, display: 'inline-block' }}>
                         Edit lease
-                      </a>
+                      </Link>
                     </div>
                   ) : !planChecked ? (
                     <div className="empty-inline">Checking rent setup…</div>
@@ -350,17 +351,17 @@ export default function LeaseHubPage({
                       Rent, deposits and one-off charges for this tenancy are tracked in
                       Financials — schedule, who has paid, reminders and receipts all in one
                       ledger.
-                      <a href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                      <Link href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
                         Open the ledger →
-                      </a>
+                      </Link>
                     </div>
                   ) : (
                     <div className="empty-inline">
                       Rent isn&apos;t being tracked for this lease yet. Set up a plan in Financials
                       to schedule rent, see who has paid, and record deposits and one-off charges.
-                      <a href={`/landlord/financials/new?lease=${leaseId}`} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                      <Link href={`/landlord/financials/new?lease=${leaseId}`} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
                         Set up rent collection
-                      </a>
+                      </Link>
                     </div>
                   )}
                 </div>
@@ -421,7 +422,7 @@ export default function LeaseHubPage({
               <div className="card-bd">
                 {lease.tenants.length === 0 ? (
                   <div className="empty-inline">
-                    No tenants assigned. <a href={`/landlord/leases/${leaseId}/edit`} className="lnk">Edit the lease</a> to add them.
+                    No tenants assigned. <Link href={`/landlord/leases/${leaseId}/edit`} className="lnk">Edit the lease</Link> to add them.
                   </div>
                 ) : lease.tenants.map(t => (
                   <div key={t.id} className="person">
@@ -430,7 +431,7 @@ export default function LeaseHubPage({
                       <div className="person-name">{t.name || '—'}</div>
                       {t.email && <div className="person-sub">{t.email}</div>}
                     </div>
-                    {t.tenant_id && <a href="/landlord/tenants" className="lnk">Tenant record →</a>}
+                    {t.tenant_id && <Link href="/landlord/tenants" className="lnk">Tenant record →</Link>}
                   </div>
                 ))}
               </div>
@@ -445,9 +446,9 @@ export default function LeaseHubPage({
                     : <>Payers, what each one owes each month, and ending someone&apos;s obligation
                        early are all handled in Financials, alongside the schedule they affect.</>}
                   {!lease.is_demo && (
-                    <a href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
+                    <Link href={financialsHref} className="btn-dark" style={{ marginTop: 12, display: 'inline-block' }}>
                       {planId ? 'Open the ledger \u2192' : 'Go to Financials \u2192'}
-                    </a>
+                    </Link>
                   )}
                 </div>
               </div>
@@ -543,8 +544,8 @@ export default function LeaseHubPage({
                           : ` · ${fmtMoney(t.totalRefunds)} refundable`}
                       </div>
                     </div>
-                    <a href={`/checkout-report/${ins.share_token}`} target="_blank" rel="noopener noreferrer" className="lnk">Report ↗</a>
-                    <a href={`/landlord/inspections/${ins.id}`} className="lnk">Open →</a>
+                    <Link href={`/checkout-report/${ins.share_token}`} target="_blank" rel="noopener noreferrer" className="lnk">Report ↗</Link>
+                    <Link href={`/landlord/inspections/${ins.id}`} className="lnk">Open →</Link>
                   </div>
                 )
               })}
@@ -597,7 +598,7 @@ function Action({
         <div className="action-body">{body}</div>
       </div>
       {href
-        ? <a href={href} className="btn-ghost">{cta}</a>
+        ? <Link href={href} className="btn-ghost">{cta}</Link>
         : <button className="btn-ghost" onClick={onClick}>{cta}</button>}
     </div>
   )

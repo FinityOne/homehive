@@ -4,16 +4,16 @@ import { useState, useEffect, use } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getLeaseById, updateLease, addLeaseDocument, deleteLeaseDocument, getLeaseDocumentSignedUrl } from '@/lib/leases'
-import { getPropertiesByOwner } from '@/lib/properties'
+import { getOwnerPropertyOptions, type PropertyOption } from '@/lib/properties'
 import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
 import type { Lease, TenantInput, LeaseDocument } from '@/lib/leases'
-import type { Property } from '@/lib/properties'
+import Link from 'next/link'
 
 export default function EditLeasePage({ params }: { params: Promise<{ leaseId: string }> }) {
   const { leaseId } = use(params)
   const router = useRouter()
   const [lease, setLease] = useState<Lease | null>(null)
-  const [properties, setProperties] = useState<Property[]>([])
+  const [properties, setProperties] = useState<PropertyOption[]>([])
   const [allTenants, setAllTenants] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -44,7 +44,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
       if (!user) { router.push('/login'); return }
       Promise.all([
         getLeaseById(leaseId),
-        getPropertiesByOwner(user.id),
+        getOwnerPropertyOptions(user.id),
         getTenantsByOwner(user.id),
       ]).then(([leaseData, props, ts]) => {
         if (!leaseData || leaseData.owner_id !== user.id) {
@@ -263,9 +263,9 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
 
       <div className="edit-wrap">
         <div className="edit-breadcrumb">
-          <a href="/landlord/leases">Leases</a>
+          <Link href="/landlord/leases">Leases</Link>
           {' › '}
-          <a href={`/landlord/leases/${leaseId}`}>{lease?.property?.name || 'Lease'}</a>
+          <Link href={`/landlord/leases/${leaseId}`}>{lease?.property?.name || 'Lease'}</Link>
           {' › '}
           Edit
         </div>
@@ -420,7 +420,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
         <div className="section-label">Tenants</div>
         <div className="section-sub">
           Only tenants from your{' '}
-          <a href="/landlord/tenants" style={{ color: '#10b981' }}>Tenants list</a>
+          <Link href="/landlord/tenants" style={{ color: '#10b981' }}>Tenants list</Link>
           {' '}can be added to a lease.
         </div>
 
@@ -445,9 +445,9 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           >
             + Add Tenant
           </button>
-          <a href="/landlord/tenants" className="btn-go-tenants">
+          <Link href="/landlord/tenants" className="btn-go-tenants">
             Manage Tenants →
-          </a>
+          </Link>
         </div>
 
         {showTenantSearch && (
@@ -473,7 +473,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
             {filteredTenants.length === 0 && (
               <div style={{ padding: '12px', fontSize: '13px', color: '#94a3b8' }}>
                 No tenants found.{' '}
-                <a href="/landlord/tenants" style={{ color: '#10b981' }}>Add tenants first.</a>
+                <Link href="/landlord/tenants" style={{ color: '#10b981' }}>Add tenants first.</Link>
               </div>
             )}
           </div>
@@ -483,7 +483,7 @@ export default function EditLeasePage({ params }: { params: Promise<{ leaseId: s
           <button className="btn-save" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          <a href={`/landlord/leases/${leaseId}`} className="btn-cancel">Cancel</a>
+          <Link href={`/landlord/leases/${leaseId}`} className="btn-cancel">Cancel</Link>
         </div>
       </div>
     </>

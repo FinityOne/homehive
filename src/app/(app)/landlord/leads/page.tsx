@@ -9,6 +9,7 @@ import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
+import Link from 'next/link'
 
 
 const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'tour_scheduled', 'closed']
@@ -912,9 +913,9 @@ export default function LandlordLeadsPage() {
         <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>
           Leads appear here once you have an active listing. Create your first listing to start receiving inquiries from students.
         </div>
-        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+        <Link href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
           Create a listing →
-        </a>
+        </Link>
       </div>
     )
   }
@@ -1058,18 +1059,18 @@ export default function LandlordLeadsPage() {
             <div className="ll-subtitle">{leads.length} total · sorted by most recent</div>
           </div>
           <div className="ll-header-right">
-            <a href="/landlord/leads/pipeline" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}>Pipeline guide →</a>
+            <Link href="/landlord/leads/pipeline" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', fontWeight: 500 }}>Pipeline guide →</Link>
             <button className="btn-gold" onClick={() => setShowAddModal(true)}>+ Add Lead</button>
           </div>
         </div>
 
         {/* Sub-nav */}
         <div style={{ background: '#fff', borderBottom: '1px solid #e8e5de', padding: '0 24px', display: 'flex', alignItems: 'center', gap: 0 }}>
-          <a href="/landlord/leads" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 700, color: '#8C1D40', textDecoration: 'none', borderBottom: '2px solid #8C1D40', whiteSpace: 'nowrap' }}>Overview</a>
-          <a href="/landlord/leads/insights" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 500, color: urgentCount > 0 ? '#dc2626' : '#6b6b6b', textDecoration: 'none', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' }}>
+          <Link href="/landlord/leads" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 700, color: '#8C1D40', textDecoration: 'none', borderBottom: '2px solid #8C1D40', whiteSpace: 'nowrap' }}>Overview</Link>
+          <Link href="/landlord/leads/insights" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 500, color: urgentCount > 0 ? '#dc2626' : '#6b6b6b', textDecoration: 'none', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' }}>
             Insights{urgentCount > 0 ? ` (${urgentCount})` : ''}
-          </a>
-          <a href="/landlord/leads/list" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 500, color: '#6b6b6b', textDecoration: 'none', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' }}>All Leads</a>
+          </Link>
+          <Link href="/landlord/leads/list" style={{ padding: '13px 16px', fontSize: 13, fontWeight: 500, color: '#6b6b6b', textDecoration: 'none', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' }}>All Leads</Link>
         </div>
 
         {/* ── OVERVIEW ── */}
@@ -1109,7 +1110,7 @@ export default function LandlordLeadsPage() {
 
                 {/* ── Urgent action banner ── */}
                 {needsActionCount > 0 && (
-                  <a
+                  <Link
                     href="/landlord/leads/insights"
                     style={{ background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textDecoration: 'none' }}
                   >
@@ -1121,7 +1122,7 @@ export default function LandlordLeadsPage() {
                       </div>
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', whiteSpace: 'nowrap' }}>Go to Insights →</span>
-                  </a>
+                  </Link>
                 )}
 
                 {/* ── KPI row ── */}
@@ -1214,7 +1215,7 @@ export default function LandlordLeadsPage() {
                                 {pa.conversionRate}% conversion
                               </span>
                               <button
-                                onClick={() => { window.location.href = '/landlord/leads/list' }}
+                                onClick={() => { router.push('/landlord/leads/list') }}
                                 style={{ fontSize: 11, fontWeight: 600, color: '#8C1D40', background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}
                               >
                                 View all →
@@ -1241,7 +1242,7 @@ export default function LandlordLeadsPage() {
                                 return (
                                   <span
                                     key={s}
-                                    onClick={() => { window.location.href = '/landlord/leads/list' }}
+                                    onClick={() => { router.push('/landlord/leads/list') }}
                                     style={{ fontSize: 11, fontWeight: 600, color: funnelColors[s] || '#64748b', background: (funnelColors[s] || '#e2e8f0') + '18', border: `1px solid ${funnelColors[s] || '#e2e8f0'}40`, borderRadius: 20, padding: '2px 9px', cursor: 'pointer' }}
                                   >
                                     {count} {STATUS_META[s].label}

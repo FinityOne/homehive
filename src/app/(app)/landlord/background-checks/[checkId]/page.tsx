@@ -5,6 +5,7 @@ import { useState, useEffect, use, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { formatPhoneDisplay } from '@/components/ui/PhoneInput'
+import Link from 'next/link'
 
 type Lead = {
   id: string; first_name: string | null; last_name: string | null
@@ -949,7 +950,7 @@ Really appreciate your time — thank you!`
                           declined:               { label: 'Declined',    color: '#dc2626', bg: 'rgba(239,68,68,0.08)' },
                         }[cs.status] || { label: cs.status, color: '#6b6b6b', bg: '#f5f4f0' }
                         return (
-                          <a
+                          <Link
                             key={cs.id}
                             href={`/landlord/background-checks/${cs.id}`}
                             target="_blank"
@@ -970,7 +971,7 @@ Really appreciate your time — thank you!`
                             </div>
                             <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, padding: '3px 9px', borderRadius: '20px', color: sp.color, background: sp.bg }}>{sp.label}</span>
                             <span style={{ color: '#d0cdc5', fontSize: '14px', flexShrink: 0 }}>›</span>
-                          </a>
+                          </Link>
                         )
                       })}
                     </div>
@@ -1316,7 +1317,7 @@ Really appreciate your time — thank you!`
                           <div style={{ fontSize: '13px', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {isCosigner ? '🔗 Linked as guarantor' : '👤 Tenant created'}
                           </div>
-                          <a href="/landlord/tenants" className="tenant-link-btn" style={{ marginTop: '8px' }}>View in Tenants →</a>
+                          <Link href="/landlord/tenants" className="tenant-link-btn" style={{ marginTop: '8px' }}>View in Tenants →</Link>
                         </div>
                       )}
                     </div>

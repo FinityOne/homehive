@@ -5,6 +5,7 @@ import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getLeasesForOwner, getLeaseStatus, formatLeaseDate } from '@/lib/leases'
 import type { Lease, LeaseStatus } from '@/lib/leases'
+import Link from 'next/link'
 
 const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: string; border: string }> = {
   upcoming: { label: 'Upcoming', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
@@ -62,9 +63,9 @@ export default function LandlordLeasesPage() {
         <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>
           Leases are created after you have a listing and a tenant. Start by creating your first listing.
         </div>
-        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+        <Link href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
           Create a listing →
-        </a>
+        </Link>
       </div>
     )
   }
@@ -105,7 +106,7 @@ export default function LandlordLeasesPage() {
       <div className="leases-wrap">
         <div className="leases-header">
           <h1 className="leases-title">Leases</h1>
-          <a href="/landlord/leases/new" className="btn-new">+ New Lease</a>
+          <Link href="/landlord/leases/new" className="btn-new">+ New Lease</Link>
         </div>
 
         <div className="filter-tabs">
@@ -124,7 +125,7 @@ export default function LandlordLeasesPage() {
           <div className="empty-state">
             No leases found
             {statusFilter !== 'all' && <div className="empty-state-sub">Try switching to a different filter</div>}
-            {statusFilter === 'all' && <div className="empty-state-sub"><a href="/landlord/leases/new" style={{ color: '#10b981' }}>Create your first lease →</a></div>}
+            {statusFilter === 'all' && <div className="empty-state-sub"><Link href="/landlord/leases/new" style={{ color: '#10b981' }}>Create your first lease →</Link></div>}
           </div>
         ) : (
           <table className="leases-table">

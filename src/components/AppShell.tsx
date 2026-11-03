@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase, getCurrentUser } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
+import { loadCurrentProfile } from '@/lib/currentProfile'
+import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import Icon, { type IconName } from '@/components/NavIcons'
@@ -270,11 +272,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // ── Auth ──
   useEffect(() => {
-    const loadUser = async (userId: string, email: string, fullName: string) => {
-      const { data: profile } = await supabase
-        .from('profiles').select('role, avatar_url').eq('id', userId).single()
-      const role = profile?.role || 'tenant'
-      setUser({ email, fullName, role, avatarUrl: profile?.avatar_url || null })
+    // The role lookup is shared with the landlord portal gate and cached for
+    // the life of the document. Both used to ask for the same `profiles` row
+    // at the same moment on every landlord page view, and the gate blocks the
+    // page's own queries until it has an answer — so the duplicate was not
+    // just a wasted request, it was time on the critical path.
+    const loadUser = async () => {
+      const profile = await loadCurrentProfile()
+      if (!profile) { router.push('/login'); return }
+      const { userId, email, fullName, role, avatarUrl } = profile
+      setUser({ email, fullName, role, avatarUrl })
       ph?.identify(userId, { email, name: fullName, role })
 
       // Fetch pending upgrade request count for admin badge
@@ -312,12 +319,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    getCurrentUser().then(user => {
-      if (user) loadUser(user.id, user.email || '', user.user_metadata?.full_name || '')
-      else router.push('/login')
-    })
+    loadUser()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session?.user) loadUser(session.user.id, session.user.email || '', session.user.user_metadata?.full_name || '')
+      if (session?.user) loadUser()
       else { setUser(null); router.push('/login') }
     })
     return () => subscription.unsubscribe()
@@ -884,10 +888,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Logo */}
-          <a href="/" className="tb-logo">
+          <Link href="/" className="tb-logo">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/hh-logo-white.png" alt="HomeHive" />
-          </a>
+          </Link>
 
           {/* Portal badge */}
           {currentPortal !== 'tenant' && (
@@ -931,7 +935,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         </>
                       )
                       return n.href ? (
-                        <a key={n.id} href={n.href} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }} onClick={() => setNotifOpen(false)}>{inner}</a>
+                        <Link key={n.id} href={n.href} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }} onClick={() => setNotifOpen(false)}>{inner}</Link>
                       ) : (
                         <div key={n.id} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }}>{inner}</div>
                       )
@@ -960,9 +964,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="tb-dd-name">{user.fullName || user.email.split('@')[0]}</div>
                     <div className="tb-dd-email">{user.email}</div>
                   </div>
-                  <a href="/profile" className="tb-dd-item" onClick={() => setProfileOpen(false)}>
+                  <Link href="/profile" className="tb-dd-item" onClick={() => setProfileOpen(false)}>
                     <span className="tb-dd-icon"><Icon name="settings" size={15} /></span> Profile settings
-                  </a>
+                  </Link>
                   <div className="tb-dd-divider" />
                   <button className="tb-dd-item tb-dd-signout" onClick={handleSignOut}>
                     <span className="tb-dd-icon"><Icon name="logOut" size={15} /></span> Sign out
@@ -1002,7 +1006,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                           const badge = badgeFor(item.href)
                           const locked = isLocked(item.href)
                           return (
-                            <a
+                            <Link
                               key={item.href}
                               href={item.href}
                               className={`sb-nav-item${isActive(item) ? ' active' : ''}${locked ? ' locked' : ''}`}
@@ -1021,7 +1025,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                               <span className="sb-tip" aria-hidden="true">
                                 {locked ? `${item.label} — with a plan` : item.label}
                               </span>
-                            </a>
+                            </Link>
                           )
                         })}
                       </div>
@@ -1034,7 +1038,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   — a landlord who came here to edit a listing should reach the
                   listing first and the ask second. */}
               {onFreeTier && currentPortal === 'landlord' && (
-                <a href="/landlord/subscribe" className="sb-upsell">
+                <Link href="/landlord/subscribe" className="sb-upsell">
                   <div className="sb-upsell-title">
                     {(plan?.propertyCount ?? 0) > 0
                       ? `${plan?.propertyCount === 1 ? 'Your listing is' : 'Your listings are'} ready to publish`
@@ -1046,16 +1050,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       : 'Add a property and set it up for free. A plan is what puts it in front of students.'}
                   </div>
                   <span className="sb-upsell-cta">See plans →</span>
-                </a>
+                </Link>
               )}
 
               {/* Landlord portal link for tenants who've been upgraded */}
               {currentPortal === 'tenant' && (role === 'landlord' || role === 'admin') && (
-                <a href="/landlord/dashboard" className="sb-nav-item" style={{ borderTop: '1px solid var(--sb-border)', marginTop: '6px', paddingTop: '12px' }}>
+                <Link href="/landlord/dashboard" className="sb-nav-item" style={{ borderTop: '1px solid var(--sb-border)', marginTop: '6px', paddingTop: '12px' }}>
                   <Icon name="arrowRight" size={17} />
                   <span className="sb-nav-label">Landlord Portal</span>
                   <span className="sb-tip" aria-hidden="true">Landlord Portal</span>
-                </a>
+                </Link>
               )}
             </nav>
 
@@ -1063,14 +1067,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="sb-portals">
                 <div className="sb-portals-label">Switch portal</div>
                 {otherPortals.map(p => (
-                  <a key={p} href={PORTAL_HREF[p]} className="sb-psw-item" aria-label={`${PSW_LABEL[p]} portal`}>
+                  <Link key={p} href={PORTAL_HREF[p]} className="sb-psw-item" aria-label={`${PSW_LABEL[p]} portal`}>
                     <span className="sb-psw-dot" style={{ background: PSW_DOT[p] }} />
                     <span className="sb-psw-label">{PSW_LABEL[p]}</span>
                     <span className="sb-psw-arrow">
                       <Icon name={p === 'tenant' ? 'arrowLeft' : 'arrowRight'} size={13} />
                     </span>
                     <span className="sb-tip" aria-hidden="true">{PSW_LABEL[p]} portal</span>
-                  </a>
+                  </Link>
                 ))}
               </div>
             )}
@@ -1090,7 +1094,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {mobileTabs.map(item => {
             const badge = badgeFor(item.href)
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 className={`mob-tab${isActive(item) ? ' active' : ''}`}
@@ -1105,7 +1109,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 ) : isLocked(item.href) ? (
                   <span aria-hidden="true" style={{ position: 'absolute', top: 5, right: '50%', marginRight: -16, fontSize: 9, opacity: 0.8 }}>🔒</span>
                 ) : null}
-              </a>
+              </Link>
             )
           })}
           <button

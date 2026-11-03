@@ -3,7 +3,8 @@
 import { use, useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, updatePropertyCore, replacePropertyRooms, Property } from '@/lib/properties'
+import { getOwnerPropertyBySlug, updatePropertyCore, replacePropertyRooms, Property } from '@/lib/properties'
+import Link from 'next/link'
 
 type RoomRow = { id?: string; name: string; price: string; is_available: boolean; images?: string[] }
 
@@ -41,8 +42,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
@@ -220,9 +220,9 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
 
       <div className="edit-wrap">
         <div className="edit-breadcrumb">
-          <a href="/landlord/listings">Listings</a>
+          <Link href="/landlord/listings">Listings</Link>
           {' › '}
-          <a href={`/landlord/listings/${slug}`}>{property?.name}</a>
+          <Link href={`/landlord/listings/${slug}`}>{property?.name}</Link>
           {' › '}
           Edit Basics
         </div>
@@ -493,7 +493,7 @@ export default function EditBasicsPage({ params }: { params: Promise<{ slug: str
           <button className="btn-save" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          <a href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</a>
+          <Link href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</Link>
         </div>
       </div>
     </>

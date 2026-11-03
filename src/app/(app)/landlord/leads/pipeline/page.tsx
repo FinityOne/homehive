@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import Link from 'next/link'
 
 const STAGES = [
   {
@@ -74,12 +75,12 @@ export default function PipelineGuidePage() {
         borderBottom: '1px solid #e2e8f0',
         padding: '20px 40px',
       }}>
-        <a
+        <Link
           href="/landlord/leads"
           style={{ fontSize: '13px', color: '#10b981', textDecoration: 'none', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}
         >
           ← Back to Leads
-        </a>
+        </Link>
         <h1 style={{ margin: 0, fontSize: '28px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.5px' }}>
           Understanding Your Lead Pipeline
         </h1>

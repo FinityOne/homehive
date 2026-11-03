@@ -42,6 +42,22 @@ function load(): Promise<LandlordPlan | null> {
   return cached
 }
 
+/**
+ * Start the plan request now, before anyone knows they need it.
+ *
+ * The portal gate cannot render a page until it has a plan answer, and it used
+ * to only *start* asking once the role lookup had come back — two round trips
+ * nose to tail, with the page's own queries waiting behind both. The request
+ * does not depend on the role, so there is no reason for it to wait on one.
+ *
+ * The cost is one cheap request for an admin, who is never gated by a plan and
+ * therefore never reads the answer. That is a fair trade for taking a full
+ * round trip off the critical path of every landlord page view.
+ */
+export function prefetchLandlordPlan(): void {
+  void load()
+}
+
 /** Drop the cache so the next read hits the network. */
 export function refreshLandlordPlan(): void {
   cached = null

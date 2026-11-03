@@ -3,8 +3,9 @@
 import { use, useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, updatePropertyCore, Property } from '@/lib/properties'
+import { getOwnerPropertyBySlug, updatePropertyCore, Property } from '@/lib/properties'
 import ListingStatusControl from '@/components/listings/ListingStatusControl'
+import Link from 'next/link'
 
 export default function EditAvailabilityPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
@@ -28,8 +29,7 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
@@ -124,9 +124,9 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
 
       <div className="edit-wrap">
         <div className="edit-breadcrumb">
-          <a href="/landlord/listings">Listings</a>
+          <Link href="/landlord/listings">Listings</Link>
           {' › '}
-          <a href={`/landlord/listings/${slug}`}>{property?.name}</a>
+          <Link href={`/landlord/listings/${slug}`}>{property?.name}</Link>
           {' › '}
           Edit Availability
         </div>
@@ -207,7 +207,7 @@ export default function EditAvailabilityPage({ params }: { params: Promise<{ slu
           <button className="btn-save" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          <a href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</a>
+          <Link href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</Link>
         </div>
       </div>
     </>

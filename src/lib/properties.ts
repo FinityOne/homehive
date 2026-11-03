@@ -376,7 +376,33 @@ export async function getPropertiesBySlugs(slugs: string[]): Promise<Property[]>
   return mapped.sort((a, b) => (order.get(a.slug) ?? 0) - (order.get(b.slug) ?? 0))
 }
 
-export async function getPropertiesByOwner(userId: string): Promise<Property[]> {
+/**
+ * Concurrent callers of `getPropertiesByOwner` share one request.
+ *
+ * A landlord's portfolio is the first thing nearly every portal page needs,
+ * and several of them ask for it more than once in the same tick without
+ * meaning to — the dashboard's `Promise.all` fetches properties *and* leads,
+ * and `getLeadsForOwner` has to fetch the same properties itself to know which
+ * slugs to filter by. That is the same heavy nested select (images, rooms,
+ * tags, nearby, ASU reasons) twice over, in parallel, for one screen.
+ *
+ * The entry is dropped the moment the request settles, so this only ever
+ * collapses requests that genuinely overlap. It is a de-duplicator, not a
+ * cache: nothing here can serve a stale portfolio after an edit.
+ */
+const inFlightOwnerProperties = new Map<string, Promise<Property[]>>()
+
+export function getPropertiesByOwner(userId: string): Promise<Property[]> {
+  const pending = inFlightOwnerProperties.get(userId)
+  if (pending) return pending
+
+  const request = fetchPropertiesByOwner(userId)
+    .finally(() => { inFlightOwnerProperties.delete(userId) })
+  inFlightOwnerProperties.set(userId, request)
+  return request
+}
+
+async function fetchPropertiesByOwner(userId: string): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')
     .select(PROPERTY_SELECT)
@@ -389,6 +415,93 @@ export async function getPropertiesByOwner(userId: string): Promise<Property[]> 
   }
 
   return data.map(mapProperty)
+}
+
+/** A property reduced to what a picker needs to show and submit. */
+export type PropertyOption = { id: string; name: string; slug: string }
+
+/**
+ * A landlord's properties as dropdown options.
+ *
+ * The lease forms render these into a `<select>` that shows a name and submits
+ * an id. Fetching the full portfolio for that meant downloading every photo
+ * URL, room, tag and nearby place in the account to populate a list of
+ * two-word labels.
+ */
+export async function getOwnerPropertyOptions(userId: string): Promise<PropertyOption[]> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select('id, name, slug')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: true })
+
+  if (error || !data) {
+    console.error('Error fetching owner property options:', error)
+    return []
+  }
+
+  return data as PropertyOption[]
+}
+
+/**
+ * One of a landlord's properties, by slug.
+ *
+ * Every listing screen — detail, preview and the five edit steps — needs
+ * exactly one property, and every one of them used to get it by fetching the
+ * whole portfolio and calling `.find()` on the result. A landlord with twenty
+ * doors downloaded twenty properties, with all their images, rooms, tags,
+ * nearby places and ASU reasons, to render one of them; the cost of opening a
+ * listing grew with how many other listings they owned, which is exactly
+ * backwards for the people who use the portal most.
+ *
+ * The joins are identical to `PROPERTY_SELECT`, so the object handed back is
+ * the same one those screens already expect — only the nineteen they threw
+ * away are gone. `owner_id` stays in the filter: this is the same ownership
+ * check `.find()` was implicitly doing, and it must not become a way to read
+ * someone else's listing by guessing a slug.
+ */
+export async function getOwnerPropertyBySlug(
+  userId: string,
+  slug: string
+): Promise<Property | null> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select(PROPERTY_SELECT)
+    .eq('owner_id', userId)
+    .eq('slug', slug)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error fetching owner property by slug:', error)
+    return null
+  }
+
+  return data ? mapProperty(data) : null
+}
+
+/**
+ * Just the slugs of a landlord's properties.
+ *
+ * `leads` is keyed by property slug, so every lead query has to start by
+ * asking which slugs belong to this owner. It used to do that by calling
+ * `getPropertiesByOwner`, which runs the full five-join portfolio select —
+ * images, rooms, tags, nearby places and ASU reasons, all fetched, all
+ * mapped, all thrown away so that a list of strings could come out the other
+ * end. On a portfolio with photos that is the most expensive query on the
+ * leads pages, and none of what it costs was ever read.
+ */
+export async function getOwnerPropertySlugs(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select('slug')
+    .eq('owner_id', userId)
+
+  if (error || !data) {
+    console.error('Error fetching owner property slugs:', error)
+    return []
+  }
+
+  return data.map(r => r.slug as string).filter(Boolean)
 }
 
 export async function updatePropertyOffer(

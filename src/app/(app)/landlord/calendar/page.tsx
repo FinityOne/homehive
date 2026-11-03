@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 type Tour = {
   id: string
@@ -260,7 +261,7 @@ export default function LandlordCalendarPage() {
                   </div>
                 </div>
                 {selectedTours.map(t => (
-                  <a
+                  <Link
                     key={t.id}
                     href={`/landlord/leads/${t.lead_id}`}
                     style={{ display: 'block', padding: '14px 16px', borderBottom: '1px solid #f1f5f9', textDecoration: 'none', transition: 'background 0.15s' }}
@@ -299,7 +300,7 @@ export default function LandlordCalendarPage() {
                       </div>
                       <span style={{ fontSize: 12, color: '#94a3b8' }}>→</span>
                     </div>
-                  </a>
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -318,7 +319,7 @@ export default function LandlordCalendarPage() {
                   Upcoming
                 </div>
                 {tours.filter(t => t.scheduled_date >= todayStr).slice(0, 5).map(t => (
-                  <a
+                  <Link
                     key={t.id}
                     href={`/landlord/leads/${t.lead_id}`}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid #f1f5f9', textDecoration: 'none', transition: 'background 0.15s' }}
@@ -342,7 +343,7 @@ export default function LandlordCalendarPage() {
                       </div>
                     </div>
                     <span style={{ fontSize: 11, color: '#94a3b8' }}>→</span>
-                  </a>
+                  </Link>
                 ))}
               </div>
             )}

@@ -4,12 +4,13 @@ import { use, useEffect, useRef, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
-  getPropertiesByOwner,
+  getOwnerPropertyBySlug,
   uploadPropertyImage,
   uploadRoomImage,
   Property,
   PropertyRoom,
 } from '@/lib/properties'
+import Link from 'next/link'
 
 export default function EditMediaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
@@ -37,8 +38,7 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
 
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
@@ -242,9 +242,9 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
 
       <div className="media-wrap">
         <div className="media-breadcrumb">
-          <a href="/landlord/listings">Listings</a>
+          <Link href="/landlord/listings">Listings</Link>
           {' › '}
-          <a href={`/landlord/listings/${slug}`}>{property?.name}</a>
+          <Link href={`/landlord/listings/${slug}`}>{property?.name}</Link>
           {' › '}
           Photos
         </div>
@@ -376,7 +376,7 @@ export default function EditMediaPage({ params }: { params: Promise<{ slug: stri
           </>
         )}
 
-        <a href={`/landlord/listings/${slug}`} className="back-link">← Back to listing</a>
+        <Link href={`/landlord/listings/${slug}`} className="back-link">← Back to listing</Link>
       </div>
     </>
   )

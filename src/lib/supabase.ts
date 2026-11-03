@@ -17,20 +17,38 @@ export const supabase = createBrowserClient(
 /**
  * The signed-in user, or null if there genuinely isn't one.
  *
- * `auth.getUser()` asks the Supabase server, so a dropped wifi connection or a
- * slow response comes back as `user: null` — indistinguishable, to a caller,
- * from being signed out. Pages read that and bounce to /login, which is what a
- * logout "every few minutes" actually looked like.
+ * `auth.getUser()` asks the Supabase server, so every caller paid a network
+ * round trip before it could even start fetching its own data — and the
+ * landlord portal has three callers deep in a chain (the app shell, the portal
+ * gate, the page itself), so a page waited on that same request three times
+ * over before its first query left the browser.
  *
  * `auth.getSession()` answers from the locally stored session instead, and
- * refreshes it if the access token has expired, returning null only when the
- * refresh itself fails. So it is the honest authority on "am I still signed in",
- * and we fall back to it whenever getUser() comes back empty.
+ * only touches the network when the access token has actually expired. It is
+ * also the *more* honest authority on "am I still signed in": a dropped wifi
+ * connection makes `getUser()` return `user: null`, indistinguishable to a
+ * caller from being signed out, which is what a logout "every few minutes"
+ * actually looked like. So the session is asked first and `getUser()` is kept
+ * only as the fallback for the case where no session is stored at all.
+ *
+ * Nothing is trusted to this value that isn't also enforced server-side: it
+ * supplies an id to scope queries with, and RLS (plus the API routes' own
+ * `getUser()` checks) is what actually decides what that id may read.
+ *
+ * Concurrent callers share one in-flight promise, so the shell, the gate and
+ * the page asking at once cost one answer rather than three.
  */
-export async function getCurrentUser(): Promise<User | null> {
-  const { data } = await supabase.auth.getUser()
-  if (data.user) return data.user
+let inFlightUser: Promise<User | null> | null = null
 
+export async function getCurrentUser(): Promise<User | null> {
+  inFlightUser ??= resolveCurrentUser().finally(() => { inFlightUser = null })
+  return inFlightUser
+}
+
+async function resolveCurrentUser(): Promise<User | null> {
   const { data: sessionData } = await supabase.auth.getSession()
-  return sessionData.session?.user ?? null
+  if (sessionData.session?.user) return sessionData.session.user
+
+  const { data } = await supabase.auth.getUser()
+  return data.user ?? null
 }

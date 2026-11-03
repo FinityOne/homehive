@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getInspectionsForOwner, computeTotals, fmtMoney, type Inspection } from '@/lib/inspections'
+import Link from 'next/link'
 
 function fmt(d: string | null): string {
   if (!d) return '—'
@@ -66,7 +67,7 @@ export default function InspectionsPage() {
       <div className="iw">
         <div className="ih">
           <h1 className="it">Checkout Inspections</h1>
-          <a href="/landlord/leases" className="ilink">Go to Leases →</a>
+          <Link href="/landlord/leases" className="ilink">Go to Leases →</Link>
         </div>
         <div className="isub">
           Move-out reports covering one or more leases on a property. Start one from any lease.
@@ -84,7 +85,7 @@ export default function InspectionsPage() {
         ) : rows.map(i => {
           const t = computeTotals(i)
           return (
-            <a key={i.id} href={`/landlord/inspections/${i.id}`} className="row">
+            <Link key={i.id} href={`/landlord/inspections/${i.id}`} className="row">
               <div className="rt">
                 <div>
                   <div className="rname">{i.title || i.property?.name || 'Move-out inspection'}</div>
@@ -113,7 +114,7 @@ export default function InspectionsPage() {
                   </div>
                 </div>
               </div>
-            </a>
+            </Link>
           )
         })}
       </div>

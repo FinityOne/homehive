@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
+import Link from 'next/link'
 
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -267,11 +268,11 @@ export default function InsightsPage() {
 
       {/* Sub-nav */}
       <div className="ins-subnav">
-        <a href="/landlord/leads" className="ins-subnav-link">Overview</a>
-        <a href="/landlord/leads/insights" className="ins-subnav-link active">
+        <Link href="/landlord/leads" className="ins-subnav-link">Overview</Link>
+        <Link href="/landlord/leads/insights" className="ins-subnav-link active">
           Insights{urgentCount > 0 ? ` (${urgentCount})` : ''}
-        </a>
-        <a href="/landlord/leads/list" className="ins-subnav-link">All Leads</a>
+        </Link>
+        <Link href="/landlord/leads/list" className="ins-subnav-link">All Leads</Link>
       </div>
 
       <div style={{ padding: '16px 20px', fontFamily: "'DM Sans', sans-serif", maxWidth: 960, margin: '0 auto' }}>

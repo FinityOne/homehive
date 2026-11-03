@@ -14,6 +14,7 @@ import {
   type TenantFormData,
 } from '@/lib/tenants'
 import { getLeadsForOwner, type Lead } from '@/lib/leads'
+import Link from 'next/link'
 
 const STATUS_LABEL: Record<TenantStatus, string> = {
   active: 'Active',
@@ -226,9 +227,9 @@ export default function TenantsPage() {
         <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '28px', lineHeight: 1.6 }}>
           Your tenants will appear here once you have an active listing. Create your first listing to start tracking tenants.
         </div>
-        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+        <Link href="/landlord/listings/new" style={{ display: 'inline-block', background: '#0f172a', color: '#34d399', padding: '12px 28px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
           Create a listing →
-        </a>
+        </Link>
       </div>
     )
   }

@@ -5,7 +5,7 @@ import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-  getPropertiesByOwner,
+  getOwnerPropertyBySlug,
   updatePropertyCore,
   updatePropertyOffer,
   replacePropertyTags,
@@ -17,6 +17,7 @@ import {
 import type { Lead } from '@/lib/leads'
 import { LISTING_STATUS_META, isPublicStatus, type ListingStatus } from '@/lib/listingStatus'
 import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import Link from 'next/link'
 
 const ListingStatusControl = dynamic(() => import('@/components/listings/ListingStatusControl'), { ssr: false })
 const LeadsTable = dynamic(() => import('@/components/leads/LeadsTable'), { ssr: false })
@@ -243,8 +244,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
@@ -446,7 +446,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               your plan is active, so it publishes the moment you subscribe — there is no
               review queue to wait on.
             </div>
-            <a
+            <Link
               href="/landlord/subscribe"
               style={{
                 display: 'inline-block', background: '#8C1D40', color: '#fff', textDecoration: 'none',
@@ -454,7 +454,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               }}
             >
               Publish this listing →
-            </a>
+            </Link>
           </div>
         )}
         {property.admin_status === 'pending' && (
@@ -479,7 +479,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
 
         {/* BREADCRUMB + HEADER */}
         <div className="lp-breadcrumb">
-          <a href="/landlord/listings">Listings</a> › {property.name}
+          <Link href="/landlord/listings">Listings</Link> › {property.name}
         </div>
         <div className="lp-header">
           <div>
@@ -689,7 +689,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               <div className="lp-card">
                 <div className="lp-card-hdr">
                   <span className="lp-card-title">Photos ({property.images.length})</span>
-                  <a href={`/landlord/listings/${slug}/edit/media`} style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>Edit photos →</a>
+                  <Link href={`/landlord/listings/${slug}/edit/media`} style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>Edit photos →</Link>
                 </div>
                 <div className="lp-card-body">
                   <div className="media-grid">
@@ -706,7 +706,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               <div className="lp-card-hdr">
                 <span className="lp-card-title">Leads ({leadsTotal})</span>
                 {leadsTotal > 0 && (
-                  <a href="/landlord/leads" style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>View all in CRM →</a>
+                  <Link href="/landlord/leads" style={{ fontSize: '12px', color: '#10b981', textDecoration: 'none', fontWeight: 600 }}>View all in CRM →</Link>
                 )}
               </div>
               <div className="lp-card-body" style={{ padding: 0, position: 'relative' }}>
@@ -720,9 +720,9 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                       date. The listing is finished — a plan is what puts it in front of
                       renters and turns this into a pipeline.
                     </div>
-                    <a href="/landlord/subscribe" style={{ display: 'inline-block', marginTop: 11, fontSize: 12.5, fontWeight: 700, color: '#8C1D40', textDecoration: 'none', borderBottom: '1px solid #e9b7c6' }}>
+                    <Link href="/landlord/subscribe" style={{ display: 'inline-block', marginTop: 11, fontSize: 12.5, fontWeight: 700, color: '#8C1D40', textDecoration: 'none', borderBottom: '1px solid #e9b7c6' }}>
                       Publish this listing →
-                    </a>
+                    </Link>
                   </div>
                 )}
                 {leadsLoading && (
@@ -1089,7 +1089,7 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
             <div className="lp-card" style={{ border: '1.5px dashed #e2e8f0', background: '#fafafa' }}>
               <div className="lp-card-hdr" style={{ borderBottom: 'none' }}>
                 <span className="lp-card-title">Photos</span>
-                <a href={`/landlord/listings/${slug}/edit/media`} className="btn-preview">Manage photos →</a>
+                <Link href={`/landlord/listings/${slug}/edit/media`} className="btn-preview">Manage photos →</Link>
               </div>
               <div className="lp-card-body" style={{ paddingTop: 0 }}>
                 {property.images?.length > 0 ? (
@@ -1168,24 +1168,24 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
               </p>
               {canPublish ? (
                 <>
-                  <a
+                  <Link
                     href={`/landlord/listings/${property.slug}/calendar`}
                     style={{ display: 'inline-block', background: '#1a1a1a', color: '#FFC627', textDecoration: 'none', fontSize: '15px', fontWeight: 700, padding: '14px 32px', borderRadius: '10px' }}
                   >
                     📅 Open Tour Calendar →
-                  </a>
+                  </Link>
                   <p style={{ marginTop: '14px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
                     The calendar opens in a focused view for easy drag-and-select scheduling. Come back here when done.
                   </p>
                 </>
               ) : (
                 <>
-                  <a
+                  <Link
                     href="/landlord/subscribe"
                     style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', textDecoration: 'none', fontSize: '15px', fontWeight: 700, padding: '14px 32px', borderRadius: '10px' }}
                   >
                     🔒 Tours come with a plan →
-                  </a>
+                  </Link>
                   <p style={{ marginTop: '14px', fontSize: '12px', color: '#9b9b9b', lineHeight: 1.6 }}>
                     Students book their own viewings from the slots you publish, and the
                     confirmations and reminders go out for you. It needs a plan for the same

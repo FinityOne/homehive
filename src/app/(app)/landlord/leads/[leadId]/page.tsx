@@ -8,6 +8,7 @@ import type { Lead } from '@/lib/leads'
 import { getNextBestPlan, actionKindTag, type LeadActionContext, type ReservationState, type RecommendedAction } from '@/lib/leadActions'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
 import { firstNameFrom } from '@/lib/names'
+import Link from 'next/link'
 
 // tour_scheduled is a legacy status — treated as qualified in the pipeline display
 const STATUS_ORDER: Lead['status'][] = ['new', 'contacted', 'follow_up', 'engaged', 'qualified', 'matching', 'cold', 'closed']
@@ -1283,7 +1284,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
 
           {/* ── BREADCRUMB ── */}
           <div className="ld2-bc">
-            <a href="/landlord/leads">Leads</a>
+            <Link href="/landlord/leads">Leads</Link>
             <span className="ld2-bc-sep">/</span>
             <span className="ld2-bc-cur">
               {lead.first_name}{lead.last_name ? ` ${lead.last_name}` : ''}{property ? ` · ${property.name}` : ''}
@@ -1905,7 +1906,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ leadId: s
                         })}
                         <div className="ld2-sms-footer">
                           <span style={{ fontSize: '11px', color: '#b0a898' }}>Variables filled · {property?.name}</span>
-                          <a href="/landlord/customizations" style={{ fontSize: '11px', color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>Edit templates →</a>
+                          <Link href="/landlord/customizations" style={{ fontSize: '11px', color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>Edit templates →</Link>
                         </div>
                       </>
                     )

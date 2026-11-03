@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 type BgStatus = 'initiated' | 'pending_verification' | 'conditionally_approved' | 'approved' | 'declined'
 
@@ -255,7 +256,7 @@ export default function BackgroundChecksPage() {
                 { label: 'Eviction', value: c.eviction_check },
               ]
               return (
-                <a key={c.id} className="bgc-row" href={`/landlord/background-checks/${c.id}`} target="_blank" rel="noopener noreferrer">
+                <Link key={c.id} className="bgc-row" href={`/landlord/background-checks/${c.id}`} target="_blank" rel="noopener noreferrer">
                   <div className="bgc-row-av">{initials}</div>
                   <div className="bgc-row-id">
                     <div className="bgc-row-name" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -312,7 +313,7 @@ export default function BackgroundChecksPage() {
                   </div>
                   <div className="bgc-row-date">{timeAgo(c.updated_at || c.created_at)}</div>
                   <span className="bgc-row-chev">›</span>
-                </a>
+                </Link>
               )
             })}
           </div>

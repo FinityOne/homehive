@@ -3,7 +3,8 @@
 import { use, useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, Property } from '@/lib/properties'
+import { getOwnerPropertyBySlug, Property } from '@/lib/properties'
+import Link from 'next/link'
 
 const TAG_ICONS: Record<string, string> = {
   wifi: '⚡', internet: '⚡',
@@ -44,8 +45,7 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
     async function load() {
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
       setProperty(found)
       setLoading(false)
@@ -199,18 +199,18 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
             }
           </span>
         </div>
-        <a href={`/landlord/listings/${slug}`} className="preview-back">← Back to manage</a>
+        <Link href={`/landlord/listings/${slug}`} className="preview-back">← Back to manage</Link>
       </div>
 
       <div className="prop-page">
 
         {/* Back nav */}
-        <a
+        <Link
           href={`/landlord/listings/${slug}`}
           style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#b0a898', textDecoration: 'none', marginBottom: '10px' }}
         >
           <span style={{ fontSize: '15px' }}>←</span> Back to listing manager
-        </a>
+        </Link>
 
         {/* Breadcrumb */}
         <div style={{ fontSize: '12px', color: '#9b9b9b', marginBottom: '16px' }}>
@@ -496,9 +496,9 @@ export default function ListingPreviewPage({ params }: { params: Promise<{ slug:
             <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#fff', lineHeight: 1 }}>${(property.price || 0).toLocaleString()}<span style={{ fontSize: '12px', color: '#9b9b9b', fontFamily: 'DM Sans, sans-serif', fontWeight: 400 }}>/mo</span></div>
             <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '2px' }}>Preview Mode — {statusCfg.label}</div>
           </div>
-          <a href={`/landlord/listings/${slug}`} style={{ background: '#f59e0b', color: '#1a1a1a', border: 'none', borderRadius: '10px', padding: '12px 18px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textDecoration: 'none', whiteSpace: 'nowrap' }}>
+          <Link href={`/landlord/listings/${slug}`} style={{ background: '#f59e0b', color: '#1a1a1a', border: 'none', borderRadius: '10px', padding: '12px 18px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textDecoration: 'none', whiteSpace: 'nowrap' }}>
             ← Manage listing
-          </a>
+          </Link>
         </div>
       </div>
     </>

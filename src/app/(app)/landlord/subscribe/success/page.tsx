@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { PLANS, isPlanTier } from '@/lib/landlordPlans'
+import Link from 'next/link'
 
 /**
  * Where Stripe sends a landlord who just paid.
@@ -83,12 +84,12 @@ function SuccessInner() {
             <a href="mailto:landlord@homehive.live" style={{ color: '#8C1D40' }}>landlord@homehive.live</a>{' '}
             and we will sort it out straight away.
           </p>
-          <a href="/landlord/dashboard" style={{
+          <Link href="/landlord/dashboard" style={{
             display: 'inline-block', background: '#1a1a1a', color: '#fff',
             padding: '11px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700, textDecoration: 'none',
           }}>
             Go to dashboard →
-          </a>
+          </Link>
         </>
       ) : planName ? (
         <>

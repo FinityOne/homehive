@@ -7,6 +7,7 @@ import { getPropertiesByOwner, Property } from '@/lib/properties'
 import { getLeadsForOwner, Lead } from '@/lib/leads'
 import { getLeasesForOwner, getLeaseStatus, formatLeaseDate, Lease } from '@/lib/leases'
 import { getPlansForOwner, PaymentPlan } from '@/lib/payments'
+import Link from 'next/link'
 
 function getGreeting(name: string) {
   const h = new Date().getHours()
@@ -481,9 +482,9 @@ export default function LandlordDashboard() {
                 not published
               </span>
             </div>
-            <a href="/landlord/subscribe" style={{ fontSize: 13, fontWeight: 600, color: '#92400e', textDecoration: 'none', borderBottom: '1px solid #f59e0b' }}>
+            <Link href="/landlord/subscribe" style={{ fontSize: 13, fontWeight: 600, color: '#92400e', textDecoration: 'none', borderBottom: '1px solid #f59e0b' }}>
               Publish {unpaidProps.length === 1 ? 'my listing' : 'my listings'} →
-            </a>
+            </Link>
           </div>
         )}
 
@@ -603,7 +604,7 @@ export default function LandlordDashboard() {
           <div className="panel">
             <div className="panel-hd">
               <span className="panel-title">Payments</span>
-              <a href="/landlord/financials" className="panel-link">View all →</a>
+              <Link href="/landlord/financials" className="panel-link">View all →</Link>
             </div>
             <div className="panel-body">
 
@@ -648,9 +649,9 @@ export default function LandlordDashboard() {
                             <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{item.propertyName}</div>
                             <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.count} payment{item.count !== 1 ? 's' : ''} past due</div>
                           </div>
-                          <a href={`/landlord/financials?plan=${item.planId}`} style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', textDecoration: 'none', flexShrink: 0 }}>
+                          <Link href={`/landlord/financials?plan=${item.planId}`} style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', textDecoration: 'none', flexShrink: 0 }}>
                             {fmtFull(item.owed)}
-                          </a>
+                          </Link>
                         </div>
                       ))}
                     </>
@@ -681,9 +682,9 @@ export default function LandlordDashboard() {
                                 {plan.tenants.map(t => t.name).join(', ')} · {planPaid}/{planTotal} paid
                               </div>
                             </div>
-                            <a href={`/landlord/financials?plan=${plan.id}`} style={{ fontSize: 11, color: '#8C1D40', textDecoration: 'none', fontWeight: 500, flexShrink: 0 }}>
+                            <Link href={`/landlord/financials?plan=${plan.id}`} style={{ fontSize: 11, color: '#8C1D40', textDecoration: 'none', fontWeight: 500, flexShrink: 0 }}>
                               View →
-                            </a>
+                            </Link>
                           </div>
                         )
                       })}
@@ -698,7 +699,7 @@ export default function LandlordDashboard() {
           <div className="panel">
             <div className="panel-hd">
               <span className="panel-title">Active Leases</span>
-              <a href="/landlord/leases" className="panel-link">View all →</a>
+              <Link href="/landlord/leases" className="panel-link">View all →</Link>
             </div>
             <div className="panel-body">
 
@@ -780,7 +781,7 @@ export default function LandlordDashboard() {
           <div className="panel">
             <div className="panel-hd">
               <span className="panel-title">Lead Pipeline</span>
-              <a href="/landlord/leads" className="panel-link">Full pipeline →</a>
+              <Link href="/landlord/leads" className="panel-link">Full pipeline →</Link>
             </div>
             <div className="panel-body">
               {leads.length === 0 ? (
@@ -807,7 +808,7 @@ export default function LandlordDashboard() {
                       const cfg = STAGE_COLOR[lead.status] || STAGE_COLOR.closed
                       const propName = lead.property ? (propNameBySlug[lead.property] || lead.property) : null
                       return (
-                        <a key={lead.id} href={`/landlord/leads/${lead.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10, background: '#f8fafc', borderRadius: 10, padding: '10px 12px', border: '1px solid #f1f5f9' }}>
+                        <Link key={lead.id} href={`/landlord/leads/${lead.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10, background: '#f8fafc', borderRadius: 10, padding: '10px 12px', border: '1px solid #f1f5f9' }}>
                           <div style={{ width: 34, height: 34, borderRadius: '50%', background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: cfg.color, flexShrink: 0 }}>
                             {initials}
                           </div>
@@ -818,7 +819,7 @@ export default function LandlordDashboard() {
                           <span className="pill" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>
                             {STAGE_LABEL[lead.status] || lead.status}
                           </span>
-                        </a>
+                        </Link>
                       )
                     })}
                   </div>
@@ -833,15 +834,15 @@ export default function LandlordDashboard() {
           <div className="panel">
             <div className="panel-hd">
               <span className="panel-title">Your Properties</span>
-              <a href="/landlord/listings" className="panel-link">Manage all →</a>
+              <Link href="/landlord/listings" className="panel-link">Manage all →</Link>
             </div>
             {properties.length === 0 ? (
               <div style={{ padding: '28px 24px', textAlign: 'center' }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>No listings yet</div>
                 <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>It takes about 5 minutes to go live.</div>
-                <a href="/landlord/listings/new" style={{ background: '#0f172a', color: '#34d399', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                <Link href="/landlord/listings/new" style={{ background: '#0f172a', color: '#34d399', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
                   Create your first listing →
-                </a>
+                </Link>
               </div>
             ) : (
               <div>
@@ -879,7 +880,7 @@ export default function LandlordDashboard() {
                           {propOverdue > 0 && <span style={{ color: '#dc2626', fontWeight: 600 }}>⚠ {fmtFull(propOverdue)} overdue</span>}
                         </div>
                       </div>
-                      <a href={`/landlord/listings/${p.slug}`} style={{ fontSize: 12, fontWeight: 500, color: '#8C1D40', textDecoration: 'none', flexShrink: 0 }}>Manage →</a>
+                      <Link href={`/landlord/listings/${p.slug}`} style={{ fontSize: 12, fontWeight: 500, color: '#8C1D40', textDecoration: 'none', flexShrink: 0 }}>Manage →</Link>
                     </div>
                   )
                 })}

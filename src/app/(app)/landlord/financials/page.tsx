@@ -25,6 +25,7 @@ import {
   type LateFeeLedger as FeeLedger, type LateFeeWaiver,
 } from '@/lib/lateFees'
 import { waivedLedger, EMPTY_WAIVED_LEDGER } from '@/lib/lateFeeWaivers'
+import Link from 'next/link'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
 const LateFeesPanel = dynamic(() => import('@/components/payments/LateFeesPanel'), { ssr: false })
@@ -334,7 +335,7 @@ export default function FinancialsPage({
           {current?.lease_id && (
             <p className="led-note">
               Rent, deposits and one-off charges live here. The{' '}
-              <a href={`/landlord/leases/${current.lease_id}`} className="lnk">lease</a> holds the
+              <Link href={`/landlord/leases/${current.lease_id}`} className="lnk">lease</Link> holds the
               tenancy itself — people, documents and move-out.
             </p>
           )}
@@ -398,7 +399,7 @@ export default function FinancialsPage({
               Set up a payment plan against a lease to schedule rent, track who has paid, and record
               deposits and one-off charges.
             </p>
-            <a href="/landlord/financials/new" className="btn-primary">Create your first plan</a>
+            <Link href="/landlord/financials/new" className="btn-primary">Create your first plan</Link>
           </div>
         ) : scoped.length === 0 ? (
           /* The filter, not the portfolio, is empty. Say which, and never let
@@ -489,7 +490,7 @@ export default function FinancialsPage({
             {/* A reminder that bounced looks exactly like a tenant ignoring
                 you, and the landlord is standing here, not in the email log. */}
             {bouncedCount > 0 && (
-              <a className="alarm-bar" href="/landlord/reminders?state=problem">
+              <Link className="alarm-bar" href="/landlord/reminders?state=problem">
                 <span>
                   <strong>
                     {bouncedCount} email{bouncedCount !== 1 ? 's' : ''} to tenants never arrived.
@@ -497,7 +498,7 @@ export default function FinancialsPage({
                   Bounced, refused, or marked as spam — so nobody read them.
                 </span>
                 <span className="go">Check them →</span>
-              </a>
+              </Link>
             )}
 
             {/* ══ 2. WHO IS BEHIND — the whole lease, never one month ══ */}
@@ -756,9 +757,9 @@ function MissedPayments({
                     <button className="btn-primary sm" onClick={() => onOpen(p.planId)}>
                       Chase or record a payment
                     </button>
-                    <a className="btn-secondary sm" href={`/landlord/reminders?plan=${p.planId}`}>
+                    <Link className="btn-secondary sm" href={`/landlord/reminders?plan=${p.planId}`}>
                       See what they were sent
-                    </a>
+                    </Link>
                   </div>
                 </div>
               )}
@@ -1191,9 +1192,9 @@ function RecentPayments({
               {/* This panel answers "has anything landed?". Reconciling against
                   a bank statement — with the clearing and bounced payments this
                   list deliberately leaves out — is the Payments tab's job. */}
-              <a className="btn-quiet sm" href="/landlord/financials/payments">
+              <Link className="btn-quiet sm" href="/landlord/financials/payments">
                 Open the payments log
-              </a>
+              </Link>
             </div>
           </>
         )}
@@ -1435,7 +1436,7 @@ function ChargeDetail({
               />
             )}
             <p className="muted sm sheet-link">
-              <a className="lnk" href="/landlord/reminders">See every reminder sent →</a>
+              <Link className="lnk" href="/landlord/reminders">See every reminder sent →</Link>
             </p>
           </div>
 
@@ -1448,9 +1449,9 @@ function ChargeDetail({
         </div>
 
         <div className="sheet-ft">
-          <a className="btn-secondary sm" href={`/landlord/reminders?plan=${c.planId}`}>
+          <Link className="btn-secondary sm" href={`/landlord/reminders?plan=${c.planId}`}>
             Emails on this lease
-          </a>
+          </Link>
           <button className="btn-primary sm" onClick={onOpenLedger}>
             Open the lease ledger
           </button>
