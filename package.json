@@ -16,7 +16,8 @@
     "verify:lead-followups": "EMAIL_UNSUBSCRIBE_SECRET=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-lead-followups.mjs",
     "verify:landlord-email": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-payment-email.mjs",
     "verify:listing-perf": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-listing-performance.mjs",
-    "verify:renewals": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-renewals.mjs"
+    "verify:renewals": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-renewals.mjs",
+    "verify:amendments": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-amendments.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.1.0",

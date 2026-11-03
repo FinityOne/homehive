@@ -8,6 +8,23 @@ import { fmtMoney, METHOD_META, type SettledMethod } from '@/lib/rentPayments'
 import { tenantCharges } from '@/lib/tenantCharges'
 import type { Payable } from '@/components/tenant/PayRentModal'
 import StripeModeBanner from '@/components/StripeModeBanner'
+import Link from 'next/link'
+import {
+  fmtShortDate as fmtAmendDate, fmtDollars as fmtAmendDollars, amendmentPath,
+} from '@/lib/leaseAmendments'
+
+/** Just enough of an amendment to put it on this page and link to it. */
+type MyAmendment = {
+  id: string
+  lease_id: string
+  title: string
+  effective_date: string
+  monthly_charge: number
+  monthly_charge_label: string | null
+  status: 'sent' | 'signed' | 'declined' | 'withdrawn'
+  token: string
+  signature_date: string | null
+}
 
 const PayRentModal = dynamic(() => import('@/components/tenant/PayRentModal'), { ssr: false })
 const LateFeeDetailSheet = dynamic(
@@ -95,6 +112,15 @@ export default function MyLeasePage() {
   const [paying, setPaying] = useState<Payable[] | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [flash, setFlash] = useState<string | null>(null)
+  /**
+   * Lease changes addressed to this tenant.
+   *
+   * On this page and not only in the email, because an email gets buried and a
+   * tenant who half-remembers being asked to sign something has nowhere else to
+   * look. Loaded separately from the tenancy so a failure here cannot stop them
+   * seeing their rent.
+   */
+  const [amendments, setAmendments] = useState<MyAmendment[]>([])
   /** The fee whose detail sheet is open, keyed by its charge id. */
   const [openFee, setOpenFee] = useState<string | null>(null)
   // Set from the URL on mount, cleared once acted on — a ref, not state, so
@@ -132,6 +158,14 @@ export default function MyLeasePage() {
     const json = await res.json().catch(() => ({}))
     setTenancies(json.tenancies ?? [])
     setLoading(false)
+
+    // After the page is usable, not before it.
+    fetch('/api/tenant/amendments', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => (r.ok ? r.json() : { amendments: [] }))
+      .then(j => setAmendments(j.amendments ?? []))
+      .catch(() => {})
   }, [router])
 
   useEffect(() => { load() }, [load])
@@ -374,6 +408,13 @@ export default function MyLeasePage() {
         )}
 
         {flash && <div className="ok">{flash}</div>}
+
+        {/* ── Lease changes ───────────────────────────────────────────────────
+            Unsigned ones are the loudest thing on the page bar an overdue
+            balance: a document waiting on a signature is a thing the tenant has
+            to do, and it is their landlord waiting. Signed ones stay visible as
+            a quiet row — this is where their copy lives. */}
+        <AmendmentNotices amendments={amendments.filter(a => a.lease_id === t.lease.id)} />
 
         <div className="figs">
           <Fig label="Balance due" value={fmtMoney(totalOwed)} tone={totalOwed > 0 ? 'bad' : 'good'} />
@@ -790,6 +831,61 @@ export default function MyLeasePage() {
   )
 }
 
+/**
+ * The tenant's amendments, on their lease page.
+ *
+ * Two shapes, because they are two different things. An unsigned amendment is a
+ * task with a deadline-shaped feeling and gets a full card with the terms on
+ * it; a signed one is a receipt and gets one line. Declined and withdrawn
+ * amendments are deliberately kept — a tenant who said no should be able to see
+ * that they said no, rather than wonder whether they imagined being asked.
+ */
+function AmendmentNotices({ amendments }: { amendments: MyAmendment[] }) {
+  if (amendments.length === 0) return null
+  const pending = amendments.filter(a => a.status === 'sent')
+  const settled = amendments.filter(a => a.status !== 'sent')
+
+  return (
+    <>
+      {pending.map(a => (
+        <div key={a.id} className="am-notice">
+          <div className="am-notice-k">Signature needed</div>
+          <div className="am-notice-t">{a.title}</div>
+          <div className="am-notice-b">
+            {a.monthly_charge > 0 ? (
+              <>
+                <strong>{fmtAmendDollars(a.monthly_charge)}/month</strong> from{' '}
+                {fmtAmendDate(a.effective_date)}, and nothing else to pay.{' '}
+              </>
+            ) : (
+              <>Takes effect {fmtAmendDate(a.effective_date)}. </>
+            )}
+            Your rent, deposit and move-out date don&apos;t change.
+          </div>
+          <Link href={amendmentPath(a.token)} className="am-notice-btn">
+            Read and sign it →
+          </Link>
+        </div>
+      ))}
+      {settled.length > 0 && (
+        <div className="am-settled">
+          {settled.map(a => (
+            <Link key={a.id} href={amendmentPath(a.token)} className="am-settled-row">
+              <span className={`am-dot ${a.status}`} />
+              <span className="am-settled-t">{a.title}</span>
+              <span className="am-settled-m">
+                {a.status === 'signed'
+                  ? `Signed ${fmtAmendDate(a.signature_date)}`
+                  : a.status === 'declined' ? 'You declined' : 'Withdrawn'}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 function Fig({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
   return (
     <div className="fig">
@@ -911,6 +1007,24 @@ const CSS = `
   .btn-dark.sm { padding: 7px 14px; font-size: 12.5px; }
 
   .ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 10px; padding: 12px 15px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+
+  /* Lease amendments. The unsigned card borrows the dark border the pay sheet
+     uses — on this page that outline means "this one is yours to act on". */
+  .am-notice { background: #fff; border: 2px solid #0f172a; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .am-notice-k { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.9px; color: #b45309; margin-bottom: 6px; }
+  .am-notice-t { font-size: 15.5px; font-weight: 700; color: #0f172a; letter-spacing: -0.2px; }
+  .am-notice-b { font-size: 13px; color: #475569; line-height: 1.6; margin-top: 5px; }
+  .am-notice-btn { display: inline-block; margin-top: 13px; background: #0f172a; color: #34d399; border-radius: 8px; padding: 10px 19px; font-size: 13px; font-weight: 600; text-decoration: none; }
+
+  .am-settled { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 11px; margin-bottom: 16px; overflow: hidden; }
+  .am-settled-row { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid #f1f5f9; text-decoration: none; }
+  .am-settled-row:last-child { border-bottom: none; }
+  .am-settled-row:hover { background: #f8fafc; }
+  .am-settled-t { font-size: 13px; font-weight: 600; color: #0f172a; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .am-settled-m { font-size: 11.5px; color: #94a3b8; white-space: nowrap; }
+  .am-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #cbd5e1; }
+  .am-dot.signed { background: #10b981; }
+  .am-dot.declined { background: #ef4444; }
   .muted { font-size: 13px; color: #94a3b8; }
   .hint { font-size: 11.5px; color: #94a3b8; line-height: 1.55; }
 

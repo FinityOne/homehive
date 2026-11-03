@@ -14,6 +14,7 @@ import {
   type Inspection,
 } from '@/lib/inspections'
 import Link from 'next/link'
+import AmendmentsTab from '@/components/leases/AmendmentsTab'
 
 const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: string; border: string }> = {
   upcoming: { label: 'Upcoming', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
@@ -21,13 +22,18 @@ const STATUS_META: Record<LeaseStatus, { label: string; color: string; bg: strin
   past:     { label: 'Past',     color: '#6b7280', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.25)' },
 }
 
-type Tab = 'overview' | 'tenants' | 'documents' | 'moveout'
+type Tab = 'overview' | 'tenants' | 'documents' | 'amendments' | 'moveout'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview',  label: 'Overview' },
-  { id: 'tenants',   label: 'Tenants' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'moveout',   label: 'Move-out' },
+  { id: 'overview',   label: 'Overview' },
+  { id: 'tenants',    label: 'Tenants' },
+  { id: 'documents',  label: 'Documents' },
+  // Mid-tenancy changes sit next to the paperwork, not in Financials, even
+  // though they usually carry money. The amendment is the agreement; the charge
+  // it gives rise to is still an ordinary line item in Financials. See the note
+  // at the top of AmendmentsTab.
+  { id: 'amendments', label: 'Amendments' },
+  { id: 'moveout',    label: 'Move-out' },
 ]
 
 /**
@@ -68,6 +74,15 @@ export default function LeaseHubPage({
 
   const [pageError, setPageError] = useState('')
 
+  // The Amendments tab's own data is loaded by the tab itself. The page needs
+  // only three things for it: how many there are (for the badge, so a landlord
+  // sees an unsigned document without opening the tab), the street address, and
+  // their own name — a lease amendment has to name both parties and the
+  // premises, and `lease.property` carries neither the address nor the name.
+  const [amendmentCount, setAmendmentCount] = useState(0)
+  const [propertyAddress, setPropertyAddress] = useState('')
+  const [landlordName, setLandlordName] = useState<string | null>(null)
+
   // Documents
   const [docFile, setDocFile] = useState<File | null>(null)
   const [docName, setDocName] = useState('')
@@ -93,6 +108,20 @@ export default function LeaseHubPage({
     setSignedUrls(map)
   }, [])
 
+  const loadAmendmentContext = useCallback(async (userId: string, propertyId: string, id: string) => {
+    const [{ count }, { data: property }, { data: profile }] = await Promise.all([
+      supabase.from('lease_amendments').select('id', { count: 'exact', head: true }).eq('lease_id', id),
+      supabase.from('properties').select('address, name').eq('id', propertyId).maybeSingle(),
+      // `full_name` only. `profiles` has no `first_name`, and selecting a column
+      // that does not exist nulls the whole row — the bug that silently killed
+      // every landlord rent email once already.
+      supabase.from('profiles').select('full_name').eq('id', userId).maybeSingle(),
+    ])
+    setAmendmentCount(count ?? 0)
+    setPropertyAddress(property?.address || property?.name || '')
+    setLandlordName(profile?.full_name ?? null)
+  }, [])
+
   const loadPlan = useCallback(async (id: string) => {
     const { data } = await supabase
       .from('payment_plans').select('id').eq('lease_id', id).maybeSingle()
@@ -110,9 +139,10 @@ export default function LeaseHubPage({
         signDocs(data.documents || [])
         getInspectionsForLease(leaseId).then(setInspections)
         loadPlan(leaseId)
+        loadAmendmentContext(user.id, data.property_id, leaseId)
       })
     })
-  }, [leaseId, router, signDocs, loadPlan])
+  }, [leaseId, router, signDocs, loadPlan, loadAmendmentContext])
 
   const refreshLease = async () => {
     const data = await getLeaseById(leaseId)
@@ -184,6 +214,7 @@ export default function LeaseHubPage({
     overview: null,
     tenants: lease.tenants.length || null,
     documents: lease.documents.length || null,
+    amendments: amendmentCount || null,
     moveout: inspections.length || null,
   }
 
@@ -500,6 +531,20 @@ export default function LeaseHubPage({
               </div>
             </div>
           </div>
+        )}
+
+        {/* ══ AMENDMENTS ══ */}
+        {tab === 'amendments' && (
+          <AmendmentsTab
+            leaseId={lease.id}
+            tenants={lease.tenants.map(t => ({ id: t.id, name: t.name, email: t.email }))}
+            isDemo={lease.is_demo}
+            leaseStart={lease.start_date}
+            leaseEnd={lease.end_date}
+            landlordName={landlordName}
+            propertyAddress={propertyAddress || lease.property?.name || 'the premises'}
+            unitNumber={lease.unit_number}
+          />
         )}
 
         {/* ══ MOVE-OUT ══ */}
