@@ -4,12 +4,13 @@ import { use, useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
-  getPropertiesByOwner,
+  getOwnerPropertyBySlug,
   replacePropertyNearby,
   replacePropertyAsuReasons,
   replacePropertyTags,
   Property,
 } from '@/lib/properties'
+import Link from 'next/link'
 
 type NearbyRow = { place: string; travel_time: string }
 
@@ -35,8 +36,7 @@ export default function EditDetailsPage({ params }: { params: Promise<{ slug: st
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
@@ -182,9 +182,9 @@ export default function EditDetailsPage({ params }: { params: Promise<{ slug: st
 
       <div className="edit-wrap">
         <div className="edit-breadcrumb">
-          <a href="/landlord/listings">Listings</a>
+          <Link href="/landlord/listings">Listings</Link>
           {' › '}
-          <a href={`/landlord/listings/${slug}`}>{property?.name}</a>
+          <Link href={`/landlord/listings/${slug}`}>{property?.name}</Link>
           {' › '}
           Edit Details
         </div>
@@ -275,7 +275,7 @@ export default function EditDetailsPage({ params }: { params: Promise<{ slug: st
           <button className="btn-save" onClick={handleSaveAll} disabled={saving}>
             {saving ? 'Saving...' : 'Save All'}
           </button>
-          <a href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</a>
+          <Link href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</Link>
         </div>
       </div>
     </>

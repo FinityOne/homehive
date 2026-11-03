@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import { loadCurrentProfile } from '@/lib/currentProfile'
+import { useLandlordPlan, prefetchLandlordPlan } from '@/lib/useLandlordPlan'
 import { isFreeLandlordPath, lockedFeature, FREE_LANDLORD_HOME } from '@/lib/landlordAccess'
 import PlanLockedScreen from '@/components/billing/PlanLockedScreen'
 
@@ -35,29 +35,38 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
   const pathname = usePathname()
   const [auth, setAuth] = useState<'checking' | 'admin' | 'landlord'>('checking')
 
+  // Fired as the portal mounts, in parallel with the role lookup below rather
+  // than behind it. Both answers are needed before a gated page may render.
+  useEffect(() => { prefetchLandlordPlan() }, [])
+
   const isFree = isFreeLandlordPath(pathname)
-  // Admins are not gated, so they are not made to wait on a plan lookup.
+  // Admins are not gated, so they never read the answer (the prefetch above
+  // asks for it anyway — see why there).
   const plan = useLandlordPlan(auth === 'landlord')
+
+  // Where to send someone who isn't signed in — read through a ref so the
+  // check itself does not depend on the pathname. Keying it on the pathname is
+  // what made every click inside the portal re-run the whole gate before the
+  // page under it could start loading; the answer is the same on all of them.
+  const pathRef = useRef(pathname)
+  useEffect(() => { pathRef.current = pathname }, [pathname])
 
   useEffect(() => {
     let cancelled = false
 
-    ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+    // Shared with the app shell and cached for the life of the document, so
+    // this costs one lookup per session rather than one per page view.
+    loadCurrentProfile().then(profile => {
       if (cancelled) return
-      if (!user) {
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`)
+      if (!profile) {
+        router.replace(`/login?next=${encodeURIComponent(pathRef.current)}`)
         return
       }
-
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', user.id).maybeSingle()
-      if (cancelled) return
-      setAuth(profile?.role === 'admin' ? 'admin' : 'landlord')
-    })()
+      setAuth(profile.role === 'admin' ? 'admin' : 'landlord')
+    })
 
     return () => { cancelled = true }
-  }, [pathname, router])
+  }, [router])
 
   // The front door: an unpaid landlord starts where they can work.
   const bounceHome = auth === 'landlord' && plan?.hasAccess === false && pathname === '/landlord/dashboard'
@@ -65,11 +74,19 @@ export default function LandlordLayout({ children }: { children: React.ReactNode
     if (bounceHome) router.replace(FREE_LANDLORD_HOME)
   }, [bounceHome, router])
 
+  // A free path is never gated — not on a plan, and not on the role either,
+  // since nothing below uses the role except the lock. So it renders at once
+  // and its own queries start immediately, instead of idling behind a check
+  // whose answer it will not read. Listings is a free path and the portal's
+  // front door for an unpaid landlord, which makes this the first screen most
+  // new landlords ever wait on.
   const waiting =
-    auth === 'checking' ||
-    bounceHome ||
-    // A free path needs no plan answer; a paid one must not flash before it.
-    (auth === 'landlord' && !isFree && plan === undefined)
+    !isFree && (
+      auth === 'checking' ||
+      bounceHome ||
+      // A paid path must not flash before its plan answer arrives.
+      (auth === 'landlord' && plan === undefined)
+    )
 
   if (waiting) {
     return (

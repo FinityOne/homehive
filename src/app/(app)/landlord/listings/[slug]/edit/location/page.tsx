@@ -3,7 +3,8 @@
 import { use, useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, updatePropertyCore, Property } from '@/lib/properties'
+import { getOwnerPropertyBySlug, updatePropertyCore, Property } from '@/lib/properties'
+import Link from 'next/link'
 
 export default function EditLocationPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
@@ -27,8 +28,7 @@ export default function EditLocationPage({ params }: { params: Promise<{ slug: s
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
 
-      const props = await getPropertiesByOwner(user.id)
-      const found = props.find(p => p.slug === slug)
+      const found = await getOwnerPropertyBySlug(user.id, slug)
       if (!found) { router.push('/landlord/listings'); return }
 
       setProperty(found)
@@ -112,9 +112,9 @@ export default function EditLocationPage({ params }: { params: Promise<{ slug: s
 
       <div className="edit-wrap">
         <div className="edit-breadcrumb">
-          <a href="/landlord/listings">Listings</a>
+          <Link href="/landlord/listings">Listings</Link>
           {' › '}
-          <a href={`/landlord/listings/${slug}`}>{property?.name}</a>
+          <Link href={`/landlord/listings/${slug}`}>{property?.name}</Link>
           {' › '}
           Edit Location
         </div>
@@ -183,7 +183,7 @@ export default function EditLocationPage({ params }: { params: Promise<{ slug: s
           <button className="btn-save" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
-          <a href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</a>
+          <Link href={`/landlord/listings/${slug}`} className="btn-cancel">Cancel</Link>
         </div>
       </div>
     </>

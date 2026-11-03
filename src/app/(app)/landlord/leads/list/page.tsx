@@ -7,6 +7,7 @@ import { getLeadsForSlugs, updateLeadStatus } from '@/lib/leads'
 import type { Lead } from '@/lib/leads'
 import { usePostHog } from 'posthog-js/react'
 import PhoneInput, { formatPhoneDisplay } from '@/components/ui/PhoneInput'
+import Link from 'next/link'
 
 
 // Main pipeline flow — cold is a side bucket before closed
@@ -570,9 +571,9 @@ export default function LeadsListPage() {
       <div style={{ maxWidth: 560, margin: '80px auto', padding: '0 20px', fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
         <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
         <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>No listings yet</div>
-        <a href="/landlord/listings/new" style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', padding: '12px 28px', borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: 'none' }}>
+        <Link href="/landlord/listings/new" style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', padding: '12px 28px', borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: 'none' }}>
           Create a listing →
-        </a>
+        </Link>
       </div>
     )
   }
@@ -712,9 +713,9 @@ export default function LeadsListPage() {
 
         {/* Sub-nav */}
         <div className="ll-subnav">
-          <a href="/landlord/leads" className="ll-subnav-link">Overview</a>
-          <a href="/landlord/leads/insights" className="ll-subnav-link">Insights</a>
-          <a href="/landlord/leads/list" className="ll-subnav-link active">All Leads</a>
+          <Link href="/landlord/leads" className="ll-subnav-link">Overview</Link>
+          <Link href="/landlord/leads/insights" className="ll-subnav-link">Insights</Link>
+          <Link href="/landlord/leads/list" className="ll-subnav-link active">All Leads</Link>
           <div className="ll-subnav-right">
             <button className="btn-gold" style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => setShowAddModal(true)}>+ Add Lead</button>
           </div>

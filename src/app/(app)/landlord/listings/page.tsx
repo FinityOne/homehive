@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, setPropertyArchived, updateListingStatus, Property } from '@/lib/properties'
 import { LISTING_STATUS_META, LISTING_STATUS_ORDER, type ListingStatus } from '@/lib/listingStatus'
 import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import Link from 'next/link'
 
 export default function ListingsPage() {
   const router = useRouter()
@@ -162,9 +163,9 @@ export default function ListingsPage() {
             )}
           </div>
           {atCeiling ? (
-            <a href="/landlord/subscribe" className="btn-add">See plans →</a>
+            <Link href="/landlord/subscribe" className="btn-add">See plans →</Link>
           ) : (
-            <a href="/landlord/listings/new" className="btn-add">+ Add Property</a>
+            <Link href="/landlord/listings/new" className="btn-add">+ Add Property</Link>
           )}
         </div>
 
@@ -188,7 +189,7 @@ export default function ListingsPage() {
                 <span className="pending-insight-tip">ASU &amp; Tempe students only</span>
                 <span className="pending-insight-tip">Cancel any time</span>
               </div>
-              <a
+              <Link
                 href="/landlord/subscribe"
                 style={{
                   display: 'inline-block', marginTop: 12, background: '#8C1D40', color: '#fff',
@@ -197,7 +198,7 @@ export default function ListingsPage() {
                 }}
               >
                 Publish my {properties.filter(p => p.owner_plan_active === false).length === 1 ? 'listing' : 'listings'} →
-              </a>
+              </Link>
             </div>
           )}
           {properties.length === 0 ? (
@@ -213,7 +214,7 @@ export default function ListingsPage() {
                 <span className="proof-item">✓ No agency fees</span>
                 <span className="proof-item">✓ Avg. 3 days to first lead</span>
               </div>
-              <a href="/landlord/listings/new" style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', padding: '12px 24px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textDecoration: 'none', display: 'inline-block' }}>Create your first listing →</a>
+              <Link href="/landlord/listings/new" style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', padding: '12px 24px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", textDecoration: 'none', display: 'inline-block' }}>Create your first listing →</Link>
             </div>
           ) : (
             properties.map(p => {
@@ -301,7 +302,7 @@ export default function ListingsPage() {
                         </button>
                       ) : (
                         <>
-                          <a href={`/landlord/listings/${p.slug}`} className="btn-manage">Manage →</a>
+                          <Link href={`/landlord/listings/${p.slug}`} className="btn-manage">Manage →</Link>
                           <button className="btn-archive-link" disabled={busyId === p.id} onClick={() => toggleArchive(p, true)}>
                             {busyId === p.id ? 'Archiving…' : 'Archive listing'}
                           </button>

@@ -3,6 +3,7 @@ import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useState, useEffect } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
+import Link from 'next/link'
 
 type AutomationLog = {
   id: string
@@ -306,7 +307,7 @@ export default function AutomationsPage() {
             </div>
             <div style={{ background: '#fff', padding: '20px 24px' }}>
               <p style={{ margin: 0, fontSize: 14, color: '#374151', lineHeight: 1.7 }}>
-                The automation matches incoming Redfin addresses against your HomeHive property listings. Make sure the street address in your <a href="/landlord/listings" style={{ color: '#8C1D40', textDecoration: 'none', fontWeight: 600 }}>listings</a> matches what Redfin shows (e.g. <em>1234 E University Dr, Tempe, AZ</em>). The first line of the address is used for matching.
+                The automation matches incoming Redfin addresses against your HomeHive property listings. Make sure the street address in your <Link href="/landlord/listings" style={{ color: '#8C1D40', textDecoration: 'none', fontWeight: 600 }}>listings</Link> matches what Redfin shows (e.g. <em>1234 E University Dr, Tempe, AZ</em>). The first line of the address is used for matching.
               </p>
             </div>
           </div>

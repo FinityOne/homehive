@@ -43,6 +43,7 @@ import {
 } from '@/lib/paymentsLog'
 import MoneyHub from '@/components/finance/MoneyHub'
 import { FINANCE_THEME } from '@/lib/financeTheme'
+import Link from 'next/link'
 
 /** What the table can be ordered by. The date is the default: this is a log. */
 type SortKey = 'at' | 'amount' | 'property' | 'who' | 'due'
@@ -561,9 +562,9 @@ function Row({ row: r, open, onToggle }: { row: PaymentEntry; open: boolean; onT
               </div>
 
               <div className="detail-ft">
-                <a className="btn-quiet" href={`/landlord/financials?plan=${r.planId}`}>
+                <Link className="btn-quiet" href={`/landlord/financials?plan=${r.planId}`}>
                   Open this lease’s ledger
-                </a>
+                </Link>
               </div>
             </div>
           </td>

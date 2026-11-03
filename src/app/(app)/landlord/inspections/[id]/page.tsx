@@ -19,6 +19,7 @@ import {
   type PartyTotal, type SettlementStatus,
 } from '@/lib/inspections'
 import { getLeasesForOwner, formatLeaseDate, type Lease } from '@/lib/leases'
+import Link from 'next/link'
 
 const BLANK_ITEM: ItemInput = {
   area: '', title: '', description: '', notes: '', cost: 0,
@@ -403,7 +404,7 @@ export default function InspectionEditorPage({ params }: { params: Promise<{ id:
       <style>{CSS}</style>
       <div className="ins-wrap">
         <div className="ins-crumb">
-          <a href="/landlord/inspections">Inspections</a> ›{' '}
+          <Link href="/landlord/inspections">Inspections</Link> ›{' '}
           {inspection.property?.name ?? 'Property'}
         </div>
 

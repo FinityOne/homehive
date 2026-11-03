@@ -1,7 +1,7 @@
 // No 'use client' directive — this is a shared lib
 
 import { supabase } from '@/lib/supabase'
-import { getPropertiesByOwner } from './properties'
+import { getOwnerPropertySlugs } from './properties'
 
 /*
  * SQL to run once in Supabase dashboard:
@@ -65,23 +65,8 @@ export type PrescreenData = {
 }
 
 export async function getLeadsForOwner(userId: string): Promise<Lead[]> {
-  const properties = await getPropertiesByOwner(userId)
-  const slugs = properties.map(p => p.slug).filter(Boolean)
-
-  if (slugs.length === 0) return []
-
-  const { data, error } = await supabase
-    .from('leads')
-    .select('*')
-    .in('property', slugs)
-    .order('created_at', { ascending: false })
-
-  if (error || !data) {
-    console.error('Error fetching leads for owner:', error)
-    return []
-  }
-
-  return data as Lead[]
+  const slugs = await getOwnerPropertySlugs(userId)
+  return getLeadsForSlugs(slugs)
 }
 
 export async function getLeadsForSlugs(slugs: string[]): Promise<Lead[]> {

@@ -12,6 +12,7 @@ import {
   formatPropertyLimit,
   UNLIMITED_PROPERTIES,
 } from '@/lib/landlordPlans'
+import Link from 'next/link'
 
 /**
  * Plan and billing.
@@ -202,9 +203,9 @@ export default function BillingPage() {
                 ? 'You’ve used every property on this plan — move up a tier to add another.'
                 : 'That’s every property the free tier covers — start a plan to publish these and add more.'}
             {' '}
-            <a href="/landlord/listings/new" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
+            <Link href="/landlord/listings/new" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>
               Add a listing →
-            </a>
+            </Link>
           </div>
         </div>
       )}

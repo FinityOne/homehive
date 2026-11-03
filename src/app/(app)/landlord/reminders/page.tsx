@@ -30,6 +30,7 @@ import {
   OUTCOME_META, KIND_FILTERS, STATE_FILTERS, kindLabel, isProblem,
   type EmailOutcome, type EmailState,
 } from '@/lib/paymentEmails'
+import Link from 'next/link'
 
 /** One send, as `/api/payments/emails` returns it. */
 type SentEmail = {
@@ -440,9 +441,9 @@ export default function RemindersPage() {
                           )}
 
                           <div className="detail-ft">
-                            <a className="btn-quiet" href={`/landlord/financials?plan=${e.plan_id}`}>
+                            <Link className="btn-quiet" href={`/landlord/financials?plan=${e.plan_id}`}>
                               Open the lease ledger
-                            </a>
+                            </Link>
                           </div>
                         </div>
                       )}

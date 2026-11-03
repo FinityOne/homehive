@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { PLANS, PLAN_ORDER, formatMonthly } from '@/lib/landlordPlans'
 import type { LockedFeature } from '@/lib/landlordAccess'
 
@@ -86,19 +87,19 @@ export default function PlanLockedScreen({
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 22 }}>
-          <a href="/landlord/subscribe" style={{
+          <Link href="/landlord/subscribe" style={{
             background: '#8C1D40', color: '#fff', textDecoration: 'none',
             fontSize: 13.5, fontWeight: 700, padding: '12px 22px', borderRadius: 9,
           }}>
             See plans →
-          </a>
-          <a href="/landlord/listings" style={{
+          </Link>
+          <Link href="/landlord/listings" style={{
             background: '#fff', color: '#1a1a1a', textDecoration: 'none',
             border: '1px solid #e8e4db',
             fontSize: 13.5, fontWeight: 600, padding: '12px 22px', borderRadius: 9,
           }}>
             Back to my listings
-          </a>
+          </Link>
         </div>
 
         <div style={{ fontSize: 12, color: '#9b9b9b', marginTop: 14, lineHeight: 1.6 }}>

@@ -7,6 +7,8 @@ import {
   fmtCurrency, fmtDate, fmtMonth, fmtOrdinal,
   PRORATION_DAYS_PER_MONTH, LINE_ITEM_CATEGORIES, SPECIAL_CATEGORIES, type SpecialCategory,
 } from '@/lib/payments'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,7 @@ const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' }
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function NewPaymentPlanPage() {
+  const router = useRouter()
   const [userId,      setUserId]     = useState('')
   const [step,        setStep]       = useState(1)
   const [saving,      setSaving]     = useState(false)
@@ -359,7 +362,7 @@ export default function NewPaymentPlanPage() {
     })
     setSaving(false)
     if (err || !planId) { setError('Something went wrong. Please try again.'); return }
-    window.location.href = `/landlord/financials?plan=${planId}`
+    router.push(`/landlord/financials?plan=${planId}`)
   }
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
@@ -376,7 +379,7 @@ export default function NewPaymentPlanPage() {
 
       {/* Header */}
       <div style={{ background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <a href="/landlord/financials" style={{ color: '#6e6e73', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}>← Financials</a>
+        <Link href="/landlord/financials" style={{ color: '#6e6e73', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}>← Financials</Link>
         <span style={{ color: '#d6d6db' }}>/</span>
         <span style={{ fontSize: '14px', fontWeight: 600, color: '#1d1d1f' }}>New Payment Plan</span>
       </div>
@@ -401,7 +404,7 @@ export default function NewPaymentPlanPage() {
               <Field label="Lease">
                 {leases.length === 0
                   ? <div style={{ fontSize: '13px', color: '#8e8e93', padding: '10px 0' }}>
-                      No leases found. <a href="/landlord/leases/new" style={{ color: '#1d1d1f', fontWeight: 600 }}>Create one →</a>
+                      No leases found. <Link href="/landlord/leases/new" style={{ color: '#1d1d1f', fontWeight: 600 }}>Create one →</Link>
                     </div>
                   : <select style={selectStyle} value={selectedLeaseId} onChange={e => onSelectLease(e.target.value)}>
                       <option value="">Select a lease…</option>
@@ -831,7 +834,7 @@ export default function NewPaymentPlanPage() {
         {/* Navigation */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
           <button
-            onClick={() => step > 1 ? setStep(s => s - 1) : window.location.href = '/landlord/financials'}
+            onClick={() => step > 1 ? setStep(s => s - 1) : router.push('/landlord/financials')}
             style={{ padding: '11px 20px', border: '1px solid #e5e5ea', borderRadius: 980, background: '#fff', color: '#6e6e73', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', minHeight: 44 }}
           >
             {step === 1 ? 'Cancel' : '← Back'}

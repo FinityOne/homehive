@@ -4,15 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { createLease, addLeaseDocument } from '@/lib/leases'
-import { getPropertiesByOwner } from '@/lib/properties'
+import { getOwnerPropertyOptions, type PropertyOption } from '@/lib/properties'
 import { getTenantsByOwner, type Tenant } from '@/lib/tenants'
-import type { Property } from '@/lib/properties'
 import type { TenantInput } from '@/lib/leases'
+import Link from 'next/link'
 
 export default function NewLeasePage() {
   const router = useRouter()
   const userIdRef = useRef<string | null>(null)
-  const [properties, setProperties] = useState<Property[]>([])
+  const [properties, setProperties] = useState<PropertyOption[]>([])
   const [allTenants, setAllTenants] = useState<Tenant[]>([])
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
@@ -39,7 +39,7 @@ export default function NewLeasePage() {
     getCurrentUser().then(user => {
       if (!user) { router.push('/login'); return }
       userIdRef.current = user.id
-      Promise.all([getPropertiesByOwner(user.id), getTenantsByOwner(user.id)]).then(([props, ts]) => {
+      Promise.all([getOwnerPropertyOptions(user.id), getTenantsByOwner(user.id)]).then(([props, ts]) => {
         setProperties(props)
         setAllTenants(ts)
       })
@@ -193,7 +193,7 @@ export default function NewLeasePage() {
 
       <div className="edit-wrap">
         <div className="edit-breadcrumb">
-          <a href="/landlord/leases">Leases</a>
+          <Link href="/landlord/leases">Leases</Link>
           {' › '}
           New Lease
         </div>
@@ -330,7 +330,7 @@ export default function NewLeasePage() {
         <div className="section-label">Tenants</div>
         <div className="section-sub">
           Only tenants from your{' '}
-          <a href="/landlord/tenants" style={{ color: '#10b981' }}>Tenants list</a>
+          <Link href="/landlord/tenants" style={{ color: '#10b981' }}>Tenants list</Link>
           {' '}can be added to a lease.
         </div>
 
@@ -355,9 +355,9 @@ export default function NewLeasePage() {
           >
             + Add Tenant
           </button>
-          <a href="/landlord/tenants" className="btn-go-tenants">
+          <Link href="/landlord/tenants" className="btn-go-tenants">
             Manage Tenants →
-          </a>
+          </Link>
         </div>
 
         {showTenantSearch && (
@@ -383,7 +383,7 @@ export default function NewLeasePage() {
             {filteredTenants.length === 0 && (
               <div style={{ padding: '12px', fontSize: '13px', color: '#94a3b8' }}>
                 No tenants found.{' '}
-                <a href="/landlord/tenants" style={{ color: '#10b981' }}>Add tenants first.</a>
+                <Link href="/landlord/tenants" style={{ color: '#10b981' }}>Add tenants first.</Link>
               </div>
             )}
           </div>
@@ -393,7 +393,7 @@ export default function NewLeasePage() {
           <button className="btn-save" onClick={handleSave} disabled={saving}>
             {saving ? 'Creating...' : 'Create Lease'}
           </button>
-          <a href="/landlord/leases" className="btn-cancel">Cancel</a>
+          <Link href="/landlord/leases" className="btn-cancel">Cancel</Link>
         </div>
       </div>
     </>

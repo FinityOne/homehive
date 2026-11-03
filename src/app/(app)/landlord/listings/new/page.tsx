@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { createProperty, replacePropertyRooms, uploadPropertyImage } from '@/lib/properties'
 import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import Link from 'next/link'
 
 type ListingType = 'sublease' | 'lease_transfer' | 'standard_rental'
 type UnitType = 'room_in_house' | 'apartment' | 'condo' | 'studio'
@@ -387,7 +388,7 @@ export default function NewListingWizard() {
 
       <div className="wiz-wrap">
 
-        <a href="/landlord/listings" className="wiz-back">← Back to listings</a>
+        <Link href="/landlord/listings" className="wiz-back">← Back to listings</Link>
 
         <div className="wiz-progress">
           <div className="wiz-steps">
@@ -971,9 +972,9 @@ export default function NewListingWizard() {
                 {submitError}
                 {submitBlockedByPlan && (
                   <div style={{ marginTop: '8px' }}>
-                    <a href="/landlord/subscribe" style={{ color: '#8C1D40', fontWeight: 700, textDecoration: 'underline' }}>
+                    <Link href="/landlord/subscribe" style={{ color: '#8C1D40', fontWeight: 700, textDecoration: 'underline' }}>
                       See plans &rarr;
-                    </a>
+                    </Link>
                   </div>
                 )}
               </div>
