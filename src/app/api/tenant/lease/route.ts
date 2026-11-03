@@ -72,7 +72,10 @@ export async function GET(req: NextRequest) {
     if (me) {
       const [li, sp, spec] = await Promise.all([
         supabaseAdmin.from('payment_line_items')
-          .select('id, category, label, amount').eq('plan_tenant_id', me.id),
+          // `notes` is the charge explaining itself — "pet rent for Dewey,
+          // agreed 1 Nov 2026". A line the tenant cannot account for is the
+          // one they email about, so it travels with the amount.
+          .select('id, category, label, amount, notes').eq('plan_tenant_id', me.id),
         supabaseAdmin.from('scheduled_payments')
           // `late_fees_applied` is deliberately absent: it is the stale column,
           // and the only safe thing to do with it is not ship it. The fee is
@@ -83,7 +86,9 @@ export async function GET(req: NextRequest) {
           .select('id, due_date, amount, status, paid_amount, paid_date, submitted_at, late_fee_paid, payment_method, processing_fee, notes')
           .eq('plan_tenant_id', me.id).order('due_date'),
         supabaseAdmin.from('special_payments')
-          .select('id, category, label, amount, due_date, status, paid_date, submitted_at, payment_method, processing_fee')
+          // `notes` for the same reason as on the line items above: a one-off
+          // charge is the hardest kind to recognise months later.
+          .select('id, category, label, amount, due_date, status, paid_date, submitted_at, payment_method, processing_fee, notes')
           .eq('plan_tenant_id', me.id).order('due_date'),
       ])
       lineItems = li.data ?? []

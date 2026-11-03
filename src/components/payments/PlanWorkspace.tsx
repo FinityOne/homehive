@@ -391,6 +391,9 @@ type DraftItem = {
   category: string
   label: string
   amount: string
+  /** What the tenant is told about this charge. Optional, and empty is the
+   *  normal case — rent needs no explaining. A pet fee does. */
+  notes: string
   isNew?: boolean
   /** Set when the line is materialised from a lease utility. Such a line is
    *  owned by that declaration — editing it here would leave the two
@@ -413,6 +416,7 @@ function LineItemEditor({
   const openEdit = () => {
     setDraft(tenant.line_items.map(li => ({
       id: li.id, category: li.category, label: li.label, amount: String(li.amount),
+      notes: li.notes ?? '',
       utilityId: li.utility_id,
     })))
     const sum = tenant.line_items.reduce((s, li) => s + li.amount, 0)
@@ -428,7 +432,7 @@ function LineItemEditor({
   }
 
   const addRow = () => {
-    setDraft(prev => [...prev, { id: null, category: 'rent', label: 'Rent', amount: '', isNew: true }])
+    setDraft(prev => [...prev, { id: null, category: 'rent', label: 'Rent', amount: '', notes: '', isNew: true }])
   }
 
   const removeRow = (idx: number) => {
@@ -463,10 +467,13 @@ function LineItemEditor({
     for (const item of draft) {
       if (item.utilityId) continue
       const amt = parseFloat(item.amount) || 0
+      // An empty box is "no note", not an empty sentence — the tenant's page
+      // tests for a value, so '' would render a stray blank line.
+      const notes = item.notes.trim() || null
       if (item.id) {
-        await updateLineItem(item.id, { label: item.label, amount: amt, category: item.category })
+        await updateLineItem(item.id, { label: item.label, amount: amt, category: item.category, notes })
       } else {
-        await addLineItem(tenant.id, { category: item.category, label: item.label, amount: amt })
+        await addLineItem(tenant.id, { category: item.category, label: item.label, amount: amt, notes })
       }
     }
 
@@ -531,7 +538,8 @@ function LineItemEditor({
             <span />
           </div>
         ) : (
-          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
+          <div key={idx}>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px 28px', gap: 6, alignItems: 'center' }}>
             <select
               style={{ ...iS, width: '100%' }}
               value={item.category}
@@ -568,6 +576,19 @@ function LineItemEditor({
             >
               ×
             </button>
+          </div>
+          {/* The tenant's copy of this line. Indented under the label it
+              belongs to, and deliberately not a column of its own: a sentence
+              does not fit a 1fr cell, and most lines never need one. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 6, marginTop: 4 }}>
+            <span />
+            <input
+              style={{ ...iS, width: '100%', fontSize: '11.5px', color: '#6e6e73' }}
+              value={item.notes}
+              onChange={e => updateDraft(idx, 'notes', e.target.value)}
+              placeholder="Detail the tenant sees (optional) — e.g. what this charge covers"
+            />
+          </div>
           </div>
         ))}
       </div>
