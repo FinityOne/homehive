@@ -35,6 +35,9 @@ export type PaymentLineItem = {
   category: string
   label: string
   amount: number
+  /** Tenant-facing detail — what this charge is for. The payer reads it on
+   *  their lease page beside the amount, so it is never a private memo. */
+  notes: string | null
   created_at: string
   /** Set when this line came from a lease-level utility (src/lib/utilities.ts).
    *  Such a line is owned by that declaration — edit the utility, not the line. */
@@ -482,7 +485,7 @@ export async function getPlansForOwner(ownerId: string): Promise<PaymentPlan[]> 
       *,
       property:properties(id, name, slug),
       lease:leases(id, start_date, end_date, rent_amount, is_demo),
-      tenants:payment_plan_tenants(id, name, email, monthly_total, status, line_items:payment_line_items(id, plan_tenant_id, category, label, amount, utility_id)),
+      tenants:payment_plan_tenants(id, name, email, monthly_total, status, line_items:payment_line_items(id, plan_tenant_id, category, label, amount, utility_id, notes)),
       late_fee_rule:late_fee_rules(*),
       utilities:plan_utilities(id, label, category, amount, cadence, split),
       scheduled_payments(id, due_date, status, paid_amount, amount, plan_tenant_id, paid_date, submitted_at, settled_at, late_fees_applied, late_fee_paid, payment_method, processing_fee, recorded_by, stripe_payment_intent_id, late_fee_reminder_sent_at, late_fee_reminder_count),
@@ -804,7 +807,7 @@ export async function addSpecialPayment(
 
 export async function updateLineItem(
   id: string,
-  updates: Partial<{ label: string; amount: number; category: string }>
+  updates: Partial<{ label: string; amount: number; category: string; notes: string | null }>
 ): Promise<{ error: any }> {
   const { error } = await supabase.from('payment_line_items').update(updates).eq('id', id)
   return { error }
@@ -812,7 +815,7 @@ export async function updateLineItem(
 
 export async function addLineItem(
   planTenantId: string,
-  item: { category: string; label: string; amount: number }
+  item: { category: string; label: string; amount: number; notes?: string | null }
 ): Promise<{ error: any; id: string | null }> {
   const { data, error } = await supabase
     .from('payment_line_items')

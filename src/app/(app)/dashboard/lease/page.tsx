@@ -40,6 +40,8 @@ type Scheduled = {
 type Special = {
   id: string; category: string; label: string; amount: number; due_date: string
   status: string; paid_date: string | null; payment_method: string | null; processing_fee: number
+  /** What the landlord wrote about this charge, for the tenant to read. */
+  notes: string | null
 }
 type Tenancy = {
   lease: {
@@ -54,7 +56,7 @@ type Tenancy = {
   me: { id: string; name: string; monthly_total: number; status: string } | null
   housemateCount: number
   unmatchedPlan?: boolean
-  lineItems: { id: string; category: string; label: string; amount: number }[]
+  lineItems: { id: string; category: string; label: string; amount: number; notes: string | null }[]
   scheduled: Scheduled[]
   specials: Special[]
 }
@@ -181,6 +183,21 @@ export default function MyLeasePage() {
     () => tenantCharges(t?.scheduled ?? [], t?.specials ?? [], t?.lateFeeRule ?? null),
     [t],
   )
+
+  /**
+   * The landlord's explanation of a one-off charge, by charge id.
+   *
+   * `tenantCharges` deliberately carries only what pricing needs, so the note
+   * is looked up here rather than threaded through the engine — a sentence of
+   * presentation has no business in the money maths.
+   */
+  const specialNotes = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const sp of t?.specials ?? []) if (sp.notes) m.set(sp.id, sp.notes)
+    return m
+  }, [t])
+  const specialNote = (r: { kind: string; id: string }) =>
+    r.kind === 'special' ? specialNotes.get(r.id) ?? null : null
 
   /**
    * Arriving from a reminder with `pay=1`: open the sheet on what is actually
@@ -387,7 +404,13 @@ export default function MyLeasePage() {
                   <>
                     {t.lineItems.map(li => (
                       <div key={li.id} className="row">
-                        <span>{li.label}</span>
+                        <span>
+                          {li.label}
+                          {/* The explanation sits with the charge, not in an
+                              email the tenant has to go and find. A line they
+                              cannot account for is the one that gets disputed. */}
+                          {li.notes && <em className="row-note">{li.notes}</em>}
+                        </span>
                         <span className="row-amt">{fmtMoney(li.amount)}</span>
                       </div>
                     ))}
@@ -530,6 +553,7 @@ export default function MyLeasePage() {
                         {(r.lateFee ?? 0) > 0 && (
                           <em className="lf"> + {fmtMoney(r.lateFee!)} late fee</em>
                         )}
+                        {specialNote(r) && <em className="row-note">{specialNote(r)}</em>}
                       </span>
                       <span className="row-amt">{fmtMoney(r.amount + (r.lateFee ?? 0))}</span>
                     </div>
@@ -554,7 +578,10 @@ export default function MyLeasePage() {
                 <div className="card-bd">
                   {upcoming.slice(0, 4).map(r => (
                     <div key={`${r.kind}-${r.id}`} className="row">
-                      <span>{r.label}</span>
+                      <span>
+                        {r.label}
+                        {specialNote(r) && <em className="row-note">{specialNote(r)}</em>}
+                      </span>
                       <span className="row-amt">{fmtMoney(r.amount)}</span>
                     </div>
                   ))}
@@ -840,6 +867,9 @@ const CSS = `
   .fee-row:last-of-type { border-bottom: none; }
   .fee-row:hover { background: #fffdf8; }
   .fee-row-main { min-width: 0; }
+  /* Secondary to the charge it explains: present on a glance down the
+     amounts, never competing with them. */
+  .row-note { display: block; margin-top: 3px; font-size: 12px; font-style: normal; color: #6e6e73; line-height: 1.45; max-width: 46ch; }
   .fee-row-label { font-size: 13.5px; font-weight: 600; color: #0f172a; }
   .fee-row-right { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
   .fee-chev { font-size: 19px; color: #cbd5e1; line-height: 1; }
