@@ -42,6 +42,28 @@ export type Payable = {
 }
 
 /**
+ * What the server actually priced, returned by `POST /api/tenant/pay`.
+ *
+ * The figures on this sheet before the intent exists are a *preview*: they come
+ * from whatever the lease page computed when it last loaded. The server
+ * recomputes every amount from the database, and the two can legitimately
+ * disagree — a late fee stops growing the moment an ACH debit is submitted, the
+ * landlord may have waived a fee since the page loaded, or a housemate's
+ * payment may have part-settled the month. Stripe charges the server's figure,
+ * so from the moment it is known it is the only number this sheet may show. The
+ * button used to keep quoting the preview, which is how a tenant could press
+ * "Pay $150" and have $90 leave their account.
+ */
+type ServerQuote = {
+  rent: number
+  lateFee: number
+  fee: number
+  total: number
+  ratePct: number
+  items: { id: string; label: string; amount: number; kind: string }[]
+}
+
+/**
  * Pay rent — method first, then card details.
  *
  * The fee is shown before anything is entered, because a surcharge discovered
@@ -59,6 +81,8 @@ export default function PayRentModal({
 }) {
   const [method, setMethod] = useState<PayMethod>('ach')
   const [clientSecret, setClientSecret] = useState<string | null>(null)
+  /** The server's own pricing, once it has priced it. Authoritative. */
+  const [priced, setPriced] = useState<ServerQuote | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -69,6 +93,32 @@ export default function PayRentModal({
   // the same base the server recomputes, so the two figures always agree.
   const base = Math.round((rent + lateFees) * 100) / 100
   const quote = computeFee(base, method)
+
+  /**
+   * The rows as they should be shown right now.
+   *
+   * Before pricing: the selection, at the amounts the lease page computed.
+   * After: whatever the server agreed to charge, at its amounts, keeping this
+   * sheet's own wording for any row it recognises.
+   */
+  const lines = (priced
+    ? priced.items.map(it => {
+        const own = payables.find(p => p.id === it.id && p.kind === it.kind)
+        return {
+          id: it.id,
+          kind: it.kind,
+          label: own?.label ?? it.label,
+          amount: it.amount,
+          rentSettled: own?.rentSettled === true,
+        }
+      })
+    : payables.map(p => ({
+        id: p.id,
+        kind: p.kind as string,
+        label: p.label,
+        amount: p.kind === 'late_fee' ? (p.lateFee ?? 0) : p.amount,
+        rentSettled: p.rentSettled === true,
+      })))
 
   async function start() {
     setStarting(true); setError(null)
@@ -88,6 +138,14 @@ export default function PayRentModal({
     const json = await res.json().catch(() => ({}))
     setStarting(false)
     if (!res.ok) { setError(json.error || 'Could not start the payment.'); return }
+    setPriced({
+      rent: Number(json.rent ?? 0),
+      lateFee: Number(json.lateFee ?? 0),
+      fee: Number(json.fee ?? 0),
+      total: Number(json.total ?? 0),
+      ratePct: Number(json.ratePct ?? quote.ratePct),
+      items: Array.isArray(json.items) ? json.items : [],
+    })
     setClientSecret(json.clientSecret)
   }
 
@@ -109,17 +167,19 @@ export default function PayRentModal({
 
           {/* What's being paid */}
           <div className="lines">
-            {payables.map(p => (
-              <div key={`${p.kind}-${p.id}`} className="line">
+            {/* Once the server has priced it, these are its lines — which also
+                drops a charge that turned out to be settled already. The amount
+                is always the server's; the wording stays the tenant's, matched
+                by charge id rather than by label. */}
+            {lines.map(l => (
+              <div key={`${l.kind}-${l.id}`} className="line">
                 <span>
-                  {p.label}
-                  {p.kind === 'late_fee' && p.rentSettled && (
+                  {l.label}
+                  {l.kind === 'late_fee' && l.rentSettled && (
                     <em className="line-note">rent already paid</em>
                   )}
                 </span>
-                <span className="line-amt">
-                  {fmtMoney(p.kind === 'late_fee' ? (p.lateFee ?? 0) : p.amount)}
-                </span>
+                <span className="line-amt">{fmtMoney(l.amount)}</span>
               </div>
             ))}
           </div>
@@ -200,8 +260,15 @@ export default function PayRentModal({
                 clientSecret={clientSecret}
                 authToken={authToken}
                 method={method}
-                total={quote.total}
-                onBack={() => setClientSecret(null)}
+                total={priced ? priced.total : quote.total}
+                lateFee={priced ? priced.lateFee : lateFees}
+                processingFee={priced ? priced.fee : quote.fee}
+                ratePct={priced ? priced.ratePct : quote.ratePct}
+                /* Only ever shown when the two genuinely disagree, which is
+                   rare — but silence there is the one thing we must not do. */
+                adjustedFrom={priced && Math.abs(priced.total - quote.total) > 0.005
+                  ? quote.total : null}
+                onBack={() => { setClientSecret(null); setPriced(null) }}
                 onPaid={() => onPaid(method, method === 'ach')}
               />
             </Elements>
@@ -213,12 +280,19 @@ export default function PayRentModal({
 }
 
 function PayForm({
-  clientSecret, authToken, method, total, onBack, onPaid,
+  clientSecret, authToken, method, total, lateFee, processingFee, ratePct,
+  adjustedFrom, onBack, onPaid,
 }: {
   clientSecret: string
   authToken: string | null
   method: PayMethod
+  /** The server's total — exactly what Stripe will take. */
   total: number
+  lateFee: number
+  processingFee: number
+  ratePct: number
+  /** The preview this replaced, when it differed. Null when they agreed. */
+  adjustedFrom: number | null
   onBack: () => void
   onPaid: () => void
 }) {
@@ -261,7 +335,24 @@ function PayForm({
 
   return (
     <form onSubmit={submit}>
-      <div className="sec-label" style={{ marginTop: 4 }}>
+      {adjustedFrom !== null && (
+        <div className="adj">
+          This came to <strong>{fmtMoney(total)}</strong>, not {fmtMoney(adjustedFrom)}.
+          {total < adjustedFrom
+            ? ' Part of what was selected has already been settled or waived, so you are being asked for less.'
+            : ' The balance moved since this page loaded. This is the up-to-date figure.'}
+        </div>
+      )}
+      <div className="totals" style={{ borderTop: 'none', paddingTop: 0 }}>
+        {lateFee > 0 && (
+          <div className="tot-row late"><span>Late fees</span><span>{fmtMoney(lateFee)}</span></div>
+        )}
+        <div className="tot-row">
+          <span>Processing fee ({ratePct}%)</span><span>{fmtMoney(processingFee)}</span>
+        </div>
+        <div className="tot-row grand"><span>Total</span><span>{fmtMoney(total)}</span></div>
+      </div>
+      <div className="sec-label" style={{ marginTop: 14 }}>
         {method === 'ach' ? 'Your bank details' : 'Card details'}
       </div>
       <PaymentElement options={{ layout: 'tabs' }} />
@@ -317,6 +408,8 @@ const CSS = `
   .tot-row.grand { font-size: 16px; font-weight: 700; color: #0f172a; border-top: 1px solid #e2e8f0; margin-top: 6px; padding-top: 10px; }
 
   .tip { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
+
+  .adj { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
 
   .err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
 

@@ -346,6 +346,11 @@ export async function POST(req: NextRequest) {
     ratePct: fee.ratePct,
     method,
     items: rows.map(r => ({
+      // The charge's id, so the sheet can put the server's amount against its
+      // own wording for that row. Without it the client has only a label to
+      // match on — and the two surfaces word a fee differently on purpose
+      // ("October 2026 rent" to a tenant, a raw due date here).
+      id: r.id,
       label: r.label,
       // A fee-only line's money is in `lateFee`, not `due`.
       amount: r.kind === 'late_fee' ? r.lateFee : r.due,
