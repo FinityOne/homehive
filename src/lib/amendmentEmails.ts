@@ -118,7 +118,15 @@ function termRows(doc: AmendmentDocument): Array<[string, string]> {
     if (upfront > 0) rows.push(['Due when you sign', fmtDollars(upfront)])
   }
 
-  rows.push(['Takes effect', fmtLegalDate(doc.effectiveDate)])
+  rows.push([
+    'Takes effect',
+    // Named as retroactive in the table, not only in the document. A tenant
+    // who opens the email, sees a date already past and is not told why
+    // assumes a mistake — and a tenant who assumes a mistake does not sign.
+    doc.isBackdated
+      ? `${fmtLegalDate(doc.effectiveDate)} — before you sign, so that month is owed in full`
+      : fmtLegalDate(doc.effectiveDate),
+  ])
   if (doc.respondBy) rows.push(['Sign by', fmtLegalDate(doc.respondBy)])
   return rows
 }

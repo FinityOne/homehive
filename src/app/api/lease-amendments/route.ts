@@ -180,6 +180,22 @@ export async function POST(req: NextRequest) {
     }, { status: 400 })
   }
 
+  // The effective date may be in the past — backdating to the start of the
+  // current month is ordinary, and the document states plainly that it is
+  // retroactive. What it may not do is predate the tenancy it amends or
+  // outlive it: an amendment effective before the lease began is amending
+  // nothing, and one effective after it ends is a term that can never apply.
+  if (effective < (lease.start_date as string)) {
+    return Response.json({
+      error: `The change can't take effect before the lease starts (${lease.start_date}).`,
+    }, { status: 400 })
+  }
+  if (effective > (lease.end_date as string)) {
+    return Response.json({
+      error: `The change can't take effect after the lease ends (${lease.end_date}).`,
+    }, { status: 400 })
+  }
+
   const property = lease.property as { name?: string; address?: string } | null
   const { data: profile } = await supabaseAdmin
     .from('profiles').select('email, full_name').eq('id', user.id).maybeSingle()

@@ -599,9 +599,15 @@ function PetAddendumForm({
         </div>
         <div className="field">
           <label className="lbl">Takes effect</label>
+          {/* Backdating is allowed, and floored at the lease start rather than
+              at today. An "as of" date earlier than signing is ordinary — a
+              pet that arrived on the 1st, agreed on the 4th — and blocking it
+              would push the landlord into editing the date on a PDF instead.
+              What the form will not do is let it pass unremarked: the hint
+              below, a recital and the rent clause all say so. */}
           <input
             className="inp" type="date" value={effective}
-            min={signingToday()} max={leaseEnd}
+            min={leaseStart} max={leaseEnd}
             onChange={e => setEffective(e.target.value)}
           />
           <div className="hint" style={{ marginTop: 5 }}>
@@ -633,6 +639,16 @@ function PetAddendumForm({
           </div>
         </div>
       </div>
+
+      {effective < signingToday() && (
+        <div className="am-back">
+          <strong>This takes effect {fmtShortDate(effective)}, before it is signed.</strong>{' '}
+          That is fine and the document says so plainly — it adds a clause stating the parties
+          intend it, and the rent clause says the {monthName(effective)} pet rent is owed in full
+          even though it is signed later. The document is still dated today, so nothing about it
+          is disguised.
+        </div>
+      )}
 
       {/* Whatever you type, the document says it. The closing clause is built
           from these three numbers, and the send is refused if any of them is
@@ -831,6 +847,8 @@ const CSS = `
   .am-doc-wrap { margin-top: 14px; }
   .am-print { margin-top: 10px; }
   .am-prev-note { font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; line-height: 1.55; }
+
+  .am-back { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 9px; padding: 10px 13px; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
 
   .am-due { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 9px; padding: 10px 13px; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
 

@@ -244,6 +244,14 @@ export default function SignAmendmentPage({
             You&apos;re responsible for any damage the pet causes, and for keeping it licensed and
             cleaning up after it. That&apos;s what the responsibilities clause covers.
           </li>
+          {doc.isBackdated && (
+            <li>
+              This starts <strong>{fmtLegalDate(doc.effectiveDate)}</strong>, which is before you
+              sign it. That is deliberate and the document says so — it means the{' '}
+              <strong>{monthName(doc.effectiveDate)}</strong> pet rent is owed in full, even
+              though that month has already begun.
+            </li>
+          )}
           {doc.requiresCotenantConsent && (
             <li>
               Your landlord&apos;s approval only takes effect once your{' '}

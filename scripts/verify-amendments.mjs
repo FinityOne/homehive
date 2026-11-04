@@ -50,7 +50,7 @@ const input = (over = {}) => ({
   leaseStartDate: '2026-08-03',
   leaseEndDate: '2027-07-31',
   effectiveDate: '2026-12-01',
-  agreementDate: TODAY,
+  agreementDate: TODAY,   // not backdated, unless a case overrides it
   monthlyPetRent: 65,
   petDeposit: 300,
   cleaningFee: 100,
@@ -216,6 +216,47 @@ check('and says approval is not effective without it',
   check('a single tenancy gets no consent clause at all',
     t.includes('written consents have been received'), false)
   check('and the flag says so', solo.requiresCotenantConsent, false)
+}
+
+// ── Backdating, which has to be said rather than hidden ───────────────────
+
+check('a forward-dated amendment is not backdated', doc.isBackdated, false)
+check('and says nothing about retroactive effect',
+  allText.includes('takes effect as of'), false)
+
+{
+  // Aleeya's real case: agreed on the 4th, effective from the 1st.
+  const back = buildPetAdditionDocument(input({
+    effectiveDate: '2026-11-01', agreementDate: '2026-11-04',
+  }))
+  const t = [...back.recitals, ...back.clauses.flatMap(c => c.paragraphs)].join('\n')
+
+  check('an effective date before the signing date is flagged', back.isBackdated, true)
+  check('a recital states both dates rather than leaving a reader to notice',
+    t.includes('signed on or about November 4, 2026 but takes effect as of November 1, 2026'),
+    true)
+  check('and says the parties intend it', t.includes('which the parties intend and agree'), true)
+  check('the rent clause states the already-begun month is owed in full',
+    t.includes('November 2026 pet rent is owed in full'), true)
+  check('and that it is payable on signing if that month has fallen due',
+    t.includes('payable on signing'), true)
+  check('the summary block says so too',
+    back.summary.some(([k]) => k === 'Effective as of'), true)
+  check('naming it as before signing',
+    back.summary.find(([k]) => k === 'Effective as of')[1].includes('before signing'), true)
+  check('the document is still dated the day it was issued, not the effective date',
+    back.agreementDate, '2026-11-04')
+  check('and the recitals say so', t.includes('made as of November 4, 2026'), true)
+  check('a backdated document still passes the guard', verifyAmendmentDocument(back), [])
+}
+{
+  // Same day is not backdating, and must not grow the retroactive clause.
+  const sameDay = buildPetAdditionDocument(input({
+    effectiveDate: '2026-11-04', agreementDate: '2026-11-04',
+  }))
+  check('effective on the day it is signed is not backdated', sameDay.isBackdated, false)
+  check('and gets no retroactive recital',
+    sameDay.recitals.join('\n').includes('takes effect as of'), false)
 }
 
 // ── Acceptance terms ───────────────────────────────────────────────────────
@@ -449,8 +490,9 @@ if (fail.length) {
 }
 console.log(
   '✓ an amendment names every charge it collects or refuses to send, says the ' +
-  'rest of the lease is unchanged, cannot be backdated or signed late or signed ' +
-  'with half a name, derives expiry and "in force" rather than storing them, holds ' +
-  'a conditional approval short of in force, and keeps asking until the agreed ' +
-  'money reaches the ledger\n'
+  'rest of the lease is unchanged, states retroactive effect rather than hiding it ' +
+  'while never letting the SIGNATURE be backdated, refuses a late signature, ' +
+  'derives expiry and "in force" rather than storing them, holds a conditional ' +
+  'approval short of in force, and keeps asking until the agreed money reaches ' +
+  'the ledger\n'
 )

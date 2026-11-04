@@ -346,6 +346,15 @@ export type AmendmentDocument = {
    * document arrives — here, written consent from the other tenants.
    */
   requiresCotenantConsent: boolean
+  /**
+   * True when `effectiveDate` is earlier than `agreementDate`.
+   *
+   * Computed once, at build time, and frozen with the rest of the document.
+   * Every surface that mentions the dates reads this rather than comparing
+   * them again, so none of them can disagree about whether a tenant is being
+   * asked to agree to something retroactive.
+   */
+  isBackdated: boolean
 }
 
 /** The animal, identified. */
@@ -474,6 +483,17 @@ export function buildPetAdditionDocument(input: PetAdditionInput): AmendmentDocu
   const speciesLower = species.toLowerCase()
   const petDesc = describePet(pet)
 
+  /**
+   * Does this take effect before it is signed?
+   *
+   * Compared against the document's own date rather than against `new Date()`,
+   * so the answer is a property of the document and not of when somebody
+   * happens to render it. A document built today is backdated or it is not;
+   * that fact must not change next week.
+   */
+  const isBackdated =
+    DATE_RE.test(effectiveDate) && DATE_RE.test(agreementDate) && effectiveDate < agreementDate
+
   // The charges, as data. Everything downstream — the closing clause, the
   // guard, the summary block, the emails — reads this list rather than
   // re-deriving the amounts, so there is one place a charge can be forgotten
@@ -505,6 +525,9 @@ export function buildPetAdditionDocument(input: PetAdditionInput): AmendmentDocu
   ]
   for (const c of charges) summary.push([c.label, fmtDollars(c.amount)])
   if (upfront > 0) summary.push(['Due on signing', fmtDollars(upfront)])
+  if (isBackdated) {
+    summary.push(['Effective as of', `${fmtLegalDate(effectiveDate)} (before signing)`])
+  }
 
   const recitals = [
     `This Residential Change Lease Agreement (this “Amendment”) is made as of ` +
@@ -519,6 +542,26 @@ export function buildPetAdditionDocument(input: PetAdditionInput): AmendmentDocu
     `not otherwise permit. Landlord is willing to approve it on the terms below. ` +
     `Landlord and Tenant therefore agree as follows.`,
   ]
+
+  // Backdating, said out loud.
+  //
+  // An effective date earlier than the date of signing is ordinary and lawful —
+  // it is what "as of" means, and a landlord whose tenant's pet arrived at the
+  // start of the month has a real reason to want it. What is not acceptable is
+  // leaving a reader to *notice* the gap. A document that quietly says
+  // "effective November 1" at the top and is signed on the 4th is
+  // indistinguishable, months later, from one that was backdated to hide when
+  // it was really agreed. So the recital states both dates and the consequence
+  // — that a month of rent has already begun — in the tenant's own interest.
+  if (isBackdated) {
+    recitals.push(
+      `This Amendment is signed on or about ${fmtLegalDate(agreementDate)} but takes effect ` +
+      `as of ${fmtLegalDate(effectiveDate)}, which the parties intend and agree. Tenant is ` +
+      `therefore responsible for the amounts under this Amendment from ` +
+      `${fmtLegalDate(effectiveDate)}, including for any period already elapsed when it is ` +
+      `signed.`
+    )
+  }
 
   // ── Money clauses, built only for the charges that exist ──────────────────
   //
@@ -535,7 +578,17 @@ export function buildPetAdditionDocument(input: PetAdditionInput): AmendmentDocu
         `This pet rent shall be paid together with the regular monthly rent, is due on the ` +
         `same day of the month as rent under the Lease, is treated as additional rent, and ` +
         `shall continue for as long as the approved ${speciesLower} remains at the Premises. ` +
-        `It is first payable with the ${monthName(effectiveDate)} rent.`,
+        `It is first payable with the ${monthName(effectiveDate)} rent.` +
+        (isBackdated
+          // The practical consequence of the "as of" date, in the clause where
+          // the money is. A tenant signing on the 4th for a term beginning on
+          // the 1st owes that month, and the single worst place to discover
+          // that is a ledger entry three weeks later.
+          ? ` Because this Amendment takes effect as of ${fmtLegalDate(effectiveDate)}, the ` +
+            `${monthName(effectiveDate)} pet rent is owed in full even though this Amendment ` +
+            `is signed after that month began, and is payable on signing if that month’s ` +
+            `rent has already fallen due.`
+          : ''),
       ],
     })
   }
@@ -745,6 +798,7 @@ export function buildPetAdditionDocument(input: PetAdditionInput): AmendmentDocu
     clauses,
     acceptance,
     requiresCotenantConsent: needsConsent,
+    isBackdated,
     signatureStatement:
       `By typing my full legal name below and submitting this form, I am signing this ` +
       `Amendment electronically. I agree that my electronic signature is the legal ` +

@@ -7,11 +7,14 @@
  *
  * Run: node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/preview-aleeya.mjs
  */
-const { buildPetAdditionDocument, verifyAmendmentDocument, renderAmendmentText } =
+const { buildPetAdditionDocument, verifyAmendmentDocument, renderAmendmentText, signingToday } =
   await import('../src/lib/leaseAmendments.ts')
 
-const EFFECTIVE = process.argv[2] || '2026-12-01'
-const RESPOND_BY = process.argv[3] || '2026-11-17'
+// Effective 1 November, issued today: backdated by a few days, which the
+// document states in a recital and again in the rent clause rather than
+// leaving a later reader to spot the gap between the two dates.
+const EFFECTIVE = process.argv[2] || '2026-11-01'
+const RESPOND_BY = process.argv[3] || '2026-11-18'
 
 const doc = buildPetAdditionDocument({
   propertyAddress: '820 W 9th Street, Tempe, AZ 85281',
@@ -20,7 +23,9 @@ const doc = buildPetAdditionDocument({
   leaseStartDate: '2026-08-03',
   leaseEndDate: '2027-07-31',
   effectiveDate: EFFECTIVE,
-  agreementDate: '2026-11-03',
+  // Always today. A document dated anything else is either forward-dated or
+  // genuinely backdated, and neither should ever happen by accident.
+  agreementDate: signingToday(),
   monthlyPetRent: 65,
   petDeposit: 300,
   cleaningFee: 100,
