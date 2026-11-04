@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import AmendmentDocumentView from './AmendmentDocument'
 import {
-  STATUS_META, KIND_META, amendmentPhase, nextAction, sortAmendments, signatureOf,
-  fmtShortDate, fmtLegalDate, fmtDollars, signingToday, monthName,
+  STATUS_META, KIND_META, PHASE_META, amendmentPhase, nextAction, sortAmendments,
+  signatureOf, fmtShortDate, fmtLegalDate, fmtDollars, signingToday, monthName,
   buildPetAdditionDocument, type LeaseAmendment, type AmendmentDocument,
 } from '@/lib/leaseAmendments'
 
@@ -84,10 +84,23 @@ export default function AmendmentsTab({
 
   const sorted = useMemo(() => sortAmendments(rows), [rows])
 
-  /** Signed, carrying a charge, and nobody has billed it. The money at risk. */
+  /** Signed, carrying money, and nobody has billed it. The money at risk. */
   const unbilled = useMemo(
-    () => sorted.filter(a => a.status === 'signed' && a.monthly_charge > 0 && !a.billed_at),
+    () => sorted.filter(a =>
+      a.status === 'signed' && !a.billed_at &&
+      (a.monthly_charge > 0 || a.deposit_amount > 0 || a.one_time_fee_amount > 0)
+    ),
     [sorted]
+  )
+  /** Signed, but the document's own condition has not been met yet. */
+  const awaitingConsent = useMemo(
+    () => sorted.filter(a => amendmentPhase(a) === 'conditional'),
+    [sorted]
+  )
+  const uncollected = useMemo(
+    () => unbilled.reduce(
+      (s, a) => s + a.monthly_charge + a.deposit_amount + a.one_time_fee_amount, 0),
+    [unbilled]
   )
 
   async function act(id: string, action: string, label: string) {
@@ -134,17 +147,39 @@ export default function AmendmentsTab({
       {/* The money nobody is collecting. Above the list, because a signed
           addendum with no line item is the one failure mode of this feature
           that costs real dollars every month in silence. */}
+      {/* The condition the document itself imposes, above the money. Approval
+          is not effective until the other tenants consent in writing, so a
+          landlord who bills before that is charging for something they have
+          not yet granted. */}
+      {awaitingConsent.length > 0 && (
+        <div className="action bad" style={{ marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div className="action-title">
+              {awaitingConsent.length === 1
+                ? `Signed, but you still need the other tenants’ written consent`
+                : `${awaitingConsent.length} signed amendments are waiting on housemate consent`}
+            </div>
+            <div className="action-body">
+              The document says your approval isn&apos;t effective until every other tenant at the
+              property has consented in writing. Collect those first, then mark them received
+              below — and hold off billing until you have.
+            </div>
+          </div>
+        </div>
+      )}
+
       {unbilled.length > 0 && (
         <div className="action warn" style={{ marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
             <div className="action-title">
               {unbilled.length === 1
-                ? `${fmtDollars(unbilled[0].monthly_charge)}/mo agreed and not yet on the ledger`
+                ? `${fmtDollars(uncollected)} agreed and not yet on the ledger`
                 : `${unbilled.length} signed amendments are not on the ledger yet`}
             </div>
             <div className="action-body">
-              Signing a document doesn&apos;t charge anybody. Add the charge as a line item on the
-              tenant&apos;s share in Financials, then mark it below so this stops nagging.
+              Signing a document doesn&apos;t charge anybody. Add the monthly amount as a line item
+              on the tenant&apos;s share, and anything due on signing as a one-off charge, then
+              mark it below so this stops nagging.
             </div>
           </div>
           <a className="btn-ghost" href={`/landlord/financials?lease=${leaseId}`}>Open Financials →</a>
@@ -214,14 +249,22 @@ export default function AmendmentsTab({
                       >
                         {meta.label}
                       </span>
-                      {phase === 'pending' && (
-                        <span className="am-chip soft">Starts {fmtShortDate(a.effective_date)}</span>
+                      {(phase === 'pending' || phase === 'conditional' || phase === 'expired') && (
+                        <span className="am-chip soft">
+                          {phase === 'pending'
+                            ? `Starts ${fmtShortDate(a.effective_date)}`
+                            : PHASE_META[phase].label}
+                        </span>
                       )}
                     </div>
                     <div className="am-sub">
                       {KIND_META[a.kind]?.label ?? a.kind} · {a.tenant_name || a.tenant_email}
                       {a.monthly_charge > 0 && <> · {fmtDollars(a.monthly_charge)}/mo</>}
+                      {a.deposit_amount + a.one_time_fee_amount > 0 && (
+                        <> · {fmtDollars(a.deposit_amount + a.one_time_fee_amount)} on signing</>
+                      )}
                       {' · '}effective {fmtShortDate(a.effective_date)}
+                      {a.respond_by && a.status === 'sent' && <> · sign by {fmtShortDate(a.respond_by)}</>}
                     </div>
                   </div>
                   <button className="lnk-btn" onClick={() => setOpen(isOpen ? null : a.id)}>
@@ -231,7 +274,7 @@ export default function AmendmentsTab({
 
                 {/* What to do about it, in one line. `bill` is the only one
                     that is really a task; the rest are status told honestly. */}
-                <div className={`am-act${action.kind === 'bill' ? ' bill' : ''}`}>
+                <div className={`am-act${action.kind === 'bill' ? ' bill' : ''}${action.kind === 'consent' || action.kind === 'expired' ? ' stop' : ''}`}>
                   <div>
                     <div className="am-act-t">{action.label}</div>
                     <div className="am-act-b">{action.detail}</div>
@@ -296,18 +339,40 @@ export default function AmendmentsTab({
                       </button>
                     </>
                   )}
-                  {a.status === 'signed' && a.monthly_charge > 0 && !a.billed_at && (
+                  {a.status === 'signed' && a.document?.requiresCotenantConsent && !a.cotenant_consents_at && (
+                    <button
+                      className="btn-dark-sm"
+                      disabled={busy === a.id}
+                      onClick={() => act(a.id, 'mark_consents', 'Consents recorded. The approval is now effective.')}
+                    >
+                      I have the housemates&apos; consent
+                    </button>
+                  )}
+                  {a.cotenant_consents_at && (
+                    <span className="am-billed">
+                      Consents received {fmtShortDate(a.cotenant_consents_at.slice(0, 10))}
+                      <button className="lnk-btn" onClick={() => act(a.id, 'unmark_consents', 'Unmarked.')}>
+                        undo
+                      </button>
+                    </span>
+                  )}
+                  {/* Billing is offered only once the approval is actually
+                      effective. Showing it beside an outstanding condition
+                      would invite a landlord to charge for something the
+                      document says has not been granted yet. */}
+                  {a.status === 'signed' && phase !== 'conditional' && !a.billed_at &&
+                   (a.monthly_charge > 0 || a.deposit_amount > 0 || a.one_time_fee_amount > 0) && (
                     <button
                       className="btn-dark-sm"
                       disabled={busy === a.id}
                       onClick={() => act(a.id, 'mark_billed', 'Marked as billed.')}
                     >
-                      I&apos;ve added the charge
+                      I&apos;ve added the charges
                     </button>
                   )}
                   {a.billed_at && (
                     <span className="am-billed">
-                      Charge added {fmtShortDate(a.billed_at.slice(0, 10))}
+                      Charges added {fmtShortDate(a.billed_at.slice(0, 10))}
                       <button className="lnk-btn" onClick={() => act(a.id, 'unmark_billed', 'Unmarked.')}>
                         undo
                       </button>
@@ -374,21 +439,39 @@ function PetAddendumForm({
   // The first of next month, which is when a monthly charge sensibly starts —
   // mid-month pet rent is a proration argument nobody wants.
   const [effective, setEffective] = useState(firstOfNextMonth())
+  // A fortnight to sign. Long enough that a student who goes home for the
+  // weekend does not lose the offer; short enough that an unanswered document
+  // does not sit open for a term, which is how a landlord ends up unsure
+  // whether a pet is approved.
+  const [respondBy, setRespondBy] = useState(inDays(14))
   const [charge, setCharge] = useState('65')
+  const [deposit, setDeposit] = useState('300')
+  const [cleaning, setCleaning] = useState('100')
   const [petName, setPetName] = useState('')
   const [species, setSpecies] = useState('Dog')
   const [breed, setBreed] = useState('')
+  const [sex, setSex] = useState('')
   const [weight, setWeight] = useState('')
+  const [dob, setDob] = useState('')
+  const [microchip, setMicrochip] = useState('')
+  const [recordNumber, setRecordNumber] = useState('')
   const [color, setColor] = useState('')
   const [sterilized, setSterilized] = useState(true)
   const [vaccinated, setVaccinated] = useState(true)
+  // On by default: this is a student house, and the paper form makes approval
+  // conditional on the housemates agreeing. A landlord with a single tenant
+  // turns it off and the clause disappears from the document entirely.
+  const [needConsent, setNeedConsent] = useState(tenants.length > 1)
   const [extra, setExtra] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
   const [preview, setPreview] = useState(false)
 
   const tenant = tenants.find(t => t.id === tenantId) ?? null
-  const chargeNum = Math.max(0, Math.round(Number(charge) || 0))
+  const num = (v: string) => Math.max(0, Math.round(Number(v) || 0))
+  const chargeNum = num(charge)
+  const depositNum = num(deposit)
+  const cleaningNum = num(cleaning)
   const premises = [propertyAddress, unitNumber?.trim() || null].filter(Boolean).join(' — ')
 
   /** The same builder the server runs. See the note above. */
@@ -401,17 +484,26 @@ function PetAddendumForm({
       leaseStartDate: leaseStart,
       leaseEndDate: leaseEnd,
       effectiveDate: effective,
-      agreementDate: effective,
+      // Dated today, not on the effective date — a document dated into the
+      // future is indistinguishable from a backdated one to a later reader.
+      // The server does the same thing, so the preview matches what sends.
+      agreementDate: signingToday(),
       monthlyPetRent: chargeNum,
+      petDeposit: depositNum,
+      cleaningFee: cleaningNum,
+      respondBy: respondBy || null,
+      requireCotenantConsent: needConsent,
       pet: {
-        name: petName, species, breed, color,
-        weightLbs: weight ? Number(weight) : null,
+        name: petName, species, breed, color, sex, weight,
+        dob: dob || null, microchip, recordNumber,
         sterilized, vaccinated,
       },
       additionalTerms: extra,
     })
-  }, [tenant, landlordName, premises, leaseStart, leaseEnd, effective, chargeNum,
-      petName, species, breed, color, weight, sterilized, vaccinated, extra])
+  }, [tenant, landlordName, premises, leaseStart, leaseEnd, effective, respondBy,
+      chargeNum, depositNum, cleaningNum, needConsent,
+      petName, species, breed, color, sex, weight, dob, microchip, recordNumber,
+      sterilized, vaccinated, extra])
 
   async function send() {
     setSending(true); setErr('')
@@ -425,11 +517,19 @@ function PetAddendumForm({
         lease_tenant_id: tenantId,
         kind: 'pet_addition',
         effective_date: effective,
+        respond_by: respondBy || null,
         monthly_charge: chargeNum,
+        deposit_amount: depositNum,
+        one_time_fee_amount: cleaningNum,
+        require_cotenant_consent: needConsent,
         pet_name: petName,
         pet_species: species,
         pet_breed: breed || null,
-        pet_weight_lbs: weight || null,
+        pet_sex: sex || null,
+        pet_weight: weight || null,
+        pet_dob: dob || null,
+        pet_microchip: microchip || null,
+        pet_record_number: recordNumber || null,
         pet_color: color || null,
         pet_sterilized: sterilized,
         pet_vaccinated: vaccinated,
@@ -494,8 +594,7 @@ function PetAddendumForm({
             onChange={e => setCharge(e.target.value)}
           />
           <div className="hint" style={{ marginTop: 5 }}>
-            The whole cost. The document states, in writing, that there is no pet deposit and no
-            one-time fee — so leave this as the only number.
+            Recurring, paid with the rent. Set it to 0 for no pet rent.
           </div>
         </div>
         <div className="field">
@@ -514,6 +613,55 @@ function PetAddendumForm({
 
       <div className="grid2">
         <div className="field">
+          <label className="lbl">Pet security deposit</label>
+          <input
+            className="inp" type="number" min={0} step={1} value={deposit}
+            onChange={e => setDeposit(e.target.value)}
+          />
+          <div className="hint" style={{ marginTop: 5 }}>
+            Refundable, held under the lease and Arizona law. 0 for none.
+          </div>
+        </div>
+        <div className="field">
+          <label className="lbl">One-time cleaning fee</label>
+          <input
+            className="inp" type="number" min={0} step={1} value={cleaning}
+            onChange={e => setCleaning(e.target.value)}
+          />
+          <div className="hint" style={{ marginTop: 5 }}>
+            Nonrefundable, due on signing. 0 for none.
+          </div>
+        </div>
+      </div>
+
+      {/* Whatever you type, the document says it. The closing clause is built
+          from these three numbers, and the send is refused if any of them is
+          charged without being named in it — so there is no way to add a
+          fee here that the tenant does not see. */}
+      {depositNum + cleaningNum > 0 && (
+        <div className="am-due">
+          <strong>{fmtDollars(depositNum + cleaningNum)}</strong> due from{' '}
+          {tenant?.name?.split(' ')[0] || 'the tenant'} on signing
+          {chargeNum > 0 && <>, then <strong>{fmtDollars(chargeNum)}/mo</strong></>}. The document
+          states all of it and says no other charge arises.
+        </div>
+      )}
+
+      <div className="field">
+        <label className="lbl">Must be signed by <span className="am-opt">optional</span></label>
+        <input
+          className="inp" type="date" value={respondBy}
+          min={signingToday()} max={leaseEnd}
+          onChange={e => setRespondBy(e.target.value)}
+        />
+        <div className="hint" style={{ marginTop: 5 }}>
+          After this date the offer is deemed withdrawn and HomeHive refuses the signature —
+          the document says so, so it has to be true. Clear it for no deadline.
+        </div>
+      </div>
+
+      <div className="grid2">
+        <div className="field">
           <label className="lbl">Pet&apos;s name</label>
           <input className="inp" value={petName} onChange={e => setPetName(e.target.value)} placeholder="Dewey" />
         </div>
@@ -526,20 +674,45 @@ function PetAddendumForm({
       <div className="grid2">
         <div className="field">
           <label className="lbl">Breed <span className="am-opt">optional</span></label>
-          <input className="inp" value={breed} onChange={e => setBreed(e.target.value)} placeholder="Labrador mix" />
+          <input className="inp" value={breed} onChange={e => setBreed(e.target.value)} placeholder="Alaskan Husky" />
         </div>
         <div className="field">
-          <label className="lbl">Adult weight, lbs <span className="am-opt">optional</span></label>
-          <input className="inp" type="number" min={1} value={weight} onChange={e => setWeight(e.target.value)} placeholder="45" />
+          <label className="lbl">Colour <span className="am-opt">optional</span></label>
+          <input className="inp" value={color} onChange={e => setColor(e.target.value)} placeholder="Brown" />
+        </div>
+      </div>
+
+      <div className="grid2">
+        <div className="field">
+          <label className="lbl">Sex <span className="am-opt">optional</span></label>
+          <input className="inp" value={sex} onChange={e => setSex(e.target.value)} placeholder="Male" />
+        </div>
+        <div className="field">
+          <label className="lbl">Weight <span className="am-opt">optional</span></label>
+          {/* Text, not a number: vet records say "33 lbs 15 oz", and rounding
+              that to an integer in a document whose job is to identify one
+              specific animal loses the detail doing the identifying. */}
+          <input className="inp" value={weight} onChange={e => setWeight(e.target.value)} placeholder="33 lbs 15 oz" />
+        </div>
+      </div>
+
+      <div className="grid2">
+        <div className="field">
+          <label className="lbl">Date of birth <span className="am-opt">optional</span></label>
+          <input className="inp" type="date" value={dob} max={signingToday()} onChange={e => setDob(e.target.value)} />
+        </div>
+        <div className="field">
+          <label className="lbl">Microchip <span className="am-opt">optional</span></label>
+          <input className="inp" value={microchip} onChange={e => setMicrochip(e.target.value)} placeholder="985113014014128" />
         </div>
       </div>
 
       <div className="field">
-        <label className="lbl">Colour / markings <span className="am-opt">optional</span></label>
-        <input className="inp" value={color} onChange={e => setColor(e.target.value)} placeholder="black and tan" />
+        <label className="lbl">Licence / record number <span className="am-opt">optional</span></label>
+        <input className="inp" value={recordNumber} onChange={e => setRecordNumber(e.target.value)} placeholder="A861983" />
         <div className="hint" style={{ marginTop: 5 }}>
-          Permission is for <em>this</em> animal. The description is what makes that enforceable if
-          a second one turns up.
+          Permission is for <em>this</em> animal. Every detail here is what makes that enforceable
+          if a second one turns up — the microchip most of all.
         </div>
       </div>
 
@@ -547,6 +720,21 @@ function PetAddendumForm({
         <label><input type="checkbox" checked={sterilized} onChange={e => setSterilized(e.target.checked)} /> Spayed or neutered</label>
         <label><input type="checkbox" checked={vaccinated} onChange={e => setVaccinated(e.target.checked)} /> Licensed &amp; vaccinated (Tempe / Maricopa County)</label>
       </div>
+
+      <div className="am-checks">
+        <label>
+          <input type="checkbox" checked={needConsent} onChange={e => setNeedConsent(e.target.checked)} />
+          The other tenants must consent in writing first
+        </label>
+      </div>
+      {needConsent && (
+        <div className="hint" style={{ margin: '-6px 0 14px' }}>
+          Adds a clause making your approval conditional on written consent from each other tenant
+          at the property. HomeHive then holds the amendment at &ldquo;signed, consents
+          outstanding&rdquo; — and keeps the billing prompt back — until you confirm you
+          have them.
+        </div>
+      )}
 
       <div className="field">
         <label className="lbl">Anything to add <span className="am-opt">optional</span></label>
@@ -589,6 +777,13 @@ function PetAddendumForm({
   )
 }
 
+/** `n` days from today, `YYYY-MM-DD`, in the billing calendar. */
+function inDays(n: number): string {
+  const t = signingToday()
+  const d = new Date(Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10) + n))
+  return d.toISOString().slice(0, 10)
+}
+
 /** The first of next month, `YYYY-MM-DD`, in the billing calendar. */
 function firstOfNextMonth(): string {
   const today = signingToday()
@@ -612,6 +807,7 @@ const CSS = `
 
   .am-act { margin-top: 11px; padding: 10px 12px; border-radius: 8px; background: #f8fafc; border: 1px solid #f1f5f9; }
   .am-act.bill { background: #fffbeb; border-color: #fde68a; }
+  .am-act.stop { background: #fef2f2; border-color: #fecaca; }
   .am-act-t { font-size: 12.5px; font-weight: 700; color: #0f172a; }
   .am-act-b { font-size: 11.5px; color: #64748b; margin-top: 2px; line-height: 1.55; }
 
@@ -635,6 +831,8 @@ const CSS = `
   .am-doc-wrap { margin-top: 14px; }
   .am-print { margin-top: 10px; }
   .am-prev-note { font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; line-height: 1.55; }
+
+  .am-due { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 9px; padding: 10px 13px; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
 
   .am-opt { font-weight: 500; text-transform: none; letter-spacing: 0; color: #94a3b8; font-size: 10.5px; }
   .am-checks { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }

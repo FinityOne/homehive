@@ -1,7 +1,7 @@
 'use client'
 
 import {
-  fmtLegalDate, fmtDollars, monthName,
+  fmtLegalDate, fmtDollars, chargesOf, dueOnExecution,
   type AmendmentDocument, type AmendmentSignature,
 } from '@/lib/leaseAmendments'
 
@@ -39,39 +39,75 @@ export default function AmendmentDocumentView({
       <style>{CSS}</style>
 
       <header className="amdoc-hd">
-        <h1 className="amdoc-title">{doc.title}</h1>
-        <dl className="amdoc-meta">
-          <div><dt>Premises</dt><dd>{doc.premises}</dd></div>
-          <div><dt>Landlord</dt><dd>{doc.landlordName}</dd></div>
-          <div><dt>Tenant</dt><dd>{doc.tenantName}</dd></div>
-          <div>
-            <dt>Lease being amended</dt>
-            <dd>{fmtLegalDate(doc.leaseStartDate)} – {fmtLegalDate(doc.leaseEndDate)}</dd>
-          </div>
-          <div><dt>Effective</dt><dd>{fmtLegalDate(doc.effectiveDate)}</dd></div>
-        </dl>
+        <div className="amdoc-hdrow">
+          <h1 className="amdoc-title">{doc.title}</h1>
+          <div className="amdoc-hdaddr">{doc.premises}</div>
+        </div>
+        {/* The boxed statement from the paper form. Kept because it is what a
+            tenant's eye lands on first and it sets the register: this is a
+            document, not a notification. */}
+        <div className="amdoc-notice">{doc.notice}</div>
       </header>
+
+      <h2 className="amdoc-section">{doc.sectionTitle}</h2>
 
       {/* The terms at a glance, above the contract itself.
           Not a substitute for reading it — the clauses are right there — but a
           student reading a legal document on a phone needs to know what it
           costs and when, before deciding to read four hundred words. Hiding
           that behind the prose is how people sign things they haven't
-          understood. */}
-      {doc.monthlyCharge > 0 && (
+          understood.
+
+          Built from doc.summary, which the builder fills from doc.charges, so
+          it cannot show a different set of amounts from the clauses below. */}
+      {doc.summary.length > 0 && (
+        <dl className="amdoc-meta summary">
+          {doc.summary.map(([k, v], i) => (
+            <div key={i}><dt>{k}</dt><dd>{v}</dd></div>
+          ))}
+        </dl>
+      )}
+
+      <dl className="amdoc-meta">
+        <div><dt>Landlord</dt><dd>{doc.landlordName}</dd></div>
+        <div><dt>Tenant</dt><dd>{doc.tenantName}</dd></div>
+        <div>
+          <dt>Lease being amended</dt>
+          <dd>{fmtLegalDate(doc.leaseStartDate)} – {fmtLegalDate(doc.leaseEndDate)}</dd>
+        </div>
+        <div><dt>Effective</dt><dd>{fmtLegalDate(doc.effectiveDate)}</dd></div>
+        {doc.respondBy && (
+          <div><dt>Must be signed by</dt><dd>{fmtLegalDate(doc.respondBy)}</dd></div>
+        )}
+      </dl>
+
+      {/* The money, as three columns a reader can hold in their head: what it
+          costs every month, what it costs today, and which part of today's
+          money comes back. That last column is the one tenants most often get
+          wrong, and getting it wrong is how somebody expects $400 at move-out
+          and receives $300. */}
+      {chargesOf(doc).length > 0 && (
         <div className="amdoc-glance">
-          <div className="g">
-            <div className="g-k">{doc.monthlyChargeLabel || 'Monthly charge'}</div>
-            <div className="g-v">{fmtDollars(doc.monthlyCharge)}<span className="g-per">/mo</span></div>
-          </div>
-          <div className="g">
-            <div className="g-k">Starts with</div>
-            <div className="g-v sm">{monthName(doc.effectiveDate)} rent</div>
-          </div>
-          <div className="g">
-            <div className="g-k">Anything else to pay</div>
-            <div className="g-v sm ok">Nothing</div>
-          </div>
+          {chargesOf(doc).map((c, i) => (
+            <div className="g" key={i}>
+              <div className="g-k">{c.label}</div>
+              <div className="g-v">
+                {fmtDollars(c.amount)}
+                {c.kind === 'monthly' && <span className="g-per">/mo</span>}
+              </div>
+              <div className={`g-n${c.kind === 'deposit' ? ' ok' : ''}`}>
+                {c.kind === 'monthly' ? 'with your rent'
+                  : c.kind === 'deposit' ? 'refundable' : 'one-time, not refundable'}
+              </div>
+            </div>
+          ))}
+          {dueOnExecution(doc) > 0 && (
+            <div className="g total">
+              <div className="g-k">Due on signing</div>
+              <div className="g-v">{fmtDollars(dueOnExecution(doc))}</div>
+              <div className="g-n">deposit + one-time fee</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -87,6 +123,13 @@ export default function AmendmentDocumentView({
           </li>
         ))}
       </ol>
+
+      {doc.acceptance.length > 0 && (
+        <section className="amdoc-accept">
+          <h2 className="amdoc-ch">Terms of acceptance</h2>
+          {doc.acceptance.map((a, i) => <p key={i}>{a}</p>)}
+        </section>
+      )}
 
       <section className="amdoc-sig">
         <h2 className="amdoc-ch">Signature</h2>
@@ -142,12 +185,37 @@ const CSS = `
 }
 @media (max-width: 640px) { .amdoc { padding: 22px 18px 20px; border-radius: 12px; } }
 
-.amdoc-hd { border-bottom: 2px solid #1f1d1a; padding-bottom: 18px; margin-bottom: 22px; }
+.amdoc-hd { border-bottom: 2px solid #1f1d1a; padding-bottom: 18px; margin-bottom: 20px; }
+.amdoc-hdrow {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; margin-bottom: 15px;
+}
 .amdoc-title {
-  margin: 0 0 16px; font-size: 21px; line-height: 1.3; font-weight: 700;
+  margin: 0; font-size: 19px; line-height: 1.3; font-weight: 700;
   letter-spacing: -0.2px; text-transform: uppercase;
 }
-.amdoc-meta { margin: 0; display: grid; gap: 7px; }
+.amdoc-hdaddr { font-size: 14px; font-weight: 700; white-space: nowrap; }
+@media (max-width: 560px) { .amdoc-hdaddr { white-space: normal; font-size: 13px; } }
+/* The boxed statement. A real border, centred, because it is a notice and not
+   a paragraph — the paper form sets it that way and tenants recognise it. */
+.amdoc-notice {
+  border: 1px solid #1f1d1a; padding: 12px 16px; text-align: center;
+  font-size: 13px; line-height: 1.6; color: #2c2a26;
+}
+.amdoc-section {
+  margin: 0 0 16px; font-size: 14px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.9px; color: #1f1d1a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.amdoc-meta { margin: 0 0 18px; display: grid; gap: 7px; }
+/* The summary block is the same grid, set apart — it is the paper form's
+   "Tenant Responsible for Pet / Approved Pet / …" header, which readers use as
+   the answer key for everything underneath. */
+.amdoc-meta.summary {
+  background: #faf9f6; border: 1px solid #e8e4db; border-radius: 10px;
+  padding: 14px 16px; gap: 8px;
+}
 .amdoc-meta > div { display: grid; grid-template-columns: 170px 1fr; gap: 10px; }
 @media (max-width: 560px) { .amdoc-meta > div { grid-template-columns: 1fr; gap: 1px; } }
 .amdoc-meta dt {
@@ -158,21 +226,22 @@ const CSS = `
 .amdoc-meta dd { margin: 0; font-size: 14.5px; line-height: 1.5; font-weight: 600; }
 
 .amdoc-glance {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px;
   background: #e8e4db; border: 1px solid #e8e4db; border-radius: 10px;
   overflow: hidden; margin-bottom: 24px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 @media (max-width: 560px) { .amdoc-glance { grid-template-columns: 1fr; } }
 .amdoc-glance .g { background: #faf9f6; padding: 13px 15px; }
+.amdoc-glance .g.total { background: #f1efe9; }
 .amdoc-glance .g-k {
   font-size: 10.5px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.7px; color: #9b9b9b; margin-bottom: 5px;
 }
 .amdoc-glance .g-v { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
-.amdoc-glance .g-v.sm { font-size: 14px; font-weight: 700; letter-spacing: 0; }
-.amdoc-glance .g-v.ok { color: #047857; }
 .amdoc-glance .g-per { font-size: 12.5px; font-weight: 600; color: #9b9b9b; }
+.amdoc-glance .g-n { font-size: 11px; color: #9b9b9b; margin-top: 3px; }
+.amdoc-glance .g-n.ok { color: #047857; font-weight: 600; }
 
 .amdoc-recitals p, .amdoc-clauses p, .amdoc-sigstate {
   margin: 0 0 12px; font-size: 14.5px; line-height: 1.72; color: #2c2a26;
@@ -188,6 +257,9 @@ const CSS = `
   margin: 0 0 9px; font-size: 12px; font-weight: 800; text-transform: uppercase;
   letter-spacing: 0.9px; color: #8C1D40;
 }
+
+.amdoc-accept { border-top: 1px solid #e8e4db; padding-top: 20px; margin-top: 6px; }
+.amdoc-accept p { margin: 0 0 11px; font-size: 13.5px; line-height: 1.68; color: #2c2a26; }
 
 .amdoc-sig { border-top: 1px solid #e8e4db; padding-top: 22px; margin-top: 10px; }
 .amdoc-sigstate { font-size: 13px; color: #55524c; }
@@ -220,7 +292,8 @@ const CSS = `
 
 @media print {
   .amdoc { border: none; border-radius: 0; padding: 0; max-width: none; }
-  .amdoc-glance { break-inside: avoid; }
+  .amdoc-glance, .amdoc-meta.summary, .amdoc-notice { break-inside: avoid; }
+  .amdoc-accept { break-inside: avoid; }
   .amdoc-clauses > li, .amdoc-sig { break-inside: avoid; }
 }
 `

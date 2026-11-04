@@ -23,7 +23,7 @@ import { getSiteUrl } from '@/lib/siteUrl'
 import { buildAmendmentRequestEmail } from '@/lib/amendmentEmails'
 import { logEmail } from '@/lib/emailLog'
 import {
-  buildPetAdditionDocument, verifyAmendmentDocument, amendmentPath, DATE_RE,
+  buildPetAdditionDocument, verifyAmendmentDocument, amendmentPath, signingToday, DATE_RE,
   type AmendmentDocument, type AmendmentKind,
 } from '@/lib/leaseAmendments'
 
@@ -115,9 +115,33 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Give the change an effective date.' }, { status: 400 })
   }
 
-  const charge = Number(body.monthly_charge ?? 0)
-  if (!Number.isFinite(charge) || charge < 0 || !Number.isInteger(charge)) {
-    return Response.json({ error: 'The monthly charge has to be a whole number of dollars.' }, { status: 400 })
+  /** Whole dollars, or an error naming the field a landlord can see. */
+  const money = (v: unknown, label: string): number | string => {
+    const n = Number(v ?? 0)
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return `${label} has to be a whole number of dollars.`
+    }
+    return n
+  }
+  const charge = money(body.monthly_charge, 'The monthly pet rent')
+  const deposit = money(body.deposit_amount, 'The pet security deposit')
+  const cleaning = money(body.one_time_fee_amount, 'The one-time cleaning fee')
+  for (const v of [charge, deposit, cleaning]) {
+    if (typeof v === 'string') return Response.json({ error: v }, { status: 400 })
+  }
+
+  // The acceptance deadline. Optional, but if it is given it must be in the
+  // future — an offer that is already expired when it lands in the tenant's
+  // inbox is worse than one with no deadline at all, because the landlord
+  // believes they have asked and the tenant cannot answer.
+  const respondBy = str(body.respond_by)
+  if (respondBy && !DATE_RE.test(respondBy)) {
+    return Response.json({ error: 'The sign-by date is not a date.' }, { status: 400 })
+  }
+  if (respondBy && respondBy < signingToday()) {
+    return Response.json({
+      error: 'The sign-by date has already passed — the tenant could never sign it in time.',
+    }, { status: 400 })
   }
 
   const petName = str(body.pet_name)
@@ -125,10 +149,9 @@ export async function POST(req: NextRequest) {
   if (!species) return Response.json({ error: 'Say what kind of animal it is.' }, { status: 400 })
   if (!petName) return Response.json({ error: 'Give the pet a name — the document identifies it.' }, { status: 400 })
 
-  const weightRaw = body.pet_weight_lbs
-  const weight = weightRaw == null || weightRaw === '' ? null : Number(weightRaw)
-  if (weight != null && (!Number.isFinite(weight) || weight <= 0)) {
-    return Response.json({ error: 'That weight is not a number of pounds.' }, { status: 400 })
+  const dob = str(body.pet_dob)
+  if (dob && !DATE_RE.test(dob)) {
+    return Response.json({ error: 'The pet’s date of birth is not a date.' }, { status: 400 })
   }
 
   // The lease must be the caller's. Never trust a client-supplied id.
@@ -178,14 +201,26 @@ export async function POST(req: NextRequest) {
     leaseStartDate: lease.start_date as string,
     leaseEndDate: lease.end_date as string,
     effectiveDate: effective,
-    agreementDate: effective,
-    monthlyPetRent: charge,
+    // The document is dated the day it is issued, which is today — not the day
+    // the change takes effect. Conflating them would date a contract into the
+    // future, and a reader cannot tell a forward-dated document from a
+    // backdated one.
+    agreementDate: signingToday(),
+    monthlyPetRent: charge as number,
+    petDeposit: deposit as number,
+    cleaningFee: cleaning as number,
+    respondBy,
+    requireCotenantConsent: body.require_cotenant_consent !== false,
     pet: {
       name: petName,
       species,
       breed: str(body.pet_breed),
-      weightLbs: weight,
       color: str(body.pet_color),
+      sex: str(body.pet_sex),
+      weight: str(body.pet_weight),
+      dob,
+      microchip: str(body.pet_microchip),
+      recordNumber: str(body.pet_record_number),
       sterilized: body.pet_sterilized === true,
       vaccinated: body.pet_vaccinated === true,
     },
@@ -222,8 +257,14 @@ export async function POST(req: NextRequest) {
       kind,
       title: doc.title,
       effective_date: effective,
-      monthly_charge: charge,
-      monthly_charge_label: doc.monthlyChargeLabel,
+      // Projected out of `document.charges`, which is the authoritative copy.
+      // These exist so a query can find "signed and never billed" without
+      // reaching into jsonb.
+      monthly_charge: charge as number,
+      monthly_charge_label: doc.charges.find(c => c.kind === 'monthly')?.label ?? null,
+      deposit_amount: deposit as number,
+      one_time_fee_amount: cleaning as number,
+      respond_by: respondBy,
       document: doc,
       tenant_name: recipient.name,
       tenant_email: recipient.email.trim().toLowerCase(),
@@ -320,7 +361,9 @@ export async function PATCH(req: NextRequest) {
   if (!id) return Response.json({ error: 'Which amendment?' }, { status: 400 })
 
   const { data: amendment } = await supabaseAdmin
-    .from('lease_amendments').select('id, owner_id, status, billed_at').eq('id', id).maybeSingle()
+    .from('lease_amendments')
+    .select('id, owner_id, status, billed_at, cotenant_consents_at')
+    .eq('id', id).maybeSingle()
 
   if (!amendment) return Response.json({ error: 'Amendment not found.' }, { status: 404 })
   if (amendment.owner_id !== user.id) return Response.json({ error: 'Unauthorized' }, { status: 403 })
@@ -348,13 +391,28 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ amendment: data })
   }
 
-  if (action === 'mark_billed' || action === 'unmark_billed') {
+  // The two "I have done the thing outside the product" switches. Both are
+  // reversible, because both are a human asserting something happened
+  // elsewhere, and a human who clicks the wrong one should not have to live
+  // with a signed record saying their tenant consented when they did not.
+  const MARKS: Record<string, { column: 'billed_at' | 'cotenant_consents_at'; set: boolean }> = {
+    mark_billed:      { column: 'billed_at',            set: true },
+    unmark_billed:    { column: 'billed_at',            set: false },
+    mark_consents:    { column: 'cotenant_consents_at', set: true },
+    unmark_consents:  { column: 'cotenant_consents_at', set: false },
+  }
+  const mark = MARKS[action]
+  if (mark) {
     if (amendment.status !== 'signed') {
-      return Response.json({ error: 'Only a signed amendment can be billed.' }, { status: 409 })
+      return Response.json({
+        error: mark.column === 'billed_at'
+          ? 'Only a signed amendment can be billed.'
+          : 'The other tenants cannot consent to something that has not been signed yet.',
+      }, { status: 409 })
     }
     const { data, error } = await supabaseAdmin
       .from('lease_amendments')
-      .update({ billed_at: action === 'mark_billed' ? new Date().toISOString() : null })
+      .update({ [mark.column]: mark.set ? new Date().toISOString() : null })
       .eq('id', id)
       .select('*')
       .single()

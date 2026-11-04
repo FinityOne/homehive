@@ -21,6 +21,8 @@ type MyAmendment = {
   effective_date: string
   monthly_charge: number
   monthly_charge_label: string | null
+  deposit_amount: number
+  one_time_fee_amount: number
   status: 'sent' | 'signed' | 'declined' | 'withdrawn'
   token: string
   signature_date: string | null
@@ -852,15 +854,26 @@ function AmendmentNotices({ amendments }: { amendments: MyAmendment[] }) {
           <div className="am-notice-k">Signature needed</div>
           <div className="am-notice-t">{a.title}</div>
           <div className="am-notice-b">
-            {a.monthly_charge > 0 ? (
+            {/* The money, read off the row rather than summarised. A card that
+                says "and nothing else to pay" beside a document carrying a
+                $300 deposit is worse than a card that says nothing at all. */}
+            {a.monthly_charge + a.deposit_amount + a.one_time_fee_amount > 0 ? (
               <>
-                <strong>{fmtAmendDollars(a.monthly_charge)}/month</strong> from{' '}
-                {fmtAmendDate(a.effective_date)}, and nothing else to pay.{' '}
+                {a.monthly_charge > 0 && (
+                  <><strong>{fmtAmendDollars(a.monthly_charge)}/month</strong> from{' '}
+                  {fmtAmendDate(a.effective_date)}
+                  {a.deposit_amount + a.one_time_fee_amount > 0 ? ', plus ' : '. '}</>
+                )}
+                {a.deposit_amount + a.one_time_fee_amount > 0 && (
+                  <><strong>{fmtAmendDollars(a.deposit_amount + a.one_time_fee_amount)}</strong>
+                  {' '}due when you sign
+                  {a.deposit_amount > 0 && ` (${fmtAmendDollars(a.deposit_amount)} of it refundable)`}. </>
+                )}
               </>
             ) : (
               <>Takes effect {fmtAmendDate(a.effective_date)}. </>
             )}
-            Your rent, deposit and move-out date don&apos;t change.
+            Your rent, your existing deposit and your move-out date don&apos;t change.
           </div>
           <Link href={amendmentPath(a.token)} className="am-notice-btn">
             Read and sign it →

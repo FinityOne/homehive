@@ -37,7 +37,8 @@ import {
 import { logEmail } from '@/lib/emailLog'
 import { loadTenantIdentity, normalizeEmail } from '@/lib/tenantIdentity'
 import {
-  checkSignatureName, checkSignatureDate, verifyAmendmentDocument, amendmentPath,
+  checkSignatureName, checkSignatureDate, checkSignatureDeadline,
+  verifyAmendmentDocument, amendmentPath,
   type AmendmentDocument,
 } from '@/lib/leaseAmendments'
 
@@ -147,6 +148,14 @@ export async function POST(req: NextRequest) {
   const date = str(body.date)
   if (!name) return Response.json({ error: 'Type your full legal name to sign.' }, { status: 400 })
   if (!date) return Response.json({ error: 'Pick the date you are signing.' }, { status: 400 })
+
+  // The offer's own deadline, first. The document says it is "deemed
+  // withdrawn" after this date, so accepting a late signature would record an
+  // agreement the contract itself says does not exist. Derived every time from
+  // `respond_by`, never from a stored flag — an offer lapses at midnight
+  // whether or not a cron was running to notice.
+  const lateProblem = checkSignatureDeadline(amendment.respond_by)
+  if (lateProblem) return Response.json({ error: lateProblem }, { status: 409 })
 
   const nameProblem = checkSignatureName(name, amendment.tenant_name)
   if (nameProblem) return Response.json({ error: nameProblem }, { status: 400 })

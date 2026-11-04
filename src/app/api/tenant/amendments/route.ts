@@ -32,8 +32,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** The columns a tenant may see. Deliberately not `select('*')`. */
 const TENANT_COLS =
   'id, lease_id, kind, title, effective_date, monthly_charge, monthly_charge_label, ' +
+  'deposit_amount, one_time_fee_amount, respond_by, ' +
   'document, status, tenant_name, tenant_email, token, sent_at, ' +
-  'signed_at, signature_name, signature_date, declined_at, decline_reason'
+  'signed_at, signature_name, signature_date, declined_at, decline_reason, ' +
+  // Whether the housemates' consents have arrived IS the tenant's business:
+  // the document they signed says the approval is not effective without them,
+  // so a tenant who cannot see that state cannot tell whether their pet is
+  // actually approved. This is the one condition column they get.
+  'cotenant_consents_at'
 // `billed_at` is absent on purpose: whether the landlord has got round to
 // putting the charge on the ledger is their admin, and showing a tenant
 // "not yet billed" invites them to assume they do not owe it.

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import AmendmentDocumentView from '@/components/leases/AmendmentDocument'
 import {
   fmtLegalDate, fmtDollars, monthName, signingToday, checkSignatureName,
+  checkSignatureDeadline, chargesOf, dueOnExecution, monthlyTotal,
   type AmendmentDocument,
 } from '@/lib/leaseAmendments'
 
@@ -17,6 +18,9 @@ type TenantAmendment = {
   effective_date: string
   monthly_charge: number
   monthly_charge_label: string | null
+  deposit_amount: number
+  one_time_fee_amount: number
+  respond_by: string | null
   document: AmendmentDocument
   status: 'sent' | 'signed' | 'declined' | 'withdrawn'
   tenant_name: string | null
@@ -144,8 +148,13 @@ export default function SignAmendmentPage({
   }
 
   const doc = row.document
+  const monthly = monthlyTotal(doc)
+  const upfront = dueOnExecution(doc)
   const nameProblem = name.trim() ? checkSignatureName(name, row.tenant_name) : null
-  const canSign = agreed && !nameProblem && date === today && !busy
+  // The offer's own deadline, checked here so a lapsed offer shows an honest
+  // page instead of a signature button that the server will reject.
+  const lateProblem = checkSignatureDeadline(doc.respondBy)
+  const canSign = agreed && !nameProblem && !lateProblem && date === today && !busy
 
   return (
     <div className="sa-wrap">
@@ -178,6 +187,11 @@ export default function SignAmendmentPage({
           talk to your landlord and they can send it again.
         </div>
       )}
+      {row.status === 'sent' && lateProblem && (
+        <div className="sa-banner bad">
+          <strong>This offer has expired.</strong> {lateProblem}
+        </div>
+      )}
       {row.status === 'withdrawn' && (
         <div className="sa-banner bad">
           <strong>Your landlord withdrew this document.</strong> It can no longer be signed, and
@@ -194,29 +208,55 @@ export default function SignAmendmentPage({
             <strong>{petPhrase(doc)}</strong> at {shortPremises(doc)} from{' '}
             <strong>{fmtLegalDate(doc.effectiveDate)}</strong>.
           </li>
-          {doc.monthlyCharge > 0 ? (
-            <>
-              <li>
-                It costs <strong>{fmtDollars(doc.monthlyCharge)} a month</strong>, added to your rent
-                starting with your <strong>{monthName(doc.effectiveDate)}</strong> payment.
-              </li>
-              <li>
-                <strong>Nothing else to pay.</strong> No pet deposit, no one-time fee, no extra
-                security deposit, no cleaning fee.
-              </li>
-            </>
-          ) : (
-            <li>There&apos;s no charge for this.</li>
+          {/* Every amount, from doc.charges. Never a summary sentence written
+              by hand: the first version of this page said "nothing else to
+              pay", which was true of the document it was built against and
+              would have been a flat lie about this one. */}
+          {monthly > 0 && (
+            <li>
+              It costs <strong>{fmtDollars(monthly)} a month</strong>, added to your rent starting
+              with your <strong>{monthName(doc.effectiveDate)}</strong> payment. Your rent itself
+              doesn&apos;t change — this sits alongside it.
+            </li>
           )}
+          {upfront > 0 && (
+            <li>
+              <strong>{fmtDollars(upfront)} is due when you sign</strong> —{' '}
+              {chargesOf(doc).filter(c => c.kind !== 'monthly').map((c, i, arr) => (
+                <span key={i}>
+                  {fmtDollars(c.amount)}{' '}
+                  {c.kind === 'deposit'
+                    ? <>as a <strong>refundable</strong> deposit you get back at the end, less
+                        anything properly deducted</>
+                    : <>as a <strong>one-time fee</strong> that isn&apos;t refunded</>}
+                  {i < arr.length - 1 ? ', and ' : '.'}
+                </span>
+              ))}
+            </li>
+          )}
+          {monthly === 0 && upfront === 0 && <li>There&apos;s no charge for this.</li>}
           <li>
-            <strong>Your rent, your deposit and your move-out date don&apos;t change.</strong>{' '}
+            <strong>Your rent, your existing deposit and your move-out date don&apos;t change.</strong>{' '}
             Neither does anything else in your lease — the document says so in writing, in the last
             clause.
           </li>
           <li>
             You&apos;re responsible for any damage the pet causes, and for keeping it licensed and
-            cleaning up after it. That&apos;s what the obligations clause covers.
+            cleaning up after it. That&apos;s what the responsibilities clause covers.
           </li>
+          {doc.requiresCotenantConsent && (
+            <li>
+              Your landlord&apos;s approval only takes effect once your{' '}
+              <strong>housemates have each consented in writing</strong>. Signing this is your part
+              of that; collecting their consents is theirs.
+            </li>
+          )}
+          {doc.respondBy && row.status === 'sent' && (
+            <li>
+              You need to sign by <strong>{fmtLegalDate(doc.respondBy)}</strong>. After that the
+              offer lapses and your landlord would have to send a new one.
+            </li>
+          )}
         </ul>
         <div className="sa-plain-f">
           This summary is here to help you read the document. The document below is what you&apos;re
@@ -243,7 +283,7 @@ export default function SignAmendmentPage({
       </div>
 
       {/* ── The signature ─────────────────────────────────────────────────── */}
-      {row.status === 'sent' && (
+      {row.status === 'sent' && !lateProblem && (
         <div className="sa-sign">
           <div className="sa-sign-t">Sign it</div>
 

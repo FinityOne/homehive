@@ -21,7 +21,7 @@
 
 import { emailShell, emailButton, esc } from './emailShell'
 import {
-  fmtLegalDate, fmtDollars, monthName,
+  fmtLegalDate, fmtDollars, monthName, chargesOf, dueOnExecution, monthlyTotal,
   type AmendmentDocument, type LeaseAmendment,
 } from './leaseAmendments'
 
@@ -41,6 +41,13 @@ function terms(rows: Array<[string, string]>): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#faf9f6;border:1px solid #e8e4db;border-radius:10px;padding:6px 16px;margin-bottom:20px;">${body}</table>`
 }
 
+/** "a, b and c". Plain text, for subjects and sentences. */
+function joinPlain(items: string[]): string {
+  if (items.length === 0) return ''
+  if (items.length === 1) return items[0]
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
 /**
  * The reassurance block.
  *
@@ -49,16 +56,28 @@ function terms(rows: Array<[string, string]>): string {
  * the email answers that before they have to ask. It is also simply true —
  * `CLAUSE_NO_MODIFICATION` is in the document and the send route refuses to
  * send one without it — which is the only reason it is safe to print.
+ *
+ * It takes the document because the honest wording depends on it. When there is
+ * a pet deposit, "your security deposit stays exactly as it is" would be the
+ * kind of half-truth that destroys trust the moment the tenant reads clause 3:
+ * their *lease* deposit is untouched and the pet deposit is a separate, extra
+ * one. Saying which is which costs a clause and buys the whole paragraph its
+ * credibility.
  */
-function unchangedNote(): string {
+function unchangedNote(doc: AmendmentDocument): string {
+  const hasDeposit = chargesOf(doc).some(c => c.kind === 'deposit')
+  const depositLine = hasDeposit
+    ? `Your existing security deposit is untouched — the pet deposit in this document is a ` +
+      `separate, additional one, held and returned under the same rules.`
+    : `Your security deposit stays exactly as it is.`
   return (
     `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:20px;">` +
     `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#166534;margin-bottom:6px;">` +
     `Your lease is otherwise unchanged</div>` +
     `<div style="font-size:13px;color:#166534;line-height:1.6;">` +
-    `Your monthly rent, your security deposit, your move-out date and everyone on the lease all stay ` +
-    `exactly as they are. This document adds one thing and changes nothing else — it says so in writing, ` +
-    `in the clause headed <em>“The rest of the Lease is unchanged”</em>.` +
+    `Your monthly rent, your move-out date and everyone on the lease all stay exactly as they are. ` +
+    `${depositLine} Nothing else in your lease changes — it says so in writing, in the clause headed ` +
+    `<em>“The rest of the Lease is unchanged”</em>.` +
     `</div></div>`
   )
 }
@@ -66,20 +85,41 @@ function unchangedNote(): string {
 const firstName = (name: string | null | undefined, fallback = 'there') =>
   (name || '').trim().split(/\s+/)[0] || fallback
 
-/** The terms rows shared by the request and the reminder. */
+/**
+ * The terms rows shared by the request and the reminder.
+ *
+ * Built from `doc.charges`, so every amount in the contract appears in the
+ * email that asks someone to sign it. The earlier version of this function hard
+ * coded "Anything else to pay: Nothing — no deposit, no fee", which was true of
+ * the document it was written against and became a lie the moment a deposit was
+ * added. Walking the list cannot drift; a sentence about the list can.
+ */
 function termRows(doc: AmendmentDocument): Array<[string, string]> {
-  const rows: Array<[string, string]> = [['Document', doc.title]]
-  rows.push(['Home', doc.premises])
-  if (doc.monthlyCharge > 0) {
-    rows.push([
-      doc.monthlyChargeLabel || 'Monthly charge',
-      `${fmtDollars(doc.monthlyCharge)} per month, from ${monthName(doc.effectiveDate)}`,
-    ])
-    rows.push(['Anything else to pay', 'Nothing — no deposit, no fee'])
-  } else {
+  const rows: Array<[string, string]> = [['Document', doc.title], ['Home', doc.premises]]
+  const charges = chargesOf(doc)
+
+  if (charges.length === 0) {
     rows.push(['Cost', 'No charge'])
+  } else {
+    for (const c of charges) {
+      rows.push([
+        c.label,
+        c.kind === 'monthly'
+          ? `${fmtDollars(c.amount)} a month, from ${monthName(doc.effectiveDate)}`
+          : c.kind === 'deposit'
+            ? `${fmtDollars(c.amount)} — refundable`
+            : `${fmtDollars(c.amount)} — one-time`,
+      ])
+    }
+    const upfront = dueOnExecution(doc)
+    // The number that actually decides whether they can say yes this week.
+    // Leaving a student to add a deposit and a fee together in their head is
+    // how a signature turns into a surprise on their bank balance.
+    if (upfront > 0) rows.push(['Due when you sign', fmtDollars(upfront)])
   }
+
   rows.push(['Takes effect', fmtLegalDate(doc.effectiveDate)])
+  if (doc.respondBy) rows.push(['Sign by', fmtLegalDate(doc.respondBy)])
   return rows
 }
 
@@ -96,8 +136,9 @@ export function buildAmendmentRequestEmail(input: {
   const first = firstName(tenantName)
   const from = landlordName ? esc(landlordName) : 'Your landlord'
 
-  const subject = doc.monthlyCharge > 0
-    ? `Sign your ${shortNoun(doc)} — ${fmtDollars(doc.monthlyCharge)}/mo, nothing else changes`
+  const monthly = monthlyTotal(doc)
+  const subject = monthly > 0
+    ? `Sign your ${shortNoun(doc)} — ${fmtDollars(monthly)}/mo, and your rent doesn’t change`
     : `Sign your ${shortNoun(doc)} — nothing else about your lease changes`
 
   const body = [
@@ -107,7 +148,7 @@ export function buildAmendmentRequestEmail(input: {
       `your signature on it. Here is the whole of it:`
     ),
     terms(termRows(doc)),
-    unchangedNote(),
+    unchangedNote(doc),
     p(
       `Sign in to HomeHive to read the full document and sign it. You type your full legal name and ` +
       `today’s date — that’s your signature. Your signed copy stays in your account, and ` +
@@ -244,32 +285,60 @@ export function buildAmendmentSignedTenantEmail(input: {
   const { doc, signatureName, signatureDate, viewUrl } = input
   const first = firstName(doc.tenantName)
 
+  const monthly = monthlyTotal(doc)
+  const upfront = dueOnExecution(doc)
+
   const rows: Array<[string, string]> = [
     ['Signed by', signatureName],
     ['Date signed', fmtLegalDate(signatureDate)],
     ['Home', doc.premises],
   ]
-  if (doc.monthlyCharge > 0) {
+  for (const c of chargesOf(doc)) {
     rows.push([
-      doc.monthlyChargeLabel || 'Monthly charge',
-      `${fmtDollars(doc.monthlyCharge)} per month, from ${monthName(doc.effectiveDate)}`,
+      c.label,
+      c.kind === 'monthly'
+        ? `${fmtDollars(c.amount)} a month, from ${monthName(doc.effectiveDate)}`
+        : c.kind === 'deposit'
+          ? `${fmtDollars(c.amount)} — refundable`
+          : `${fmtDollars(c.amount)} — one-time`,
     ])
   }
+  if (upfront > 0) rows.push(['Due now', fmtDollars(upfront)])
   rows.push(['Takes effect', fmtLegalDate(doc.effectiveDate)])
 
   const body = [
     p(`Hi ${esc(first)},`),
     p(`You’ve signed your <strong>${esc(doc.title)}</strong>. Here’s what you agreed to:`),
     terms(rows),
-    doc.monthlyCharge > 0
+    monthly > 0
       ? p(
-          `Your ${esc((doc.monthlyChargeLabel || 'charge').toLowerCase())} of ` +
-          `<strong>${esc(fmtDollars(doc.monthlyCharge))}</strong> will appear on your rent from ` +
+          `The <strong>${esc(fmtDollars(monthly))}</strong> a month will appear on your rent from ` +
           `${esc(monthName(doc.effectiveDate))}. Your rent itself is unchanged — this is an ` +
-          `addition to it, not a new rent.`
+          `addition alongside it, not a new rent.`
         )
       : '',
-    unchangedNote(),
+    // The deposit deserves its own sentence. "Refundable" in a table is a word
+    // people skim; what they actually need to know is that it comes back and
+    // the fee does not, because confusing the two is how a tenant expects $400
+    // at move-out and gets $300.
+    upfront > 0
+      ? p(
+          `The <strong>${esc(fmtDollars(upfront))}</strong> due now is ` +
+          esc(joinPlain(chargesOf(doc).filter(c => c.kind !== 'monthly').map(c =>
+            `${fmtDollars(c.amount)} ${c.kind === 'deposit' ? 'as a refundable deposit' : 'as a one-time fee'}`
+          ))) +
+          `. The deposit comes back to you at the end of the tenancy, less anything properly ` +
+          `deducted under your lease; the one-time fee does not.`
+        )
+      : '',
+    doc.requiresCotenantConsent
+      ? p(
+          `<span style="font-size:12.5px;color:#9b9b9b;">One thing left: your landlord needs ` +
+          `written consent from the other tenants at the property before the approval takes ` +
+          `effect. That’s in the clause headed <em>“Consent of the other tenants”</em>.</span>`
+        )
+      : '',
+    unchangedNote(doc),
     `<div style="margin:22px 0 6px;">${emailButton({ label: 'View your signed copy', url: viewUrl, secondary: true })}</div>`,
     p(
       `<span style="font-size:12.5px;color:#9b9b9b;">Your signed copy stays in your HomeHive account ` +
@@ -310,7 +379,7 @@ export function buildAmendmentSignedTenantEmail(input: {
  * what single thing collects it.
  */
 export function buildAmendmentSignedLandlordEmail(input: {
-  amendment: Pick<LeaseAmendment, 'tenant_name' | 'monthly_charge' | 'monthly_charge_label' | 'effective_date'>
+  amendment: Pick<LeaseAmendment, 'tenant_name' | 'effective_date'>
   doc: AmendmentDocument
   signatureName: string
   signatureDate: string
@@ -318,36 +387,67 @@ export function buildAmendmentSignedLandlordEmail(input: {
 }): BuiltEmail {
   const { amendment, doc, signatureName, signatureDate, manageUrl } = input
   const who = amendment.tenant_name || signatureName
-  const charge = amendment.monthly_charge
+  const monthly = monthlyTotal(doc)
+  const upfront = dueOnExecution(doc)
+  const money = monthly + upfront
 
-  const subject = charge > 0
-    ? `${who} signed — add ${fmtDollars(charge)}/mo to their rent`
+  // The to-do, in the order the document imposes it. Collecting the other
+  // tenants' consent comes first because the contract says approval is not
+  // effective without it — billing pet rent for an approval that has not taken
+  // effect is charging for something not yet granted.
+  const todo: string[] = []
+  if (doc.requiresCotenantConsent) {
+    todo.push(
+      'Collect written consent from the other tenants at the property. Your approval is ' +
+      'not effective until you have it — that is this document’s own condition.'
+    )
+  }
+  if (monthly > 0) {
+    todo.push(
+      `Add ${fmtDollars(monthly)} a month to ${who}’s share in Financials, from ` +
+      `${monthName(amendment.effective_date)}.`
+    )
+  }
+  if (upfront > 0) {
+    todo.push(`Charge the ${fmtDollars(upfront)} due on signing as a one-off.`)
+  }
+
+  const subject = money > 0
+    ? `${who} signed — ${joinPlain([
+        ...(upfront > 0 ? [`${fmtDollars(upfront)} due now`] : []),
+        ...(monthly > 0 ? [`${fmtDollars(monthly)}/mo`] : []),
+      ])} to collect`
     : `${who} signed the ${shortNoun(doc)}`
+
+  const rows: Array<[string, string]> = [
+    ['Signed by', signatureName],
+    ['Date signed', fmtLegalDate(signatureDate)],
+  ]
+  for (const c of chargesOf(doc)) {
+    rows.push([c.label, c.kind === 'monthly' ? `${fmtDollars(c.amount)} per month` : fmtDollars(c.amount)])
+  }
+  if (upfront > 0) rows.push(['Due on signing', fmtDollars(upfront)])
+  rows.push(['Takes effect', fmtLegalDate(amendment.effective_date)])
 
   const body = [
     p(
       `<strong>${esc(signatureName)}</strong> signed the ${esc(doc.title)} for ` +
       `<strong>${esc(doc.premises)}</strong> on ${esc(fmtLegalDate(signatureDate))}.`
     ),
-    terms([
-      ['Signed by', signatureName],
-      ['Date signed', fmtLegalDate(signatureDate)],
-      ...(charge > 0
-        ? [[amendment.monthly_charge_label || 'Agreed charge', `${fmtDollars(charge)} per month`] as [string, string]]
-        : []),
-      ['Takes effect', fmtLegalDate(amendment.effective_date)],
-    ]),
-    charge > 0
+    terms(rows),
+    todo.length > 0
       ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin-bottom:20px;">` +
-        `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#92400e;margin-bottom:6px;">` +
-        `One thing left to do</div>` +
-        `<div style="font-size:13px;color:#92400e;line-height:1.6;">` +
-        `Signing doesn’t charge anybody. Add ` +
-        `<strong>${esc(fmtDollars(charge))}</strong> as a ` +
-        `${esc((amendment.monthly_charge_label || 'charge').toLowerCase())} line item on ` +
-        `${esc(who)}’s share from ${esc(monthName(amendment.effective_date))}, or it won’t ` +
-        `be collected. The amendment page has the link.` +
-        `</div></div>`
+        `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#92400e;margin-bottom:8px;">` +
+        `${todo.length === 1 ? 'One thing left to do' : `${todo.length} things left to do`}</div>` +
+        todo.map((t, i) => (
+          `<div style="font-size:13px;color:#92400e;line-height:1.6;${i ? 'margin-top:8px;' : ''}">` +
+          `${i + 1}. ${esc(t)}</div>`
+        )).join('') +
+        (money > 0
+          ? `<div style="font-size:12px;color:#92400e;line-height:1.55;margin-top:10px;opacity:.85;">` +
+            `Signing doesn’t charge anybody — nothing is collected until you add it.</div>`
+          : '') +
+        `</div>`
       : '',
     `<div style="margin:22px 0 6px;">${emailButton({ label: 'Open the amendment', url: manageUrl })}</div>`,
   ].filter(Boolean).join('\n')
@@ -355,11 +455,11 @@ export function buildAmendmentSignedLandlordEmail(input: {
   const text = [
     `${signatureName} signed the ${doc.title} for ${doc.premises} on ${fmtLegalDate(signatureDate)}.`,
     '',
-    charge > 0
-      ? `One thing left to do: signing doesn't charge anybody. Add ${fmtDollars(charge)} as a ` +
-        `${(amendment.monthly_charge_label || 'charge').toLowerCase()} line item on ${who}'s share ` +
-        `from ${monthName(amendment.effective_date)}, or it won't be collected.`
-      : '',
+    ...rows.map(([k, v]) => `  ${k}: ${v}`),
+    ...(todo.length > 0
+      ? ['', todo.length === 1 ? 'One thing left to do:' : 'Left to do:', ...todo.map((t, i) => `  ${i + 1}. ${t}`)]
+      : []),
+    ...(money > 0 ? ['', "Signing doesn't charge anybody — nothing is collected until you add it."] : []),
     '',
     manageUrl,
   ].filter(Boolean).join('\n')
@@ -369,7 +469,7 @@ export function buildAmendmentSignedLandlordEmail(input: {
     html: emailShell({
       banner: 'Signed by the tenant',
       bannerSubject: doc.title,
-      tone: charge > 0 ? 'action' : 'good',
+      tone: todo.length > 0 ? 'action' : 'good',
       body,
     }),
     text,

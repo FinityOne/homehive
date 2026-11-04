@@ -66,13 +66,39 @@ create table if not exists public.lease_amendments (
   -- and `lease_renewals.new_rent` exactly. A charge that round-trips through a
   -- different money type is a charge that eventually disagrees with the lease.
   --
-  -- This column is the *agreed* figure, and it is not a bill. Nothing in this
-  -- table charges anybody: the landlord adds a `payment_line_items` row against
-  -- the right payer, and `billed_at` records that they did. Creating a charge as
-  -- a side effect of a tenant's own signature — on a shared lease, against a
-  -- payer the server had to guess — is a surprise this product cannot afford.
+  -- These columns are the *agreed* figures, and they are not bills. Nothing in
+  -- this table charges anybody: the landlord adds a `payment_line_items` row
+  -- against the right payer, and `billed_at` records that they did. Creating a
+  -- charge as a side effect of a tenant's own signature — on a shared lease,
+  -- against a payer the server had to guess — is a surprise this product cannot
+  -- afford.
+  --
+  -- Three separate columns and not one total, because the three behave
+  -- completely differently and a tenant who confuses them is a tenant who
+  -- thinks they are getting the whole $400 back:
+  --
+  --   monthly_charge      — recurring, paid with rent, stops when the pet goes
+  --   deposit_amount      — refundable, held, returned subject to deductions
+  --   one_time_fee_amount — nonrefundable and gone the moment it is paid
+  --
+  -- The authoritative copy of all three is inside `document.charges`, which is
+  -- what the prose is generated from and what the guard checks. These are the
+  -- indexable projection of that, for the "signed but never billed" query.
   monthly_charge       integer     not null default 0,
   monthly_charge_label text,
+  deposit_amount       integer     not null default 0,
+  one_time_fee_amount  integer     not null default 0,
+
+  /**
+   * The last day the tenant may sign, from the document's own acceptance terms.
+   *
+   * A date and not a status. The document says the offer is "deemed withdrawn"
+   * after this, which is true at midnight whether or not any code was running —
+   * so `amendmentPhase()` derives expiry from this column and the signing route
+   * refuses a late signature. A fifth status would need a cron to stay true and
+   * would be wrong in between.
+   */
+  respond_by           date,
 
   /**
    * The contract itself, frozen.
@@ -131,6 +157,20 @@ create table if not exists public.lease_amendments (
   decline_reason       text,
 
   /**
+   * When the written consents from the other tenants were received.
+   *
+   * The pet document makes approval conditional: "Landlord's approval shall not
+   * become effective until such written consents have been received." A product
+   * that reported a signed amendment as "in force" while that condition was
+   * outstanding would be contradicting the contract it had just had somebody
+   * sign — and would invite the landlord to start billing for an approval that
+   * has not taken effect. So the condition is a column, `amendmentPhase()`
+   * returns `conditional` until it is set, and `nextAction()` puts collecting
+   * the consents *before* billing.
+   */
+  cotenant_consents_at timestamptz,
+
+  /**
    * When the landlord put the agreed charge on the tenant's ledger.
    *
    * Null on a signed amendment with a charge means real money is going
@@ -147,7 +187,7 @@ create table if not exists public.lease_amendments (
   constraint lease_amendments_status_check
     check (status in ('sent', 'signed', 'declined', 'withdrawn')),
   constraint lease_amendments_charge_check
-    check (monthly_charge >= 0),
+    check (monthly_charge >= 0 and deposit_amount >= 0 and one_time_fee_amount >= 0),
   constraint lease_amendments_token_unique
     unique (token),
 
@@ -169,9 +209,11 @@ create table if not exists public.lease_amendments (
     ),
   constraint lease_amendments_declined_shape
     check ((status = 'declined') = (declined_at is not null)),
-  -- Nothing is billable until it is signed.
+  -- Nothing is billable until it is signed, and nothing is consented to either.
   constraint lease_amendments_billed_only_when_signed
-    check (billed_at is null or status = 'signed')
+    check (billed_at is null or status = 'signed'),
+  constraint lease_amendments_consents_only_when_signed
+    check (cotenant_consents_at is null or status = 'signed')
 );
 
 comment on table public.lease_amendments is
@@ -179,7 +221,15 @@ comment on table public.lease_amendments is
 comment on column public.lease_amendments.document is
   'The whole contract as built at send time, including party names and the lease term. Read as-is forever — rebuilding it from current lease/property rows would let a later rename change a signed document.';
 comment on column public.lease_amendments.monthly_charge is
-  'The agreed monthly amount in whole dollars. NOT a bill: the landlord adds a payment_line_items row and billed_at records it. Signing never charges anybody.';
+  'The agreed recurring amount in whole dollars. NOT a bill: the landlord adds a payment_line_items row and billed_at records it. Signing never charges anybody.';
+comment on column public.lease_amendments.deposit_amount is
+  'Refundable, held under the Lease and Arizona law. Separate from one_time_fee_amount because one comes back and the other does not.';
+comment on column public.lease_amendments.one_time_fee_amount is
+  'One-time and nonrefundable, due on execution.';
+comment on column public.lease_amendments.respond_by is
+  'Last day the tenant may sign, from the document''s acceptance terms. Expiry is derived from this, never stored — the offer lapses at midnight with no code running.';
+comment on column public.lease_amendments.cotenant_consents_at is
+  'When the other tenants'' written consents arrived. Until then a signed pet amendment is `conditional`, not in force — the document says approval is not effective without them.';
 comment on column public.lease_amendments.token is
   'The deep link in the email. Does NOT authenticate the signer — the signing page is behind the tenant login and the POST re-verifies identity.';
 comment on column public.lease_amendments.status is
@@ -214,7 +264,8 @@ create index if not exists lease_amendments_tenant_email_idx
 -- a page.
 create index if not exists lease_amendments_unbilled_idx
   on public.lease_amendments (owner_id, effective_date)
-  where status = 'signed' and billed_at is null and monthly_charge > 0;
+  where status = 'signed' and billed_at is null
+    and (monthly_charge > 0 or deposit_amount > 0 or one_time_fee_amount > 0);
 
 alter table public.lease_amendments enable row level security;
 
