@@ -6,13 +6,12 @@ import { notifyLandlord } from '@/lib/notifyLandlord'
 import { canReceiveLeads, type ListingStatus } from '@/lib/listingStatus'
 import { firstNameFrom } from '@/lib/names'
 
-// Anon key for public lead inserts (RLS allows)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-// Service role client for auth admin lookups
+// One service-role client for the whole route. The insert below used to run
+// on the anon key, which worked only because `leads` had RLS switched off.
+// With RLS on there is no anon insert policy — and there should not be one: a
+// public form posting straight into the table is exactly what the Supabase
+// linter flagged. The write belongs here, on the server, behind the
+// listing-status check above it.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -52,7 +51,7 @@ export async function POST(req: Request) {
   }
 
   // 1. Save to Supabase
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('leads')
     .insert([{
       first_name, email, phone, move_in_date, property, status: 'new',
@@ -110,7 +109,7 @@ export async function POST(req: Request) {
   const faqUrl = property ? `${siteUrl}/homes/${property}/faq` : ''
 
   if (property) {
-    const { data: prop } = await supabase
+    const { data: prop } = await supabaseAdmin
       .from('properties')
       .select('id, name, address, price, owner_id, property_images(url, position)')
       .eq('slug', property)
@@ -124,7 +123,7 @@ export async function POST(req: Request) {
 
       // Does this listing have answered FAQs worth linking in the welcome email?
       try {
-        const { count } = await supabase
+        const { count } = await supabaseAdmin
           .from('property_faqs')
           .select('id', { count: 'exact', head: true })
           .eq('property_id', prop.id)
@@ -141,7 +140,7 @@ export async function POST(req: Request) {
           if (user?.email) landlordEmail = user.email
         } catch (_) {}
         try {
-          const { data: profile } = await supabase
+          const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('full_name')
             .eq('id', prop.owner_id)
