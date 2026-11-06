@@ -25,32 +25,15 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { PULSE_WINDOWS, DEFAULT_PULSE_WINDOW, MARKET_INQUIRY_RATE } from '@/lib/listingPulse'
-import type { Pulse, PulseWindow, PulseTone, PulseDay } from '@/lib/listingPulse'
+import type { PulseWindow, PulseDay } from '@/lib/listingPulse'
+import type { PulsePayload } from '@/lib/pulsePayload'
+import type { Benchmark } from '@/lib/listingFunnel'
+import { C, TONE, nf } from './pulse/theme'
+import FunnelStrip from './pulse/FunnelStrip'
+import PaceCard from './pulse/PaceCard'
+import BrowseClockPanel from './pulse/BrowseClockPanel'
+import ListingBreakdown from './pulse/ListingBreakdown'
 
-/**
- * Three hues, validated for colour-vision deficiency against this surface
- * (worst adjacent pair ΔE 13.6 deutan, 21.8 normal) — not picked by eye.
- * Views and visitors are the two series; inquiries is the marker layer.
- */
-const C = {
-  views:     '#BE2A55',
-  visitors:  '#1197B0',
-  inquiries: '#B07D08',
-  ink:       '#0f172a',
-  ink2:      '#475569',
-  muted:     '#94a3b8',
-  faint:     '#f1f5f9',
-  line:      '#e2e8f0',
-}
-
-const TONE: Record<PulseTone, { bg: string; border: string; fg: string; icon: string }> = {
-  good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d', icon: '✓' },
-  warn: { bg: '#fffbeb', border: '#fde68a', fg: '#b45309', icon: '!' },
-  bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c', icon: '!' },
-  info: { bg: '#f8fafc', border: '#e2e8f0', fg: '#475569', icon: 'i' },
-}
-
-const nf = (n: number) => n.toLocaleString()
 
 /** A delta chip. Arrow plus sign plus colour — never colour alone. */
 function Delta({ pct, windowDays }: { pct: number | null; windowDays: number }) {
@@ -237,11 +220,45 @@ function TrafficChart({ days, windowDays }: { days: PulseDay[]; windowDays: Puls
 
 // ── Section ──────────────────────────────────────────────────────────────────
 
-type Payload = { pulse: Pulse; asOf: string }
+/**
+ * One comparison against the market.
+ *
+ * A bare number is unreadable — "12 views" is either healthy or a disaster
+ * and a landlord cannot tell which — so every figure here arrives next to
+ * what comparable listings are doing in the same week. The verdict carries an
+ * arrow and a word as well as a colour, and when the pool is too small to be
+ * a market the chip says that instead of inventing a comparison.
+ */
+function BenchmarkChip({ b }: { b: Benchmark }) {
+  const look =
+    b.verdict === 'ahead'   ? { fg: '#15803d', mark: '▲', word: 'Ahead' }
+    : b.verdict === 'behind' ? { fg: '#b45309', mark: '▼', word: 'Behind' }
+    : b.verdict === 'typical' ? { fg: C.ink2,   mark: '=', word: 'Typical' }
+    :                           { fg: C.muted,  mark: '·', word: 'No read yet' }
+
+  const fmt = (n: number | null) => (n == null ? '—' : b.unit === '%' ? `${n}%` : `${n}`)
+
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, padding: '11px 13px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
+        {b.label}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+        <span style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300, color: C.ink, letterSpacing: -0.8 }}>
+          {fmt(b.you)}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: look.fg }}>
+          {look.mark} {look.word}
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{b.note}</div>
+    </div>
+  )
+}
 
 export default function ListingPulse({ slug }: { slug: string | null }) {
   const [windowDays, setWindowDays] = useState<PulseWindow>(DEFAULT_PULSE_WINDOW)
-  const [data, setData] = useState<Payload | null>(null)
+  const [data, setData] = useState<PulsePayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   // Keep the last good pulse on screen while a toggle reloads: blanking the
@@ -264,7 +281,7 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
       setLoading(false)
       if (!res.ok) { setError(json.error || 'Could not load your traffic.'); return }
       setError(null)
-      setData(json as Payload)
+      setData(json as PulsePayload)
     })()
     return () => { cancelled = true }
   }, [windowDays, slug])
@@ -315,14 +332,22 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
         <div className="panel"><div className="panel-body" style={{ fontSize: 13, color: '#b91c1c' }}>{error}</div></div>
       )}
 
-      {!error && !p && (
+      {!error && !data && (
         <div className="panel"><div className="panel-body" style={{ fontSize: 13, color: C.muted }}>
           {loading ? 'Counting your traffic…' : 'No traffic data yet.'}
         </div></div>
       )}
 
-      {!error && p && (
+      {!error && data && (() => {
+        const p = data.pulse
+        return (
         <>
+          {/* One payload, destructured once: narrowing on `data` is what keeps
+              the funnel, pace and clock reads below type-safe. */}
+          {/* Will the rooms be full in time? Above every count, because it is
+              the only question here with a date attached. */}
+          {data.pace.verdict !== 'no_vacancy' && <PaceCard pace={data.pace} />}
+
           {/* The one thing to do about it, before any number */}
           {headline && (
             <div style={{
@@ -450,6 +475,37 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
             </div>
           </div>
 
+          {/* ── Where the leases are being lost ──
+              Deliberately below the volume chart and above the per-listing
+              list: the chart says how much traffic there is, this says what
+              happens to it, and only then is it useful to know which home. */}
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <div className="panel-hd">
+              <span className="panel-title">From search to signed — last {windowDays} days</span>
+              {data.funnel.ctrPct != null && (
+                <span style={{ fontSize: 12, color: C.ink2 }}>
+                  Click-through <strong style={{ color: C.ink }}>{data.funnel.ctrPct}%</strong>
+                </span>
+              )}
+            </div>
+            <div className="panel-body">
+              <FunnelStrip funnel={data.funnel} windowDays={windowDays} />
+            </div>
+          </div>
+
+          {/* ── How this compares to everyone else right now ── */}
+          {data.benchmarks.some(b => b.verdict !== 'unknown') && (
+            <div className="panel" style={{ marginBottom: 14 }}>
+              <div className="panel-hd">
+                <span className="panel-title">Against comparable listings</span>
+                <span style={{ fontSize: 11, color: C.muted }}>live on HomeHive right now</span>
+              </div>
+              <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }} >
+                {data.benchmarks.map(b => <BenchmarkChip key={b.key} b={b} />)}
+              </div>
+            </div>
+          )}
+
           {/* ── Per-listing, and where the traffic came from ── */}
           <div className="db-row">
             <div className="panel">
@@ -458,32 +514,7 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
                 <Link href="/landlord/performance" className="panel-link">Full performance →</Link>
               </div>
               <div className="panel-body">
-                {ranked.length === 0 ? (
-                  <div style={{ fontSize: 13, color: C.muted }}>No live listings to measure yet.</div>
-                ) : ranked.map((l, i) => (
-                  <div key={l.slug} className={`row-item${i === 0 ? ' row-item-first' : ''}`} style={{ display: 'block' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                      <Link href={`/homes/${l.slug}`} style={{ fontSize: 13, fontWeight: 600, color: C.ink, textDecoration: 'none' }}>
-                        {l.name}
-                      </Link>
-                      <span style={{ fontSize: 12, color: C.ink2, whiteSpace: 'nowrap' }}>
-                        <strong style={{ color: C.ink }}>{l.visitors}</strong> {l.visitors === 1 ? 'person' : 'people'}
-                        {' · '}{l.views} view{l.views !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <div className="prog-bar" style={{ marginTop: 6 }}>
-                      <div className="prog-fill" style={{ width: `${l.sharePct}%`, background: C.views }} />
-                    </div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                      {l.isUnpublished
-                        ? 'not published — students cannot see this one'
-                        : l.views === 0
-                          ? `live, but nobody opened it in ${windowDays} days`
-                          : `${l.inquiries} inquir${l.inquiries === 1 ? 'y' : 'ies'}${l.conversionPct != null ? ` · ${l.conversionPct}% of visitors` : ''}${l.tours ? ` · ${l.tours} tour${l.tours !== 1 ? 's' : ''}` : ''}`
-                      }
-                    </div>
-                  </div>
-                ))}
+                <ListingBreakdown rows={ranked} detail={data.detail} windowDays={windowDays} />
               </div>
             </div>
 
@@ -526,6 +557,23 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
             </div>
           </div>
 
+          {/* ── When students are actually looking ── */}
+          <div className="db-row-full">
+            <div className="panel">
+              <div className="panel-hd">
+                <span className="panel-title">When students look at your listings</span>
+                {data.clock.readable && data.clock.peakLabel && (
+                  <span style={{ fontSize: 12, color: C.ink2 }}>
+                    Peak <strong style={{ color: C.ink }}>{data.clock.peakLabel}</strong>
+                  </span>
+                )}
+              </div>
+              <div className="panel-body">
+                <BrowseClockPanel clock={data.clock} windowDays={windowDays} />
+              </div>
+            </div>
+          </div>
+
           {/* ── What else the numbers say ── */}
           {rest.length > 0 && (
             <div className="db-row" style={{ gridTemplateColumns: rest.length > 1 ? '1fr 1fr' : '1fr' }}>
@@ -547,7 +595,8 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
             </div>
           )}
         </>
-      )}
+        )
+      })()}
 
       <style>{`
         @media (max-width: 760px) { .pulse-tiles { grid-template-columns: repeat(2, 1fr) !important; } }

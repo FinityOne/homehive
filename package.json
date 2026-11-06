@@ -16,6 +16,7 @@
     "verify:landlord-access": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-access.mjs",
     "verify:lead-followups": "EMAIL_UNSUBSCRIBE_SECRET=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-lead-followups.mjs",
     "verify:landlord-email": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-landlord-payment-email.mjs",
+    "verify:funnel": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-listing-funnel.mjs",
     "verify:pulse": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-listing-pulse.mjs",
     "verify:listing-perf": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-listing-performance.mjs",
     "verify:renewals": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-renewals.mjs",

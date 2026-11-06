@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { getProperties, Property } from '@/lib/properties'
 import { usePostHog } from 'posthog-js/react'
 import SaveButton from '@/components/SaveButton'
+import { createImpressionTracker, trackListingEvent } from '@/lib/listingEvents'
 
 // ─── FILTER STATE ────────────────────────────────────────────────────────────
 type Filters = {
@@ -224,7 +225,14 @@ function fmtDate(d: string | null | undefined) {
 }
 
 // ─── HOME CARD ───────────────────────────────────────────────────────────────
-function HomeCard({ home, onHover, featured = false }: { home: Property; onHover: (id: string | null) => void; featured?: boolean }) {
+function HomeCard({ home, onHover, featured = false, rank, observe }: {
+  home: Property
+  onHover: (id: string | null) => void
+  featured?: boolean
+  /** 1-based place in the result list, so being skipped at 2 and at 40 read differently. */
+  rank?: number
+  observe?: (el: Element | null, slug: string, position: number) => void
+}) {
   const tc      = TYPE_CONFIG[home.listing_type] ?? TYPE_CONFIG.standard_rental
   const start   = fmtDate(home.sublease_start_date)
   const end     = fmtDate(home.sublease_end_date)
@@ -237,8 +245,17 @@ function HomeCard({ home, onHover, featured = false }: { home: Property; onHover
     <a
       href={`/homes/${home.slug}`}
       className={`hc2-card${featured ? ' hc2-featured' : ''}${isRented ? ' hc2-rented' : ''}`}
+      // An impression is recorded when this card is genuinely on screen, and
+      // the click beside it is what turns the pair into a click-through rate —
+      // the one number that separates "my photo and price are being skipped"
+      // from "nobody is searching for this".
+      ref={el => { observe?.(el, home.slug, rank ?? 0) }}
       onMouseEnter={() => onHover(home.slug)}
       onMouseLeave={() => onHover(null)}
+      onClick={() => trackListingEvent(
+        { property_slug: home.slug, event_type: 'card_click', surface: 'search', position: rank },
+        { dedupe: false },
+      )}
     >
       {/* Image */}
       <div className={`hc2-img-wrap${featured ? ' hc2-img-wrap--featured' : ''}`}>
@@ -341,6 +358,28 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
         return 0
       })
   }, [properties, filters, sortBy])
+
+  // Impressions: one observer for the whole result list, re-armed whenever the
+  // list changes, because filtering to four homes means four different cards
+  // are now the ones being seen.
+  const tracker = useRef<ReturnType<typeof createImpressionTracker> | null>(null)
+  if (tracker.current === null && typeof window !== 'undefined') {
+    tracker.current = createImpressionTracker('search')
+  }
+  useEffect(() => () => { tracker.current?.disconnect(); tracker.current = null }, [])
+  const observe = tracker.current?.observe
+
+  // Rank is the card's place in the list as rendered — featured first, then
+  // rentals, subleases and transfers, matching the sections below.
+  const rankBySlug = useMemo(() => {
+    const ordered = [
+      ...filtered.filter(h => h.is_featured),
+      ...filtered.filter(h => !h.is_featured && h.listing_type === 'standard_rental'),
+      ...filtered.filter(h => !h.is_featured && h.listing_type === 'sublease'),
+      ...filtered.filter(h => !h.is_featured && h.listing_type === 'lease_transfer'),
+    ]
+    return new Map(ordered.map((h, i) => [h.slug, i + 1]))
+  }, [filtered])
 
   return (
     <>
@@ -661,7 +700,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
                       <SectionHeading label="Featured Picks" count={featured.length} />
                       <div className="homes-grid">
                         {featured.map((home, i) => (
-                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} featured={i === 0 && featured.length === 1} />
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} featured={i === 0 && featured.length === 1} rank={rankBySlug.get(home.slug)} observe={observe} />
                         ))}
                       </div>
                     </>
@@ -673,7 +712,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
                       <SectionHeading label="For Rent" count={rentals.length} />
                       <div className="homes-grid">
                         {rentals.map(home => (
-                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} rank={rankBySlug.get(home.slug)} observe={observe} />
                         ))}
                       </div>
                     </>
@@ -685,7 +724,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
                       <SectionHeading label="Subleases" count={subleases.length} />
                       <div className="homes-grid">
                         {subleases.map(home => (
-                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} rank={rankBySlug.get(home.slug)} observe={observe} />
                         ))}
                       </div>
                     </>
@@ -697,7 +736,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
                       <SectionHeading label="Lease Transfers" count={transfers.length} />
                       <div className="homes-grid">
                         {transfers.map(home => (
-                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} />
+                          <HomeCard key={home.slug} home={home} onHover={setHoveredId} rank={rankBySlug.get(home.slug)} observe={observe} />
                         ))}
                       </div>
                     </>

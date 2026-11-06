@@ -12,6 +12,7 @@ import PhoneInput from '@/components/ui/PhoneInput'
 import SaveButton from '@/components/SaveButton'
 import { identifyVisitor, getAnonId, getSessionId } from '@/lib/visitorId'
 import type { SocialProof } from '@/lib/listingPulse'
+import { trackListingEvent } from '@/lib/listingEvents'
 
 // Platform-wide amenity icons mapped to common tag keywords
 const TAG_ICONS: Record<string, string> = {
@@ -79,6 +80,7 @@ export default function PropertyPageClient({
   }[]>([])
   const titleRef = useRef<HTMLDivElement>(null)
   const formStartedRef = useRef(false)
+  const submittedRef = useRef(false)
   const [roomLightbox, setRoomLightbox] = useState<{ images: string[]; index: number; roomName: string } | null>(null)
   const [comments, setComments] = useState<{ id: string; author_name: string; avatar_url: string | null; content: string; created_at: string }[]>([])
   const [commentText, setCommentText] = useState('')
@@ -88,8 +90,23 @@ export default function PropertyPageClient({
 
   const openRoomLightbox = useCallback((images: string[], index: number, roomName: string) => {
     setRoomLightbox({ images, index, roomName })
-  }, [])
+    trackListingEvent({ property_slug: slug, event_type: 'gallery_open', surface: 'listing' })
+  }, [slug])
   const closeRoomLightbox = useCallback(() => setRoomLightbox(null), [])
+
+  // Started the inquiry form and left without sending it. `pagehide` rather
+  // than `beforeunload`: Safari and every mobile browser fire it reliably on
+  // a real exit, and the event helper posts with keepalive so the write
+  // survives the teardown.
+  useEffect(() => {
+    const onLeave = () => {
+      if (formStartedRef.current && !submittedRef.current) {
+        trackListingEvent({ property_slug: slug, event_type: 'form_abandon', surface: 'listing' })
+      }
+    }
+    window.addEventListener('pagehide', onLeave)
+    return () => window.removeEventListener('pagehide', onLeave)
+  }, [slug])
   const roomLbPrev = useCallback(() => setRoomLightbox(lb => lb ? { ...lb, index: (lb.index - 1 + lb.images.length) % lb.images.length } : lb), [])
   const roomLbNext = useCallback(() => setRoomLightbox(lb => lb ? { ...lb, index: (lb.index + 1) % lb.images.length } : lb), [])
 
@@ -340,6 +357,11 @@ export default function PropertyPageClient({
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
     if (!formStartedRef.current && home) {
       formStartedRef.current = true
+      // A started form that never arrives is the most recoverable loss on the
+      // platform: the renter wanted this home enough to type into it. The
+      // landlord cannot see who, but they can see how many, which is what
+      // turns "my conversion is low" into something with a cause.
+      trackListingEvent({ property_slug: slug, event_type: 'form_start', surface: 'listing' })
       ph?.capture('inquiry_form_started', {
         property_slug: slug,
         property_name: home.name,
@@ -398,6 +420,7 @@ export default function PropertyPageClient({
         }
 
         setSubmittedLeadId(data.leadId ?? null)
+        submittedRef.current = true
         setSubmitted(true)
         setMobileFormOpen(false)
         if (loggedInUser && data.leadId) {
@@ -1320,7 +1343,15 @@ export default function PropertyPageClient({
                 <div className="section-label">Frequently Asked Questions</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {faqs.slice(0, 4).map(f => (
-                    <details key={f.id} className="faq-inline">
+                    <details
+                      key={f.id}
+                      className="faq-inline"
+                      onToggle={e => {
+                        if ((e.currentTarget as HTMLDetailsElement).open) {
+                          trackListingEvent({ property_slug: slug, event_type: 'faq_open', surface: 'listing' })
+                        }
+                      }}
+                    >
                       <summary>{f.question}</summary>
                       <div className="faq-inline-a">{f.answer}</div>
                     </details>
