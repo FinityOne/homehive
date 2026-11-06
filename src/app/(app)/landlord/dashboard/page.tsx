@@ -8,6 +8,7 @@ import { getLeadsForOwner, Lead } from '@/lib/leads'
 import { getLeasesForOwner, getLeaseStatus, formatLeaseDate, Lease } from '@/lib/leases'
 import { getPlansForOwner, PaymentPlan } from '@/lib/payments'
 import Link from 'next/link'
+import ListingPulse from './ListingPulse'
 
 function getGreeting(name: string) {
   const h = new Date().getHours()
@@ -564,12 +565,12 @@ export default function LandlordDashboard() {
 
         </div>
 
-        {/* ── CHARTS ── */}
-        <div className="db-analytics-hd">
-          <div className="db-section-title" style={{ margin: 0 }}>
-            📊 {dashProperty === 'all' ? 'Portfolio analytics' : 'Property analytics'}
-          </div>
-          {properties.length > 1 && (
+        {/* ── SCOPE ──
+            One toggle for everything below it: the traffic pulse and the
+            portfolio charts both answer to it, because a landlord asking
+            "how is Maple Street doing" means the whole answer, not half of it. */}
+        {properties.length > 1 && (
+          <div className="db-analytics-hd">
             <div className="db-prop-toggle">
               {[{ slug: 'all', name: 'All properties' }, ...properties].map(p => {
                 const active = dashProperty === p.slug
@@ -584,7 +585,18 @@ export default function LandlordDashboard() {
                 )
               })}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* ── LISTING PULSE ──
+            Deliberately above the lead charts. When no leads come in, every
+            panel below this one reads as a flat line, and the landlord's next
+            question — "is anyone even seeing it?" — is answered only here. */}
+        <ListingPulse slug={dashProperty === 'all' ? null : dashProperty} />
+
+        {/* ── CHARTS ── */}
+        <div className="db-section-title">
+          📊 {dashProperty === 'all' ? 'Portfolio analytics' : 'Property analytics'}
         </div>
         <div className="db-row-full">
           <LeadsTrendPanel dates={scopedLeads.map(l => l.created_at)} />
