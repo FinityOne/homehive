@@ -307,6 +307,14 @@ export type TodoItem = {
 export type Dashboard = {
   /** The hierarchy, so the overview and every detail page share one shape. */
   tree: MoneyTree
+  /**
+   * Every charge on the leases in view, flattened once.
+   *
+   * Carried so the judgement layer (`financialsSignals`) and the cash
+   * projection (`financialsForecast`) read the same rows the figures above were
+   * summed from, instead of re-flattening them and risking a second answer.
+   */
+  charges: Charge[]
 
   // ── Standing: bound to no window ──
   /** Shortfall plus assessed fees, across the whole of every lease in view. */
@@ -329,6 +337,21 @@ export type Dashboard = {
   received12: number
   billed12: number
   rate12: number | null
+  /**
+   * The last month that has finished, and the typical rate of the ones before
+   * it.
+   *
+   * These are the *only* honest comparison this product can offer. Nothing
+   * snapshots a portfolio, so there is no real "arrears up 8% this week" to be
+   * had — and a month still running has not finished collecting, so comparing
+   * it against a completed one invents a crisis every time a landlord looks
+   * before the rent is due. Deltas are drawn from these two and nowhere else.
+   */
+  lastCompleted: TrendPoint | null
+  /** Median collection rate across completed months, excluding the last one. */
+  rateTypical: number | null
+  /** lastCompleted.rate − rateTypical, in points. Null without both. */
+  rateDelta: number | null
 
   // ── Series ──
   trend: TrendPoint[]
@@ -422,9 +445,20 @@ export function buildDashboard(
   })
 
   const past = series.filter(p => p.position !== 'future')
+  // Completed months only — see `lastCompleted` on the type for why.
+  const completed = series.filter(p => p.position === 'past' && p.rate !== null)
+  const lastCompleted = completed.length > 0 ? completed[completed.length - 1] : null
+  const rateTypical = completed.length >= 3
+    ? (() => {
+        const priors = completed.slice(0, -1).map(p => p.rate!).sort((a, b) => a - b)
+        const m = Math.floor(priors.length / 2)
+        return priors.length % 2 ? priors[m] : Math.round((priors[m - 1] + priors[m]) / 2)
+      })()
+    : null
 
   return {
     tree,
+    charges,
 
     owed: a.total,
     owedPayers: a.payerCount,
@@ -445,6 +479,11 @@ export function buildDashboard(
       const collected = past.reduce((n, p) => n + p.collected, 0)
       return billed > 0 ? Math.round((collected / billed) * 100) : null
     })(),
+    lastCompleted,
+    rateTypical,
+    rateDelta: lastCompleted?.rate != null && rateTypical !== null
+      ? lastCompleted.rate - rateTypical
+      : null,
 
     trend: series,
     aging: agingBuckets(a),

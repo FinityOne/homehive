@@ -25,13 +25,15 @@
  * hierarchy and name what the landlord is looking at.
  */
 
-import { use, useEffect, useMemo } from 'react'
+import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
 import { buildTree, leaseHref } from '@/lib/financialsTree'
 import MoneyHub from '@/components/finance/MoneyHub'
+import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
+import { GLYPH_CSS } from '@/components/finance/Glyph'
 import { ProgressBar, VIZ_CSS } from '@/components/finance/Charts'
 import { dayOrdinal } from '@/components/finance/ChargeSheet'
 import { FINANCE_THEME } from '@/lib/financeTheme'
@@ -45,6 +47,8 @@ export default function PlanLedgerPage({
 }) {
   const { planId } = use(params)
   const { plans, waivers, bounced, loading } = useMoney()
+  const [find, setFind] = useState(false)
+  usePaletteShortcut(useCallback(() => setFind(true), []))
 
   const tree = useMemo(() => buildTree(plans, waivers), [plans, waivers])
   const plan = useMemo(() => tree.plans.find(p => p.planId === planId) ?? null, [tree, planId])
@@ -61,7 +65,7 @@ export default function PlanLedgerPage({
 
   return (
     <>
-      <style>{FINANCE_THEME}{VIZ_CSS}{CSS}</style>
+      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{CSS}</style>
       <div className="fin fin-wrap">
         <MoneyHub
           tab="portfolio"
@@ -89,6 +93,7 @@ export default function PlanLedgerPage({
             ? { label: 'The tenancy', href: `/landlord/leases/${lease.leaseId}` }
             : undefined}
           secondary={lease ? { label: 'Lease money', href: leaseHref(lease.key) } : undefined}
+          onFind={() => setFind(true)}
           alarmCount={bounced}
           meta={plan
             ? (
@@ -177,6 +182,8 @@ export default function PlanLedgerPage({
 
         <PlanWorkspace planId={planId} embedded />
       </div>
+
+      <CommandPalette tree={tree} open={find} onClose={() => setFind(false)} />
     </>
   )
 }

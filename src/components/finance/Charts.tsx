@@ -38,6 +38,7 @@ import { useId, useState } from 'react'
 import { fmtCurrency } from '@/lib/payments'
 import { METHOD_META, type MethodSlice } from '@/lib/financialsRollup'
 import type { TrendPoint, AgingBucket } from '@/lib/financialsDashboard'
+import type { ForecastWeek } from '@/lib/financialsForecast'
 import type { UpcomingMonth } from '@/lib/financialsMonth'
 
 /** Money, short, for an axis or a bar cap. `$12.4k`, `$940`. */
@@ -492,6 +493,195 @@ export function ProgressBar({
   )
 }
 
+// ─── SPARKLINE ───────────────────────────────────────────────────────────────
+
+/**
+ * Twelve months of one measure, inside a KPI tile.
+ *
+ * A single big number says where you are and nothing about where you came
+ * from, which is the difference between a figure and a fact. This is the
+ * cheapest possible fix: no axes, no labels, no interaction — shape only. It
+ * is never the sole carrier of anything, because the tile states the current
+ * value in words right above it.
+ */
+export function Sparkline({
+  values, tone = 'ink', height = 26,
+}: {
+  values: number[]
+  tone?: 'ink' | 'good' | 'bad' | 'warn'
+  height?: number
+}) {
+  const live = values.filter(v => Number.isFinite(v))
+  if (live.length < 3) return null
+
+  const W = 100, H = 30, PAD = 3
+  const max = Math.max(...live)
+  const min = Math.min(...live)
+  const span = max - min || 1
+  const x = (i: number) => (i / (live.length - 1)) * W
+  const y = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2)
+  const pts = live.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+  const stroke =
+    tone === 'good' ? 'var(--in)' : tone === 'bad' ? 'var(--late)'
+    : tone === 'warn' ? 'var(--fee)' : 'var(--ink-3)'
+
+  return (
+    <svg
+      className="spark2"
+      style={{ height }}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`Trend over the last ${live.length} months`}
+    >
+      <polygon points={`0,${H} ${pts.join(' ')} ${W},${H}`} fill={stroke} opacity="0.08" />
+      <polyline
+        points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth="1.6"
+        strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
+      />
+      {/* The latest point, so "now" is locatable on a 100px line. */}
+      <circle
+        cx={x(live.length - 1)} cy={y(live[live.length - 1])} r="2.2"
+        fill={stroke} stroke="var(--surface)" strokeWidth="1.4" vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  )
+}
+
+// ─── DELTA ───────────────────────────────────────────────────────────────────
+
+/**
+ * A change, with its direction — and only where one honestly exists.
+ *
+ * Deliberately narrow. Nothing in this product snapshots a portfolio, so there
+ * is no truthful "arrears up 8% this week" to show, and the component is not
+ * able to render one: it takes a signed number and a basis it must name. If a
+ * caller has no basis, there is no chip, which is the correct outcome rather
+ * than a missing feature.
+ *
+ * `goodWhen` exists because direction is not meaning. A rising collection rate
+ * is good; a rising number of days late is not.
+ */
+export function Delta({
+  value, unit = 'pts', basis, goodWhen = 'up',
+}: {
+  value: number | null
+  unit?: 'pts' | '%' | 'd'
+  /** What it is a change *from*. Shown on hover, so the chip can never be a
+   *  comparison the reader cannot interrogate. */
+  basis: string
+  goodWhen?: 'up' | 'down'
+}) {
+  if (value === null || value === 0) return null
+  const up = value > 0
+  const good = goodWhen === 'up' ? up : !up
+  return (
+    <span
+      className={`delta ${good ? 'good' : 'bad'}`}
+      title={`${up ? 'Up' : 'Down'} ${Math.abs(value)}${unit} ${basis}`}
+    >
+      <span className="delta-arrow" aria-hidden="true">{up ? '▲' : '▼'}</span>
+      {Math.abs(value)}{unit}
+    </span>
+  )
+}
+
+// ─── CASH FORECAST ───────────────────────────────────────────────────────────
+
+/**
+ * When the money is projected to arrive, week by week.
+ *
+ * Four stacked bands, each a status colour used in its reserved meaning:
+ * clearing (in flight, certain), on time, slipping (the payer is reliably
+ * late), and at risk (the payer is already behind). Stacking is right here
+ * because the parts genuinely sum to one quantity — the cash landing that week
+ * — and the question is how much of it you can count on.
+ *
+ * The caveat is rendered, not implied: a projection built from a tenant's own
+ * history is still a projection, and existing arrears are deliberately absent
+ * because nobody knows when overdue money arrives.
+ */
+export function ForecastBars({
+  weeks, overdueUnscheduled,
+}: {
+  weeks: ForecastWeek[]
+  overdueUnscheduled: number
+}) {
+  const [tip, setTip] = useState<Tip>(null)
+  const peak = Math.max(1, ...weeks.map(w => w.expected + w.atRisk))
+  const total = weeks.reduce((n, w) => n + w.expected, 0)
+  const risk = weeks.reduce((n, w) => n + w.atRisk, 0)
+
+  return (
+    <div className="viz">
+      <div className="viz-legend">
+        <span className="viz-key"><i className="viz-sw clearing" />Clearing</span>
+        <span className="viz-key"><i className="viz-sw ontime" />On time</span>
+        <span className="viz-key"><i className="viz-sw slip" />Slipping</span>
+        <span className="viz-key"><i className="viz-sw risk" />At risk</span>
+        <span className="viz-note">
+          <b>{fmtCurrency(total)}</b> expected over {weeks.length} weeks
+        </span>
+      </div>
+
+      <div className="viz-plot bars fc" onMouseLeave={() => setTip(null)}>
+        <span className="viz-grid base" aria-hidden="true" />
+        {weeks.map((w, i) => {
+          const h = (v: number) => Math.round((v / peak) * 100)
+          return (
+            <div
+              key={w.start}
+              className="viz-col"
+              aria-label={`${w.longLabel}: ${fmtCurrency(w.expected)} expected${
+                w.atRisk > 0 ? `, ${fmtCurrency(w.atRisk)} at risk` : ''}`}
+              onMouseEnter={() => setTip({
+                x: ((i + 0.5) / weeks.length) * 100,
+                y: 6,
+                title: w.longLabel,
+                rows: [
+                  ...(w.clearing > 0 ? [{ label: 'Clearing now', value: fmtCurrency(w.clearing) }] : []),
+                  ...(w.onTime > 0 ? [{ label: 'Due, pays on time', value: fmtCurrency(w.onTime) }] : []),
+                  ...(w.slipping > 0 ? [{ label: 'Projected late', value: fmtCurrency(w.slipping) }] : []),
+                  ...(w.atRisk > 0 ? [{ label: 'At risk', value: fmtCurrency(w.atRisk) }] : []),
+                  { label: 'Expected', value: fmtCurrency(w.expected) },
+                ],
+              })}
+            >
+              <span className="viz-stack">
+                {/* Stacked from the baseline up, with a 2px surface gap between
+                    bands so two adjacent colours never merge into one block. */}
+                <span className="fc-band clearing" style={{ height: `${h(w.clearing)}%`, bottom: 0 }} />
+                <span className="fc-band ontime" style={{ height: `${h(w.onTime)}%`, bottom: `${h(w.clearing)}%` }} />
+                <span className="fc-band slip" style={{ height: `${h(w.slipping)}%`, bottom: `${h(w.clearing + w.onTime)}%` }} />
+                <span className="fc-band risk" style={{ height: `${h(w.atRisk)}%`, bottom: `${h(w.expected)}%` }} />
+              </span>
+              <span className="viz-x">
+                {/* Every other label, or thirteen weeks collide. */}
+                {i % 2 === 0 ? w.label : ''}
+              </span>
+            </div>
+          )
+        })}
+        <Tooltip tip={tip} />
+      </div>
+
+      <p className="fc-note">
+        A projection from your own tenants&rsquo; settled history — each charge is shifted by how late
+        that payer usually is.
+        {risk > 0 && (
+          <> <b>{fmtCurrency(risk)}</b> of it is owed by someone already behind, so it is at risk
+          rather than expected.</>
+        )}
+        {overdueUnscheduled > 0 && (
+          <> The <b>{fmtCurrency(overdueUnscheduled)}</b> already overdue is <b>not</b> in this chart:
+          overdue money has no arrival date, and assuming one would be the most misleading figure on
+          the page.</>
+        )}
+      </p>
+    </div>
+  )
+}
+
 /**
  * The stylesheet for everything above.
  *
@@ -678,9 +868,66 @@ export const VIZ_CSS = `
   .fin .pbar2-fill { display: block; height: 100%; background: var(--in); border-radius: 999px; transition: width 0.4s; }
   .fin .pbar2-mark { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink); border-radius: 2px; }
 
+  /* ── Sparkline ────────────────────────────────────────────────────────── */
+  .fin .spark2 { display: block; width: 100%; margin-top: 8px; overflow: visible; }
+
+  /* ── Delta chip ───────────────────────────────────────────────────────── */
+  .fin .delta {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    padding: 1px 7px; border-radius: 980px; letter-spacing: -0.005em;
+    background: var(--idle-bg); color: var(--ink-2); white-space: nowrap;
+  }
+  .fin .delta.good { background: var(--in-bg);   color: var(--in); }
+  .fin .delta.bad  { background: var(--late-bg); color: var(--late); }
+  .fin .delta-arrow { font-size: 8px; line-height: 1; }
+
+  /* ── Cash forecast ────────────────────────────────────────────────────── */
+  .fin .viz-plot.bars.fc { height: 150px; }
+  .fin .fc-band {
+    position: absolute; left: 0; right: 0; display: block; min-height: 0;
+    transition: height 0.35s cubic-bezier(0.4,0,0.2,1);
+  }
+  /* The gap is a surface-coloured ring rather than a margin, so the bands stay
+     mathematically stacked while reading as separate. */
+  .fin .fc-band.clearing { background: var(--flight); }
+  .fin .fc-band.ontime   { background: var(--in);     box-shadow: 0 -2px 0 var(--surface); }
+  .fin .fc-band.slip     { background: var(--fee);    box-shadow: 0 -2px 0 var(--surface); }
+  .fin .fc-band.risk     { background: var(--late);   box-shadow: 0 -2px 0 var(--surface); }
+  /* Rounded cap on whichever band happens to be on top of the stack. */
+  .fin .viz-col:hover .fc-band { filter: saturate(1.15); }
+  .fin .viz-sw.clearing { background: var(--flight); }
+  .fin .viz-sw.ontime   { background: var(--in); }
+  .fin .viz-sw.slip     { background: var(--fee); }
+  .fin .viz-sw.risk     { background: var(--late); }
+  .fin .fc-note {
+    font-size: 11.5px; color: var(--ink-3); line-height: 1.6; margin-top: 14px;
+    letter-spacing: -0.005em; max-width: 92ch;
+  }
+  .fin .fc-note b { color: var(--ink-2); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fin .viz-bar, .fin .fc-band, .fin .meter-fill, .fin .pbar2-fill { transition: none; }
+  }
+
   @media (max-width: 700px) {
     .fin .viz-plot.bars { height: 140px; }
     .fin .mix-row { grid-template-columns: 92px 1fr auto; gap: 9px; }
     .fin .viz-note { margin-left: 0; width: 100%; }
+  }
+
+  /* On paper the charts are ink on white: no hover, no tooltip, and the hidden
+     data table becomes the chart. */
+  @media print {
+    .fin .viz-tip, .fin .viz-hits { display: none !important; }
+    .fin .viz-table {
+      position: static; width: 100%; height: auto; clip-path: none;
+      white-space: normal; border-collapse: collapse; font-size: 10pt;
+    }
+    .fin .viz-table caption { text-align: left; font-weight: 600; padding: 6pt 0; }
+    .fin .viz-table th, .fin .viz-table td {
+      border-bottom: 1px solid #ddd; padding: 3pt 6pt; text-align: left;
+    }
+    .fin .viz-plot { break-inside: avoid; }
   }
 `

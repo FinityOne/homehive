@@ -32,7 +32,7 @@
  * same sheet that opens from every other payment line in the product.
  */
 
-import { use, useEffect, useMemo, useState } from 'react'
+import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
@@ -44,6 +44,8 @@ import {
 } from '@/lib/financialsMonth'
 import { AHEAD_MONTHS } from '@/lib/financialsDashboard'
 import MoneyHub from '@/components/finance/MoneyHub'
+import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
+import { GLYPH_CSS } from '@/components/finance/Glyph'
 import { AheadStrip, Meter, VIZ_CSS } from '@/components/finance/Charts'
 import ChargeSheet, { StatePill, dayOrdinal } from '@/components/finance/ChargeSheet'
 import { FINANCE_THEME } from '@/lib/financeTheme'
@@ -65,6 +67,8 @@ export default function SchedulePage({
 }) {
   const sp = use(searchParams)
   const { plans, waivers, bounced, loading } = useMoney()
+  const [find, setFind] = useState(false)
+  usePaletteShortcut(useCallback(() => setFind(true), []))
 
   const thisMonth = monthKeyOf(new Date())
   const [month, setMonth] = useState<MonthKey>(
@@ -142,13 +146,14 @@ export default function SchedulePage({
 
   return (
     <>
-      <style>{FINANCE_THEME}{VIZ_CSS}{CSS}</style>
+      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{CSS}</style>
       <div className="fin fin-wrap">
         <MoneyHub
           tab="schedule"
           title="Schedule"
           sub="What falls due, month by month — past months and future ones read identically."
           action={{ label: 'New payment plan', href: '/landlord/financials/new' }}
+          onFind={() => setFind(true)}
           alarmCount={bounced}
           dueCount={tree.leases.filter(l => l.owed > 0).length}
           filters={
@@ -353,6 +358,8 @@ export default function SchedulePage({
       </div>
 
       {detail && <ChargeSheet charge={detail} onClose={() => setDetail(null)} />}
+
+      <CommandPalette tree={tree} open={find} onClose={() => setFind(false)} />
     </>
   )
 }
