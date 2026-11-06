@@ -521,7 +521,7 @@ export const TIME_CSS = `
     display: flex; flex-direction: column; justify-content: flex-end;
     background: none; border: none; padding: 0; cursor: pointer; border-radius: 5px 5px 0 0;
   }
-  .fin .tc-col.on { background: rgba(0,113,227,0.07); }
+  .fin .tc-col.on { background: rgba(15,122,67,0.08); }
   .fin .tc-col:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .fin .tc-col.ahead { opacity: 0.45; }
 

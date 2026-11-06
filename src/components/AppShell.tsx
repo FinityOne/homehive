@@ -166,31 +166,52 @@ const THEMES = {
     '--dd-bg':            '#ffffff',
     '--dd-shadow':        '0 4px 20px rgba(0,0,0,0.10)',
   },
+  /**
+   * The landlord portal: a light admin shell with a green accent.
+   *
+   * It was a dark navy sidebar. The portal is a tool somebody works in for an
+   * hour at a time next to a spreadsheet and a bank tab, and a dark rail beside
+   * a white workspace fights that — it reads as a marketing chrome wrapped
+   * around an application rather than part of one. Light throughout lets the
+   * content carry the contrast, which is what a working surface wants.
+   *
+   * Two colours do the work, and they do different jobs:
+   *   • **Dark** marks where you *are*. The active row is a near-black pill,
+   *     which is unmistakable at a glance and never competes with the data.
+   *   • **Green** marks what you can *do* — the brand mark, primary buttons,
+   *     the upgrade card. It is the one saturated colour in the chrome.
+   */
   landlord: {
-    '--sb-bg':            '#0f172a',
-    '--sb-border':        '#1e293b',
-    '--tb-bg':            '#0f172a',
-    '--tb-border':        '#1e293b',
-    '--logo-color':       '#f1f5f9',
-    '--logo-em':          '#10b981',
-    '--nav-color':        'rgba(241,245,249,0.5)',
-    '--nav-hover-bg':     'rgba(241,245,249,0.07)',
-    '--nav-hover-color':  '#f1f5f9',
-    '--nav-active-bg':    'rgba(16,185,129,0.18)',
-    '--nav-active-color': '#34d399',
-    '--avatar-bg':        'rgba(16,185,129,0.22)',
-    '--avatar-color':     '#34d399',
-    '--user-text':        '#f1f5f9',
-    '--user-sub':         'rgba(241,245,249,0.4)',
-    '--divider':          '#1e293b',
-    '--so-color':         'rgba(241,245,249,0.4)',
-    '--so-hover-bg':      'rgba(241,245,249,0.07)',
-    '--so-hover-color':   '#f1f5f9',
-    '--ham-color':        'rgba(241,245,249,0.6)',
-    '--main-bg':          '#f0f4f8',
-    '--psw-hover-bg':     'rgba(241,245,249,0.07)',
-    '--dd-bg':            '#1e293b',
-    '--dd-shadow':        '0 4px 20px rgba(0,0,0,0.30)',
+    '--sb-bg':            '#ffffff',
+    '--sb-border':        '#e8ebe9',
+    '--tb-bg':            '#ffffff',
+    '--tb-border':        '#e8ebe9',
+    '--logo-color':       '#14181b',
+    '--logo-em':          '#0f7a43',
+    '--nav-color':        '#5c6360',
+    '--nav-hover-bg':     '#f3f5f4',
+    '--nav-hover-color':  '#14181b',
+    // The active row is a dark pill, so "you are here" is unmissable without
+    // spending the accent colour on it — the accent is reserved for actions.
+    '--nav-active-bg':    '#15191c',
+    '--nav-active-color': '#ffffff',
+    '--avatar-bg':        '#e3f2e9',
+    '--avatar-color':     '#0f7a43',
+    '--user-text':        '#14181b',
+    '--user-sub':         '#8a918e',
+    '--divider':          '#eceeed',
+    '--so-color':         '#8a918e',
+    '--so-hover-bg':      '#fdeceb',
+    '--so-hover-color':   '#d13b30',
+    '--ham-color':        '#5c6360',
+    '--main-bg':          '#f6f8f7',
+    '--psw-hover-bg':     '#f3f5f4',
+    '--dd-bg':            '#ffffff',
+    '--dd-shadow':        '0 8px 30px rgba(20,24,27,0.12)',
+    // The brand accent, used by the shell for anything pressable.
+    '--brand':            '#0f7a43',
+    '--brand-ink':        '#0b6336',
+    '--brand-soft':       '#e8f4ed',
   },
   admin: {
     '--sb-bg':            '#18181b',
@@ -465,11 +486,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         .tb-logo img { height: 26px; width: auto; display: block; }
 
         /* Portal badge next to logo */
+        /* Tinted with the brand where one is defined, rather than with the
+           active-row colour — on a light shell that is now near-black, and a
+           black chip beside the logo reads as a warning rather than a label. */
         .tb-portal-badge {
           margin-left: 10px; flex-shrink: 0;
           font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
-          padding: 2px 8px; border-radius: 4px;
-          background: var(--nav-active-bg); color: var(--nav-active-color);
+          padding: 3px 9px; border-radius: 5px;
+          background: var(--brand-soft, var(--nav-active-bg));
+          color: var(--brand, var(--nav-active-color));
         }
 
         /* Vertical divider */
@@ -633,7 +658,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         /* ── SIDEBAR ── */
         .app-sidebar {
-          width: 232px; flex-shrink: 0;
+          /* Widened from 232px. The rows below carry a 20px icon and 14.5px
+             label — comfortable to hit and to read at arm's length — and at
+             the old width the longer labels ("Tours & Calendar") clipped. */
+          width: 268px; flex-shrink: 0;
           background: var(--sb-bg); border-right: 1px solid var(--sb-border);
           display: flex; flex-direction: column;
           position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto;
@@ -642,7 +670,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
         /* Icon-only rail. Width is the only thing that animates; labels are
            swapped out entirely so they never wrap mid-transition. */
-        .app-sidebar.railed { width: 64px; }
+        .app-sidebar.railed { width: 76px; }
         .app-sidebar::-webkit-scrollbar { width: 6px; }
         .app-sidebar::-webkit-scrollbar-thumb { background: var(--divider); border-radius: 3px; }
         .app-sidebar::-webkit-scrollbar-track { background: transparent; }
@@ -656,9 +684,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         .sb-group-btn {
           display: flex; align-items: center; gap: 6px; width: 100%;
           background: none; border: none; cursor: pointer;
-          padding: 9px 8px 6px; border-radius: 7px;
-          font-size: 10px; font-weight: 700; color: var(--user-sub);
-          text-transform: uppercase; letter-spacing: 0.9px;
+          padding: 14px 12px 7px; border-radius: 7px;
+          font-size: 11px; font-weight: 700; color: var(--user-sub);
+          text-transform: uppercase; letter-spacing: 1px;
           font-family: 'DM Sans', sans-serif; text-align: left;
           transition: color 0.15s;
         }
@@ -678,28 +706,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         .sb-group-items > div { overflow: hidden; min-height: 0; }
         .sb-group-items.collapsed { grid-template-rows: 0fr; opacity: 0; }
 
+        /* Rows are deliberately generous: 20px icon, 14.5px label, 42px tall.
+           This is a tool someone navigates dozens of times an hour, and the
+           previous 13px/16px row was tuned for density at the cost of being
+           tiring to aim at. */
         .sb-nav-item {
-          display: flex; align-items: center; gap: 10px; padding: 8px 9px;
-          border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif;
+          display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+          border-radius: 10px; font-size: 14.5px; font-family: 'DM Sans', sans-serif;
+          letter-spacing: -0.012em;
           color: var(--nav-color); text-decoration: none;
-          transition: background 0.15s, color 0.15s; margin-bottom: 1px;
+          transition: background 0.15s, color 0.15s; margin-bottom: 2px;
           position: relative; white-space: nowrap;
         }
         .sb-nav-item:hover  { background: var(--nav-hover-bg); color: var(--nav-hover-color); }
-        .sb-nav-item.active { background: var(--nav-active-bg); color: var(--nav-active-color); font-weight: 600; }
-        /* A short bar on the active row — reads as "you are here" at a glance,
-           even in the rail where the label is gone. */
-        .sb-nav-item.active::before {
-          content: ''; position: absolute; left: -10px; top: 50%;
-          transform: translateY(-50%);
-          width: 3px; height: 18px; border-radius: 0 3px 3px 0;
-          background: var(--nav-active-color);
+        /* The active row is a solid pill rather than a tint plus a marker
+           bar. At this size the pill alone is unmistakable, and it leaves the
+           accent colour free to mean "pressable" everywhere else. */
+        .sb-nav-item.active {
+          background: var(--nav-active-bg); color: var(--nav-active-color); font-weight: 600;
         }
+        .sb-nav-item.active::before { content: none; }
+        .sb-nav-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .sb-nav-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
         .sb-nav-badge {
-          margin-left: auto; color: #fff; font-size: 10px; font-weight: 700;
-          padding: 1px 6px; border-radius: 10px; flex-shrink: 0;
+          margin-left: auto; color: #fff; font-size: 11px; font-weight: 700;
+          padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
           font-family: 'DM Sans', sans-serif; line-height: 1.5;
+        }
+        /* On the dark active pill a coloured badge loses its contrast, so it
+           inverts to a translucent white chip instead. */
+        .sb-nav-item.active .sb-nav-badge {
+          background: rgba(255,255,255,0.22) !important; color: #fff;
         }
         /* Free tier: a locked row stays readable and clickable — dimming it to
            grey would make the product look broken rather than purchasable. */
@@ -710,28 +747,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           position: absolute; top: 4px; right: 6px; font-size: 8px;
         }
 
-        /* ── FREE-TIER UPSELL ── */
+        /* ── FREE-TIER UPSELL ──
+           The one place in the chrome that is allowed a tinted fill, because
+           it is selling rather than navigating. It wears the brand green, not
+           the active-row dark, so it never reads as "you are here". */
         .sb-upsell {
-          margin: 10px 10px 0; padding: 12px 13px;
-          background: var(--nav-active-bg); border: 1px solid var(--divider);
-          border-radius: 10px; font-family: 'DM Sans', sans-serif;
+          margin: 14px 12px 4px; padding: 14px 15px;
+          background: var(--brand-soft, var(--nav-active-bg));
+          border: 1px solid var(--divider);
+          border-radius: 12px; font-family: 'DM Sans', sans-serif;
           text-decoration: none; display: block;
         }
-        .sb-upsell:hover { border-color: var(--nav-active-color); }
+        .sb-upsell:hover { border-color: var(--brand, var(--nav-active-color)); }
         .sb-upsell-title {
-          font-size: 12px; font-weight: 700; color: var(--nav-active-color);
+          font-size: 13px; font-weight: 700; color: var(--brand, var(--nav-active-color));
           line-height: 1.35; margin-bottom: 4px;
         }
-        .sb-upsell-body { font-size: 11.5px; color: var(--user-sub); line-height: 1.45; }
+        .sb-upsell-body { font-size: 12px; color: var(--user-sub); line-height: 1.45; }
         .sb-upsell-cta {
-          font-size: 11.5px; font-weight: 700; color: var(--nav-active-color);
+          font-size: 12px; font-weight: 700; color: var(--brand, var(--nav-active-color));
           margin-top: 7px; display: block;
         }
         .app-sidebar.railed .sb-upsell { display: none; }
 
         /* ── RAIL MODE ── */
         .app-sidebar.railed .sb-nav { padding: 10px 8px 8px; }
-        .app-sidebar.railed .sb-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
+        .app-sidebar.railed .sb-nav-item { justify-content: center; padding: 11px 0; gap: 0; }
         .app-sidebar.railed .sb-nav-item.active::before { left: -8px; }
         .app-sidebar.railed .sb-nav-label { display: none; }
         .app-sidebar.railed .sb-group-btn { display: none; }
@@ -844,7 +885,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           .app-sidebar.railed .sb-group-btn,
           .app-sidebar.railed .sb-psw-arrow { display: flex; }
           .app-sidebar.railed .sb-nav { padding: 10px 10px 8px; }
-          .app-sidebar.railed .sb-nav-item { justify-content: flex-start; padding: 8px 9px; gap: 10px; }
+          .app-sidebar.railed .sb-nav-item { justify-content: flex-start; padding: 10px 12px; gap: 12px; }
           .app-sidebar.railed .sb-nav-item.active::before { left: -10px; }
           .app-sidebar.railed .sb-psw-item { justify-content: flex-start; }
           /* Groups stay collapsible in the drawer, so undo the rail's force-open. */
@@ -1015,7 +1056,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                               aria-label={locked ? `${item.label} — included with a plan` : item.label}
                               aria-current={isActive(item) ? 'page' : undefined}
                             >
-                              <Icon name={item.icon} size={17} />
+                              <span className="sb-nav-icon">
+                                <Icon name={item.icon} size={20} />
+                              </span>
                               <span className="sb-nav-label">{item.label}</span>
                               {badge ? (
                                 <span className="sb-nav-badge" style={{ background: badge.color }}>

@@ -44,14 +44,31 @@ export const FINANCE_THEME = `
     --surface:  #ffffff;
     --surface-2:#fafafb;
 
-    /* Interactive — and nothing else */
-    --accent:     #0071e3;
-    --accent-ink: #005bb8;
-    --accent-bg:  #e8f1fd;
+    /* Interactive — the brand green.
+       This was Apple blue, under a rule that said "blue means interactive and
+       nothing informational is ever blue". The portal has moved to a green
+       admin shell, and an area whose buttons are blue inside a chrome whose
+       buttons are green reads as two products bolted together.
+       The old rule's *purpose* survives, carried by shape instead of hue: an
+       action is a filled pill or an underlined link, a figure never is. Green
+       therefore means "good or pressable", and the thing that tells you which
+       is whether it has a button around it. See the note above --in.
+       5.4:1 on white, and white on it is the same — so it works as a fill and
+       as text. */
+    --accent:     #0f7a43;
+    --accent-ink: #0b6336;
+    --accent-bg:  #e8f4ed;
 
     /* State. Each one has a strong form for text and a soft form for fills, so
        a tinted row and the figure inside it can never drift apart. */
-    --in:        #1d8a4e;   /* money received */
+    /* Money received — the same green as --accent, on purpose.
+       Two greens one step apart looked like a mistake rather than a
+       distinction, and the lighter of them only reached 3.6:1 on white, which
+       fails normal-text contrast for every collected figure on the page. So
+       there is one green, it means "good or pressable", and what tells those
+       apart is shape: an action is a filled pill or an underlined link, a
+       figure never is. 5.4:1 on white. */
+    --in:        #0f7a43;   /* money received */
     --in-bg:     #e8f5ed;
     --in-line:   #cfe9d9;
     --late:      #d13b30;   /* overdue, bounced, failed */
@@ -347,10 +364,25 @@ export const FINANCE_THEME = `
   }
 
   /* ── Page shell ───────────────────────────────────────────────────────────
-     One width for the whole area. The old page ran two (940 and 1120), so
-     moving between the rollup and a ledger shifted the layout sideways. */
-  .fin-wrap { max-width: 1180px; margin: 0 auto; padding: 30px 22px 96px; }
-  .fin-wrap.narrow { max-width: 940px; }
+     The working pages use the full width of the window.
+
+     They were capped at 1180px and centred, which on a 1600px desktop left
+     two columns of empty grey either side while the tables inside scrolled
+     horizontally — the classic failure of a content width borrowed from
+     reading layouts and applied to an admin tool. A rent ledger wants every
+     pixel it can get.
+
+     Two pages keep a cap, for opposite reasons: a statement is a document
+     that will be printed, and Insights is prose. Measure matters there;
+     elsewhere it does not. */
+  .fin-wrap { max-width: none; margin: 0; padding: 26px 30px 90px; }
+  .fin-wrap.narrow { max-width: 1040px; margin: 0 auto; }
+
+  @media (min-width: 1700px) {
+    /* Past this the eye has to travel too far across a table row, so the
+       content stops growing and simply centres. */
+    .fin-wrap { max-width: 1680px; margin: 0 auto; }
+  }
 
   /* ── Big numbers ──────────────────────────────────────────────────────────
      The overview is read at a glance from arm's length, which means the figure
