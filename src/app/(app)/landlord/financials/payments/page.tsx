@@ -31,10 +31,11 @@
  */
 
 import { use, useCallback, useEffect, useMemo, useState } from 'react'
-import { getCurrentUser, supabase } from '@/lib/supabase'
-import { getPlansForOwner, fmtCurrency, fmtDate, type PaymentPlan } from '@/lib/payments'
+import { supabase } from '@/lib/supabase'
+import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { METHOD_META } from '@/lib/financialsRollup'
-import { filterPlans, LEASE_FILTERS, type LeaseFilter } from '@/lib/financialsMonth'
+import { arrears, filterPlans, LEASE_FILTERS, type LeaseFilter } from '@/lib/financialsMonth'
+import { useMoney } from '@/lib/useMoney'
 import {
   paymentLog, filterPayments, paymentTotals, stateCounts, leaseOptions, paymentsCsv,
   PAY_STATE_META, KIND_LABEL, STATE_FILTERS, METHOD_FILTERS, RANGE_FILTERS,
@@ -57,13 +58,11 @@ export default function PaymentsLogPage({
 }) {
   const sp = use(searchParams)
 
-  const [plans, setPlans] = useState<PaymentPlan[]>([])
+  const { plans, bounced: bouncedCount, loading } = useMoney()
   const [attempts, setAttempts] = useState<AttemptRow[]>([])
-  const [loading, setLoading] = useState(true)
   /** Set when the attempts table could not be read — failures then cannot be
    *  shown, and the page says so rather than implying there were none. */
   const [attemptsError, setAttemptsError] = useState(false)
-  const [bouncedCount, setBouncedCount] = useState(0)
 
   // Active leases by default, exactly as Financials does: a landlord with three
   // years of tenancies behind them should not have to read past all of them.
@@ -83,13 +82,16 @@ export default function PaymentsLogPage({
 
   useEffect(() => { document.title = 'Payments — Landlord | HomeHive' }, [])
 
+  /**
+   * Only the attempts are loaded here.
+   *
+   * The plans come from `useMoney`, which every screen in the money area now
+   * shares — the portfolio query is the heaviest read in the portal, and this
+   * page used to fire its own copy of it on every visit. Failed attempts are
+   * this page's alone: nothing else in the area shows them, because the charge
+   * itself does not remember a payment that bounced.
+   */
   const load = useCallback(async () => {
-    const user = await getCurrentUser()
-    if (!user) return
-    const data = await getPlansForOwner(user.id)
-    setPlans(data)
-    setLoading(false)
-
     // RLS keys this table on plan ownership, so no owner filter is needed here
     // and none would be trustworthy if it were.
     const { data: rows, error } = await supabase
@@ -111,24 +113,9 @@ export default function PaymentsLogPage({
     ;(async () => { await load() })()
   }, [load])
 
-  // The bounced-email badge the whole money area carries, so the Reminders tab
-  // still shouts from here.
-  useEffect(() => {
-    ;(async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const res = await fetch('/api/payments/emails?state=problem&limit=50', {
-          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-        })
-        const json = await res.json()
-        if (res.ok) setBouncedCount(json.counts?.problem ?? 0)
-      } catch {
-        // A badge is not worth a visible error.
-      }
-    })()
-  }, [])
-
   const scoped = useMemo(() => filterPlans(plans, leaseFilter), [plans, leaseFilter])
+  // Carried on the Collections tab from here, as it is from every money screen.
+  const behind = useMemo(() => arrears(scoped).payerCount, [scoped])
   const all = useMemo(() => paymentLog(scoped, attempts), [scoped, attempts])
   const counts = useMemo(() => stateCounts(all), [all])
   const leases = useMemo(() => leaseOptions(all), [all])
@@ -183,7 +170,8 @@ export default function PaymentsLogPage({
           title="Payments"
           sub="Every payment your tenants have made — what cleared, what is still moving through the bank, and what bounced."
           alarmCount={bouncedCount}
-          action={{ label: 'Go to Financials', href: '/landlord/financials' }}
+          dueCount={behind}
+          action={{ label: 'Export CSV', onClick: download }}
           meta={
             <div className="meta-row">
               <div className="seg sm" role="tablist" aria-label="Which leases">

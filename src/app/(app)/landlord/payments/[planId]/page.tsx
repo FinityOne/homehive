@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
 
 /**
- * The rent ledger is no longer a page of its own — every monetary view lives in
- * Financials, which opens the ledger inline at ?plan=. Kept as a redirect so
- * older links (emails, bookmarks) still land on the right money.
+ * The rent ledger has moved twice now: it was `/landlord/payments/<planId>`,
+ * then a panel inside Financials at `?plan=`, and it is now a route of its own
+ * under Financials. This stub keeps the oldest links — emails, bookmarks,
+ * anything a landlord saved — landing on the right money.
  */
 export default async function PlanDetailRedirect({
   params,
@@ -11,5 +12,5 @@ export default async function PlanDetailRedirect({
   params: Promise<{ planId: string }>
 }) {
   const { planId } = await params
-  redirect(`/landlord/financials?plan=${planId}`)
+  redirect(`/landlord/financials/plan/${planId}`)
 }
