@@ -93,6 +93,15 @@ export default function PortfolioPage({
   const counts = useMemo(() => stageCounts(plans), [plans])
   const tree = useMemo(() => buildTree(scoped, waivers), [scoped, waivers])
 
+  /** Leases inside their last two months, soonest first. An upcoming lease is
+   *  excluded — a term that has not started cannot be ending. */
+  const expiring = useMemo(
+    () => tree.leases
+      .filter(l => l.daysLeft !== null && l.daysLeft >= 0 && l.daysLeft <= 60 && l.stage !== 'upcoming')
+      .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0)),
+    [tree],
+  )
+
   // Money owed on leases this filter excludes. Reported so narrowing the view
   // can never make a debt vanish — the one thing a default filter must not do.
   const hidden = useMemo(() => {
@@ -295,6 +304,69 @@ export default function PortfolioPage({
                 <div className="kpi-meta">returnable at move-out</div>
               </div>
             </div>
+
+            {/* ── Leases inside their last two months ──
+                Moved here off the overview, which had grown too long to be
+                read at a glance. It belongs with the structure rather than
+                with the figures: renewal, deposit return and move-out are all
+                decisions about a *tenancy*, and this is the page about
+                tenancies. The money angle is the one that matters most and is
+                stated on the row — settle arrears before a deposit goes back,
+                because afterwards there is usually no way to collect. */}
+            {expiring.length > 0 && (
+              <section className="card expiring">
+                <div className="card-hd">
+                  <div>
+                    <h2 className="card-title">Ending within 60 days</h2>
+                    <p className="muted sm">
+                      Renewal, deposit return and move-out — and the last point at which arrears
+                      are still collectable.
+                    </p>
+                  </div>
+                  <span className="card-note">
+                    {expiring.length} lease{expiring.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="xlist">
+                  {expiring.map(l => (
+                    <Link key={l.key} className="xrow" href={leaseHref(l.key)}>
+                      <span className="xrow-main">
+                        <b>
+                          {l.propertyName}
+                          <span className={`pill ${(l.daysLeft ?? 99) <= 14 ? 'bad' : 'warn'}`}>
+                            {l.daysLeft}d left
+                          </span>
+                          {l.owed > 0 && (
+                            <span
+                              className="pill bad"
+                              title="Settle this before the deposit goes back — afterwards there is usually no way to collect it"
+                            >
+                              {fmtCurrency(l.owed)} owed
+                            </span>
+                          )}
+                        </b>
+                        <em>
+                          {l.label} · ends {fmtDate(l.termEnd ?? '')} ·
+                          {' '}{l.activePayers} tenant{l.activePayers !== 1 ? 's' : ''}
+                        </em>
+                      </span>
+                      <span className="xrow-fig">
+                        <b>{fmtCurrency(l.depositsHeld)}</b>
+                        <em>deposit held</em>
+                      </span>
+                      <span className="row-chev" aria-hidden="true" />
+                    </Link>
+                  ))}
+                </div>
+                <div className="card-ft">
+                  <span>
+                    Terms, offers and renewal decisions live on the renewals page — this is only
+                    the money side of them.
+                  </span>
+                  <Link className="btn-quiet sm" href="/landlord/renewals">Renewals →</Link>
+                </div>
+              </section>
+            )}
 
             {tree.splitLeaseCount > 0 && (
               <p className="lead-note">
@@ -795,6 +867,27 @@ const CSS = `
     letter-spacing: -0.01em; max-width: 86ch;
   }
   .fin .lead-note strong { color: var(--ink); }
+
+  /* ── Ending soon ── */
+  .fin .card.expiring { margin-bottom: 16px; }
+  .fin .xlist { display: flex; flex-direction: column; }
+  .fin .xrow {
+    display: flex; align-items: center; gap: 16px; padding: 12px 2px;
+    border-top: 1px solid var(--line-2); text-decoration: none; color: inherit;
+  }
+  .fin .xrow:first-child { border-top: none; }
+  .fin .xrow:hover { background: var(--surface-2); }
+  .fin .xrow-main { flex: 1; min-width: 0; }
+  .fin .xrow-main b {
+    font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; letter-spacing: -0.01em;
+  }
+  .fin .xrow-main em {
+    font-style: normal; display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px;
+  }
+  .fin .xrow-fig { text-align: right; flex-shrink: 0; }
+  .fin .xrow-fig b { font-size: 13.5px; font-weight: 600; display: block; font-variant-numeric: tabular-nums; }
+  .fin .xrow-fig em { font-style: normal; font-size: 11px; color: var(--ink-3); }
 
   .fin .trow.sub { padding: 13px 18px; }
   .fin .trow-name.sm { font-size: 14px; font-weight: 500; }
