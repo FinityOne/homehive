@@ -10,7 +10,8 @@ import { acceptsInquiries, acceptsWaitlist } from '@/lib/listingStatus'
 import { notFound } from 'next/navigation'
 import PhoneInput from '@/components/ui/PhoneInput'
 import SaveButton from '@/components/SaveButton'
-import { identifyVisitor } from '@/lib/visitorId'
+import { identifyVisitor, getAnonId, getSessionId } from '@/lib/visitorId'
+import type { SocialProof } from '@/lib/listingPulse'
 
 // Platform-wide amenity icons mapped to common tag keywords
 const TAG_ICONS: Record<string, string> = {
@@ -66,6 +67,10 @@ export default function PropertyPageClient({
   const [mobileFormOpen, setMobileFormOpen] = useState(false)
   const [showStickyBar, setShowStickyBar] = useState(false)
   const [badgeHover, setBadgeHover] = useState(false)
+  // How many people have opened this listing this week. Set from the
+  // page-view write's own response, and null until it answers — or when there
+  // are too few people for the sentence to help (see describeSocialProof).
+  const [socialProof, setSocialProof] = useState<SocialProof | null>(null)
   const [landlordProfile, setLandlordProfile] = useState<{ first_name: string | null; avatar_url: string | null } | null>(null)
   const [recommended, setRecommended] = useState<{
     slug: string; name: string; address: string; price: number; beds: number; baths: number
@@ -207,17 +212,24 @@ export default function PropertyPageClient({
     const referrer     = localStorage.getItem('utm_referrer') || document.referrer || undefined
     const device_type  = /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
 
-    // Generate or reuse session ID (persists for the browser session)
-    if (!sessionStorage.getItem('hh_session_id')) {
-      sessionStorage.setItem('hh_session_id', crypto.randomUUID())
-    }
-    const session_id = sessionStorage.getItem('hh_session_id')!
+    // Two identities, and the difference matters to the landlord reading the
+    // other end of this: `session_id` dies with the tab, so it counts visits;
+    // `anonymous_id` is the 1-year cookie the rest of the tracking already
+    // keeps, so it counts people. The overview leads on unique visitors, which
+    // only means anything with the second one attached.
+    const session_id   = getSessionId()
+    const anonymous_id = getAnonId()
 
     fetch('/api/page-views', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ property_slug: slug, session_id, utm_source, utm_medium, utm_campaign, utm_content, landing_page, referrer, device_type }),
-    }).catch(() => {})
+      body: JSON.stringify({ property_slug: slug, session_id, anonymous_id, utm_source, utm_medium, utm_campaign, utm_content, landing_page, referrer, device_type }),
+    })
+      // The response carries how many people have opened this listing this
+      // week — counted after this view, so the number includes the reader.
+      .then(r => r.json())
+      .then(d => { if (d?.proof) setSocialProof(d.proof) })
+      .catch(() => {})
   }, [home]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -960,6 +972,30 @@ export default function PropertyPageClient({
             </span>
             <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '20px', background: avail.bg, color: avail.color, animation: avail.urgent ? 'pulse 2s infinite' : 'none' }}>{avail.text}</span>
           </div>
+
+          {/* How many others are looking.
+              Deliberately quiet: one line of muted text in the title block
+              rather than a coloured pill. It sits beside a scarcity badge that
+              is already shouting, and a second shouting badge reads as a sales
+              tactic — which makes a renter trust the first one less. The
+              number is only shown when it is genuinely a crowd; the engine
+              returns nothing below five people. */}
+          {socialProof && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '10px', fontSize: '13px', color: 'var(--hh-text-muted)' }}>
+              <span aria-hidden="true">👀</span>
+              <span>
+                {socialProof.text}
+                {socialProof.urgency && (
+                  <>
+                    {' · '}
+                    <strong style={{ color: socialProof.competitive ? '#B45309' : 'var(--hh-text-2)', fontWeight: 600 }}>
+                      {socialProof.urgency}
+                    </strong>
+                  </>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ── SPLIT LAYOUT ────────────────────────────────── */}
