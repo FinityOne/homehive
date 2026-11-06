@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { isSaved, toggleSaved, onShortlistChange } from '@/lib/shortlist'
+import { trackListingEvent } from '@/lib/listingEvents'
 
 // Heart toggle that saves a listing to the shortlist. Self-contained (inline
 // styles) so it can drop into any card without coordinating CSS. Sits in the
@@ -27,7 +28,14 @@ export default function SaveButton({ slug }: { slug: string }) {
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
-        setSaved(toggleSaved(slug))
+        const nowSaved = toggleSaved(slug)
+        setSaved(nowSaved)
+        // The shortlist lives in localStorage, so a landlord has never been
+        // able to see that anyone saved their home — and a save is the
+        // strongest intent a visitor shows short of writing in. Only the save
+        // is recorded, not the un-save: the question being answered is "how
+        // many people shortlisted this", not "who changed their mind".
+        if (nowSaved) trackListingEvent({ property_slug: slug, event_type: 'save' })
       }}
       style={{
         position: 'absolute', top: 10, right: 10, zIndex: 3,

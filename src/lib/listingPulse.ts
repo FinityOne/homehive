@@ -231,10 +231,20 @@ function dayLabels(key: string): { label: string; full: string } {
  * A row with neither id counts as its own person, which is the honest reading
  * of "we have no idea who this was".
  */
-export function visitorKey(row: PulseViewRow): string {
+export function personKey(row: { id: string; anonymous_id: string | null; session_id: string | null }): string {
   if (row.anonymous_id) return `a:${row.anonymous_id}`
   if (row.session_id) return `s:${row.session_id}`
   return `r:${row.id}`
+}
+
+/**
+ * The same rule for a page view. Kept as its own name because the funnel in
+ * `listingFunnel.ts` applies `personKey` to event rows, and the two must never
+ * drift: a person's impression, click, view and inquiry only stitch into one
+ * journey while both sides agree on what "one person" is.
+ */
+export function visitorKey(row: PulseViewRow): string {
+  return personKey(row)
 }
 
 /**
