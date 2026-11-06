@@ -117,8 +117,13 @@ create policy "leads_update_owner_or_admin"
 -- ── 5. Grants ────────────────────────────────────────────────────────────────
 -- Unchanged in substance — stated here so the table's access is visible in one
 -- place and `npm run verify:grants` keeps seeing it.
--- `anon` is deliberately absent: with no insert policy the grant would be
--- inert anyway, and a logged-out visitor has no business touching this table.
+-- NOTE: `anon` is absent from the grants BELOW, but that did not remove the
+-- `grant all to anon` this table had already been given in
+-- 20261102020000_data_api_grants.sql -- a grant cannot revoke an earlier one.
+-- RLS still held the line (anon reads 0 rows, inserts raise 42501, deletes
+-- affect 0), but the privilege outlived the intent until
+-- 20261105000000_leads_grant_narrowing.sql revoked it. Read that file for the
+-- grants this table actually has.
 grant select, insert, update on public.leads to authenticated;
 grant all on public.leads to service_role;
 
