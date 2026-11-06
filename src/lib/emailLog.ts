@@ -36,6 +36,14 @@ export type EmailType =
   | 'renewal_offer_tenant'
   | 'renewal_response_landlord'
   | 'renewal_window_landlord'
+  // Lease amendments. All transactional: each is caused by somebody acting on a
+  // contract they are a party to, and a tenant cannot opt out of being sent the
+  // document they are being asked to sign.
+  | 'amendment_request_tenant'
+  | 'amendment_reminder_tenant'
+  | 'amendment_signed_tenant'
+  | 'amendment_signed_landlord'
+  | 'amendment_declined_landlord'
 
 /**
  * Record an email we sent.
