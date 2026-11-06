@@ -57,12 +57,13 @@ const SECTIONS: Item[] = [
   { id: 'go-overview',    group: 'Go to', name: 'Overview',    sub: 'Collection, arrears, what is coming', href: '/landlord/financials',             icon: 'bolt',     rank: 0 },
   { id: 'go-portfolio',   group: 'Go to', name: 'Portfolio',   sub: 'Property → lease → plan → tenant',    href: '/landlord/financials/portfolio',   icon: 'building', rank: 1 },
   { id: 'go-collections', group: 'Go to', name: 'Collections', sub: 'Who is behind, and what to do',       href: '/landlord/financials/collections', icon: 'alert',    rank: 2 },
-  { id: 'go-cashflow',    group: 'Go to', name: 'Cash flow',   sub: 'When money arrives, and how reliably', href: '/landlord/financials/cashflow',   icon: 'wallet',   rank: 3 },
-  { id: 'go-insights',    group: 'Go to', name: 'Insights',    sub: 'What the figures add up to',           href: '/landlord/financials/insights',   icon: 'bolt',     rank: 4 },
-  { id: 'go-schedule',    group: 'Go to', name: 'Schedule',    sub: 'What falls due, month by month',      href: '/landlord/financials/schedule',    icon: 'calendar', rank: 5 },
-  { id: 'go-payments',    group: 'Go to', name: 'Payments',    sub: 'What actually arrived',                href: '/landlord/financials/payments',    icon: 'check',    rank: 6 },
-  { id: 'go-statement',   group: 'Go to', name: 'Statement',   sub: 'A printable owner statement',         href: '/landlord/financials/statement',   icon: 'mail',     rank: 7 },
-  { id: 'go-new',         group: 'Go to', name: 'New payment plan', sub: 'Schedule rent against a lease',  href: '/landlord/financials/new',         icon: 'search',   rank: 8 },
+  { id: 'go-trends',      group: 'Go to', name: 'Trends',      sub: 'Health over time — arrears, on-time share', href: '/landlord/financials/trends', icon: 'trend-up', rank: 3 },
+  { id: 'go-cashflow',    group: 'Go to', name: 'Cash flow',   sub: 'When money arrives, and how reliably', href: '/landlord/financials/cashflow',   icon: 'wallet',   rank: 4 },
+  { id: 'go-insights',    group: 'Go to', name: 'Insights',    sub: 'What the figures add up to',           href: '/landlord/financials/insights',   icon: 'bolt',     rank: 5 },
+  { id: 'go-schedule',    group: 'Go to', name: 'Schedule',    sub: 'What falls due, month by month',      href: '/landlord/financials/schedule',    icon: 'calendar', rank: 6 },
+  { id: 'go-payments',    group: 'Go to', name: 'Payments',    sub: 'What actually arrived',                href: '/landlord/financials/payments',    icon: 'check',    rank: 7 },
+  { id: 'go-statement',   group: 'Go to', name: 'Statement',   sub: 'A printable owner statement',         href: '/landlord/financials/statement',   icon: 'mail',     rank: 8 },
+  { id: 'go-new',         group: 'Go to', name: 'New payment plan', sub: 'Schedule rent against a lease',  href: '/landlord/financials/new',         icon: 'search',   rank: 9 },
 ]
 
 const GROUP_ORDER: Item['group'][] = ['Tenants', 'Leases', 'Properties', 'Payment plans', 'Go to']
