@@ -230,10 +230,13 @@ export default function CashflowPage() {
                 <span>
                   Only completed months are compared. A month still running has not finished
                   collecting, so holding it against a finished one would report a crisis every time
-                  you looked before the rent came in.
+                  you looked before the rent came in. This is twelve months fixed —{' '}
+                  <strong>Trends</strong> carries the same rate over any span, beside arrears and
+                  the cumulative gap.
                 </span>
-                <Link className="btn-quiet sm" href="/landlord/financials/schedule">
-                  Open the schedule →
+                <Link className="btn-secondary sm" href="/landlord/financials/trends">
+                  Health over time
+                  <Glyph name="arrow-right" size={14} />
                 </Link>
               </div>
             </section>

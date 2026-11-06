@@ -40,6 +40,7 @@ const { signals, pulse, reliability } = await import('../src/lib/financialsSigna
 const { forecast } = await import('../src/lib/financialsForecast.ts')
 const { statement, statementCsv, statementMonths } =
   await import('../src/lib/financialsStatement.ts')
+const { history, rangeLabel } = await import('../src/lib/financialsHistory.ts')
 
 const pass = []
 const fail = []
@@ -661,6 +662,155 @@ const LEASE = { id: 'lease-1', start_date: '2026-08-01', end_date: '2027-07-31',
 
   const quiet = statement([stmt], 'prop-st', '2025-01', NOW)
   check('a month with no activity says it is empty', quiet.empty, true)
+}
+
+
+
+// ─── 12. HEALTH OVER TIME ───────────────────────────────────────────────────
+//
+// The month-end arrears line is the only genuinely new arithmetic in the
+// trends work, and a confidently wrong balance history would be worse than no
+// chart at all. These assertions fix it to a scenario worked by hand.
+//
+// One lease billing $800 on the 1st of Aug, Sep, Oct and Nov, with today being
+// 5 November 2026:
+//
+//   Aug  paid on the day                     → on time
+//   Sep  unpaid until 10 October             → arrived 39 days late
+//   Oct  never paid                          → overdue
+//   Nov  never paid                          → overdue
+//
+// Worked by hand, the balance at each month end is:
+//
+//   31 Aug   $0      Aug billed, Aug paid
+//   30 Sep   $800    Sep billed and not yet paid (the payment lands in Oct)
+//   31 Oct   $800    Sep cleared on the 10th, Oct now outstanding instead
+//    5 Nov   $1,600  Oct and Nov both outstanding
+{
+  const hist = plan({
+    id: 'plan-h2', lease_id: 'lease-h2', name: 'History flat',
+    lease: { id: 'lease-h2', start_date: '2026-08-01', end_date: '2027-07-31', rent_amount: 800 },
+    property: { id: 'prop-h2', name: '9 Oak', slug: '9-oak' },
+    property_id: 'prop-h2',
+    tenants: [payer({ id: 't-h2', plan_id: 'plan-h2', name: 'Hana' })],
+    scheduled_payments: [
+      rent({ id: 'h2-aug', plan_tenant_id: 't-h2', due_date: '2026-08-01', status: 'paid', paid_amount: 800, paid_date: '2026-08-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'h2-sep', plan_tenant_id: 't-h2', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-10-10', payment_method: 'ach', recorded_by: 'tenant', late_fee_paid: 25 }),
+      rent({ id: 'h2-oct', plan_tenant_id: 't-h2', due_date: '2026-10-01' }),
+      rent({ id: 'h2-nov', plan_tenant_id: 't-h2', due_date: '2026-11-01' }),
+    ],
+  })
+
+  const charges = allCharges([hist], NOW)
+  const h = history(charges, 'all', NOW)
+  const at = k => h.months.find(m => m.key === k)
+
+  // ── The window ──
+  check('"all time" starts at the first month billed', h.months[0].key, '2026-08')
+  check('and ends at the current month', h.months[h.months.length - 1].key, '2026-11')
+  check('a fixed range returns exactly that many months',
+    history(charges, '6m', NOW).months.length, 6)
+  check('two years returns 24', history(charges, '24m', NOW).months.length, 24)
+  check('and a fixed range ends on the current month',
+    history(charges, '6m', NOW).months[5].key, '2026-11')
+
+  // ── The three-way partition. This identity is what lets the stacked bar be
+  //    drawn at all: hiding or mis-summing a part would make the stack a lie
+  //    about what it is a part of. ──
+  check('every month partitions exactly into on-time + late + unpaid',
+    h.months.every(m => Math.round((m.onTime + m.late + m.unpaid) * 100) / 100 === m.billed),
+    true)
+  check('August arrived on time', [at('2026-08').onTime, at('2026-08').late, at('2026-08').unpaid], [800, 0, 0])
+  check('September arrived late, not on time', [at('2026-09').onTime, at('2026-09').late], [0, 800])
+  check('October never arrived', [at('2026-10').unpaid, at('2026-10').collected], [800, 0])
+
+  // ── The reconstructed balance, against the hand-worked figures above ──
+  check('31 Aug: nothing outstanding',  at('2026-08').arrearsAtEnd, 0)
+  check('30 Sep: September is owed',    at('2026-09').arrearsAtEnd, 800)
+  check('31 Oct: September cleared, October owed instead', at('2026-10').arrearsAtEnd, 800)
+  check('5 Nov: October and November both owed', at('2026-11').arrearsAtEnd, 1600)
+  check('the current month is measured to today, not to month end',
+    at('2026-11').arrearsAtEnd, 1600)
+
+  // Scaled to the size of the portfolio, which is what makes it readable.
+  check('November is carrying two months of billing', at('2026-11').monthsOutstanding, 2)
+  check('August was carrying none', at('2026-08').monthsOutstanding, 0)
+
+  // ── Cumulative ──
+  check('cumulative billed is a running total', h.months.map(m => m.cumBilled), [800, 1600, 2400, 3200])
+  check('cumulative collected is too', h.months.map(m => m.cumCollected), [800, 1600, 1600, 1600])
+  check('and it never exceeds billed', h.months.every(m => m.cumCollected <= m.cumBilled), true)
+
+  // ── A rate stays rent against rent, even with a fee collected ──
+  check('September collected its rent in full', at('2026-09').rate, 100)
+  check('the $25 fee is reported beside the rate, not inside it',
+    [at('2026-09').feesCollected, at('2026-09').received], [25, 825])
+  check('on-time share is zero for a month that arrived late', at('2026-09').onTimeShare, 0)
+
+  // ── Window summary ──
+  check('the window totals its billing', h.billed, 3200)
+  check('and its collection', h.collected, 1600)
+  check('the window rate is rent against rent', h.rate, 50)
+  check('the on-time share counts only money that arrived on the day', h.onTimeShare, 25)
+  check('arrears now is the latest month end', h.arrearsNow, 1600)
+  check('compared against the start of the window', h.arrearsThen, 0)
+  check('so the change says ground was lost', h.arrearsChange, 1600)
+  check('and the peak is reported for a reference line', h.arrearsPeak, 1600)
+  check('the best month is named', h.best.key, '2026-08')
+  check('and the worst', h.worst.key, '2026-10')
+  check('the caption states the span', rangeLabel(h), 'August 2026 to November 2026')
+}
+
+// A future month has billed charges and no payments, so computing a balance
+// for it would draw a cliff of imaginary arrears off the right of every chart.
+{
+  const ahead = plan({
+    id: 'plan-h3', lease_id: 'lease-h3', lease: LEASE, name: 'Future flat',
+    tenants: [payer({ id: 't-h3', plan_id: 'plan-h3', name: 'Fay' })],
+    scheduled_payments: [
+      rent({ id: 'h3-now', plan_tenant_id: 't-h3', due_date: '2026-11-01', status: 'paid', paid_amount: 800, paid_date: '2026-11-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'h3-dec', plan_tenant_id: 't-h3', due_date: '2026-12-01' }),
+      rent({ id: 'h3-jan', plan_tenant_id: 't-h3', due_date: '2027-01-01' }),
+    ],
+  })
+  const h = history(allCharges([ahead], NOW), '6m', NOW)
+  const dec = h.months.find(m => m.key === '2026-12')
+  check('a future month is not in the window at all', dec, undefined)
+
+  // ...and when one is in view, it carries no balance.
+  const wide = history(allCharges([ahead], NOW), 'all', NOW)
+  check('"all time" still stops at the current month',
+    wide.months[wide.months.length - 1].key, '2026-11')
+  check('settled months exclude anything unfinished',
+    wide.settledMonths.every(m => m.position !== 'future'), true)
+  check('the current month is included as settled-to-date',
+    wide.settledMonths[wide.settledMonths.length - 1].key, '2026-11')
+}
+
+// Nothing billed at all must not throw, and must not invent a comparison.
+{
+  const h = history([], '12m', NOW)
+  check('an empty history says so', h.empty, true)
+  check('with no months to draw', h.months.length, 0)
+  check('no rate', h.rate, null)
+  check('no arrears figure', h.arrearsNow, null)
+  check('and no change to report', h.arrearsChange, null)
+  check('its caption says there is no history', rangeLabel(h), 'no history yet')
+}
+
+// A portfolio too young to compare against itself must not offer a delta.
+{
+  const young = plan({
+    id: 'plan-h4', lease_id: 'lease-h4', lease: LEASE, name: 'New flat',
+    tenants: [payer({ id: 't-h4', plan_id: 'plan-h4', name: 'Nia' })],
+    scheduled_payments: [
+      rent({ id: 'h4-oct', plan_tenant_id: 't-h4', due_date: '2026-10-01', status: 'paid', paid_amount: 800, paid_date: '2026-10-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'h4-nov', plan_tenant_id: 't-h4', due_date: '2026-11-01' }),
+    ],
+  })
+  const h = history(allCharges([young], NOW), 'all', NOW)
+  check('two months of history is not enough for a window delta', h.arrearsChange, null)
+  check('but the current balance is still reported', h.arrearsNow, 800)
 }
 
 

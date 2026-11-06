@@ -305,6 +305,19 @@ export default function FinancialsOverview({
                 selected={thisMonth}
                 onSelect={key => router.push(`/landlord/financials/schedule?month=${key}`)}
               />
+              {/* This chart answers throughput only — billed against collected.
+                  Whether the portfolio is *gaining or losing ground* needs the
+                  arrears line and a range control, which is a page. */}
+              <div className="card-ft">
+                <span>
+                  Twelve months of throughput. Arrears carried month by month, the cumulative gap,
+                  and any span from six months to all time live in Trends.
+                </span>
+                <Link className="btn-secondary sm" href="/landlord/financials/trends">
+                  Health over time
+                  <Glyph name="arrow-right" size={14} />
+                </Link>
+              </div>
             </section>
 
             {/* ══ 5. WHERE TO GO NEXT ══
@@ -358,6 +371,13 @@ export default function FinancialsOverview({
                 line={`What falls due month by month — ${
                   d.upcoming[1] ? `${monthLabel(d.upcoming[1].key, true)} next` : 'lease by lease'}`}
                 href="/landlord/financials/schedule"
+              />
+              <Dest
+                icon="trend-up"
+                title="Trends"
+                stat={d.rate12 !== null ? `${d.rate12}%` : '—'}
+                line="Arrears carried month by month, on-time share, and the cumulative gap — over any span"
+                href="/landlord/financials/trends"
               />
               <Dest
                 icon="check"
