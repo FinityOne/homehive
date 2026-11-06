@@ -323,6 +323,117 @@ export function history(
   }
 }
 
+// ─── PACE ────────────────────────────────────────────────────────────────────
+
+/**
+ * This month against the same *elapsed portion* of last month.
+ *
+ * A dashboard stat card wants a delta pill, and the honest objection to one
+ * has always been that a running month compared against a finished month
+ * invents a crisis every time a landlord looks before the rent is due: on the
+ * 3rd, "down 94%" is true and useless.
+ *
+ * Comparing like elapsed portions fixes exactly that. On the 6th of November
+ * this compares everything collected 1–6 November against everything
+ * collected 1–6 October. Both sides are six days of a month, so the
+ * comparison is fair, and it is the one a landlord actually makes in their
+ * head: *are we ahead of where we were by now last month?*
+ *
+ * Null when there is no last month to compare against, rather than a zero —
+ * see the module header on never inventing a comparison.
+ */
+export type Pace = {
+  /** Collected so far this month. */
+  toDate: number
+  /** Collected by the same day of last month. */
+  lastToSame: number
+  /** toDate − lastToSame. */
+  delta: number
+  /** The change as a percentage of last month's figure. Null when that was
+   *  zero — a rise from nothing is not a percentage. */
+  deltaPct: number | null
+  /** How far through the month we are, for the caption. */
+  dayOfMonth: number
+  /** 'by the 6th of last month' */
+  basis: string
+  /** False when there is nothing to compare with. */
+  comparable: boolean
+}
+
+export function pace(charges: Charge[], now = new Date()): Pace {
+  const todayStr = billingToday(now)
+  const day = Number(todayStr.slice(8, 10))
+  const thisKey = monthKeyOf(now)
+  const lastKey = shiftMonth(thisKey, -1)
+
+  // The same day number in the previous month, clamped to its length so the
+  // 31st of a long month compares against the last day of a short one rather
+  // than falling off the end of it.
+  const lastEnd = monthRange(lastKey).to!
+  const lastDays = Number(lastEnd.slice(8, 10))
+  const lastCut = `${lastKey}-${String(Math.min(day, lastDays)).padStart(2, '0')}`
+
+  /** Money received in a month, counted only up to a cut-off date. */
+  const upTo = (key: MonthKey, cut: string) => round2(charges.reduce((n, c) => {
+    if (c.dueDate.slice(0, 7) !== key) return n
+    const d = c.settlement?.paidDate
+    return d && d <= cut ? n + c.paid : n
+  }, 0))
+
+  const toDate = upTo(thisKey, todayStr)
+  const lastToSame = upTo(lastKey, lastCut)
+  const anyLast = charges.some(c => c.dueDate.slice(0, 7) === lastKey)
+
+  return {
+    toDate,
+    lastToSame,
+    delta: round2(toDate - lastToSame),
+    deltaPct: lastToSame > 0 ? Math.round(((toDate - lastToSame) / lastToSame) * 100) : null,
+    dayOfMonth: day,
+    basis: `the same point of ${monthLabel(lastKey)}`,
+    comparable: anyLast,
+  }
+}
+
+/**
+ * How today's arrears compare with the last month end.
+ *
+ * Honest for the same reason the trends chart is: a month-end balance is
+ * reconstructible from due dates and settlement dates, so this is arithmetic
+ * rather than a stored snapshot we never took.
+ */
+export type ArrearsMove = {
+  now: number
+  atLastMonthEnd: number | null
+  delta: number | null
+  deltaPct: number | null
+  basis: string
+}
+
+export function arrearsMove(charges: Charge[], now = new Date()): ArrearsMove {
+  const todayStr = billingToday(now)
+  const lastKey = shiftMonth(monthKeyOf(now), -1)
+  const lastEnd = monthRange(lastKey).to!
+
+  const owedAt = (cut: string) => round2(charges
+    .filter(c => c.dueDate <= cut)
+    .reduce((n, c) => n + Math.max(0, c.amount - paidBy(c, cut)), 0))
+
+  const current = owedAt(todayStr)
+  const anyBefore = charges.some(c => c.dueDate <= lastEnd)
+  const before = anyBefore ? owedAt(lastEnd) : null
+
+  return {
+    now: current,
+    atLastMonthEnd: before,
+    delta: before !== null ? round2(current - before) : null,
+    deltaPct: before !== null && before > 0
+      ? Math.round(((current - before) / before) * 100)
+      : null,
+    basis: `the end of ${monthLabel(lastKey)}`,
+  }
+}
+
 /** The window as a sentence, for a chart's caption. */
 export function rangeLabel(h: History): string {
   const live = h.months.filter(m => m.position !== 'future')
