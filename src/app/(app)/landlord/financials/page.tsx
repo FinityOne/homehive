@@ -1,54 +1,45 @@
 'use client'
 
 /**
- * Financials — the overview.
+ * Financials — the overview, as an admin dashboard.
  *
- * ── The fault this version fixes ───────────────────────────────────────────
+ * ── The shape ──────────────────────────────────────────────────────────────
  *
- * The last one carried thirteen blocks: a pulse, eleven signals, six tiles, a
- * trend chart, a rate chart, an aging chart, a payment-behaviour card, a
- * thirteen-week forecast, an action list, a look-ahead strip, a property
- * league table, an expiring-lease list and a footnote. Every one of them was
- * worth having. Together they were still a wall — just a better-looking one
- * than the wall before it. A landlord arriving to ask *is anything wrong*
- * should not have to read a page to find out.
+ * Four bands, read top to bottom, and nothing else:
  *
- * So this screen now holds **five things and stops**:
+ *   1. **Three stat cards.** Collected this month (filled — the one figure
+ *      the screen is about), overdue, and what is coming. Each carries a
+ *      change pill and a way in.
+ *   2. **Two panels.** Properties as a grid of peers on the left; collection
+ *      month by month as a chart on the right.
+ *   3. **What needs attention.** The worst three signals, compact.
+ *   4. **Recent payments.** The familiar admin table — who, what, when, how
+ *      much, and a status dot.
  *
- *   1. **The pulse** — one sentence on the state of the business, and the one
- *      thing to press.
- *   2. **Six numbers** — each a door, each the answer to a question a landlord
- *      actually arrives with.
- *   3. **The worst three signals** — triage, not a report. The rest are a page.
- *   4. **One chart** — collected against billed, twelve months. The single
- *      most useful picture in the product.
- *   5. **Where to go next** — six destinations, each carrying a live figure,
- *      so choosing where to click is itself informed.
+ * Everything heavier lives behind a tab or a destination link: the full signal
+ * list, the cash projection, the trends instrument, the collections work
+ * surface. This screen's job is to be read from a few feet away and tell a
+ * landlord whether to sit down.
  *
- * Everything else moved somewhere it can be read properly:
+ * ── On the change pills ────────────────────────────────────────────────────
  *
- *   • the full signal list      → /financials/insights
- *   • the forecast, the rate
- *     chart and payment
- *     behaviour                 → /financials/cashflow
- *   • aging and the action list → /financials/collections  (already there)
- *   • the property league table
- *     and expiring leases       → /financials/portfolio
+ * A dashboard of this shape wants a percentage on every card, and this product
+ * has refused to fake one throughout — nothing snapshots a portfolio, so
+ * "arrears up 8% this week" is not a number we hold.
  *
- * None of it was deleted and nothing is duplicated — the aging chart and the
- * action list were *already* on collections, and the property table was
- * already on portfolio, so removing them here closed a genuine duplication
- * rather than losing a feature.
+ * Two of the three are honest and now computed properly:
  *
- * ── Rules the figures obey ─────────────────────────────────────────────────
+ *   • **Collected** compares this month *to date* against the same elapsed
+ *     portion of last month — six days against six days. That is the
+ *     comparison a landlord makes in their head, and it is fair in a way that
+ *     a running month against a finished one never is.
+ *   • **Overdue** compares today's balance against the reconstructed balance
+ *     at the last month end, which the trends model already derives from due
+ *     dates and settlement dates.
  *
- * A standing figure (owed, held, contracted, clearing) is bound to no window,
- * because the thing it describes isn't. A period figure names its period:
- * "October 2026", never "this month". A collection rate is rent against rent,
- * so a late fee never enters the numerator. "Owed" always means shortfall
- * **plus** the fee assessed on it. And a delta is only ever drawn between
- * *completed* months — nothing snapshots a portfolio, so "arrears up 8% this
- * week" is a number this product cannot honestly produce and never shows.
+ * The third has no honest basis, so it carries a count instead of a pill.
+ * `TrendPill` cannot render a comparison without being told what it is
+ * against, which is the guard that keeps this true as the page changes.
  */
 
 import { use, useCallback, useEffect, useMemo, useState } from 'react'
@@ -59,17 +50,29 @@ import { useMoney } from '@/lib/useMoney'
 import { buildDashboard } from '@/lib/financialsDashboard'
 import { signals, pulse } from '@/lib/financialsSignals'
 import { forecast } from '@/lib/financialsForecast'
+import { pace, arrearsMove } from '@/lib/financialsHistory'
 import { leaseHref, planHref } from '@/lib/financialsTree'
-import { monthKeyOf, monthLabel } from '@/lib/financialsMonth'
+import { monthLabel, type Charge } from '@/lib/financialsMonth'
+import { METHOD_META } from '@/lib/financialsRollup'
 import MoneyHub from '@/components/finance/MoneyHub'
 import Signals from '@/components/finance/Signals'
 import Glyph, { GLYPH_CSS, type GlyphName } from '@/components/finance/Glyph'
 import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
-import { TrendBars, Meter, VIZ_CSS } from '@/components/finance/Charts'
+import { VIZ_CSS } from '@/components/finance/Charts'
+import ChargeSheet, { settledLabel } from '@/components/finance/ChargeSheet'
+import {
+  StatCard, MiniCard, TrendPill, StatusDot, GradientBars, PANEL_CSS, type BarPoint,
+} from '@/components/finance/Panels'
 import { FINANCE_THEME } from '@/lib/financeTheme'
 
 /** How many signals the landing screen shows before deferring to Insights. */
 const SIGNALS_SHOWN = 3
+/** Rows in the activity table. One screenful, not a log. */
+const ACTIVITY_ROWS = 7
+
+/** Initials for a table avatar or a mini-card badge. */
+const initials = (name: string) =>
+  name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('') || '—'
 
 export default function FinancialsOverview({
   searchParams,
@@ -80,6 +83,9 @@ export default function FinancialsOverview({
   const router = useRouter()
   const { plans, waivers, bounced, loading } = useMoney()
   const [find, setFind] = useState(false)
+  const [detail, setDetail] = useState<Charge | null>(null)
+  /** The chart's window. Matches the reference's Monthly/Yearly control. */
+  const [span, setSpan] = useState<'6m' | '12m'>('12m')
   usePaletteShortcut(useCallback(() => setFind(true), []))
 
   useEffect(() => { document.title = 'Financials — Landlord | HomeHive' }, [])
@@ -88,8 +94,7 @@ export default function FinancialsOverview({
    * The ledger used to open *inside* this page at `?plan=<id>`, and that link
    * is in sent email, in the dashboard, on the lease page and in two redirect
    * stubs. It is a route of its own now, so those links are forwarded rather
-   * than broken — a landlord clicking a six-month-old rent receipt still lands
-   * on the right ledger.
+   * than broken.
    */
   useEffect(() => {
     if (planParam) router.replace(planHref(planParam))
@@ -100,7 +105,37 @@ export default function FinancialsOverview({
   const sigs = useMemo(() => signals(d), [d])
   const p = useMemo(() => pulse(d, sigs), [d, sigs])
   const cash = useMemo(() => forecast(d.charges), [d.charges])
-  const thisMonth = monthKeyOf(new Date())
+  const pc = useMemo(() => pace(d.charges), [d.charges])
+  const am = useMemo(() => arrearsMove(d.charges), [d.charges])
+
+  /** The chart: collected per month, over the chosen span. */
+  const bars = useMemo<BarPoint[]>(() => {
+    const months = d.trend.filter(t => t.position !== 'future')
+    const take = span === '6m' ? 6 : 12
+    return months.slice(-take).map(t => ({
+      key: t.key,
+      label: t.label,
+      longLabel: t.longLabel,
+      value: t.collected,
+      rows: [
+        { label: 'Collected', value: fmtCurrency(t.collected) },
+        { label: 'Billed', value: fmtCurrency(t.billed) },
+        ...(t.stillDue > 0 ? [{ label: 'Still due', value: fmtCurrency(t.stillDue) }] : []),
+        ...(t.rate !== null ? [{ label: 'Rate', value: `${t.rate}%` }] : []),
+      ],
+    }))
+  }, [d.trend, span])
+
+  const chartTotal = bars.reduce((n, b) => n + b.value, 0)
+
+  /** Recent payments, newest first — the activity table. */
+  const activity = useMemo(
+    () => d.charges
+      .filter(c => c.settlement?.paidDate && (c.settlement.net > 0 || c.settlement.lateFee > 0))
+      .sort((a, b) => (b.settlement!.paidDate ?? '').localeCompare(a.settlement!.paidDate ?? ''))
+      .slice(0, ACTIVITY_ROWS),
+    [d.charges],
+  )
 
   if (planParam || leaseParam) {
     return (
@@ -113,18 +148,18 @@ export default function FinancialsOverview({
 
   return (
     <>
-      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{CSS}</style>
+      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{PANEL_CSS}{CSS}</style>
       <div className="fin fin-wrap">
         <MoneyHub
           tab="overview"
           title="Financials"
+          // The pulse is the subtitle. It keeps the one sentence that matters
+          // without spending a whole band of the page on it.
           sub={loading
             ? 'Loading your portfolio…'
             : d.empty
               ? 'Set up a payment plan to start tracking rent.'
-              : `${d.tree.activeLeaseCount} active lease${d.tree.activeLeaseCount !== 1 ? 's' : ''} across ${
-                  d.tree.propertyCount} propert${d.tree.propertyCount !== 1 ? 'ies' : 'y'} · ${
-                  fmtCurrency(d.monthly)}/mo contracted`}
+              : `${p.headline} — ${p.line}`}
           action={{ label: 'New payment plan', href: '/landlord/financials/new' }}
           secondary={d.empty ? undefined : { label: 'Statement', href: '/landlord/financials/statement' }}
           onFind={d.empty ? undefined : () => setFind(true)}
@@ -134,10 +169,9 @@ export default function FinancialsOverview({
 
         {loading ? (
           <>
-            <div className="skeleton" style={{ height: 112, marginBottom: 18 }} />
-            <div className="kpis">
-              {[0, 1, 2, 3].map(i => (
-                <div key={i} className="kpi"><div className="skeleton" style={{ height: 62 }} /></div>
+            <div className="stats">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="statc"><div className="skeleton" style={{ height: 128 }} /></div>
               ))}
             </div>
             <div className="skeleton-hero" />
@@ -154,116 +188,56 @@ export default function FinancialsOverview({
           </div>
         ) : (
           <>
-            {/* ══ 1. THE PULSE ══
-                Tone is a left edge and a faint wash, never a saturated banner:
-                one late tenant should not make a portfolio feel like an
-                emergency. */}
-            <section className={`pulse rise ${p.tone}`}>
-              <div className="pulse-main">
-                <div className="pulse-eyebrow">
-                  <Glyph
-                    name={p.tone === 'critical' ? 'alert' : p.tone === 'warning' ? 'clock' : 'check'}
-                    size={13}
-                  />
-                  {d.thisMonth.label} · as it stands today
-                </div>
-                <h2 className="pulse-head">{p.headline}</h2>
-                <p className="pulse-line">{p.line}</p>
-              </div>
-              {p.action && (
-                <div className="pulse-act">
-                  <Link className="btn-primary" href={p.action.href}>
-                    {p.action.label}
-                    <Glyph name="arrow-right" size={15} />
-                  </Link>
-                </div>
-              )}
-            </section>
+            {/* ══ 1. THREE STAT CARDS ══ */}
+            <div className="stats">
+              <StatCard
+                primary
+                icon="wallet"
+                title={`Collected in ${d.thisMonth.label.split(' ')[0]}`}
+                sub="Rent and charges received so far"
+                value={fmtCurrency(pc.toDate)}
+                pill={pc.comparable
+                  ? <TrendPill pct={pc.deltaPct} basis={pc.basis} goodWhen="up" onDark />
+                  : undefined}
+                foot={pc.comparable
+                  ? `${fmtCurrency(pc.lastToSame)} by the same point of last month`
+                  : `${d.thisMonth.rate ?? 0}% of ${fmtCurrency(d.thisMonth.billed)} billed`}
+                href={`/landlord/financials/schedule?month=${d.thisMonth.key}`}
+                footLabel="See details"
+              />
 
-            {/* ══ 2. SIX NUMBERS, EACH A DOOR ══ */}
-            <div className="kpis">
-              <Link
+              <StatCard
+                icon="alert"
+                tone={d.owed > 0 ? 'bad' : undefined}
+                title="Overdue right now"
+                sub={d.owed > 0
+                  ? `${d.owedPayers} ${d.owedPayers === 1 ? 'person' : 'people'} · worst ${d.worstDaysLate} days late`
+                  : 'Everyone is up to date'}
+                value={d.owed > 0 ? fmtCurrency(d.owed) : 'All clear'}
+                // Against the reconstructed balance at the last month end —
+                // down is good here, so the pill inverts.
+                pill={<TrendPill pct={am.deltaPct} basis={am.basis} goodWhen="down" />}
+                foot={am.atLastMonthEnd !== null
+                  ? `${fmtCurrency(am.atLastMonthEnd)} at the end of last month`
+                  : undefined}
                 href="/landlord/financials/collections"
-                className={`kpi lead${d.owed > 0 ? ' hot' : ''}`}
-              >
-                <div className="kpi-label">Overdue right now</div>
-                <div className={`kpi-value ${d.owed > 0 ? 'bad' : 'good'}`}>
-                  {d.owed > 0 ? fmtCurrency(d.owed) : 'All clear'}
-                </div>
-                <div className="kpi-meta">
-                  {d.owed > 0
-                    ? `${d.owedPayers} ${d.owedPayers === 1 ? 'person' : 'people'} · ${
-                        d.owedCharges} charge${d.owedCharges !== 1 ? 's' : ''} missed · worst ${
-                        d.worstDaysLate} day${d.worstDaysLate !== 1 ? 's' : ''} late`
-                    : 'Every charge that has come due has been settled'}
-                </div>
-                <span className="kpi-go">Work the collections list →</span>
-              </Link>
+                footLabel="Work collections"
+              />
 
-              <Link href={`/landlord/financials/schedule?month=${d.thisMonth.key}`} className="kpi">
-                <div className="kpi-label">Collected in {d.thisMonth.label.split(' ')[0]}</div>
-                <div className="kpi-value">{fmtCurrency(d.thisMonth.collected)}</div>
-                <div className="kpi-meta">
-                  {d.thisMonth.rate !== null
-                    ? `${d.thisMonth.rate}% of ${fmtCurrency(d.thisMonth.billed)} billed`
-                    : 'nothing billed this month'}
-                </div>
-                <Meter pct={d.thisMonth.rate} />
-              </Link>
-
-              <Link href="/landlord/financials/cashflow" className="kpi">
-                <div className="kpi-label">Landing in 30 days</div>
-                <div className="kpi-value">
-                  {d.next30.amount > 0 ? fmtCurrency(d.next30.amount) : 'Nothing'}
-                </div>
-                <div className="kpi-meta">
-                  {d.next30.count > 0
-                    ? `${d.next30.count} charge${d.next30.count !== 1 ? 's' : ''} coming due`
-                    : 'nothing falls due in the next month'}
-                </div>
-                {d.clearing.amount > 0 && (
-                  <div className="kpi-foot">
-                    {fmtCurrency(d.clearing.amount)} already sent and clearing
-                  </div>
-                )}
-              </Link>
-
-              <Link href="/landlord/financials/portfolio" className="kpi">
-                <div className="kpi-label">Contracted rent</div>
-                <div className="kpi-value">{fmtCurrency(d.monthly)}<small>/mo</small></div>
-                <div className="kpi-meta">
-                  {d.tree.activeLeaseCount} active lease{d.tree.activeLeaseCount !== 1 ? 's' : ''} ·
-                  {' '}{d.tree.payers.filter(x => x.status === 'active').length} payers
-                </div>
-              </Link>
-
-              <Link
-                href="/landlord/financials/collections#fees"
-                className={`kpi${d.fees.total > 0 ? ' warm' : ''}`}
-              >
-                <div className="kpi-label">Late fees owed</div>
-                <div className={`kpi-value ${d.fees.total > 0 ? 'warn' : 'good'}`}>
-                  {d.fees.total > 0 ? fmtCurrency(d.fees.total) : 'None'}
-                </div>
-                <div className="kpi-meta">
-                  {d.fees.total > 0
-                    ? `${d.fees.feeCount} fee${d.fees.feeCount !== 1 ? 's' : ''} across ${
-                        d.fees.payerCount} ${d.fees.payerCount === 1 ? 'person' : 'people'}`
-                    : 'nothing assessed and unpaid'}
-                </div>
-              </Link>
-
-              <div className="kpi">
-                <div className="kpi-label">Deposits held</div>
-                <div className="kpi-value">{fmtCurrency(d.depositsHeld)}</div>
-                <div className="kpi-meta">
-                  {d.depositsHeld > 0 ? 'returnable at move-out' : 'none on file'}
-                </div>
-              </div>
+              <StatCard
+                icon="calendar"
+                title="Expected next 90 days"
+                sub="Projected from how each payer actually pays"
+                value={fmtCurrency(cash.expected)}
+                // No honest basis for a percentage here, so it carries a count.
+                foot={cash.atRisk > 0
+                  ? `${fmtCurrency(cash.atRisk)} of it is owed by someone already behind`
+                  : `${d.next30.count} charge${d.next30.count !== 1 ? 's' : ''} fall due in the next 30 days`}
+                href="/landlord/financials/cashflow"
+                footLabel="View cash flow"
+              />
             </div>
 
-            {/* A reminder that bounced looks exactly like a tenant ignoring
-                you, and the landlord is standing here, not in the email log. */}
             {bounced > 0 && (
               <Link className="alarm-bar" href="/landlord/reminders?state=problem">
                 <span>
@@ -274,149 +248,212 @@ export default function FinancialsOverview({
               </Link>
             )}
 
-            {/* ══ 3. THE WORST THREE SIGNALS ══ */}
+            {/* ══ 2. PROPERTIES + THE CHART ══ */}
+            <div className="grid-2">
+              <section className="gpanel">
+                <div className="gpanel-hd">
+                  <div>
+                    <h2 className="gpanel-title">Your properties</h2>
+                    <p className="gpanel-sub">
+                      {d.tree.propertyCount} propert{d.tree.propertyCount !== 1 ? 'ies' : 'y'} ·
+                      {' '}{fmtCurrency(d.monthly)}/mo contracted
+                    </p>
+                  </div>
+                  <Link className="btn-secondary sm" href="/landlord/financials/portfolio">
+                    View all
+                  </Link>
+                </div>
+
+                <div className="minis">
+                  {d.properties.slice(0, 4).map(prop => (
+                    <MiniCard
+                      key={prop.propertyId}
+                      badge={initials(prop.propertyName)}
+                      label={prop.propertyName}
+                      value={fmtCurrency(prop.monthly)}
+                      caption={`${prop.leases.length} lease${prop.leases.length !== 1 ? 's' : ''} · ${
+                        prop.payerCount} payer${prop.payerCount !== 1 ? 's' : ''}`}
+                      status={prop.owed > 0
+                        ? `${fmtCurrency(prop.owed)} overdue`
+                        : prop.activeLeases === 0 ? 'No live lease' : 'Up to date'}
+                      statusTone={prop.owed > 0 ? 'bad' : prop.activeLeases === 0 ? 'idle' : 'good'}
+                      href={`/landlord/financials/portfolio#p-${prop.propertyId}`}
+                    />
+                  ))}
+                </div>
+
+                {d.properties.length > 4 && (
+                  <p className="gpanel-more">
+                    and {d.properties.length - 4} more —{' '}
+                    <Link className="lnk" href="/landlord/financials/portfolio">open the portfolio</Link>
+                  </p>
+                )}
+              </section>
+
+              <section className="gpanel">
+                <div className="gpanel-hd">
+                  <div>
+                    <h2 className="gpanel-title">Collection</h2>
+                    <div className="gpanel-big">{fmtCurrency(chartTotal)}</div>
+                    <p className="gpanel-sub">
+                      received over the last {bars.length} months
+                    </p>
+                  </div>
+                  <div className="seg sm" role="tablist" aria-label="Span">
+                    <button
+                      role="tab" aria-selected={span === '6m'}
+                      className={`seg-btn${span === '6m' ? ' on' : ''}`}
+                      onClick={() => setSpan('6m')}
+                    >6 months</button>
+                    <button
+                      role="tab" aria-selected={span === '12m'}
+                      className={`seg-btn${span === '12m' ? ' on' : ''}`}
+                      onClick={() => setSpan('12m')}
+                    >12 months</button>
+                  </div>
+                </div>
+
+                <GradientBars
+                  points={bars}
+                  onSelect={key => router.push(`/landlord/financials/schedule?month=${key}`)}
+                />
+
+                <div className="gpanel-ft">
+                  <span>Hover a month for the detail; click to open it.</span>
+                  <Link className="btn-quiet sm" href="/landlord/financials/trends">
+                    Health over time →
+                  </Link>
+                </div>
+              </section>
+            </div>
+
+            {/* ══ 3. WHAT NEEDS ATTENTION ══ */}
             <Signals
               signals={sigs}
               limit={SIGNALS_SHOWN}
               moreHref="/landlord/financials/insights"
+              title="Needs your attention"
             />
 
-            {/* ══ 4. ONE CHART ══
-                The rate line that used to sit under this moved to Cash flow,
-                where it belongs beside the behaviour it is explained by. */}
-            <section className="card">
-              <div className="card-hd">
+            {/* ══ 4. RECENT ACTIVITY ══ */}
+            <section className="gpanel flush">
+              <div className="gpanel-hd pad">
                 <div>
-                  <h2 className="card-title">
-                    <Glyph name="trend-up" size={15} />
-                    Billed against collected
-                  </h2>
-                  <p className="muted sm">
-                    {d.rate12 !== null
-                      ? <>Over the last year you collected <b>{fmtCurrency(d.received12)}</b> of{' '}
-                         <b>{fmtCurrency(d.billed12)}</b> billed — {d.rate12}%.</>
-                      : 'Nothing has been billed yet.'}
-                  </p>
+                  <h2 className="gpanel-title">Recent payments</h2>
+                  <p className="gpanel-sub">The last {activity.length} that arrived</p>
                 </div>
-                <span className="card-note">click a month to open it</span>
+                <div className="ptools">
+                  <Link className="btn-secondary sm" href="/landlord/financials/payments">
+                    <Glyph name="search" size={14} />
+                    All payments
+                  </Link>
+                </div>
               </div>
-              <TrendBars
-                points={d.trend}
-                selected={thisMonth}
-                onSelect={key => router.push(`/landlord/financials/schedule?month=${key}`)}
-              />
-              {/* This chart answers throughput only — billed against collected.
-                  Whether the portfolio is *gaining or losing ground* needs the
-                  arrears line and a range control, which is a page. */}
-              <div className="card-ft">
-                <span>
-                  Twelve months of throughput. Arrears carried month by month, the cumulative gap,
-                  and any span from six months to all time live in Trends.
-                </span>
-                <Link className="btn-secondary sm" href="/landlord/financials/trends">
-                  Health over time
-                  <Glyph name="arrow-right" size={14} />
-                </Link>
-              </div>
+
+              {activity.length === 0 ? (
+                <p className="muted pad-b">
+                  Nothing has been paid on these leases yet. Money a tenant pays online lands here
+                  the moment it settles, and anything you record by hand appears too.
+                </p>
+              ) : (
+                <div className="tbl-scroll">
+                  <table className="atable">
+                    <thead>
+                      <tr>
+                        <th>Tenant</th>
+                        <th>Charge</th>
+                        <th>Paid</th>
+                        <th>Method</th>
+                        <th className="num">Amount</th>
+                        <th>Status</th>
+                        <th aria-label="Actions" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activity.map(c => {
+                        const st = c.settlement!
+                        const when = st.paidDate
+                          ? settledLabel({ paidDate: st.paidDate, settledAt: st.settledAt })
+                          : null
+                        const method = st.method ? METHOD_META[st.method] : null
+                        const late = (st.daysLate ?? 0) > 0
+                        return (
+                          <tr key={`${c.kind}-${c.id}`} onClick={() => setDetail(c)}>
+                            <td>
+                              <span className="at-who">
+                                <span className="at-avatar">{initials(c.who ?? 'The lease')}</span>
+                                <span>
+                                  <span className="at-name">{c.who ?? 'The lease'}</span>
+                                  <span className="at-sub">{c.propertyName}</span>
+                                </span>
+                              </span>
+                            </td>
+                            <td>{c.label}</td>
+                            <td>{when ? when.date : '—'}</td>
+                            <td>
+                              {method
+                                ? <span className="mchip sm" style={{ background: method.bg, color: method.color }}>
+                                    {method.short}
+                                  </span>
+                                : <span className="muted sm">—</span>}
+                            </td>
+                            <td className="num">{fmtCurrency(st.net + st.lateFee)}</td>
+                            <td>
+                              <StatusDot tone={late ? 'warn' : 'good'}>
+                                {late ? `${st.daysLate}d late` : 'On time'}
+                              </StatusDot>
+                            </td>
+                            <td className="at-more" aria-hidden="true">⋮</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
 
-            {/* ══ 5. WHERE TO GO NEXT ══
-                Not a nav menu — each card carries a live figure, so choosing
-                where to click is itself informed. This is the part that lets
-                the screen above it stay short. */}
-            <div className="sec-hd">
-              <h2 className="sec-title">Go deeper</h2>
-              <span className="sec-note">every number above has a page behind it</span>
-            </div>
+            {/* ══ WHERE ELSE TO GO ══ */}
             <div className="dests">
-              <Dest
-                icon="alert"
-                tone={d.owed > 0 ? 'critical' : 'good'}
-                title="Collections"
-                stat={d.owed > 0 ? fmtCurrency(d.owed) : 'All clear'}
-                line={d.owed > 0
-                  ? `${d.owedPayers} behind, aged into buckets, with who to call first`
-                  : 'Nobody is behind. Late fees and write-offs live here too.'}
-                href="/landlord/financials/collections"
-              />
-              <Dest
-                icon="wallet"
-                title="Cash flow"
-                stat={cash.expected > 0 ? fmtCurrency(cash.expected) : '—'}
-                line={`Projected over ${cash.weeks.length} weeks, the collection rate, and how reliably each tenant pays`}
-                href="/landlord/financials/cashflow"
-              />
-              <Dest
-                icon="bolt"
-                tone={sigs.some(s => s.severity === 'critical') ? 'critical'
-                  : sigs.some(s => s.severity === 'warning') ? 'warning' : undefined}
-                title="Insights"
-                stat={`${sigs.length}`}
-                line="Everything the figures add up to, ranked by what it costs to ignore"
-                href="/landlord/financials/insights"
-              />
-              <Dest
-                icon="building"
-                title="Portfolio"
+              <Dest icon="building" title="Portfolio"
                 stat={`${d.tree.propertyCount} / ${d.tree.leaseCount}`}
-                line="Property → lease → plan → tenant, with leases ending soon"
-                href="/landlord/financials/portfolio"
-              />
-              <Dest
-                icon="calendar"
-                title="Schedule"
-                stat={d.upcoming[1]
-                  ? fmtCurrency(d.upcoming[1].expected)
-                  : fmtCurrency(d.next30.amount)}
-                line={`What falls due month by month — ${
-                  d.upcoming[1] ? `${monthLabel(d.upcoming[1].key, true)} next` : 'lease by lease'}`}
-                href="/landlord/financials/schedule"
-              />
-              <Dest
-                icon="trend-up"
-                title="Trends"
+                line="Property → lease → plan → tenant"
+                href="/landlord/financials/portfolio" />
+              <Dest icon="trend-up" title="Trends"
                 stat={d.rate12 !== null ? `${d.rate12}%` : '—'}
-                line="Arrears carried month by month, on-time share, and the cumulative gap — over any span"
-                href="/landlord/financials/trends"
-              />
-              <Dest
-                icon="check"
-                title="Payments"
-                stat={fmtCurrency(d.received12)}
-                line="Every payment that arrived, cleared, is clearing, or bounced"
-                href="/landlord/financials/payments"
-              />
+                line="Arrears carried, on-time share, any span"
+                href="/landlord/financials/trends" />
+              <Dest icon="bolt" title="Insights"
+                stat={`${sigs.length}`}
+                line="Everything the figures add up to"
+                href="/landlord/financials/insights" />
+              <Dest icon="calendar" title="Schedule"
+                stat={d.upcoming[1] ? fmtCurrency(d.upcoming[1].expected) : fmtCurrency(d.next30.amount)}
+                line={d.upcoming[1] ? `${monthLabel(d.upcoming[1].key, true)} next` : 'Month by month'}
+                href="/landlord/financials/schedule" />
             </div>
           </>
         )}
       </div>
 
+      {detail && <ChargeSheet charge={detail} onClose={() => setDetail(null)} />}
       <CommandPalette tree={d.tree} open={find} onClose={() => setFind(false)} />
     </>
   )
 }
 
-/**
- * One destination.
- *
- * A figure, not just a label — the whole reason this replaces the sections it
- * replaces is that a landlord can see what is behind a door before opening it.
- */
 function Dest({
-  icon, title, stat, line, href, tone,
+  icon, title, stat, line, href,
 }: {
   icon: GlyphName
   title: string
   stat: string
   line: string
   href: string
-  tone?: 'critical' | 'warning' | 'good'
 }) {
   return (
     <Link className="dest" href={href}>
-      <span className={`gl-plate${tone ? ' ' + tone : ''}`}>
-        <Glyph name={icon} size={15} />
-      </span>
+      <span className="gl-plate"><Glyph name={icon} size={15} /></span>
       <span className="dest-main">
         <span className="dest-title">{title}</span>
         <span className="dest-stat">{stat}</span>
@@ -430,49 +467,54 @@ function Dest({
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
 
-  .fin .kpi-value small { font-size: 0.5em; font-weight: 500; color: var(--ink-3); margin-left: 2px; }
-  .fin .card-title { display: flex; align-items: center; gap: 8px; }
-  .fin .card-title .gl { color: var(--ink-3); }
+  /* The two-up band. 44/56 rather than even: the chart earns the extra room,
+     and a pair of exactly equal panels reads as indecision. */
+  .fin .grid-2 {
+    display: grid; grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
+    gap: 16px; margin-bottom: 18px;
+  }
+  .fin .gpanel.flush { padding: 18px 0 4px; }
+  .fin .gpanel-hd.pad { padding: 0 20px; }
+  .fin .pad-b { padding: 0 20px 18px; }
+  .fin .gpanel-more { font-size: 12px; color: var(--ink-3); margin-top: 12px; }
+  .fin .gpanel-ft {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap; margin-top: 14px; padding-top: 13px;
+    border-top: 1px solid var(--line-2); font-size: 12px; color: var(--ink-3);
+  }
+  .fin .statc + .statc { }
 
-  /* ── Destinations ─────────────────────────────────────────────────────────
-     Three across on a desktop, one on a phone. Deliberately airier than the
-     KPI tiles above: these are a decision about where to go, not a figure to
-     read, and crowding them would reproduce the problem this section exists
-     to solve. */
+  /* ── Destinations, now a quiet footer row rather than a section ──────── */
   .fin .dests {
     display: grid; gap: 12px; margin-bottom: 20px;
-    grid-template-columns: repeat(auto-fit, minmax(278px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   }
   .fin .dest {
-    display: flex; align-items: flex-start; gap: 13px;
+    display: flex; align-items: flex-start; gap: 12px;
     background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-    padding: 17px 18px; text-decoration: none; color: inherit; min-width: 0;
+    padding: 15px 16px; text-decoration: none; color: inherit; min-width: 0;
     transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
   }
   .fin .dest:hover { border-color: #d9d9de; box-shadow: var(--lift-1); }
-  .fin .dest .row-chev { margin-top: 10px; }
+  .fin .dest .row-chev { margin-top: 9px; }
   .fin .dest-main { flex: 1; min-width: 0; }
   .fin .dest-title {
     display: block; font-size: 11.5px; font-weight: 500; text-transform: uppercase;
     letter-spacing: 0.045em; color: var(--ink-3);
   }
   .fin .dest-stat {
-    display: block; font-size: 21px; font-weight: 600; letter-spacing: -0.022em;
-    margin-top: 5px; font-variant-numeric: tabular-nums; line-height: 1.15;
+    display: block; font-size: 19px; font-weight: 600; letter-spacing: -0.022em;
+    margin-top: 4px; font-variant-numeric: tabular-nums; line-height: 1.15;
   }
   .fin .dest-line {
-    display: block; font-size: 12px; color: var(--ink-2); line-height: 1.5;
-    margin-top: 6px; letter-spacing: -0.005em;
+    display: block; font-size: 11.5px; color: var(--ink-2); line-height: 1.45; margin-top: 4px;
   }
 
+  @media (max-width: 1100px) {
+    .fin .grid-2 { grid-template-columns: 1fr; }
+  }
   @media (max-width: 700px) {
-    .fin .pulse { padding: 18px 17px; }
-    .fin .pulse-head { font-size: 22px; }
-    .fin .pulse-act { width: 100%; }
-    .fin .pulse-act .btn-primary { width: 100%; }
     .fin .alarm-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
     .fin .sig-body { padding-left: 14px; }
-    .fin .dest { padding: 15px; }
-    .fin .dest-stat { font-size: 19px; }
   }
 `
