@@ -26,7 +26,22 @@ const TAG: Record<Severity, string> = {
   good:     'Healthy',
 }
 
-export default function Signals({ signals }: { signals: Signal[] }) {
+export default function Signals({
+  signals, limit, moreHref, title = 'What this means',
+}: {
+  signals: Signal[]
+  /**
+   * Show only the worst few.
+   *
+   * The overview passes this. Eleven signals is a page in its own right, and
+   * it now has one — on a landing screen the top three are triage and the rest
+   * are a wall, which is the fault the whole redesign is working against.
+   */
+  limit?: number
+  /** Where the rest of them live, when `limit` is cutting some off. */
+  moreHref?: string
+  title?: string
+}) {
   // The worst row opens itself; everything else waits to be asked.
   const [open, setOpen] = useState<Set<string>>(() => {
     const first = signals[0]
@@ -34,6 +49,8 @@ export default function Signals({ signals }: { signals: Signal[] }) {
   })
 
   if (signals.length === 0) return null
+  const shown = limit ? signals.slice(0, limit) : signals
+  const hidden = signals.length - shown.length
 
   const toggle = (id: string) => setOpen(prev => {
     const next = new Set(prev)
@@ -47,7 +64,7 @@ export default function Signals({ signals }: { signals: Signal[] }) {
     <section className="card">
       <div className="card-hd">
         <div>
-          <h2 className="card-title">What this means</h2>
+          <h2 className="card-title">{title}</h2>
           <p className="muted sm">
             {acting > 0
               ? `${acting} thing${acting !== 1 ? 's' : ''} worth doing something about, worst first.`
@@ -58,7 +75,7 @@ export default function Signals({ signals }: { signals: Signal[] }) {
       </div>
 
       <div className="sigs">
-        {signals.map(s => {
+        {shown.map(s => {
           const isOpen = open.has(s.id)
           return (
             <div key={s.id} className="sig">
@@ -97,6 +114,19 @@ export default function Signals({ signals }: { signals: Signal[] }) {
           )
         })}
       </div>
+
+      {hidden > 0 && moreHref && (
+        <div className="card-ft">
+          <span>
+            {hidden} more worth knowing about, including the quieter ones —
+            uncollected fees, money in flight, a property with no live lease.
+          </span>
+          <Link className="btn-secondary sm" href={moreHref}>
+            See all {signals.length}
+            <Glyph name="arrow-right" size={14} />
+          </Link>
+        </div>
+      )}
     </section>
   )
 }
