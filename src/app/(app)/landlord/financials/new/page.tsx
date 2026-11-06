@@ -793,7 +793,7 @@ export default function NewPaymentPlanPage() {
             {/* Amount mismatch warning */}
             {!amountMatch && leaseRent > 0 && (
               <div style={{ background: '#fdeceb', border: '1px solid #f3c6c2', borderRadius: '8px', padding: '12px 14px', marginBottom: 16, fontSize: '13px', color: '#d13b30' }}>
-                ⚠️ Payer totals ({fmtCurrency(grandTotal)}) don't match the lease rent ({fmtCurrency(leaseRent)}). You can proceed, but verify this is intentional.
+                ⚠️ Payer totals ({fmtCurrency(grandTotal)}) don&rsquo;t match the lease rent ({fmtCurrency(leaseRent)}). You can proceed, but verify this is intentional.
               </div>
             )}
 

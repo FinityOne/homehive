@@ -237,6 +237,18 @@ export const FINANCE_THEME = `
   }
   .fin .hub-tab .seg-badge { background: var(--line-2); color: var(--ink-2); }
   .fin .hub-tab.alarm .seg-badge { background: var(--late-bg); color: var(--late); }
+  /* Five sections plus Reminders does not fit a phone, so the strip scrolls
+     rather than wrapping into two rows that push the page down. */
+  .fin .hub-tabs { overflow-x: auto; scrollbar-width: none; }
+  .fin .hub-tabs::-webkit-scrollbar { display: none; }
+  .fin .hub-tab { flex-shrink: 0; }
+
+  /* Every page in the area puts its own controls in the same place: directly
+     under the tabs, above the first figure. */
+  .fin .hub-filters {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 16px 0 2px;
+  }
 
   /* ── Section headers ──────────────────────────────────────────────────── */
   .fin .sec-hd {
@@ -333,7 +345,277 @@ export const FINANCE_THEME = `
     .fin .hub-tab { padding: 11px 12px 13px; }
     .fin .title { font-size: 25px; }
   }
+
+  /* ── Page shell ───────────────────────────────────────────────────────────
+     One width for the whole area. The old page ran two (940 and 1120), so
+     moving between the rollup and a ledger shifted the layout sideways. */
+  .fin-wrap { max-width: 1180px; margin: 0 auto; padding: 30px 22px 96px; }
+  .fin-wrap.narrow { max-width: 940px; }
+
+  /* ── Big numbers ──────────────────────────────────────────────────────────
+     The overview is read at a glance from arm's length, which means the figure
+     is the largest thing in the tile and everything else is subordinate to it.
+     A "lead" tile is double width, for the one question that is not one of
+     four equal questions. */
+  .fin .kpis {
+    display: grid; gap: 12px; margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
+  }
+  .fin .kpi {
+    position: relative; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; padding: 16px 17px 15px; text-align: left;
+    font-family: inherit; color: inherit; display: block; min-width: 0;
+  }
+  .fin a.kpi, .fin button.kpi {
+    cursor: pointer; text-decoration: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .fin a.kpi:hover, .fin button.kpi:hover {
+    border-color: #d9d9de; box-shadow: 0 2px 10px rgba(0,0,0,0.045);
+  }
+  .fin .kpi.lead { grid-column: span 2; }
+  .fin .kpi-label {
+    font-size: 11.5px; color: var(--ink-3); letter-spacing: 0.005em;
+    text-transform: uppercase; font-weight: 500;
+  }
+  .fin .kpi-value {
+    font-size: 29px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.1;
+    margin-top: 7px; font-variant-numeric: tabular-nums;
+  }
+  .fin .kpi.lead .kpi-value { font-size: 38px; }
+  .fin .kpi-value.good { color: var(--in); }
+  .fin .kpi-value.bad  { color: var(--late); }
+  .fin .kpi-value.warn { color: var(--fee); }
+  .fin .kpi-value.info { color: var(--flight); }
+  .fin .kpi-meta {
+    font-size: 12.5px; color: var(--ink-2); margin-top: 6px;
+    line-height: 1.5; letter-spacing: -0.01em;
+  }
+  .fin .kpi-foot {
+    font-size: 11.5px; color: var(--ink-3); margin-top: 7px;
+    padding-top: 7px; border-top: 1px solid var(--line-2); line-height: 1.5;
+  }
+  /* A tile that is a door says so, quietly, in its own corner. */
+  .fin .kpi-go { font-size: 11.5px; color: var(--accent); margin-top: 8px; display: block; }
+  /* The one tile actively costing money gets a tinted edge — never a full red
+     fill, which would make the whole screen feel like an error. */
+  .fin .kpi.hot  { border-color: var(--late-line); background: #fffafa; }
+  .fin .kpi.warm { border-color: var(--fee-line);  background: #fffcf8; }
+
+  /* ── Cards ────────────────────────────────────────────────────────────────
+     The overview is cards; the detail pages are panels and tables. A card can
+     be a link in its entirety, which a panel never is. */
+  .fin .cards { display: grid; gap: 14px; margin-bottom: 18px; }
+  .fin .cards.two   { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  .fin .cards.three { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .fin .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    padding: 18px 20px; min-width: 0;
+  }
+  .fin .card-hd {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .fin .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
+  .fin .card-note {
+    font-size: 12px; color: var(--ink-3); letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums; text-align: right;
+  }
+  .fin .card-ft {
+    margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--line-2);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap; font-size: 12.5px; color: var(--ink-3); line-height: 1.5;
+  }
+
+  /* ── Filter bar ───────────────────────────────────────────────────────────
+     Detail pages exist to be cut and sliced, so their controls are a
+     first-class row: one line, left to right, in the same place on every page,
+     with the reset appearing only once something is actually filtered. */
+  .fin .filters { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .fin .fsel {
+    appearance: none; background: var(--surface) no-repeat right 9px center;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round'/></svg>");
+    border: 1px solid var(--line); border-radius: 9px; padding: 7px 28px 7px 11px;
+    font-family: inherit; font-size: 13px; color: var(--ink); min-height: 34px;
+    cursor: pointer; letter-spacing: -0.01em; max-width: 240px;
+  }
+  .fin .fsel:hover { border-color: #d9d9de; }
+  .fin .fsel.on { border-color: var(--accent); color: var(--accent-ink); }
+  .fin .fsearch {
+    border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px;
+    font-family: inherit; font-size: 13px; min-height: 34px; min-width: 190px;
+    letter-spacing: -0.01em; background: var(--surface); color: var(--ink);
+  }
+  .fin .fsearch::placeholder { color: var(--ink-3); }
+  .fin .fcount {
+    font-size: 12.5px; color: var(--ink-3); margin-left: auto; letter-spacing: -0.01em;
+  }
+
+  /* ── Tables ───────────────────────────────────────────────────────────────
+     Scanning work — reconciling, chasing, comparing — is a table: one row per
+     thing, the same columns in the same places, sortable on the column being
+     worked. Panels are for drilling; a table is for scanning. */
+  .fin .tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .fin .tbl th, .fin .tbl td { text-align: left; padding: 11px 12px; vertical-align: middle; }
+  .fin .tbl thead th {
+    font-size: 11px; font-weight: 500; color: var(--ink-3); text-transform: uppercase;
+    letter-spacing: 0.03em; border-bottom: 1px solid var(--line); white-space: nowrap;
+    position: sticky; top: 0; background: var(--surface); z-index: 1;
+  }
+  .fin .tbl tbody tr { border-bottom: 1px solid var(--line-2); }
+  .fin .tbl tbody tr:last-child { border-bottom: none; }
+  .fin .tbl tbody tr.click { cursor: pointer; }
+  .fin .tbl tbody tr.click:hover { background: var(--surface-2); }
+  .fin .tbl td.num, .fin .tbl th.num {
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .fin .tbl-sort {
+    background: none; border: none; padding: 0; font: inherit; color: inherit;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+    text-transform: inherit; letter-spacing: inherit;
+  }
+  .fin .tbl-sort:hover { color: var(--ink); }
+  .fin .tbl-sort .caret { font-size: 9px; color: var(--accent); }
+  .fin .tbl-scroll { overflow-x: auto; }
+  /* The cell that holds a name with a line of context under it. */
+  .fin .cell-main { min-width: 0; }
+  .fin .cell-main b { font-weight: 500; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .fin .cell-main em {
+    font-style: normal; display: block; font-size: 11.5px; color: var(--ink-3);
+    margin-top: 2px; letter-spacing: -0.005em;
+  }
+
+  /* ── Tree rows ────────────────────────────────────────────────────────────
+     Property → lease → plan → payer. The indent and the rule down the left are
+     what carry the depth: a landlord three levels in has to be able to see,
+     without reading, that they are inside something. */
+  .fin .tree { display: flex; flex-direction: column; }
+  .fin .tnode { border-bottom: 1px solid var(--line-2); }
+  .fin .tnode:last-child { border-bottom: none; }
+  .fin .trow {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 15px 20px; background: none; border: none; font-family: inherit;
+    color: inherit; cursor: pointer;
+  }
+  .fin .trow:hover { background: var(--surface-2); }
+  .fin .trow-main { flex: 1; min-width: 0; }
+  .fin .trow-name {
+    font-size: 15px; font-weight: 600; letter-spacing: -0.016em;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .fin .trow-sub {
+    font-size: 12.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .fin .trow-figs { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+  .fin .tfig { text-align: right; }
+  .fin .tfig b { font-size: 14.5px; font-weight: 600; display: block; font-variant-numeric: tabular-nums; }
+  .fin .tfig b.owed { color: var(--late); }
+  .fin .tfig b.good { color: var(--in); }
+  .fin .tfig em { font-style: normal; font-size: 11px; color: var(--ink-3); display: block; margin-top: 1px; }
+  .fin .tkids { background: var(--surface-2); border-top: 1px solid var(--line-2); }
+  .fin .tkid { border-left: 2px solid var(--line); margin-left: 20px; }
+
+  /* ── Drawer ───────────────────────────────────────────────────────────────
+     Every detail that is not a page is this: a right-hand sheet over the
+     current view, so a landlord inspecting a charge never loses the list they
+     found it in. */
+  .fin .sheet-wrap { position: fixed; inset: 0; z-index: 90; display: flex; justify-content: flex-end; }
+  .fin .sheet-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.28); }
+  .fin .sheet {
+    position: relative; width: min(560px, 100%); height: 100%; background: var(--surface);
+    display: flex; flex-direction: column; box-shadow: -8px 0 40px rgba(0,0,0,0.14);
+    animation: fin-slide 0.22s cubic-bezier(0.32,0.72,0,1);
+  }
+  @keyframes fin-slide { from { transform: translateX(22px); opacity: 0.6 } to { transform: none; opacity: 1 } }
+  .fin .sheet-hd {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+    padding: 20px 22px 16px; border-bottom: 1px solid var(--line);
+  }
+  .fin .sheet-title {
+    font-size: 18px; font-weight: 600; letter-spacing: -0.02em;
+    display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  }
+  .fin .sheet-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; line-height: 1.55; }
+  .fin .sheet-x {
+    background: none; border: none; font-size: 26px; line-height: 1; color: var(--ink-3);
+    cursor: pointer; padding: 0 2px; flex-shrink: 0;
+  }
+  .fin .sheet-x:hover { color: var(--ink); }
+  .fin .sheet-bd { flex: 1; overflow-y: auto; padding: 4px 22px 22px; }
+  .fin .sheet-sec { padding: 18px 0; border-bottom: 1px solid var(--line-2); }
+  .fin .sheet-sec:last-child { border-bottom: none; }
+  .fin .sheet-sec-hd {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .fin .sheet-sec-hd h3 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+  .fin .sheet-sec-hd span { font-size: 11.5px; color: var(--ink-3); text-align: right; }
+  .fin .sheet-ft {
+    display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+    padding: 14px 22px; border-top: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .fin .sheet-link { margin-top: 10px; }
+  /* A line of a breakdown: label left, money right, and a total that is
+     visibly a total. */
+  .fin .sline {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    padding: 7px 0; font-size: 13.5px; letter-spacing: -0.01em;
+  }
+  .fin .sline-lbl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .fin .sline-note { display: block; width: 100%; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+  .fin .sline-amt { font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+  .fin .sline-amt.owed { color: var(--late); font-weight: 600; }
+  .fin .sline-amt.good { color: var(--in); }
+  .fin .sline.fee { color: var(--fee); }
+  .fin .sline.sub { border-top: 1px solid var(--line-2); margin-top: 4px; padding-top: 9px; font-weight: 500; }
+  .fin .sline.total {
+    border-top: 1px solid var(--line); margin-top: 6px; padding-top: 11px;
+    font-weight: 600; font-size: 14.5px;
+  }
+
+  /* ── Jump nav ───────────────────────────────────────────────────────────── */
+  .fin .jump { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; }
+  .fin .jump a {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+    color: var(--ink-2); text-decoration: none; padding: 5px 11px;
+    border-radius: 980px; background: var(--line-2); letter-spacing: -0.01em;
+  }
+  .fin .jump a:hover { background: var(--accent-bg); color: var(--accent-ink); }
+  .fin .jump-n { font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .fin .jump-n.late { color: var(--late); }
+  .fin .jump-n.fee  { color: var(--fee); }
+
+  .fin .panel-ft {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    flex-wrap: wrap; padding: 13px 22px; border-top: 1px solid var(--line-2);
+    background: var(--surface-2); font-size: 12.5px; color: var(--ink-2); line-height: 1.55;
+  }
+  .fin .pad { padding: 2px 22px 16px; }
+  .fin .num.owed { color: var(--late); font-weight: 600; }
+
+  @media (max-width: 860px) {
+    .fin .kpi.lead { grid-column: span 1; }
+    .fin .kpi.lead .kpi-value { font-size: 31px; }
+  }
+  @media (max-width: 700px) {
+    .fin-wrap { padding: 20px 15px 80px; }
+    .fin .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
+    .fin .kpi { padding: 13px 14px; border-radius: 14px; }
+    .fin .kpi-value { font-size: 24px; }
+    .fin .card { padding: 15px; border-radius: 15px; }
+    .fin .trow { padding: 13px 14px; gap: 9px; }
+    .fin .trow-figs { gap: 13px; }
+    .fin .sheet { width: 100%; }
+    .fin .tkid { margin-left: 10px; }
+  }
 `
 
 /** Where a money screen sits, for the hub header's tabs. */
-export type HubTab = 'overview' | 'payments' | 'reminders'
+export type HubTab =
+  | 'overview'     // is anything wrong
+  | 'portfolio'    // property → lease → plan → payer
+  | 'collections'  // who is behind, and the work on it
+  | 'schedule'     // what falls due when
+  | 'payments'     // what actually arrived
+  | 'reminders'    // what was emailed about it
