@@ -40,7 +40,7 @@
  * must never be able to make a debt disappear.
  */
 
-import { use, useEffect, useMemo, useState } from 'react'
+import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
@@ -49,6 +49,8 @@ import {
   filterPlans, stageCounts, arrears, LEASE_FILTERS, type LeaseFilter,
 } from '@/lib/financialsMonth'
 import MoneyHub from '@/components/finance/MoneyHub'
+import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
+import { GLYPH_CSS } from '@/components/finance/Glyph'
 import { ProgressBar, Meter, VIZ_CSS } from '@/components/finance/Charts'
 import { dayOrdinal } from '@/components/finance/ChargeSheet'
 import { FINANCE_THEME } from '@/lib/financeTheme'
@@ -71,6 +73,8 @@ export default function PortfolioPage({
 }) {
   const sp = use(searchParams)
   const { plans, waivers, bounced, loading } = useMoney()
+  const [find, setFind] = useState(false)
+  usePaletteShortcut(useCallback(() => setFind(true), []))
 
   const [leaseFilter, setLeaseFilter] = useState<LeaseFilter>(
     LEASE_FILTERS.some(f => f.id === sp.leases) ? (sp.leases as LeaseFilter) : 'current',
@@ -170,13 +174,14 @@ export default function PortfolioPage({
 
   return (
     <>
-      <style>{FINANCE_THEME}{VIZ_CSS}{CSS}</style>
+      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{CSS}</style>
       <div className="fin fin-wrap">
         <MoneyHub
           tab="portfolio"
           title="Portfolio"
           sub="Every property, the leases on it, how each lease is billed, and who pays."
           action={{ label: 'New payment plan', href: '/landlord/financials/new' }}
+          onFind={() => setFind(true)}
           alarmCount={bounced}
           dueCount={tree.leases.filter(l => l.owed > 0).length}
           filters={
@@ -330,6 +335,8 @@ export default function PortfolioPage({
           </>
         )}
       </div>
+
+      <CommandPalette tree={tree} open={find} onClose={() => setFind(false)} />
     </>
   )
 }
@@ -759,6 +766,7 @@ function PayerRow({
           </td>
         </tr>
       )}
+
     </>
   )
 }

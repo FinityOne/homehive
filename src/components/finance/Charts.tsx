@@ -38,7 +38,20 @@ import { useId, useState } from 'react'
 import { fmtCurrency } from '@/lib/payments'
 import { METHOD_META, type MethodSlice } from '@/lib/financialsRollup'
 import type { TrendPoint, AgingBucket } from '@/lib/financialsDashboard'
+import type { ForecastWeek } from '@/lib/financialsForecast'
 import type { UpcomingMonth } from '@/lib/financialsMonth'
+
+/**
+ * The narrowest a bar column is allowed to get, in pixels.
+ *
+ * Below roughly this, two things break at once: the bar itself becomes a
+ * hairline that cannot be compared by eye, and the month or date under it
+ * overlaps its neighbours. Twelve months in a phone-width card works out at
+ * 26px a column, which is well past both. So the plots keep this floor and
+ * scroll sideways when the card cannot afford it — a gesture is a much smaller
+ * cost than an unreadable chart.
+ */
+const MIN_COL = 44
 
 /** Money, short, for an axis or a bar cap. `$12.4k`, `$940`. */
 export function shortMoney(n: number): string {
@@ -104,7 +117,18 @@ export function TrendBars({
         </span>
       </div>
 
-      <div className="viz-plot bars" onMouseLeave={() => setTip(null)}>
+      {/* A floor on column width, and a scroll when the card is narrower than
+          that floor needs. Twelve months in a phone-width card is 26px per
+          column — the bars become hairlines and the month labels overlap into
+          mush. Below the floor this scrolls sideways instead of compressing,
+          which keeps every bar readable at the cost of a gesture. On a desktop
+          card the columns are wider than the floor and nothing scrolls. */}
+      <div className="viz-scroll">
+      <div
+        className="viz-plot bars"
+        style={{ minWidth: points.length * MIN_COL }}
+        onMouseLeave={() => setTip(null)}
+      >
         {/* A recessive baseline and a midline: enough to judge a height
             against, not a grid to read values off. Values come from hover. */}
         <span className="viz-grid mid" aria-hidden="true" />
@@ -157,6 +181,7 @@ export function TrendBars({
 
         <Tooltip tip={tip} />
       </div>
+      </div>
 
       {/* Colour is never the only way to read this. */}
       <table className="viz-table" id={tableId}>
@@ -207,32 +232,41 @@ export function RateLine({ points }: { points: TrendPoint[] }) {
           averaging <b>{avg}%</b> over {live.length} months · dashed line is full collection
         </span>
       </div>
-      <div className="viz-plot line" onMouseLeave={() => setTip(null)}>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
-             aria-label={`Collection rate by month, averaging ${avg}%, from ${live[0].longLabel} to ${live[live.length - 1].longLabel}`}>
-          <line x1={PAD} x2={W - PAD} y1={y(100)} y2={y(100)}
+      <div
+        className="viz-plot line"
+        role="img"
+        aria-label={`Collection rate by month, averaging ${avg}%, from ${live[0].longLabel} to ${live[live.length - 1].longLabel}`}
+        onMouseLeave={() => setTip(null)}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+          <line x1={0} x2={W} y1={y(100)} y2={y(100)}
                 stroke="var(--line)" strokeWidth="1" strokeDasharray="4 4"
                 vectorEffect="non-scaling-stroke" />
           <polyline points={pts.join(' ')} fill="none" stroke="var(--ink-2)" strokeWidth="2"
                     strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          {live.map((p, i) => (
-            <circle
-              key={p.key}
-              cx={x(i)} cy={y(p.rate!)} r="4.5"
-              // A month that fell short wears the late tone; a full month is
-              // the ink of the line it sits on. Both carry a value on hover.
-              fill={p.rate! >= 100 ? 'var(--in)' : 'var(--late)'}
-              stroke="var(--surface)" strokeWidth="2" vectorEffect="non-scaling-stroke"
-            />
-          ))}
         </svg>
-        {/* Hit targets wider than the dots, so this is usable with a thumb. */}
+
+        {/* The markers live in CSS, not in the SVG above.
+            The plot is stretched to the card's width while its height is
+            fixed, so the viewBox is scaled unevenly — and anything circular
+            inside it comes out as an ellipse. Positioning them as elements
+            keeps them round at any width, and gives each one a hit target
+            bigger than the dot, which is what makes this usable with a
+            thumb. */}
         <div className="viz-hits">
           {live.map((p, i) => (
             <button
               key={p.key}
               type="button"
               className="viz-hit"
+              // Anchored on the vertex the line actually passes through, not
+              // on the middle of an evenly-divided slot — the first and last
+              // points sit on the edges of the plot, so a flex row of equal
+              // slots would put every dot half a segment adrift of its line.
+              style={{
+                left: `${(x(i) / W) * 100}%`,
+                width: `${Math.max(100 / live.length, 8)}%`,
+              }}
               aria-label={`${p.longLabel}: ${p.rate}% collected`}
               onMouseEnter={() => setTip({
                 x: ((i + 0.5) / live.length) * 100,
@@ -244,7 +278,14 @@ export function RateLine({ points }: { points: TrendPoint[] }) {
                   ...(p.stillDue > 0 ? [{ label: 'Still due', value: fmtCurrency(p.stillDue) }] : []),
                 ],
               })}
-            />
+            >
+              <span
+                // A month that fell short wears the late tone; a full month is
+                // the green of money received.
+                className={`viz-dot ${p.rate! >= 100 ? 'in' : 'late'}`}
+                style={{ top: `${(y(p.rate!) / H) * 100}%` }}
+              />
+            </button>
           ))}
         </div>
         <Tooltip tip={tip} />
@@ -401,7 +442,14 @@ export function AheadStrip({
         <span className="viz-key"><i className="viz-sw due" />Still expected</span>
         <span className="viz-key"><i className="viz-sw collected" />Already paid in</span>
       </div>
-      <div className="viz-plot bars ahead" onMouseLeave={() => setTip(null)}>
+      <div className="viz-scroll">
+      <div
+        className="viz-plot bars ahead"
+        // Wider than the bar floor: each column here carries a money cap above
+        // the bar as well as a label under it.
+        style={{ minWidth: months.length * 62 }}
+        onMouseLeave={() => setTip(null)}
+      >
         <span className="viz-grid base" aria-hidden="true" />
         {months.map((m, i) => (
           <button
@@ -438,6 +486,7 @@ export function AheadStrip({
           </button>
         ))}
         <Tooltip tip={tip} />
+      </div>
       </div>
     </div>
   )
@@ -492,6 +541,218 @@ export function ProgressBar({
   )
 }
 
+// ─── SPARKLINE ───────────────────────────────────────────────────────────────
+
+/**
+ * Twelve months of one measure, inside a KPI tile.
+ *
+ * A single big number says where you are and nothing about where you came
+ * from, which is the difference between a figure and a fact. This is the
+ * cheapest possible fix: no axes, no labels, no interaction — shape only. It
+ * is never the sole carrier of anything, because the tile states the current
+ * value in words right above it.
+ */
+export function Sparkline({
+  values, tone = 'ink', height = 26,
+}: {
+  values: number[]
+  tone?: 'ink' | 'good' | 'bad' | 'warn'
+  height?: number
+}) {
+  const live = values.filter(v => Number.isFinite(v))
+  if (live.length < 3) return null
+
+  const W = 100, H = 30, PAD = 3
+  const max = Math.max(...live)
+  const min = Math.min(...live)
+  const span = max - min || 1
+  const x = (i: number) => (i / (live.length - 1)) * W
+  const y = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2)
+  const pts = live.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+  const tint =
+    tone === 'good' ? 'var(--in)' : tone === 'bad' ? 'var(--late)'
+    : tone === 'warn' ? 'var(--fee)' : 'var(--ink-3)'
+  const last = live.length - 1
+
+  return (
+    <div
+      className="spark2"
+      style={{ height }}
+      role="img"
+      aria-label={`Trend over the last ${live.length} months`}
+    >
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+        <polygon points={`0,${H} ${pts.join(' ')} ${W},${H}`} fill={tint} opacity="0.08" />
+        <polyline
+          points={pts.join(' ')} fill="none" stroke={tint} strokeWidth="1.6"
+          strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      {/* The latest point, so "now" is locatable on a 100px line.
+          Positioned in CSS rather than drawn in the SVG: the plot is stretched
+          to the tile's width, and anything circular inside a stretched viewBox
+          comes out an ellipse. */}
+      <span
+        className="spark2-dot"
+        style={{
+          left: `${(x(last) / W) * 100}%`,
+          top: `${(y(live[last]) / H) * 100}%`,
+          background: tint,
+        }}
+      />
+    </div>
+  )
+}
+
+// ─── DELTA ───────────────────────────────────────────────────────────────────
+
+/**
+ * A change, with its direction — and only where one honestly exists.
+ *
+ * Deliberately narrow. Nothing in this product snapshots a portfolio, so there
+ * is no truthful "arrears up 8% this week" to show, and the component is not
+ * able to render one: it takes a signed number and a basis it must name. If a
+ * caller has no basis, there is no chip, which is the correct outcome rather
+ * than a missing feature.
+ *
+ * `goodWhen` exists because direction is not meaning. A rising collection rate
+ * is good; a rising number of days late is not.
+ */
+export function Delta({
+  value, unit = 'pts', basis, goodWhen = 'up',
+}: {
+  value: number | null
+  unit?: 'pts' | '%' | 'd'
+  /** What it is a change *from*. Shown on hover, so the chip can never be a
+   *  comparison the reader cannot interrogate. */
+  basis: string
+  goodWhen?: 'up' | 'down'
+}) {
+  if (value === null || value === 0) return null
+  const up = value > 0
+  const good = goodWhen === 'up' ? up : !up
+  return (
+    <span
+      className={`delta ${good ? 'good' : 'bad'}`}
+      title={`${up ? 'Up' : 'Down'} ${Math.abs(value)}${unit} ${basis}`}
+    >
+      <span className="delta-arrow" aria-hidden="true">{up ? '▲' : '▼'}</span>
+      {Math.abs(value)}{unit}
+    </span>
+  )
+}
+
+// ─── CASH FORECAST ───────────────────────────────────────────────────────────
+
+/**
+ * When the money is projected to arrive, week by week.
+ *
+ * Four stacked bands, each a status colour used in its reserved meaning:
+ * clearing (in flight, certain), on time, slipping (the payer is reliably
+ * late), and at risk (the payer is already behind). Stacking is right here
+ * because the parts genuinely sum to one quantity — the cash landing that week
+ * — and the question is how much of it you can count on.
+ *
+ * The caveat is rendered, not implied: a projection built from a tenant's own
+ * history is still a projection, and existing arrears are deliberately absent
+ * because nobody knows when overdue money arrives.
+ */
+export function ForecastBars({
+  weeks, overdueUnscheduled,
+}: {
+  weeks: ForecastWeek[]
+  overdueUnscheduled: number
+}) {
+  const [tip, setTip] = useState<Tip>(null)
+  const peak = Math.max(1, ...weeks.map(w => w.expected + w.atRisk))
+  const total = weeks.reduce((n, w) => n + w.expected, 0)
+  const risk = weeks.reduce((n, w) => n + w.atRisk, 0)
+
+  return (
+    <div className="viz">
+      <div className="viz-legend">
+        <span className="viz-key"><i className="viz-sw clearing" />Clearing</span>
+        <span className="viz-key"><i className="viz-sw ontime" />On time</span>
+        <span className="viz-key"><i className="viz-sw slip" />Slipping</span>
+        <span className="viz-key"><i className="viz-sw risk" />At risk</span>
+        <span className="viz-note">
+          <b>{fmtCurrency(total)}</b> expected over {weeks.length} weeks
+        </span>
+      </div>
+
+      <div className="viz-scroll">
+      <div
+        className="viz-plot bars fc"
+        style={{ minWidth: weeks.length * MIN_COL }}
+        onMouseLeave={() => setTip(null)}
+      >
+        <span className="viz-grid base" aria-hidden="true" />
+        {weeks.map((w, i) => {
+          // Percentages are kept unrounded and stacked cumulatively. Rounding
+          // each band on its own lets the errors add up, which shows as a
+          // hairline gap or a 1px overlap between two bands that are supposed
+          // to sit exactly on top of one another.
+          const pc = (v: number) => (v / peak) * 100
+          const base = pc(w.clearing)
+          const afterOnTime = base + pc(w.onTime)
+          const afterSlip = afterOnTime + pc(w.slipping)
+          return (
+            <div
+              key={w.start}
+              className="viz-col"
+              aria-label={`${w.longLabel}: ${fmtCurrency(w.expected)} expected${
+                w.atRisk > 0 ? `, ${fmtCurrency(w.atRisk)} at risk` : ''}`}
+              onMouseEnter={() => setTip({
+                x: ((i + 0.5) / weeks.length) * 100,
+                y: 6,
+                title: w.longLabel,
+                rows: [
+                  ...(w.clearing > 0 ? [{ label: 'Clearing now', value: fmtCurrency(w.clearing) }] : []),
+                  ...(w.onTime > 0 ? [{ label: 'Due, pays on time', value: fmtCurrency(w.onTime) }] : []),
+                  ...(w.slipping > 0 ? [{ label: 'Projected late', value: fmtCurrency(w.slipping) }] : []),
+                  ...(w.atRisk > 0 ? [{ label: 'At risk', value: fmtCurrency(w.atRisk) }] : []),
+                  { label: 'Expected', value: fmtCurrency(w.expected) },
+                ],
+              })}
+            >
+              <span className="viz-stack">
+                {/* Stacked from the baseline up, with a 2px surface gap between
+                    bands so two adjacent colours never merge into one block. */}
+                <span className="fc-band clearing" style={{ height: `${pc(w.clearing)}%`, bottom: 0 }} />
+                <span className="fc-band ontime" style={{ height: `${pc(w.onTime)}%`, bottom: `${base}%` }} />
+                <span className="fc-band slip" style={{ height: `${pc(w.slipping)}%`, bottom: `${afterOnTime}%` }} />
+                <span className="fc-band risk" style={{ height: `${pc(w.atRisk)}%`, bottom: `${afterSlip}%` }} />
+              </span>
+              <span className="viz-x">
+                {/* Every other label. Thirteen dates collide even at the
+                    column floor, and a week is identifiable from its
+                    neighbour. */}
+                {i % 2 === 0 ? w.label : ''}
+              </span>
+            </div>
+          )
+        })}
+        <Tooltip tip={tip} />
+      </div>
+      </div>
+
+      <p className="fc-note">
+        A projection from your own tenants&rsquo; settled history — each charge is shifted by how late
+        that payer usually is.
+        {risk > 0 && (
+          <> <b>{fmtCurrency(risk)}</b> of it is owed by someone already behind, so it is at risk
+          rather than expected.</>
+        )}
+        {overdueUnscheduled > 0 && (
+          <> The <b>{fmtCurrency(overdueUnscheduled)}</b> already overdue is <b>not</b> in this chart:
+          overdue money has no arrival date, and assuming one would be the most misleading figure on
+          the page.</>
+        )}
+      </p>
+    </div>
+  )
+}
+
 /**
  * The stylesheet for everything above.
  *
@@ -519,6 +780,20 @@ export const VIZ_CSS = `
   .fin .viz-note b { color: var(--ink-2); font-weight: 600; }
 
   /* ── Bars ─────────────────────────────────────────────────────────────── */
+  /* The scroll only engages when the plot's own min-width exceeds the card.
+     Momentum scrolling keeps it feeling native on a phone, and the scrollbar
+     is left visible on purpose — a chart that scrolls with no indication that
+     it does is a chart whose right-hand half nobody ever sees. */
+  .fin .viz-scroll {
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    /* Room for the scrollbar so it never sits on top of the x labels. */
+    padding-bottom: 2px;
+    /* A soft edge on the right, so a cut-off bar reads as "more this way". */
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), rgba(0,0,0,0.25) 100%);
+  }
+  .fin .viz-scroll:not(:hover) { scrollbar-color: var(--line) transparent; }
   .fin .viz-plot {
     position: relative; display: flex; align-items: flex-end; gap: 2px;
   }
@@ -593,13 +868,25 @@ export const VIZ_CSS = `
   .fin .viz-tip-r b { font-variant-numeric: tabular-nums; font-weight: 600; opacity: 1; }
 
   /* ── Rate line ────────────────────────────────────────────────────────── */
-  .fin .viz-plot.line { display: block; height: 96px; padding: 0; }
-  .fin .viz-plot.line svg { width: 100%; height: 96px; display: block; overflow: visible; }
-  .fin .viz-hits { position: absolute; inset: 0; display: flex; }
+  .fin .viz-plot.line { display: block; height: 104px; padding: 0; }
+  .fin .viz-plot.line svg { width: 100%; height: 104px; display: block; overflow: visible; }
+  /* Each hit is anchored on its vertex and centred over it, rather than being
+     one cell of an evenly divided row — see the note at the call site. */
+  .fin .viz-hits { position: absolute; inset: 0; }
   .fin .viz-hit {
-    flex: 1 1 0; background: none; border: none; cursor: pointer; border-radius: 6px;
+    position: absolute; top: 0; bottom: 0; transform: translateX(-50%);
+    background: none; border: none; cursor: pointer; border-radius: 6px; padding: 0;
   }
-  .fin .viz-hit:hover { background: rgba(0,0,0,0.03); }
+  .fin .viz-hit:hover { background: rgba(0,0,0,0.035); }
+  /* The marker. An element rather than an SVG circle, because the viewBox
+     above is stretched to the card width and would turn it into an ellipse. */
+  .fin .viz-dot {
+    position: absolute; left: 50%; width: 9px; height: 9px; border-radius: 50%;
+    transform: translate(-50%, -50%); box-shadow: 0 0 0 2px var(--surface);
+  }
+  .fin .viz-dot.in   { background: var(--in); }
+  .fin .viz-dot.late { background: var(--late); }
+  .fin .viz-hit:hover .viz-dot { transform: translate(-50%, -50%) scale(1.25); }
   .fin .viz-xs {
     display: flex; margin-top: 5px;
     font-size: 10.5px; color: var(--ink-3);
@@ -678,9 +965,86 @@ export const VIZ_CSS = `
   .fin .pbar2-fill { display: block; height: 100%; background: var(--in); border-radius: 999px; transition: width 0.4s; }
   .fin .pbar2-mark { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--ink); border-radius: 2px; }
 
+  /* ── Sparkline ────────────────────────────────────────────────────────── */
+  .fin .spark2 { position: relative; display: block; width: 100%; margin-top: 8px; }
+  .fin .spark2 svg { display: block; width: 100%; height: 100%; }
+  .fin .spark2-dot {
+    position: absolute; width: 5px; height: 5px; border-radius: 50%;
+    transform: translate(-50%, -50%); box-shadow: 0 0 0 1.5px var(--surface);
+  }
+
+  /* ── Delta chip ───────────────────────────────────────────────────────── */
+  .fin .delta {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    padding: 1px 7px; border-radius: 980px; letter-spacing: -0.005em;
+    background: var(--idle-bg); color: var(--ink-2); white-space: nowrap;
+  }
+  .fin .delta.good { background: var(--in-bg);   color: var(--in); }
+  .fin .delta.bad  { background: var(--late-bg); color: var(--late); }
+  .fin .delta-arrow { font-size: 8px; line-height: 1; }
+
+  /* ── Cash forecast ────────────────────────────────────────────────────── */
+  .fin .viz-plot.bars.fc { height: 150px; }
+  .fin .fc-band {
+    position: absolute; left: 0; right: 0; display: block; min-height: 0;
+    transition: height 0.35s cubic-bezier(0.4,0,0.2,1);
+  }
+  /* The gap is a surface-coloured ring rather than a margin, so the bands stay
+     mathematically stacked while reading as separate. */
+  .fin .fc-band.clearing { background: var(--flight); }
+  .fin .fc-band.ontime   { background: var(--in);     box-shadow: 0 -2px 0 var(--surface); }
+  .fin .fc-band.slip     { background: var(--fee);    box-shadow: 0 -2px 0 var(--surface); }
+  .fin .fc-band.risk     { background: var(--late);   box-shadow: 0 -2px 0 var(--surface); }
+  /* Rounded cap on whichever band happens to be on top of the stack. */
+  .fin .viz-col:hover .fc-band { filter: saturate(1.15); }
+  .fin .viz-sw.clearing { background: var(--flight); }
+  .fin .viz-sw.ontime   { background: var(--in); }
+  .fin .viz-sw.slip     { background: var(--fee); }
+  .fin .viz-sw.risk     { background: var(--late); }
+  .fin .fc-note {
+    font-size: 11.5px; color: var(--ink-3); line-height: 1.6; margin-top: 14px;
+    letter-spacing: -0.005em; max-width: 92ch;
+  }
+  .fin .fc-note b { color: var(--ink-2); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fin .viz-bar, .fin .fc-band, .fin .meter-fill, .fin .pbar2-fill { transition: none; }
+  }
+
   @media (max-width: 700px) {
-    .fin .viz-plot.bars { height: 140px; }
-    .fin .mix-row { grid-template-columns: 92px 1fr auto; gap: 9px; }
+    .fin .viz-plot.bars { height: 150px; }
+    /* The method rows stop competing for width and stack: a chip, then the
+       bar and figure under it. Three columns inside a phone-width card left
+       the meta line ("31% · 12 payments · $400 clearing") wrapping to three
+       lines of four words. */
+    .fin .mix-row { grid-template-columns: 1fr auto; gap: 6px 10px; }
+    .fin .mix-chip { grid-column: 1 / -1; justify-self: start; padding: 2px 10px; }
     .fin .viz-note { margin-left: 0; width: 100%; }
+    .fin .fc-note { font-size: 11px; }
+  }
+  /* A chart inside one of the two-up cards has about half the room, so the
+     floor bites there first — which is exactly when the scroll should appear. */
+  @media (max-width: 1040px) {
+    .fin .viz-legend { gap: 10px; }
+  }
+
+  /* On paper the charts are ink on white: no hover, no tooltip, and the hidden
+     data table becomes the chart. */
+  @media print {
+    .fin .viz-tip, .fin .viz-hits { display: none !important; }
+    /* Nothing scrolls on paper, so the floor is dropped and the mask with it
+       — otherwise the right-hand column prints faded. */
+    .fin .viz-scroll { overflow: visible !important; mask-image: none !important; }
+    .fin .viz-plot { min-width: 0 !important; }
+    .fin .viz-table {
+      position: static; width: 100%; height: auto; clip-path: none;
+      white-space: normal; border-collapse: collapse; font-size: 10pt;
+    }
+    .fin .viz-table caption { text-align: left; font-weight: 600; padding: 6pt 0; }
+    .fin .viz-table th, .fin .viz-table td {
+      border-bottom: 1px solid #ddd; padding: 3pt 6pt; text-align: left;
+    }
+    .fin .viz-plot { break-inside: avoid; }
   }
 `

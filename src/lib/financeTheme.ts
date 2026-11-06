@@ -609,6 +609,236 @@ export const FINANCE_THEME = `
     .fin .sheet { width: 100%; }
     .fin .tkid { margin-left: 10px; }
   }
+
+  /* ══ THE SECOND PASS ═══════════════════════════════════════════════════════
+     Everything below was added once the structure was right and the area still
+     read flat. Three things were missing: a sense of depth (every surface sat
+     at exactly the same altitude), a single place for the eye to land first,
+     and any way to move without using the mouse. */
+
+  /* ── Elevation ────────────────────────────────────────────────────────────
+     Two levels and no more. A card at rest is defined by its hairline, not by
+     a shadow — money screens with drop shadows everywhere look like a
+     consumer app and read as less trustworthy. The shadow appears on *lift*
+     (hover, the open sheet, the palette), where it means "this is above the
+     page", which is information rather than decoration. */
+  .fin {
+    --lift-1: 0 1px 2px rgba(0,0,0,0.04), 0 2px 10px rgba(0,0,0,0.04);
+    --lift-2: 0 8px 30px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.05);
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .fin a.kpi:hover, .fin button.kpi:hover { box-shadow: var(--lift-1); }
+  .fin .card { transition: box-shadow 0.18s var(--ease), border-color 0.18s var(--ease); }
+
+  /* ── The pulse band ───────────────────────────────────────────────────────
+     The first thing on the overview, and the one thing a landlord who reads
+     nothing else should still leave knowing: the state of the business in a
+     sentence, and the single thing to press.
+
+     It is a band rather than a tile because it is not one of a set — it is the
+     page's thesis. The tone is carried by a left edge and a faint wash, never
+     a saturated fill: a full red banner across the top of a money page makes a
+     portfolio with one late tenant feel like an emergency. */
+  .fin .pulse {
+    position: relative; display: flex; align-items: flex-start; gap: 18px;
+    justify-content: space-between; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--idle); border-radius: 18px;
+    padding: 22px 24px; margin-bottom: 18px; overflow: hidden;
+  }
+  .fin .pulse.calm     { border-left-color: var(--in);   background: linear-gradient(100deg, var(--in-bg) 0%, var(--surface) 42%); }
+  .fin .pulse.warning  { border-left-color: var(--fee);  background: linear-gradient(100deg, var(--fee-bg) 0%, var(--surface) 42%); }
+  .fin .pulse.critical { border-left-color: var(--late); background: linear-gradient(100deg, var(--late-bg) 0%, var(--surface) 42%); }
+  .fin .pulse-main { min-width: 0; flex: 1 1 420px; }
+  .fin .pulse-eyebrow {
+    display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.055em; color: var(--ink-3); margin-bottom: 9px;
+  }
+  .fin .pulse-head {
+    font-size: 26px; font-weight: 600; letter-spacing: -0.026em; line-height: 1.18;
+    font-variant-numeric: tabular-nums;
+  }
+  .fin .pulse.critical .pulse-head { color: var(--late); }
+  .fin .pulse-line {
+    font-size: 14px; color: var(--ink-2); line-height: 1.6; margin-top: 8px;
+    letter-spacing: -0.01em; max-width: 76ch;
+  }
+  .fin .pulse-act { flex-shrink: 0; padding-top: 4px; }
+
+  /* ── Signals ──────────────────────────────────────────────────────────────
+     The judgement layer. Each row is a claim with its evidence folded
+     underneath, because a landlord believes the second one only if the first
+     one showed its working. Collapsed by default: five open signals is the
+     wall this whole redesign was escaping. */
+  .fin .sigs { display: flex; flex-direction: column; }
+  .fin .sig { border-top: 1px solid var(--line-2); }
+  .fin .sig:first-child { border-top: none; }
+  .fin .sig-row {
+    display: flex; align-items: flex-start; gap: 13px; width: 100%; text-align: left;
+    padding: 14px 2px; background: none; border: none; font-family: inherit;
+    color: inherit; cursor: pointer;
+  }
+  .fin .sig-row:hover { background: var(--surface-2); }
+  .fin .sig-main { flex: 1; min-width: 0; }
+  .fin .sig-title {
+    font-size: 14px; font-weight: 500; letter-spacing: -0.012em; line-height: 1.45;
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  }
+  .fin .sig-tag {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 1px 6px; border-radius: 4px; background: var(--idle-bg); color: var(--ink-3);
+  }
+  .fin .sig-tag.critical { background: var(--late-bg);   color: var(--late); }
+  .fin .sig-tag.warning  { background: var(--fee-bg);    color: var(--fee); }
+  .fin .sig-tag.watch    { background: var(--flight-bg); color: var(--flight); }
+  .fin .sig-tag.good     { background: var(--in-bg);     color: var(--in); }
+  .fin .sig-detail {
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin-top: 5px;
+    letter-spacing: -0.005em; max-width: 84ch;
+  }
+  .fin .sig-body { padding: 0 2px 16px 56px; }
+  .fin .sig-ev {
+    list-style: none; margin: 0 0 13px; padding: 0;
+    border-left: 2px solid var(--line); padding-left: 13px;
+  }
+  .fin .sig-ev li {
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.65; padding: 2px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .fin .sig-twist { margin-top: 10px; }
+
+  /* ── Command palette ──────────────────────────────────────────────────────
+     The answer to "I can't find the payment plan" that no amount of hierarchy
+     fixes on its own: a landlord with forty tenancies should type three
+     letters of a tenant's name and be there. Professional tools are
+     keyboard-first; this is the one piece of this area that makes it feel like
+     one. */
+  .fin-cmdk-wrap {
+    position: fixed; inset: 0; z-index: 120; display: flex; justify-content: center;
+    align-items: flex-start; padding: 12vh 18px 18px;
+  }
+  .fin-cmdk-scrim { position: absolute; inset: 0; background: rgba(20,20,22,0.34); }
+  .fin-cmdk {
+    position: relative; width: 100%; max-width: 580px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--lift-2);
+    overflow: hidden; display: flex; flex-direction: column; max-height: 70vh;
+    animation: fin-pop 0.16s var(--ease);
+  }
+  @keyframes fin-pop { from { transform: translateY(-6px) scale(0.99); opacity: 0 } to { transform: none; opacity: 1 } }
+  .fin-cmdk-top {
+    display: flex; align-items: center; gap: 11px; padding: 14px 17px;
+    border-bottom: 1px solid var(--line); color: var(--ink-3);
+  }
+  .fin-cmdk-input {
+    flex: 1; border: none; outline: none; background: none; font-family: inherit;
+    font-size: 16px; color: var(--ink); letter-spacing: -0.012em; min-width: 0;
+  }
+  .fin-cmdk-input::placeholder { color: var(--ink-3); }
+  .fin-cmdk-esc {
+    font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--line);
+    border-radius: 5px; padding: 2px 6px; flex-shrink: 0;
+  }
+  .fin-cmdk-list { overflow-y: auto; padding: 6px; }
+  .fin-cmdk-group {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-3); padding: 10px 11px 5px;
+  }
+  .fin-cmdk-item {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 9px 11px; border: none; background: none; border-radius: 9px;
+    font-family: inherit; color: inherit; cursor: pointer;
+  }
+  .fin-cmdk-item.on { background: var(--accent-bg); }
+  .fin-cmdk-item .ci-main { flex: 1; min-width: 0; }
+  .fin-cmdk-item .ci-name {
+    font-size: 14px; letter-spacing: -0.011em; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .fin-cmdk-item .ci-sub {
+    font-size: 11.5px; color: var(--ink-3); margin-top: 1px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .fin-cmdk-item .ci-fig {
+    font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-2); flex-shrink: 0;
+  }
+  .fin-cmdk-item .ci-fig.owed { color: var(--late); font-weight: 600; }
+  .fin-cmdk-empty { padding: 30px 18px; text-align: center; font-size: 13.5px; color: var(--ink-2); }
+  .fin-cmdk-foot {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px; border-top: 1px solid var(--line-2);
+    font-size: 11px; color: var(--ink-3); background: var(--surface-2);
+  }
+  .fin-cmdk-foot kbd {
+    font-family: inherit; font-size: 10px; border: 1px solid var(--line);
+    border-radius: 4px; padding: 1px 5px; margin-right: 4px; background: var(--surface);
+  }
+  /* The affordance. Without something visible saying the palette exists, a
+     keyboard feature is a secret. */
+  .fin .find-btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 980px;
+    padding: 7px 12px 7px 11px; font-family: inherit; font-size: 13px;
+    color: var(--ink-3); cursor: pointer; letter-spacing: -0.01em; min-height: 34px;
+  }
+  .fin .find-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .fin .find-btn kbd {
+    font-family: inherit; font-size: 10.5px; border: 1px solid var(--line);
+    border-radius: 4px; padding: 1px 5px; color: var(--ink-3);
+  }
+
+  /* ── Reliability bands ────────────────────────────────────────────────────
+     A payer's own payment history, as a word plus a tone. Never a letter grade
+     and never a bare score: "B−" tells a landlord nothing they can act on,
+     where "late on 5 of 6, typically 9 days" tells them everything. */
+  .fin .band {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
+    padding: 2px 9px; border-radius: 980px; white-space: nowrap;
+    background: var(--idle-bg); color: var(--ink-2);
+  }
+  .fin .band.reliable   { background: var(--in-bg);     color: var(--in); }
+  .fin .band.slips      { background: var(--fee-bg);    color: var(--fee); }
+  .fin .band.chronic    { background: var(--fee-bg);    color: var(--fee); }
+  .fin .band.delinquent { background: var(--late-bg);   color: var(--late); }
+  .fin .band-dots { display: inline-flex; gap: 2px; }
+  .fin .band-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.3; }
+  .fin .band-dot.on { opacity: 1; }
+
+  /* ── Motion ───────────────────────────────────────────────────────────────
+     Content arrives rather than appearing. Short, once, and never on a figure
+     that is being read — a money number that animates is a number you cannot
+     trust at a glance. */
+  .fin .rise { animation: fin-rise 0.26s var(--ease) both; }
+  @keyframes fin-rise { from { opacity: 0; transform: translateY(5px) } to { opacity: 1; transform: none } }
+  @media (prefers-reduced-motion: reduce) {
+    .fin .rise, .fin .sheet, .fin-cmdk { animation: none; }
+    .fin * { transition-duration: 0.01ms !important; }
+  }
+
+  /* ── Print ────────────────────────────────────────────────────────────────
+     A landlord's accountant, lender and lawyer all want this on paper, and the
+     browser's default output of a dashboard is unusable. Chrome, tabs, filters
+     and anything interactive come out; the figures and tables stay. */
+  @media print {
+    .fin { --surface: #fff; --surface-2: #fff; }
+    .fin .hub-tabs, .fin .hub-filters, .fin .hub-actions, .fin .jump,
+    .fin .find-btn, .fin .seg, .fin .filters, .fin .sheet-wrap, .fin-cmdk-wrap,
+    .fin .row-chev, .fin .twist, .fin .alarm-bar, .fin .kpi-go { display: none !important; }
+    .fin-wrap { max-width: none; padding: 0; }
+    .fin .card, .fin .panel, .fin .kpi, .fin .pulse {
+      border: 1px solid #ddd !important; box-shadow: none !important;
+      break-inside: avoid; background: #fff !important;
+    }
+    .fin .pulse { border-left-width: 1px !important; }
+    .fin .kpis { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; }
+    .fin .kpi.lead { grid-column: span 2 !important; }
+    .fin .title { font-size: 20pt; }
+    .fin .kpi-value { font-size: 15pt; }
+    .fin .tbl { font-size: 9pt; }
+    .fin .tbl thead th { position: static; }
+    .fin a { text-decoration: none; color: inherit; }
+    /* A URL printed after every link turns a table into noise. */
+    .fin a[href]::after { content: none !important; }
+  }
 `
 
 /** Where a money screen sits, for the hub header's tabs. */

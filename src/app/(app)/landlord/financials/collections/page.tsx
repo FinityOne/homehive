@@ -44,7 +44,7 @@
  * product rather than in the landlord's head.
  */
 
-import { use, useEffect, useMemo, useState } from 'react'
+import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -52,25 +52,32 @@ import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
 import { buildTree, leaseHref, planHref } from '@/lib/financialsTree'
 import {
-  arrears, filterPlans, type ArrearsPayer, type Charge, type LeaseFilter,
+  allCharges, arrears, filterPlans, type ArrearsPayer, type Charge, type LeaseFilter,
 } from '@/lib/financialsMonth'
 import { agingBuckets, bucketOf, type AgingBucket } from '@/lib/financialsDashboard'
+import { reliability, type Reliability } from '@/lib/financialsSignals'
 import {
   lateFeeLedger, withReminderHistory, EMPTY_LEDGER, type LateFeeLedger,
 } from '@/lib/lateFees'
 import { waivedLedger, EMPTY_WAIVED_LEDGER } from '@/lib/lateFeeWaivers'
 import MoneyHub from '@/components/finance/MoneyHub'
+import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
+import { GLYPH_CSS } from '@/components/finance/Glyph'
 import { AgingChart, VIZ_CSS } from '@/components/finance/Charts'
 import ChargeSheet, { StatePill } from '@/components/finance/ChargeSheet'
 import { FINANCE_THEME } from '@/lib/financeTheme'
 
 const LateFeesPanel = dynamic(() => import('@/components/payments/LateFeesPanel'), { ssr: false })
 
-type SortKey = 'amount' | 'age' | 'name' | 'property'
+type SortKey = 'amount' | 'age' | 'history' | 'name' | 'property'
 
 const SORTS: { id: SortKey; label: string }[] = [
   { id: 'amount',   label: 'Most owed' },
   { id: 'age',      label: 'Oldest debt' },
+  // Not the same question as "most owed", and often the more useful one: the
+  // tenant who has been late eleven times is a different conversation from the
+  // one who has slipped once, however much each of them happens to owe today.
+  { id: 'history',  label: 'Worst payment history' },
   { id: 'name',     label: 'Tenant name' },
   { id: 'property', label: 'Property' },
 ]
@@ -105,6 +112,8 @@ export default function CollectionsPage({
   const sp = use(searchParams)
   const router = useRouter()
   const { plans, waivers, bounced, loading, reload } = useMoney()
+  const [find, setFind] = useState(false)
+  usePaletteShortcut(useCallback(() => setFind(true), []))
 
   // Everything in view, including ended leases: a debt does not stop being
   // owed because the tenancy finished, and this is the page where that
@@ -132,6 +141,21 @@ export default function CollectionsPage({
   const tree = useMemo(() => buildTree(scoped, waivers), [scoped, waivers])
   const a = useMemo(() => arrears(scoped), [scoped])
   const buckets = useMemo(() => agingBuckets(a), [a])
+
+  /**
+   * Each payer's own payment history, keyed the same way arrears are.
+   *
+   * This is what turns a list of debts into a list of *people*: $800 from
+   * someone who has paid on time for a year is a reminder, and $800 from
+   * someone late on five of six months is a conversation about the lease.
+   * Arrears alone cannot tell those apart, because the moment either of them
+   * pays they both vanish from it.
+   */
+  const relBy = useMemo(() => {
+    const m = new Map<string, Reliability>()
+    for (const r of reliability(allCharges(scoped))) m.set(r.key, r)
+    return m
+  }, [scoped])
 
   /** Late fees across the whole of each lease — like arrears, bound to no
    *  window, because a fee assessed in August is still unpaid in November.
@@ -176,14 +200,16 @@ export default function CollectionsPage({
       )) return false
       return true
     })
+    const score = (x: ArrearsPayer) => relBy.get(x.key)?.score ?? 100
     const by: Record<SortKey, (x: ArrearsPayer, y: ArrearsPayer) => number> = {
       amount:   (x, y) => y.total - x.total,
       age:      (x, y) => y.maxDaysLate - x.maxDaysLate,
+      history:  (x, y) => score(x) - score(y) || y.total - x.total,
       name:     (x, y) => x.name.localeCompare(y.name),
       property: (x, y) => x.propertyName.localeCompare(y.propertyName) || y.total - x.total,
     }
     return list.slice().sort(by[sort])
-  }, [a, property, age, query, sort])
+  }, [a, property, age, query, sort, relBy])
 
   const shownTotal = rows.reduce((n, p) => n + p.total, 0)
   const filtered = age !== 'all' || property !== '' || query.trim() !== '' || leaseFilter !== 'all'
@@ -211,7 +237,7 @@ export default function CollectionsPage({
 
   return (
     <>
-      <style>{FINANCE_THEME}{VIZ_CSS}{CSS}</style>
+      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{CSS}</style>
       <div className="fin fin-wrap">
         <MoneyHub
           tab="collections"
@@ -221,6 +247,7 @@ export default function CollectionsPage({
                 a.payerCount === 1 ? 'person' : 'people'} — the whole of each lease, not this month.`
             : 'Nobody is behind on rent anywhere in the portfolio.'}
           action={rows.length > 0 ? { label: 'Export this list', onClick: download } : undefined}
+          onFind={() => setFind(true)}
           alarmCount={bounced}
           dueCount={a.payerCount}
           filters={
@@ -441,6 +468,7 @@ export default function CollectionsPage({
                   <PayerBlock
                     key={p.key}
                     payer={p}
+                    rel={relBy.get(p.key)}
                     open={open.has(p.key)}
                     onToggle={() => toggle(p.key)}
                     onInspect={setDetail}
@@ -477,15 +505,19 @@ export default function CollectionsPage({
       </div>
 
       {detail && <ChargeSheet charge={detail} onClose={() => setDetail(null)} />}
+
+      <CommandPalette tree={tree} open={find} onClose={() => setFind(false)} />
     </>
   )
 }
 
 /** One person behind on one tenancy, opening to the charges underneath. */
 function PayerBlock({
-  payer: p, open, onToggle, onInspect, leaseKey,
+  payer: p, rel, open, onToggle, onInspect, leaseKey,
 }: {
   payer: ArrearsPayer
+  /** Their own payment history. Absent only if nothing of theirs has settled. */
+  rel?: Reliability
   open: boolean
   onToggle: () => void
   onInspect: (c: Charge) => void
@@ -518,6 +550,19 @@ function PayerBlock({
             {' '}oldest {fmtDate(p.oldestDue)}
             {p.email && <> · {p.email}</>}
           </div>
+          {/* Their track record, so the landlord knows which conversation this
+              is before they open it. Words plus a tone, never a letter grade. */}
+          {rel && rel.settled > 0 && (
+            <div className="miss-hist">
+              <span className={`band ${rel.band}`}>{rel.bandLabel}</span>
+              <span>{rel.note}</span>
+              {rel.chased === 0 && (
+                <span className="pill warn" title="No reminder has been sent about these charges">
+                  never asked
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="miss-fig">
           <div className="miss-amt">{fmtCurrency(p.total)}</div>
@@ -622,6 +667,10 @@ const CSS = `
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
   .fin .miss-sub { font-size: 12px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+  .fin .miss-hist {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px;
+    font-size: 11.5px; color: var(--ink-3); letter-spacing: -0.005em;
+  }
   .fin .miss-fig { text-align: right; flex-shrink: 0; }
   .fin .miss-amt {
     font-size: 16px; font-weight: 600; color: var(--late); font-variant-numeric: tabular-nums;

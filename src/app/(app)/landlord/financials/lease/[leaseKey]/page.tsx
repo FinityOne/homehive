@@ -35,13 +35,15 @@
  * page reports; the ledger writes.
  */
 
-import { use, useEffect, useMemo, useState } from 'react'
+import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
 import { buildTree, findLease, planHref, type TreePayer } from '@/lib/financialsTree'
 import { allCharges, type Charge } from '@/lib/financialsMonth'
 import MoneyHub from '@/components/finance/MoneyHub'
+import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
+import { GLYPH_CSS } from '@/components/finance/Glyph'
 import { ProgressBar, Meter, MethodMix, VIZ_CSS } from '@/components/finance/Charts'
 import ChargeSheet, { StatePill, dayOrdinal, settledLabel } from '@/components/finance/ChargeSheet'
 import { FINANCE_THEME } from '@/lib/financeTheme'
@@ -67,6 +69,8 @@ export default function LeaseMoneyPage({
   const { leaseKey } = use(params)
   const sp = use(searchParams)
   const { plans, waivers, bounced, loading } = useMoney()
+  const [find, setFind] = useState(false)
+  usePaletteShortcut(useCallback(() => setFind(true), []))
 
   const [filter, setFilter] = useState<ChargeFilter>(
     CHARGE_FILTERS.some(f => f.id === sp.charges) ? (sp.charges as ChargeFilter) : 'all',
@@ -118,6 +122,7 @@ export default function LeaseMoneyPage({
             crumbs={[{ label: 'Financials', href: '/landlord/financials' }, { label: 'Lease' }]}
             title="That lease is not here"
             sub="It may have been removed, or it belongs to another account."
+            onFind={() => setFind(true)}
             alarmCount={bounced}
           />
           <div className="empty">
@@ -137,7 +142,7 @@ export default function LeaseMoneyPage({
 
   return (
     <>
-      <style>{FINANCE_THEME}{VIZ_CSS}{CSS}</style>
+      <style>{FINANCE_THEME}{GLYPH_CSS}{VIZ_CSS}{CSS}</style>
       <div className="fin fin-wrap">
         <MoneyHub
           tab="portfolio"
@@ -522,6 +527,7 @@ export default function LeaseMoneyPage({
       </div>
 
       {detail && <ChargeSheet charge={detail} onClose={() => setDetail(null)} />}
+      <CommandPalette tree={tree} open={find} onClose={() => setFind(false)} />
     </>
   )
 }
@@ -646,6 +652,7 @@ function PayerRow({
           </td>
         </tr>
       )}
+
     </>
   )
 }

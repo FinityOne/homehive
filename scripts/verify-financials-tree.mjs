@@ -35,7 +35,11 @@ const { buildTree, findLease, leaseHref, planHref } =
   await import('../src/lib/financialsTree.ts')
 const { buildDashboard, agingBuckets, trend, behaviour, bucketOf } =
   await import('../src/lib/financialsDashboard.ts')
-const { arrears } = await import('../src/lib/financialsMonth.ts')
+const { arrears, allCharges } = await import('../src/lib/financialsMonth.ts')
+const { signals, pulse, reliability } = await import('../src/lib/financialsSignals.ts')
+const { forecast } = await import('../src/lib/financialsForecast.ts')
+const { statement, statementCsv, statementMonths } =
+  await import('../src/lib/financialsStatement.ts')
 
 const pass = []
 const fail = []
@@ -373,6 +377,292 @@ const LEASE = { id: 'lease-1', start_date: '2026-08-01', end_date: '2027-07-31',
   check('with no rate rather than a zero', d.rate12, null)
   check('and no action list', d.todo.length, 0)
 }
+
+
+// ─── 8. THE JUDGEMENT LAYER ──────────────────────────────────────────────────
+//
+// Signals are the one part of this product that renders an opinion, so the
+// claims worth pinning down are the ones a landlord would act on wrongly.
+{
+  const RULE = {
+    id: 'r', plan_id: 'plan-s', grace_period_days: 0,
+    fee_amount: 5, frequency_days: 1, max_total_fees: 40, created_at: '2026-08-01T00:00:00Z',
+  }
+
+  // A lease ending inside its deposit window, with money owed on it. This is
+  // the most expensive mistake in the domain: once the deposit goes back the
+  // leverage is gone, so it must outrank a larger but open-ended debt.
+  const closing = plan({
+    id: 'plan-s', lease_id: 'lease-s', name: 'Ending flat', late_fee_rule: RULE,
+    lease: { id: 'lease-s', start_date: '2026-01-01', end_date: '2026-12-15', rent_amount: 800 },
+    tenants: [payer({ id: 't-s', plan_id: 'plan-s', name: 'Noor' })],
+    scheduled_payments: [
+      rent({ id: 's-oct', plan_tenant_id: 't-s', due_date: '2026-10-01' }),
+    ],
+    special_payments: [{
+      id: 'sp-dep', plan_id: 'plan-s', plan_tenant_id: 't-s', category: 'security_deposit',
+      label: 'Deposit', amount: 900, due_date: '2026-01-01', status: 'paid',
+      paid_date: '2026-01-01', settled_at: null, submitted_at: null, payment_method: 'card',
+      processing_fee: 0, stripe_payment_intent_id: null, notes: null,
+      reminder_sent_at: null, reminder_count: 0,
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', utility_id: null,
+    }],
+  })
+
+  const d = buildDashboard([closing], [], NOW)
+  const list = signals(d)
+  const ids = list.map(s2 => s2.id)
+
+  check('a closing deposit window is reported', ids.includes('deposit-window-lease-s'), true)
+  const dw = list.find(s2 => s2.id === 'deposit-window-lease-s')
+  check('and is critical, because it has a deadline', dw.severity, 'critical')
+  check('it names the deposit being held', dw.detail.includes('$900'), true)
+  check('overdue-and-never-chased is reported too', ids.includes('never-chased'), true)
+
+  // Severity ordering is the whole point of a ranked list.
+  check('critical signals sort first',
+    list[0].severity, 'critical')
+  // Every signal must be actionable and evidenced, or it is a horoscope.
+  check('every signal carries evidence', list.every(s2 => s2.evidence.length > 0), true)
+  check('every signal links somewhere in the money area',
+    list.every(s2 => s2.action.href.startsWith('/landlord/')), true)
+  check('every signal has a label on its button', list.every(s2 => s2.action.label.length > 0), true)
+
+  // The pulse is the page's one sentence.
+  const pl = pulse(d, list)
+  check('the pulse leads with the money owed', pl.headline.includes('overdue'), true)
+  check('and is toned by the worst signal', pl.tone, 'critical')
+  check('and offers the collections list', pl.action.href, '/landlord/financials/collections')
+}
+
+// A healthy portfolio must say so — a panel that only ever reports problems is
+// one a landlord stops reading.
+{
+  const clean = plan({
+    id: 'plan-h', lease_id: 'lease-h', lease: LEASE, name: 'Good flat',
+    tenants: [payer({ id: 't-h', plan_id: 'plan-h', name: 'Ivy' })],
+    scheduled_payments: [
+      rent({ id: 'h-1', plan_tenant_id: 't-h', due_date: '2026-08-01', status: 'paid', paid_amount: 800, paid_date: '2026-08-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'h-2', plan_tenant_id: 't-h', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-09-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'h-3', plan_tenant_id: 't-h', due_date: '2026-10-01', status: 'paid', paid_amount: 800, paid_date: '2026-10-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'h-4', plan_tenant_id: 't-h', due_date: '2026-12-01' }),
+    ],
+  })
+  const d = buildDashboard([clean], [], NOW)
+  const list = signals(d)
+  check('a clean portfolio gets a positive signal', list.some(s2 => s2.id === 'healthy'), true)
+  check('and no critical ones', list.some(s2 => s2.severity === 'critical'), false)
+  const pl = pulse(d, list)
+  check('the pulse says everyone is up to date', pl.headline, 'Everyone is up to date')
+  check('and is calm', pl.tone, 'calm')
+}
+
+// ─── 9. RELIABILITY ─────────────────────────────────────────────────────────
+//
+// The figure arrears cannot give you: a tenant who always pays, three weeks
+// late, is invisible in every arrears total the moment their money lands.
+{
+  const chronic = plan({
+    id: 'plan-c', lease_id: 'lease-c', lease: LEASE, name: 'Chronic flat',
+    tenants: [
+      payer({ id: 't-late', plan_id: 'plan-c', name: 'Late Larry' }),
+      payer({ id: 't-good', plan_id: 'plan-c', name: 'Prompt Pat' }),
+      payer({ id: 't-new', plan_id: 'plan-c', name: 'New Nia' }),
+    ],
+    scheduled_payments: [
+      // Late on three of four, by 10, 12 and 30 days. Median of the late ones
+      // is 12 — the mean would be 17 and would describe nobody.
+      rent({ id: 'c-1', plan_tenant_id: 't-late', due_date: '2026-07-01', status: 'paid', paid_amount: 800, paid_date: '2026-07-11', payment_method: 'ach', recorded_by: 'tenant' }),
+      rent({ id: 'c-2', plan_tenant_id: 't-late', due_date: '2026-08-01', status: 'paid', paid_amount: 800, paid_date: '2026-08-13', payment_method: 'ach', recorded_by: 'tenant' }),
+      rent({ id: 'c-3', plan_tenant_id: 't-late', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-10-01', payment_method: 'ach', recorded_by: 'tenant' }),
+      rent({ id: 'c-4', plan_tenant_id: 't-late', due_date: '2026-10-01', status: 'paid', paid_amount: 800, paid_date: '2026-10-01', payment_method: 'ach', recorded_by: 'tenant' }),
+      rent({ id: 'c-5', plan_tenant_id: 't-good', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-09-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'c-6', plan_tenant_id: 't-good', due_date: '2026-10-01', status: 'paid', paid_amount: 800, paid_date: '2026-09-28', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'c-7', plan_tenant_id: 't-new', due_date: '2026-12-01' }),
+    ],
+  })
+
+  const charges = allCharges([chronic], NOW)
+  const rel = reliability(charges)
+  const byName = new Map(rel.map(r => [r.name, r]))
+
+  check('a chronically late payer is banded as such', byName.get('Late Larry').band, 'chronic')
+  check('and the typical lateness is the median, not the mean',
+    byName.get('Late Larry').medianDaysLate, 12)
+  check('the worst month is kept separately', byName.get('Late Larry').worstDaysLate, 30)
+  check('late on three of four', [byName.get('Late Larry').late, byName.get('Late Larry').settled], [3, 4])
+  check('a prompt payer is banded reliable', byName.get('Prompt Pat').band, 'reliable')
+  check('paying early is not late', byName.get('Prompt Pat').late, 0)
+  check('and their note says so', byName.get('Prompt Pat').note.includes('on time'), true)
+  check('a payer with no history is not ranked as perfect',
+    byName.get('New Nia').score < byName.get('Prompt Pat').score, true)
+  check('and says there is no pattern yet',
+    byName.get('New Nia').note.includes('no pattern'), true)
+  check('the worst record sorts first', rel[0].name, 'Late Larry')
+}
+
+// Owing money today outranks any history: that is a different conversation.
+{
+  const owing = plan({
+    id: 'plan-o', lease_id: 'lease-o', lease: LEASE, name: 'Owing flat',
+    tenants: [payer({ id: 't-o', plan_id: 'plan-o', name: 'Owen' })],
+    scheduled_payments: [
+      rent({ id: 'o-1', plan_tenant_id: 't-o', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-09-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'o-2', plan_tenant_id: 't-o', due_date: '2026-10-01' }),
+    ],
+  })
+  const rel = reliability(allCharges([owing], NOW))
+  check('a payer in arrears is banded delinquent', rel[0].band, 'delinquent')
+  check('even with a clean settled record', rel[0].late, 0)
+  check('and the band is in words, not only a colour', rel[0].bandLabel, 'In arrears now')
+}
+
+// ─── 10. THE CASH PROJECTION ────────────────────────────────────────────────
+//
+// The most dangerous number this product could print is a forecast that
+// quietly assumes overdue money arrives. These assertions exist to stop that.
+{
+  const RULE = null
+  const fc = plan({
+    id: 'plan-fc', lease_id: 'lease-fc', lease: LEASE, name: 'Forecast flat', late_fee_rule: RULE,
+    tenants: [
+      payer({ id: 't-slip', plan_id: 'plan-fc', name: 'Slips Sam' }),
+      payer({ id: 't-ontime', plan_id: 'plan-fc', name: 'Onthe Dot' }),
+      payer({ id: 't-behind', plan_id: 'plan-fc', name: 'Behind Bea' }),
+    ],
+    scheduled_payments: [
+      // Sam is reliably 8 days late: two settled charges, both 8 days late.
+      rent({ id: 'f-s1', plan_tenant_id: 't-slip', due_date: '2026-08-01', status: 'paid', paid_amount: 800, paid_date: '2026-08-09', payment_method: 'ach', recorded_by: 'tenant' }),
+      rent({ id: 'f-s2', plan_tenant_id: 't-slip', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-09-09', payment_method: 'ach', recorded_by: 'tenant' }),
+      // ...and owes one due 15 Nov, which should land in the week of the 23rd.
+      rent({ id: 'f-s3', plan_tenant_id: 't-slip', due_date: '2026-11-15' }),
+
+      // Dot has two on-time settlements and one due 15 Nov, which stays put.
+      rent({ id: 'f-d1', plan_tenant_id: 't-ontime', due_date: '2026-08-01', status: 'paid', paid_amount: 800, paid_date: '2026-08-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'f-d2', plan_tenant_id: 't-ontime', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-09-01', payment_method: 'card', recorded_by: 'tenant' }),
+      rent({ id: 'f-d3', plan_tenant_id: 't-ontime', due_date: '2026-11-15' }),
+
+      // Bea is already overdue, and also has a future charge.
+      rent({ id: 'f-b1', plan_tenant_id: 't-behind', due_date: '2026-10-01' }),
+      rent({ id: 'f-b2', plan_tenant_id: 't-behind', due_date: '2026-11-15' }),
+
+      // An ACH debit in flight: the tenant has sent it, so it is the one
+      // certainty in the whole projection.
+      rent({ id: 'f-clear', plan_tenant_id: 't-ontime', due_date: '2026-11-01', status: 'processing', paid_amount: 0, payment_method: 'ach', recorded_by: 'tenant' }),
+    ],
+  })
+
+  const charges = allCharges([fc], NOW)
+  const f = forecast(charges, 13, NOW)
+
+  // The central promise.
+  check('existing arrears never enter a week',
+    f.weeks.every(w => w.onTime + w.slipping + w.clearing >= 0), true)
+  check('overdue money is reported apart, unscheduled', f.overdueUnscheduled, 800)
+  check('and is not counted as expected',
+    f.expected < f.contracted + 800, true)
+
+  // Weeks run from today: 5 Nov is week 0, 12 Nov week 1, 19 Nov week 2.
+  check('the window starts today', f.weeks[0].start, '2026-11-05')
+  check('and runs thirteen weeks', f.weeks.length, 13)
+
+  const wk = (d2) => f.weeks.findIndex(w => d2 >= w.start && d2 <= w.end)
+  const onTimeWeek = wk('2026-11-15')
+  const slipWeek = wk('2026-11-23')
+  check('a punctual payer is projected on the due date',
+    f.weeks[onTimeWeek].onTime, 800)
+  check('a reliably late payer is projected late',
+    f.weeks[slipWeek].slipping, 800)
+  check('and that is a different week from the due date',
+    slipWeek > onTimeWeek, true)
+
+  check('money in flight lands in the first week', f.weeks[0].clearing, 800)
+  check('a charge owed by someone already behind is at risk, not expected',
+    f.weeks[onTimeWeek].atRisk, 800)
+  check('at risk is excluded from the week it sits in',
+    f.weeks[onTimeWeek].expected, 800)
+  check('expected is clearing plus on-time plus slipping',
+    f.expected,
+    Math.round(f.weeks.reduce((n, w) => n + w.clearing + w.onTime + w.slipping, 0) * 100) / 100)
+  check('slippage is never negative', f.slippage >= 0, true)
+  check('payers modelled from their own history are counted', f.modelledPayers, 1)
+
+  const empty = forecast([], 13, NOW)
+  check('an empty portfolio forecasts nothing', empty.empty, true)
+  check('and offers no weeks to misread', empty.weeks.length, 0)
+}
+
+// ─── 11. THE OWNER STATEMENT ────────────────────────────────────────────────
+//
+// The only document here that leaves the building, and the only surface that
+// has to balance. A statement that silently does not add up is worse than no
+// statement: it will be forwarded to an accountant who trusts it.
+{
+  const stmt = plan({
+    id: 'plan-st', lease_id: 'lease-st', lease: LEASE, name: 'Statement flat',
+    property: { id: 'prop-st', name: '42 Mill Ave', slug: '42-mill-ave' },
+    property_id: 'prop-st',
+    tenants: [payer({ id: 't-st', plan_id: 'plan-st', name: 'Sara' })],
+    scheduled_payments: [
+      // September's rent went unpaid until 10 October — so it is October's
+      // opening arrears AND October's recovery, which is the case a naive
+      // statement gets wrong.
+      rent({ id: 'st-sep', plan_tenant_id: 't-st', due_date: '2026-09-01', status: 'paid', paid_amount: 800, paid_date: '2026-10-10', payment_method: 'ach', recorded_by: 'tenant' }),
+      rent({ id: 'st-oct', plan_tenant_id: 't-st', due_date: '2026-10-01' }),
+    ],
+    special_payments: [{
+      id: 'st-dep', plan_id: 'plan-st', plan_tenant_id: 't-st', category: 'security_deposit',
+      label: 'Deposit', amount: 500, due_date: '2026-10-05', status: 'paid',
+      paid_date: '2026-10-05', settled_at: null, submitted_at: null, payment_method: 'card',
+      processing_fee: 0, stripe_payment_intent_id: null, notes: null,
+      reminder_sent_at: null, reminder_count: 0,
+      created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', utility_id: null,
+    }],
+  })
+
+  const s2 = statement([stmt], 'prop-st', '2026-10', NOW)
+
+  check('the statement names the property', s2.propertyName, '42 Mill Ave')
+  check('and the period by name', s2.monthLabel, 'October 2026')
+  check('and carries the day it was produced', s2.producedOn, '2026-11-05')
+
+  // The identity: opening + billed − collected − recovered = closing.
+  check('September is October’s opening arrears', s2.openingArrears, 800)
+  check('and paying it in October is recovery', s2.recovered, 800)
+  check('October’s own rent is what was billed', s2.billed, 800)
+  check('nothing was collected against October itself', s2.collected, 0)
+  check('so the closing balance is October’s unpaid rent', s2.closingArrears, 800)
+  check('and the statement balances', s2.balances, true)
+  check('the identity actually holds',
+    Math.round((s2.openingArrears + s2.billed - s2.collected - s2.recovered) * 100) / 100,
+    s2.closingArrears)
+
+  // A deposit is not income. Rolling it into collected rent is the most common
+  // error in small-landlord bookkeeping and this must never do it.
+  check('a deposit is not billed rent', s2.billed, 800)
+  check('nor collected rent', s2.collected, 0)
+  check('it is reported in its own figure', s2.depositsReceived, 500)
+  check('and as a held liability', s2.depositsHeld, 500)
+
+  // A rate on the page stays rent against rent.
+  check('the collection rate ignores deposits and fees', s2.rate, 0)
+
+  const csv = statementCsv(s2)
+  check('the export names the property', csv.includes('42 Mill Ave'), true)
+  check('and carries the closing balance', csv.includes('Closing arrears'), true)
+  check('and keeps deposits out of the rent block',
+    csv.includes('Deposits held (liability)'), true)
+
+  const months = statementMonths([stmt], 'prop-st', NOW)
+  check('the month picker offers the months with activity',
+    months.includes('2026-09') && months.includes('2026-10'), true)
+  check('and always offers the current one', months.includes('2026-11'), true)
+  check('newest first', months[0], months.slice().sort((a, b) => b.localeCompare(a))[0])
+
+  const quiet = statement([stmt], 'prop-st', '2025-01', NOW)
+  check('a month with no activity says it is empty', quiet.empty, true)
+}
+
 
 console.log(`${pass.length} passed`)
 for (const p of pass) console.log('  ok   ' + p)

@@ -46,6 +46,7 @@
  */
 
 import Link from 'next/link'
+import Glyph from '@/components/finance/Glyph'
 import { type HubTab } from '@/lib/financeTheme'
 
 export type Crumb = { label: string; href?: string }
@@ -77,7 +78,7 @@ const TABS: TabSpec[] = [
 ]
 
 export default function MoneyHub({
-  tab, title, sub, crumbs, action, secondary, alarmCount, dueCount, meta, filters,
+  tab, title, sub, crumbs, action, secondary, onFind, alarmCount, dueCount, meta, filters,
 }: {
   /** Which money screen this is. Null hides the tabs — used by a form, where
    *  tabbing away mid-edit would lose what the landlord typed. */
@@ -95,6 +96,13 @@ export default function MoneyHub({
   alarmCount?: number
   /** How many people are behind — carried on Collections from anywhere. */
   dueCount?: number
+  /**
+   * Opens the ⌘K palette. Passed by every screen that has a portfolio to
+   * search, and rendered as a visible control — a keyboard feature nobody can
+   * see is a secret, and the landlords who most need "find Aleeya" are the
+   * least likely to guess a shortcut.
+   */
+  onFind?: () => void
   /** A short status line under the title — lease term, filter in force. */
   meta?: React.ReactNode
   /** The view's own filter row, rendered under the tabs so every page in the
@@ -122,8 +130,15 @@ export default function MoneyHub({
           {sub && <p className="sub">{sub}</p>}
           {meta}
         </div>
-        {(action || secondary) && (
+        {(action || secondary || onFind) && (
           <div className="hub-actions">
+            {onFind && (
+              <button className="find-btn" onClick={onFind} title="Find a tenant, lease, property or plan">
+                <Glyph name="search" size={15} />
+                Find anything
+                <kbd>⌘K</kbd>
+              </button>
+            )}
             {secondary && (
               secondary.href
                 ? <Link className="btn-secondary" href={secondary.href}>{secondary.label}</Link>
