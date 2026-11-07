@@ -66,7 +66,10 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
   landlord: [
     {
       items: [
-        { href: '/landlord/dashboard', label: 'Overview', icon: 'grid', exact: true, primary: true },
+        // Not `exact`: the overview's depth pages (traffic report, analytics,
+        // portfolio) live under it, and the sidebar should keep saying where
+        // the landlord is rather than going dark the moment they go deeper.
+        { href: '/landlord/dashboard', label: 'Overview', icon: 'grid', primary: true },
       ],
     },
     {

@@ -21,14 +21,14 @@
  * to show an event count beside a volume count.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
 import { PULSE_WINDOWS, DEFAULT_PULSE_WINDOW, MARKET_INQUIRY_RATE } from '@/lib/listingPulse'
 import type { PulseWindow, PulseDay } from '@/lib/listingPulse'
 import type { PulsePayload } from '@/lib/pulsePayload'
 import type { Benchmark } from '@/lib/listingFunnel'
 import { C, TONE, nf } from './pulse/theme'
+import { usePulse } from './pulse/usePulse'
 import FunnelStrip from './pulse/FunnelStrip'
 import PaceCard from './pulse/PaceCard'
 import BrowseClockPanel from './pulse/BrowseClockPanel'
@@ -258,33 +258,10 @@ function BenchmarkChip({ b }: { b: Benchmark }) {
 
 export default function ListingPulse({ slug }: { slug: string | null }) {
   const [windowDays, setWindowDays] = useState<PulseWindow>(DEFAULT_PULSE_WINDOW)
-  const [data, setData] = useState<PulsePayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   // Keep the last good pulse on screen while a toggle reloads: blanking the
   // whole section to swap one number is how a dashboard feels broken.
+  const { data, error, loading } = usePulse(slug, windowDays)
   const [showTable, setShowTable] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { if (!cancelled) setLoading(false); return }
-      const qs = new URLSearchParams({ days: String(windowDays) })
-      if (slug) qs.set('slug', slug)
-      const res = await fetch(`/api/landlord/pulse?${qs}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      const json = await res.json().catch(() => ({}))
-      if (cancelled) return
-      setLoading(false)
-      if (!res.ok) { setError(json.error || 'Could not load your traffic.'); return }
-      setError(null)
-      setData(json as PulsePayload)
-    })()
-    return () => { cancelled = true }
-  }, [windowDays, slug])
 
   const p = data?.pulse ?? null
   const market = Math.round(MARKET_INQUIRY_RATE * 1000) / 10
