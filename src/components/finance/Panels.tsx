@@ -388,10 +388,10 @@ export const PANEL_CSS = `
   }
   .fin .statc:hover { box-shadow: var(--lift-1); }
   .fin .statc.primary {
-    background: linear-gradient(152deg, #15854a 0%, #0f7a43 46%, #0c6a3a 100%);
+    background: var(--fill-hero);
     border-color: transparent; color: #fff;
   }
-  .fin .statc.primary:hover { box-shadow: 0 10px 30px rgba(15,122,67,0.26); }
+  .fin .statc.primary:hover { box-shadow: var(--fill-hero-lift); }
 
   .fin .statc-top { display: flex; align-items: flex-start; gap: 12px; }
   .fin .statc-icon {
@@ -449,22 +449,6 @@ export const PANEL_CSS = `
   .fin .tpill.good { background: var(--in-bg);   color: var(--in); }
   .fin .tpill.bad  { background: var(--late-bg); color: var(--late); }
   .fin .tpill.on-dark { background: rgba(255,255,255,0.2); color: #fff; }
-
-  /* ── Panels in the glance layer ───────────────────────────────────────── */
-  .fin .gpanel {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
-    padding: 18px 20px 20px; min-width: 0;
-  }
-  .fin .gpanel-hd {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 14px; flex-wrap: wrap; margin-bottom: 16px;
-  }
-  .fin .gpanel-title { font-size: 16px; font-weight: 600; letter-spacing: -0.018em; }
-  .fin .gpanel-sub { font-size: 12px; color: var(--ink-3); margin-top: 3px; line-height: 1.5; }
-  .fin .gpanel-big {
-    font-size: 28px; font-weight: 600; letter-spacing: -0.028em;
-    font-variant-numeric: tabular-nums; margin-top: 2px;
-  }
 
   /* ── Mini cards ───────────────────────────────────────────────────────── */
   .fin .minis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
@@ -565,22 +549,10 @@ export const PANEL_CSS = `
     font-style: normal; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums;
   }
 
-  /* ── Admin data table ─────────────────────────────────────────────────── */
-  .fin .atable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .fin .atable thead th {
-    text-align: left; padding: 10px 14px; font-size: 11.5px; font-weight: 500;
-    color: var(--ink-3); border-bottom: 1px solid var(--line);
-    white-space: nowrap; letter-spacing: -0.005em;
-  }
-  .fin .atable tbody td {
-    padding: 13px 14px; border-bottom: 1px solid var(--line-2); vertical-align: middle;
-  }
-  .fin .atable tbody tr:last-child td { border-bottom: none; }
-  .fin .atable tbody tr { cursor: pointer; transition: background 0.12s; }
-  .fin .atable tbody tr:hover { background: var(--surface-2); }
-  .fin .atable td.num, .fin .atable th.num {
-    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
-  }
+  /* ── The cells an activity row is made of ─────────────────────────────────
+     The table itself is the area's shared .tbl (in the roomy spacing); what
+     is particular to an activity row is the avatar-and-two-lines cell, so
+     that is all that lives here. */
   .fin .at-who { display: flex; align-items: center; gap: 11px; min-width: 0; }
   /* The text column next to the avatar. Without this the name and the line
      under it are two inline spans and run together on one line. */

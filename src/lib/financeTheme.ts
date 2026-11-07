@@ -92,6 +92,12 @@ export const FINANCE_THEME = `
     --warn: var(--fee);
     --info: var(--flight);
 
+    /* The filled headline card. One gradient, named once: the overview's
+       primary stat card and every tab's headline tile are the same object
+       seen at two sizes, and two hand-copied gradients drift. */
+    --fill-hero: linear-gradient(152deg, #15854a 0%, #0f7a43 46%, #0c6a3a 100%);
+    --fill-hero-lift: 0 10px 30px rgba(15,122,67,0.26);
+
     --radius:    16px;
     --radius-sm: 10px;
 
@@ -418,7 +424,7 @@ export const FINANCE_THEME = `
      case, so it keeps its tinted red edge. */
   .fin .kpi.lead { grid-column: span 2; }
   .fin .kpi.lead:not(.hot):not(.warm), .fin .kpi.hero:not(.hot):not(.warm) {
-    background: linear-gradient(152deg, #15854a 0%, #0f7a43 46%, #0c6a3a 100%);
+    background: var(--fill-hero);
     border-color: transparent; color: #fff;
   }
   .fin .kpi.lead:not(.hot):not(.warm) .kpi-label,
@@ -494,11 +500,27 @@ export const FINANCE_THEME = `
     background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
     padding: 18px 20px; min-width: 0;
   }
+  /* A card with no padding of its own, for one that ends in a full-bleed
+     table. Its header and its prose re-apply the inset themselves. */
+  .fin .card.flush { padding: 18px 0 4px; }
+  .fin .card.flush .card-hd, .fin .card.flush .card-prose { padding: 0 20px; }
+  .fin .card.flush .card-prose { padding-bottom: 18px; }
   .fin .card-hd {
     display: flex; align-items: baseline; justify-content: space-between;
     gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
   }
+  /* Baseline alignment is right for a title beside a figure, and wrong for a
+     two-line identity block beside a control, which is what a panel heading
+     on the overview is. */
+  .fin .card-hd.top { align-items: flex-start; gap: 14px; margin-bottom: 16px; }
   .fin .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
+  .fin .card-hd.top .card-title { font-size: 16px; letter-spacing: -0.018em; }
+  .fin .card-sub { font-size: 12px; color: var(--ink-3); margin-top: 3px; line-height: 1.5; }
+  .fin .card-big {
+    font-size: 28px; font-weight: 600; letter-spacing: -0.028em;
+    font-variant-numeric: tabular-nums; margin-top: 2px;
+  }
+  .fin .card-more { font-size: 12px; color: var(--ink-3); margin-top: 12px; }
   .fin .card-note {
     font-size: 12px; color: var(--ink-3); letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums; text-align: right;
@@ -617,6 +639,19 @@ export const FINANCE_THEME = `
   .fin .seg.pill .seg-btn:hover:not(.on) { color: var(--ink); }
 
 
+  /* ── Method chip ──────────────────────────────────────────────────────────
+     How a payment arrived — card, ACH, cash — beside the amount. The colours
+     come from METHOD_META as inline styles (one per method, so they cannot
+     live here); the shape is the same pill as everything else, and it was
+     missing entirely: both callers rendered a bare <span>, so the chip was a
+     word in a colour rather than a chip. */
+  .fin .mchip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 980px; white-space: nowrap;
+    font-size: 12px; font-weight: 500; letter-spacing: -0.005em;
+  }
+  .fin .mchip.sm { padding: 2px 8px; font-size: 11.5px; }
+
   /* ── Tables ───────────────────────────────────────────────────────────────
      Scanning work — reconciling, chasing, comparing — is a table: one row per
      thing, the same columns in the same places, sortable on the column being
@@ -635,6 +670,11 @@ export const FINANCE_THEME = `
   .fin .tbl td.num, .fin .tbl th.num {
     text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
   }
+  /* The glance-layer spacing. A table a landlord reads from a few feet away
+     wants more air than one they are reconciling line by line — that is the
+     whole of the difference, so it is a modifier and not another table. */
+  .fin .tbl.roomy thead th { padding: 10px 14px; }
+  .fin .tbl.roomy tbody td { padding: 13px 14px; }
   .fin .tbl-sort {
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
