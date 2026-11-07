@@ -338,11 +338,11 @@ export default function FinancialsOverview({
 
             {/* ══ 2. PROPERTIES + THE CHART ══ */}
             <div className="grid-2">
-              <section className="gpanel">
-                <div className="gpanel-hd">
+              <section className="card">
+                <div className="card-hd top">
                   <div>
-                    <h2 className="gpanel-title">Your properties</h2>
-                    <p className="gpanel-sub">
+                    <h2 className="card-title">Your properties</h2>
+                    <p className="card-sub">
                       {d.tree.propertyCount} propert{d.tree.propertyCount !== 1 ? 'ies' : 'y'} ·
                       {' '}{fmtCurrency(d.monthly)}/mo contracted
                     </p>
@@ -371,19 +371,19 @@ export default function FinancialsOverview({
                 </div>
 
                 {d.properties.length > 4 && (
-                  <p className="gpanel-more">
+                  <p className="card-more">
                     and {d.properties.length - 4} more —{' '}
                     <Link className="lnk" href="/landlord/financials/portfolio">open the portfolio</Link>
                   </p>
                 )}
               </section>
 
-              <section className="gpanel">
-                <div className="gpanel-hd">
+              <section className="card">
+                <div className="card-hd top">
                   <div>
-                    <h2 className="gpanel-title">Collection</h2>
-                    <div className="gpanel-big">{fmtCurrency(chartTotal)}</div>
-                    <p className="gpanel-sub">
+                    <h2 className="card-title">Collection</h2>
+                    <div className="card-big">{fmtCurrency(chartTotal)}</div>
+                    <p className="card-sub">
                       received over the last {bars.length} months
                     </p>
                   </div>
@@ -406,7 +406,7 @@ export default function FinancialsOverview({
                   onSelect={key => router.push(`/landlord/financials/schedule?month=${key}`)}
                 />
 
-                <div className="gpanel-ft">
+                <div className="card-ft">
                   <span>Hover a month for the detail; click to open it.</span>
                   <Link className="btn-quiet sm" href="/landlord/financials/trends">
                     Health over time →
@@ -424,11 +424,11 @@ export default function FinancialsOverview({
             />
 
             {/* ══ 4. RECENT ACTIVITY ══ */}
-            <section className="gpanel flush">
-              <div className="gpanel-hd pad">
+            <section className="card flush">
+              <div className="card-hd top">
                 <div>
-                  <h2 className="gpanel-title">Recent payments</h2>
-                  <p className="gpanel-sub">
+                  <h2 className="card-title">Recent payments</h2>
+                  <p className="card-sub">
                     {searching
                       ? `${activity.length} match${activity.length === 1 ? '' : 'es'}`
                       : `The last ${activity.length} that arrived`}
@@ -454,7 +454,7 @@ export default function FinancialsOverview({
               </div>
 
               {activity.length === 0 ? (
-                <p className="muted pad-b">
+                <p className="muted card-prose">
                   {searching
                     ? 'No payment matches that. Try a tenant’s name, a property, or clear the filter.'
                     : 'Nothing has been paid on these leases yet. Money a tenant pays online lands here '
@@ -462,7 +462,7 @@ export default function FinancialsOverview({
                 </p>
               ) : (
                 <div className="tbl-scroll">
-                  <table className="atable">
+                  <table className="tbl roomy">
                     <thead>
                       <tr>
                         <th>Tenant</th>
@@ -483,7 +483,11 @@ export default function FinancialsOverview({
                         const method = st.method ? METHOD_META[st.method] : null
                         const late = (st.daysLate ?? 0) > 0
                         return (
-                          <tr key={`${c.kind}-${c.id}`} onClick={() => setDetail(c)}>
+                          <tr
+                            key={`${c.kind}-${c.id}`}
+                            className="click"
+                            onClick={() => setDetail(c)}
+                          >
                             <td>
                               <span className="at-who">
                                 <span className="at-avatar">{initials(c.who ?? 'The lease')}</span>
@@ -578,16 +582,6 @@ const CSS = `
     display: grid; grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
     gap: 16px; margin-bottom: 18px;
   }
-  .fin .gpanel.flush { padding: 18px 0 4px; }
-  .fin .gpanel-hd.pad { padding: 0 20px; }
-  .fin .pad-b { padding: 0 20px 18px; }
-  .fin .gpanel-more { font-size: 12px; color: var(--ink-3); margin-top: 12px; }
-  .fin .gpanel-ft {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    flex-wrap: wrap; margin-top: 14px; padding-top: 13px;
-    border-top: 1px solid var(--line-2); font-size: 12px; color: var(--ink-3);
-  }
-  .fin .statc + .statc { }
 
   /* ── Destinations, now a quiet footer row rather than a section ──────── */
   .fin .dests {
@@ -603,9 +597,11 @@ const CSS = `
   .fin .dest:hover { border-color: #d9d9de; box-shadow: var(--lift-1); }
   .fin .dest .row-chev { margin-top: 9px; }
   .fin .dest-main { flex: 1; min-width: 0; }
+  /* Sentence case, for the same reason the tile labels dropped their
+     uppercase: it is a name, not a column head. */
   .fin .dest-title {
-    display: block; font-size: 11.5px; font-weight: 500; text-transform: uppercase;
-    letter-spacing: 0.045em; color: var(--ink-3);
+    display: block; font-size: 12px; font-weight: 500;
+    letter-spacing: -0.01em; color: var(--ink-2);
   }
   .fin .dest-stat {
     display: block; font-size: 19px; font-weight: 600; letter-spacing: -0.022em;
