@@ -61,14 +61,35 @@ import CommandPalette, { usePaletteShortcut } from '@/components/finance/Command
 import { VIZ_CSS } from '@/components/finance/Charts'
 import ChargeSheet, { settledLabel } from '@/components/finance/ChargeSheet'
 import {
-  StatCard, MiniCard, TrendPill, StatusDot, GradientBars, PANEL_CSS, type BarPoint,
+  StatCard, MiniCard, TrendPill, StatusDot, GradientBars, SectionBand, PeriodSelect,
+  TableTools, PANEL_CSS, type BarPoint,
 } from '@/components/finance/Panels'
 import { FINANCE_THEME } from '@/lib/financeTheme'
 
 /** How many signals the landing screen shows before deferring to Insights. */
 const SIGNALS_SHOWN = 3
-/** Rows in the activity table. One screenful, not a log. */
+/** Rows in the activity table at a glance. One screenful, not a log. */
 const ACTIVITY_ROWS = 7
+/** Rows once the landlord is actually searching — then it is a log. */
+const ACTIVITY_ROWS_SEARCHING = 25
+
+/**
+ * The window the collected figure is read over.
+ *
+ * Only the collected card takes a window: "overdue" and "expected" name their
+ * own ("right now", "next 90 days") and are not quantities a period can scope
+ * — there is no such thing as the arrears of last March, because nothing
+ * snapshots a portfolio. So the chip scopes the one card it honestly can,
+ * and the other two keep their own windows in their titles.
+ */
+type PeriodId = 'this' | 'last' | '3m' | '12m'
+
+const PERIODS: { id: PeriodId; label: string; months: number; endsLastMonth?: boolean }[] = [
+  { id: 'this', label: 'This month',   months: 1 },
+  { id: 'last', label: 'Last month',   months: 1, endsLastMonth: true },
+  { id: '3m',   label: 'Last 3 months', months: 3 },
+  { id: '12m',  label: 'Last 12 months', months: 12 },
+]
 
 /** Initials for a table avatar or a mini-card badge. */
 const initials = (name: string) =>
@@ -86,6 +107,11 @@ export default function FinancialsOverview({
   const [detail, setDetail] = useState<Charge | null>(null)
   /** The chart's window. Matches the reference's Monthly/Yearly control. */
   const [span, setSpan] = useState<'6m' | '12m'>('12m')
+  /** The window the collected card is read over. */
+  const [period, setPeriod] = useState<PeriodId>('this')
+  /** The activity table's own search and status filter. */
+  const [q, setQ] = useState('')
+  const [status, setStatus] = useState<'all' | 'ontime' | 'late'>('all')
   usePaletteShortcut(useCallback(() => setFind(true), []))
 
   useEffect(() => { document.title = 'Financials — Landlord | HomeHive' }, [])
@@ -128,14 +154,62 @@ export default function FinancialsOverview({
 
   const chartTotal = bars.reduce((n, b) => n + b.value, 0)
 
-  /** Recent payments, newest first — the activity table. */
-  const activity = useMemo(
-    () => d.charges
+  /**
+   * Collected over the chosen window, and what to say under it.
+   *
+   * This month keeps the pace comparison, which is the honest one — this month
+   * to date against the same elapsed portion of last month. A finished window
+   * has no such counterpart we hold, so it carries its collection rate instead
+   * of a pill, under the rule that runs through this area: never a percentage
+   * whose basis we cannot name.
+   */
+  const collected = useMemo(() => {
+    const spec = PERIODS.find(x => x.id === period)!
+    const past = d.trend.filter(t => t.position !== 'future')
+    const window = spec.endsLastMonth
+      ? past.filter(t => t.position === 'past').slice(-spec.months)
+      : past.slice(-spec.months)
+    const sum = (f: (t: (typeof past)[number]) => number) =>
+      window.reduce((n, t) => n + f(t), 0)
+    const got = sum(t => t.collected)
+    const billed = sum(t => t.billed)
+    const one = window.length === 1 ? window[0] : null
+    return {
+      isThisMonth: period === 'this',
+      title: one ? `Collected in ${one.longLabel.split(' ')[0]}` : `Collected · ${spec.label.toLowerCase()}`,
+      value: period === 'this' ? pc.toDate : got,
+      billed,
+      rate: billed > 0 ? Math.round((got / billed) * 100) : null,
+      href: one
+        ? `/landlord/financials/schedule?month=${one.key}`
+        : '/landlord/financials/schedule',
+    }
+  }, [d.trend, period, pc.toDate])
+
+  /**
+   * Recent payments, newest first — the activity table.
+   *
+   * Searching widens it as well as filtering it: seven rows is the right
+   * glance, but a landlord who has typed a tenant's name is no longer
+   * glancing, and a search that can only look at the last seven payments
+   * would answer "no" to questions whose answer is yes.
+   */
+  const searching = q.trim() !== '' || status !== 'all'
+  const activity = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return d.charges
       .filter(c => c.settlement?.paidDate && (c.settlement.net > 0 || c.settlement.lateFee > 0))
+      .filter(c => {
+        const late = (c.settlement!.daysLate ?? 0) > 0
+        if (status === 'late' && !late) return false
+        if (status === 'ontime' && late) return false
+        if (!needle) return true
+        return [c.who, c.propertyName, c.label]
+          .some(v => v?.toLowerCase().includes(needle))
+      })
       .sort((a, b) => (b.settlement!.paidDate ?? '').localeCompare(a.settlement!.paidDate ?? ''))
-      .slice(0, ACTIVITY_ROWS),
-    [d.charges],
-  )
+      .slice(0, searching ? ACTIVITY_ROWS_SEARCHING : ACTIVITY_ROWS)
+  }, [d.charges, q, status, searching])
 
   if (planParam || leaseParam) {
     return (
@@ -188,21 +262,35 @@ export default function FinancialsOverview({
           </div>
         ) : (
           <>
-            {/* ══ 1. THREE STAT CARDS ══ */}
+            {/* ══ 1. THE BAND, THEN THREE STAT CARDS ══ */}
+            <SectionBand
+              title="Overview"
+              sub="Collection, arrears and what is coming — your whole portfolio."
+            >
+              <PeriodSelect
+                label="Window for the collected figure"
+                value={period}
+                options={PERIODS.map(x => ({ id: x.id, label: x.label }))}
+                onChange={setPeriod}
+              />
+            </SectionBand>
+
             <div className="stats">
               <StatCard
                 primary
                 icon="wallet"
-                title={`Collected in ${d.thisMonth.label.split(' ')[0]}`}
-                sub="Rent and charges received so far"
-                value={fmtCurrency(pc.toDate)}
-                pill={pc.comparable
+                title={collected.title}
+                sub={collected.isThisMonth
+                  ? 'Rent and charges received so far'
+                  : 'Rent and charges received'}
+                value={fmtCurrency(collected.value)}
+                pill={collected.isThisMonth && pc.comparable
                   ? <TrendPill pct={pc.deltaPct} basis={pc.basis} goodWhen="up" onDark />
                   : undefined}
-                foot={pc.comparable
+                foot={collected.isThisMonth && pc.comparable
                   ? `${fmtCurrency(pc.lastToSame)} by the same point of last month`
-                  : `${d.thisMonth.rate ?? 0}% of ${fmtCurrency(d.thisMonth.billed)} billed`}
-                href={`/landlord/financials/schedule?month=${d.thisMonth.key}`}
+                  : `${collected.rate ?? 0}% of ${fmtCurrency(collected.billed)} billed`}
+                href={collected.href}
                 footLabel="See details"
               />
 
@@ -299,7 +387,7 @@ export default function FinancialsOverview({
                       received over the last {bars.length} months
                     </p>
                   </div>
-                  <div className="seg sm" role="tablist" aria-label="Span">
+                  <div className="seg sm pill" role="tablist" aria-label="Span">
                     <button
                       role="tab" aria-selected={span === '6m'}
                       className={`seg-btn${span === '6m' ? ' on' : ''}`}
@@ -340,11 +428,26 @@ export default function FinancialsOverview({
               <div className="gpanel-hd pad">
                 <div>
                   <h2 className="gpanel-title">Recent payments</h2>
-                  <p className="gpanel-sub">The last {activity.length} that arrived</p>
+                  <p className="gpanel-sub">
+                    {searching
+                      ? `${activity.length} match${activity.length === 1 ? '' : 'es'}`
+                      : `The last ${activity.length} that arrived`}
+                  </p>
                 </div>
                 <div className="ptools">
+                  <TableTools
+                    query={q}
+                    onQuery={setQ}
+                    placeholder="Search tenant or property"
+                    filter={status}
+                    filters={[
+                      { id: 'all' as const, label: 'All payments' },
+                      { id: 'ontime' as const, label: 'On time' },
+                      { id: 'late' as const, label: 'Late' },
+                    ]}
+                    onFilter={setStatus}
+                  />
                   <Link className="btn-secondary sm" href="/landlord/financials/payments">
-                    <Glyph name="search" size={14} />
                     All payments
                   </Link>
                 </div>
@@ -352,8 +455,10 @@ export default function FinancialsOverview({
 
               {activity.length === 0 ? (
                 <p className="muted pad-b">
-                  Nothing has been paid on these leases yet. Money a tenant pays online lands here
-                  the moment it settles, and anything you record by hand appears too.
+                  {searching
+                    ? 'No payment matches that. Try a tenant’s name, a property, or clear the filter.'
+                    : 'Nothing has been paid on these leases yet. Money a tenant pays online lands here '
+                      + 'the moment it settles, and anything you record by hand appears too.'}
                 </p>
               ) : (
                 <div className="tbl-scroll">

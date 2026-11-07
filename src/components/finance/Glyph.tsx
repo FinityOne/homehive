@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The money area's icon set — twelve glyphs, drawn here, no dependency.
+ * The money area's icon set — sixteen glyphs, drawn here, no dependency.
  *
  * ── Why icons at all ───────────────────────────────────────────────────────
  *
@@ -27,7 +27,7 @@
 export type GlyphName =
   | 'alert' | 'clock' | 'trend-down' | 'trend-up' | 'mail' | 'calendar'
   | 'shield' | 'check' | 'users' | 'building' | 'wallet' | 'search'
-  | 'bolt' | 'arrow-right'
+  | 'bolt' | 'arrow-right' | 'chevron-down' | 'filter'
 
 /** The path data, on a 20×20 grid. */
 const PATHS: Record<GlyphName, React.ReactNode> = {
@@ -113,6 +113,14 @@ const PATHS: Record<GlyphName, React.ReactNode> = {
     <>
       <path d="M3.6 10h12.8" />
       <path d="M12.2 5.9 16.4 10l-4.2 4.1" />
+    </>
+  ),
+  'chevron-down': <path d="M5.6 8.2 10 12.6l4.4-4.4" />,
+  filter: (
+    <>
+      <path d="M3.4 5.4h13.2" />
+      <path d="M5.8 10h8.4" />
+      <path d="M8.4 14.6h3.2" />
     </>
   ),
 }
