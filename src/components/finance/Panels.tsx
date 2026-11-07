@@ -603,74 +603,10 @@ export const PANEL_CSS = `
     color: var(--ink-3); font-size: 15px; line-height: 1; text-align: right;
   }
 
-  /* ── Section band ─────────────────────────────────────────────────────────
-     The line between the page header and the first figure: what this is, and
-     over what window. */
-  .fin .band {
-    display: flex; align-items: flex-end; justify-content: space-between;
-    gap: 16px; flex-wrap: wrap; margin: 4px 0 16px;
-  }
-  .fin .band-id { min-width: 0; }
-  .fin .band-title { font-size: 20px; font-weight: 600; letter-spacing: -0.022em; }
-  .fin .band-sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
-  .fin .band-tools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-
-  /* ── Select chip ──────────────────────────────────────────────────────────
-     A native <select> wearing a pill. The select is laid over the whole chip
-     at zero opacity, so the hit area is the chip and the picker is the
-     platform's own. */
-  .fin .chipsel {
-    position: relative; display: inline-flex; align-items: center; gap: 7px;
-    background: var(--surface); border: 1px solid var(--line); border-radius: 980px;
-    padding: 0 13px; min-height: 36px; color: var(--ink-2);
-    font-size: 13.5px; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap;
-    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
-  }
-  .fin .chipsel:hover { border-color: #d9d9de; box-shadow: var(--lift-1); }
-  .fin .chipsel:focus-within { border-color: var(--accent); }
-  .fin .chipsel-label { color: var(--ink); }
-  .fin .chipsel select {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    opacity: 0; cursor: pointer; font-family: inherit; font-size: 16px;
-  }
-
-  /* ── Toolbar inside a panel header ────────────────────────────────────── */
-  .fin .ptools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-  .fin .psearch {
-    display: flex; align-items: center; gap: 8px;
-    border: 1px solid var(--line); border-radius: 980px; padding: 0 14px;
-    min-height: 36px; background: var(--surface); color: var(--ink-3); min-width: 210px;
-    transition: border-color 0.15s var(--ease);
-  }
-  .fin .psearch:focus-within { border-color: var(--accent); }
-  .fin .psearch input {
-    border: none; outline: none; background: none; font-family: inherit;
-    font-size: 13.5px; color: var(--ink); width: 100%; min-width: 0;
-  }
-  .fin .psearch input::-webkit-search-cancel-button { cursor: pointer; }
-
-  /* ── Segmented control, pill form ─────────────────────────────────────────
-     The chart's window switch. The selected side is a filled green pill with a
-     dot, rather than the white-on-grey tab used elsewhere: this control sits
-     inside a panel header beside a large figure, where the quieter form
-     disappears entirely. */
-  .fin .seg.pill { background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 980px; }
-  .fin .seg.pill .seg-btn { border-radius: 980px; padding: 6px 14px; min-height: 30px; }
-  .fin .seg.pill .seg-btn.on {
-    background: var(--accent); color: #fff; box-shadow: none; font-weight: 500;
-  }
-  .fin .seg.pill .seg-btn.on::before {
-    content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fff;
-  }
-  .fin .seg.pill .seg-btn:hover:not(.on) { color: var(--ink); }
-
   @media (max-width: 900px) {
     .fin .minis { grid-template-columns: 1fr; }
   }
   @media (max-width: 700px) {
-    .fin .band { align-items: flex-start; }
-    .fin .band-tools, .fin .ptools { width: 100%; }
-    .fin .psearch { flex: 1; min-width: 0; }
     .fin .statc { padding: 16px 16px 0; }
     .fin .statc-value { font-size: 26px; }
     .fin .gb-cols { gap: 6px; margin-left: 36px; }

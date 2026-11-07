@@ -206,32 +206,32 @@ export default function RemindersPage() {
           action={{ label: 'Go to Financials', href: '/landlord/financials' }}
         />
 
-        <section className="tiles" aria-label="Summary">
-          <div className="tile">
-            <div className="tile-label">Emails sent</div>
-            <div className="tile-value">{stats.total}</div>
-            <div className="tile-meta">
+        <section className="kpis" aria-label="Summary">
+          <div className="kpi hero">
+            <div className="kpi-label">Emails sent</div>
+            <div className="kpi-value">{stats.total}</div>
+            <div className="kpi-meta">
               {audience === 'tenant' ? 'to tenants, most recent first' : 'including your own copies'}
             </div>
           </div>
-          <div className="tile">
-            <div className="tile-label">Reached the tenant</div>
-            <div className="tile-value">{stats.deliveryRate === null ? '—' : `${stats.deliveryRate}%`}</div>
-            <div className="tile-meta">
+          <div className="kpi">
+            <div className="kpi-label">Reached the tenant</div>
+            <div className="kpi-value">{stats.deliveryRate === null ? '—' : `${stats.deliveryRate}%`}</div>
+            <div className="kpi-meta">
               {counts.delivered} of {stats.total} confirmed delivered
             </div>
           </div>
-          <div className="tile">
-            <div className="tile-label">Opened</div>
-            <div className="tile-value">{stats.openRate === null ? '—' : `${stats.openRate}%`}</div>
-            <div className="tile-meta">
+          <div className="kpi">
+            <div className="kpi-label">Opened</div>
+            <div className="kpi-value">{stats.openRate === null ? '—' : `${stats.openRate}%`}</div>
+            <div className="kpi-meta">
               {counts.opened} opened of those delivered
             </div>
           </div>
-          <div className={`tile${stats.problem > 0 ? ' bad' : ''}`}>
-            <div className="tile-label">Needs a look</div>
-            <div className="tile-value">{stats.problem === 0 ? 'None' : stats.problem}</div>
-            <div className="tile-meta">
+          <div className={`kpi${stats.problem > 0 ? ' hot' : ''}`}>
+            <div className="kpi-label">Needs a look</div>
+            <div className="kpi-value">{stats.problem === 0 ? 'None' : stats.problem}</div>
+            <div className="kpi-meta">
               {stats.problem > 0
                 ? 'bounced, refused or marked as spam'
                 : 'nothing bounced or was refused'}
@@ -278,14 +278,15 @@ export default function RemindersPage() {
           </div>
 
           <div className="pickers">
-            <select value={kind} onChange={e => setKind(e.target.value)} aria-label="Kind of email">
+            <select className="fsel" value={kind} onChange={e => setKind(e.target.value)} aria-label="Kind of email">
               {KIND_FILTERS.map(k => <option key={k.id} value={k.id}>{k.label}</option>)}
             </select>
-            <select value={plan} onChange={e => setPlan(e.target.value)} aria-label="Lease">
+            <select className="fsel" value={plan} onChange={e => setPlan(e.target.value)} aria-label="Lease">
               <option value="">Every property</option>
               {leases.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
             <input
+              className="fsearch"
               type="search"
               value={search}
               placeholder="Search a tenant or address"
@@ -480,28 +481,17 @@ function Step({ label, at, done, bad }: { label: string; at: string | null; done
 const CSS = `
   /* Tokens, buttons, badges, panels, the hub header and the alarm bar all come
      from src/lib/financeTheme.ts. What is left here is this page's own layout:
-     the summary tiles, the filter bar and the day-grouped log. */
+     the summary row, the filter bar and the day-grouped log. */
   .rem-wrap { max-width: 1060px; margin: 0 auto; padding: 32px 22px 96px; }
   .sub { max-width: 64ch; }
 
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-  .tile {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-    padding: 15px 17px 14px;
-  }
-  .tile.bad { background: #fff8f7; border-color: #f6cfcb; }
-  .tile-label { font-size: 11.5px; font-weight: 500; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.055em; }
-  .tile-value { font-size: 26px; font-weight: 600; letter-spacing: -0.024em; margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .tile.bad .tile-value { color: var(--bad); }
-  .tile-meta { font-size: 12px; color: var(--ink-3); margin-top: 4px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  /* The summary row is the area's shared .kpis / .kpi. */
+  .kpis { grid-template-columns: repeat(4, 1fr); }
 
   .controls { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
   .pickers { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .pickers select, .pickers input[type="search"] {
-    font-family: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
-    border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; letter-spacing: -0.01em;
-  }
-  .pickers input[type="search"] { min-width: 220px; }
+  /* The controls are the area's shared .fsel / .fsearch pills. */
+  .pickers .fsearch { min-width: 220px; }
   .switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.01em; cursor: pointer; }
 
   .day { margin-bottom: 22px; }
@@ -560,7 +550,7 @@ const CSS = `
   .foot { font-size: 12px; color: var(--ink-3); line-height: 1.6; margin-top: 4px; letter-spacing: -0.01em; }
 
   @media (max-width: 900px) {
-    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
     .detail { padding-left: 18px; }
     .dl { grid-template-columns: 1fr; gap: 2px; }
   }
@@ -569,6 +559,6 @@ const CSS = `
     .send { grid-template-columns: 1fr auto; row-gap: 8px; }
     .send > .out { grid-column: 1 / -1; justify-self: start; }
     .send > .twist { display: none; }
-    .pickers input[type="search"] { min-width: 0; flex: 1; }
+    .pickers .fsearch { min-width: 0; flex: 1; }
   }
 `

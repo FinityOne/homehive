@@ -395,7 +395,7 @@ export const FINANCE_THEME = `
   }
   .fin .kpi {
     position: relative; background: var(--surface); border: 1px solid var(--line);
-    border-radius: 16px; padding: 16px 17px 15px; text-align: left;
+    border-radius: 18px; padding: 18px 19px 17px; text-align: left;
     font-family: inherit; color: inherit; display: block; min-width: 0;
   }
   .fin a.kpi, .fin button.kpi {
@@ -405,10 +405,59 @@ export const FINANCE_THEME = `
   .fin a.kpi:hover, .fin button.kpi:hover {
     border-color: #d9d9de; box-shadow: 0 2px 10px rgba(0,0,0,0.045);
   }
+  /* ── The one filled tile ──────────────────────────────────────────────────
+     Each detail tab has a headline figure, and on the overview that figure is
+     a filled green card. Carrying the same treatment across the tabs is what
+     makes them one product rather than five pages that happen to share a
+     header: a landlord's eye lands in the same place on every screen.
+
+     One filled card per screen, never two — two is a traffic light. And never
+     when the lead tile is the one carrying bad news: .hot and .warm mean
+     the headline is overdue money or a fee, and a green fill would say the
+     opposite of what the figure says. Collections' lead tile is exactly that
+     case, so it keeps its tinted red edge. */
   .fin .kpi.lead { grid-column: span 2; }
+  .fin .kpi.lead:not(.hot):not(.warm), .fin .kpi.hero:not(.hot):not(.warm) {
+    background: linear-gradient(152deg, #15854a 0%, #0f7a43 46%, #0c6a3a 100%);
+    border-color: transparent; color: #fff;
+  }
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-label,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-label { color: rgba(255,255,255,0.78); }
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-value,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-value,
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-value.good,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-value.good,
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-value.info,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-value.info,
+  /* The figure-tone classes too: a green or teal figure on the green card
+     would be the one thing on the screen you cannot read. */
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-value.fig-in,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-value.fig-in,
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-value.fig-flight,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-value.fig-flight { color: #fff; }
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-meta,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-meta { color: rgba(255,255,255,0.76); }
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-foot,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-foot {
+    color: rgba(255,255,255,0.7); border-top-color: rgba(255,255,255,0.2);
+  }
+  .fin .kpi.lead:not(.hot):not(.warm) .kpi-go,
+  .fin .kpi.hero:not(.hot):not(.warm) .kpi-go { color: #fff; text-decoration: underline; }
+  /* A meter on the filled card: the green fill would be invisible against the
+     green, so "good" becomes white. Amber and red still read on dark green and
+     keep their meaning. */
+  .fin .kpi.lead:not(.hot):not(.warm) .meter,
+  .fin .kpi.hero:not(.hot):not(.warm) .meter { background: rgba(255,255,255,0.22); }
+  .fin .kpi.lead:not(.hot):not(.warm) .meter-fill.good,
+  .fin .kpi.hero:not(.hot):not(.warm) .meter-fill.good { background: #fff; }
+  .fin .kpi.lead:not(.hot):not(.warm) .meter-mark,
+  .fin .kpi.hero:not(.hot):not(.warm) .meter-mark { background: rgba(255,255,255,0.65); }
+  /* Sentence case, not shouting. The uppercase label was borrowed from the
+     dense ledger tables, where it marks a column; on a card it is the card's
+     name and reads better as one. */
   .fin .kpi-label {
-    font-size: 11.5px; color: var(--ink-3); letter-spacing: 0.005em;
-    text-transform: uppercase; font-weight: 500;
+    font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.01em;
+    font-weight: 500;
   }
   .fin .kpi-value {
     font-size: 29px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.1;
@@ -432,6 +481,7 @@ export const FINANCE_THEME = `
   /* The one tile actively costing money gets a tinted edge — never a full red
      fill, which would make the whole screen feel like an error. */
   .fin .kpi.hot  { border-color: var(--late-line); background: #fffafa; }
+  .fin .kpi.hot .kpi-value { color: var(--late); }
   .fin .kpi.warm { border-color: var(--fee-line);  background: #fffcf8; }
 
   /* ── Cards ────────────────────────────────────────────────────────────────
@@ -463,25 +513,109 @@ export const FINANCE_THEME = `
      Detail pages exist to be cut and sliced, so their controls are a
      first-class row: one line, left to right, in the same place on every page,
      with the reset appearing only once something is actually filtered. */
+  /* Every control in the area is the same pill: 36px tall, fully rounded, a
+     hairline that warms on hover and goes accent on focus. The detail tabs
+     used to wear 9px-cornered 34px boxes while the overview wore pills, which
+     made one area look like two — and the filter row is the first thing a
+     landlord touches on every tab. */
   .fin .filters { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
   .fin .fsel {
-    appearance: none; background: var(--surface) no-repeat right 9px center;
+    appearance: none; background: var(--surface) no-repeat right 13px center;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round'/></svg>");
-    border: 1px solid var(--line); border-radius: 9px; padding: 7px 28px 7px 11px;
-    font-family: inherit; font-size: 13px; color: var(--ink); min-height: 34px;
-    cursor: pointer; letter-spacing: -0.01em; max-width: 240px;
+    border: 1px solid var(--line); border-radius: 980px; padding: 0 33px 0 14px;
+    font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--ink);
+    min-height: 36px; cursor: pointer; letter-spacing: -0.01em; max-width: 240px;
+    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
   }
-  .fin .fsel:hover { border-color: #d9d9de; }
-  .fin .fsel.on { border-color: var(--accent); color: var(--accent-ink); }
+  .fin .fsel:hover { border-color: #d9d9de; box-shadow: var(--lift-1); }
+  /* A filter that is actually filtering says so — otherwise a landlord reads a
+     short list as the whole list. */
+  .fin .fsel.on {
+    border-color: var(--accent); color: var(--accent-ink); background-color: var(--accent-bg);
+  }
+  /* The magnifier is a background image rather than an element so that every
+     plain <input type="search"> in the area gets it without being wrapped. */
   .fin .fsearch {
-    border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px;
-    font-family: inherit; font-size: 13px; min-height: 34px; min-width: 190px;
-    letter-spacing: -0.01em; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 980px; padding: 0 14px 0 35px;
+    font-family: inherit; font-size: 13.5px; min-height: 36px; min-width: 210px;
+    letter-spacing: -0.01em; color: var(--ink);
+    background: var(--surface) no-repeat left 13px center;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 20 20' fill='none' stroke='%238e8e93' stroke-width='1.6' stroke-linecap='round'><circle cx='9' cy='9' r='5.3'/><path d='M12.9 12.9 17 17'/></svg>");
+    transition: border-color 0.15s var(--ease);
   }
+  .fin .fsearch:focus { outline: none; border-color: var(--accent); }
   .fin .fsearch::placeholder { color: var(--ink-3); }
   .fin .fcount {
     font-size: 12.5px; color: var(--ink-3); margin-left: auto; letter-spacing: -0.01em;
   }
+
+  /* ── Section band ─────────────────────────────────────────────────────────
+     The line between the page header and the first figure: what this is, and
+     over what window. */
+  .fin .band {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin: 4px 0 16px;
+  }
+  .fin .band-id { min-width: 0; }
+  .fin .band-title { font-size: 20px; font-weight: 600; letter-spacing: -0.022em; }
+  .fin .band-sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+  .fin .band-tools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+  /* ── Select chip ──────────────────────────────────────────────────────────
+     A native <select> wearing a pill. The select is laid over the whole chip
+     at zero opacity, so the hit area is the chip and the picker is the
+     platform's own. */
+  .fin .chipsel {
+    position: relative; display: inline-flex; align-items: center; gap: 7px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 980px;
+    padding: 0 13px; min-height: 36px; color: var(--ink-2);
+    font-size: 13.5px; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap;
+    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  }
+  .fin .chipsel:hover { border-color: #d9d9de; box-shadow: var(--lift-1); }
+  .fin .chipsel:focus-within { border-color: var(--accent); }
+  .fin .chipsel-label { color: var(--ink); }
+  .fin .chipsel select {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; cursor: pointer; font-family: inherit; font-size: 16px;
+  }
+
+  /* ── Toolbar inside a panel header ────────────────────────────────────── */
+  .fin .ptools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .fin .psearch {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); border-radius: 980px; padding: 0 14px;
+    min-height: 36px; background: var(--surface); color: var(--ink-3); min-width: 210px;
+    transition: border-color 0.15s var(--ease);
+  }
+  .fin .psearch:focus-within { border-color: var(--accent); }
+  .fin .psearch input {
+    border: none; outline: none; background: none; font-family: inherit;
+    font-size: 13.5px; color: var(--ink); width: 100%; min-width: 0;
+  }
+  .fin .psearch input::-webkit-search-cancel-button { cursor: pointer; }
+
+  /* ── Segmented control, pill form ─────────────────────────────────────────
+     The selected side is a filled green pill with a dot, rather than the
+     white-on-grey tab: beside a large figure the quiet form disappears
+     entirely.
+
+     Which form a control takes is decided by what its options carry, not by
+     which page it is on. Plain labels — a window switch, which leases —
+     take the pill. Options carrying a count or a .hot state keep the quiet
+     tab form: a filled green pill with a badge sitting in it is two
+     emphases fighting, and green behind a red overdue count is a
+     contradiction. */
+  .fin .seg.pill { background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 980px; }
+  .fin .seg.pill .seg-btn { border-radius: 980px; padding: 6px 14px; min-height: 30px; }
+  .fin .seg.pill .seg-btn.on {
+    background: var(--accent); color: #fff; box-shadow: none; font-weight: 500;
+  }
+  .fin .seg.pill .seg-btn.on::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fff;
+  }
+  .fin .seg.pill .seg-btn:hover:not(.on) { color: var(--ink); }
+
 
   /* ── Tables ───────────────────────────────────────────────────────────────
      Scanning work — reconciling, chasing, comparing — is a table: one row per
@@ -490,8 +624,8 @@ export const FINANCE_THEME = `
   .fin .tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .fin .tbl th, .fin .tbl td { text-align: left; padding: 11px 12px; vertical-align: middle; }
   .fin .tbl thead th {
-    font-size: 11px; font-weight: 500; color: var(--ink-3); text-transform: uppercase;
-    letter-spacing: 0.03em; border-bottom: 1px solid var(--line); white-space: nowrap;
+    font-size: 11.5px; font-weight: 500; color: var(--ink-3);
+    letter-spacing: -0.005em; border-bottom: 1px solid var(--line); white-space: nowrap;
     position: sticky; top: 0; background: var(--surface); z-index: 1;
   }
   .fin .tbl tbody tr { border-bottom: 1px solid var(--line-2); }
@@ -632,6 +766,9 @@ export const FINANCE_THEME = `
   }
   @media (max-width: 700px) {
     .fin-wrap { padding: 20px 15px 80px; }
+    .fin .band { align-items: flex-start; }
+    .fin .band-tools, .fin .ptools { width: 100%; }
+    .fin .psearch, .fin .fsearch { flex: 1; min-width: 0; }
     .fin .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
     .fin .kpi { padding: 13px 14px; border-radius: 14px; }
     .fin .kpi-value { font-size: 24px; }

@@ -174,7 +174,7 @@ export default function PaymentsLogPage({
           action={{ label: 'Export CSV', onClick: download }}
           meta={
             <div className="meta-row">
-              <div className="seg sm" role="tablist" aria-label="Which leases">
+              <div className="seg sm pill" role="tablist" aria-label="Which leases">
                 {LEASE_FILTERS.map(f => (
                   <button
                     key={f.id}
@@ -191,42 +191,42 @@ export default function PaymentsLogPage({
           }
         />
 
-        <section className="tiles" aria-label="Summary">
-          <div className="tile">
-            <div className="tile-label">Collected</div>
-            <div className="tile-value fig-in">{fmtCurrency(totals.cleared)}</div>
-            <div className="tile-meta">
+        <section className="kpis" aria-label="Summary">
+          <div className="kpi hero">
+            <div className="kpi-label">Collected</div>
+            <div className="kpi-value fig-in">{fmtCurrency(totals.cleared)}</div>
+            <div className="kpi-meta">
               {totals.clearedCount} payment{totals.clearedCount !== 1 ? 's' : ''} landed
               {totals.lateFees > 0 && <> · includes {fmtCurrency(totals.lateFees)} of late fees</>}
             </div>
           </div>
-          <div className="tile">
-            <div className="tile-label">Still clearing</div>
-            <div className={`tile-value${totals.clearing > 0 ? ' fig-flight' : ''}`}>
+          <div className="kpi">
+            <div className="kpi-label">Still clearing</div>
+            <div className={`kpi-value${totals.clearing > 0 ? ' fig-flight' : ''}`}>
               {totals.clearing > 0 ? fmtCurrency(totals.clearing) : '—'}
             </div>
-            <div className="tile-meta">
+            <div className="kpi-meta">
               {totals.clearingCount > 0
                 ? `${totals.clearingCount} bank payment${totals.clearingCount !== 1 ? 's' : ''} in flight`
                 : 'nothing in flight'}
               {totals.avgClearingDays !== null && <> · usually {totals.avgClearingDays} days</>}
             </div>
           </div>
-          <div className={`tile${totals.failedCount > 0 ? ' bad' : ''}`}>
-            <div className="tile-label">Failed</div>
-            <div className="tile-value">
+          <div className={`kpi${totals.failedCount > 0 ? ' hot' : ''}`}>
+            <div className="kpi-label">Failed</div>
+            <div className="kpi-value">
               {totals.failedCount > 0 ? fmtCurrency(totals.failed) : 'None'}
             </div>
-            <div className="tile-meta">
+            <div className="kpi-meta">
               {totals.failedCount > 0
                 ? `${totals.failedCount} bounced — the tenant still owes it`
                 : 'nothing has bounced'}
             </div>
           </div>
-          <div className="tile">
-            <div className="tile-label">Arrived late</div>
-            <div className="tile-value">{totals.lateCount === 0 ? 'None' : totals.lateCount}</div>
-            <div className="tile-meta">
+          <div className="kpi">
+            <div className="kpi-label">Arrived late</div>
+            <div className="kpi-value">{totals.lateCount === 0 ? 'None' : totals.lateCount}</div>
+            <div className="kpi-meta">
               {totals.lateCount > 0
                 ? 'sent after the due date'
                 : 'every payment was sent on time'}
@@ -267,6 +267,7 @@ export default function PaymentsLogPage({
 
           <div className="pickers">
             <select
+              className="fsel"
               value={filter.planId}
               onChange={e => set({ planId: e.target.value })}
               aria-label="Lease"
@@ -275,6 +276,7 @@ export default function PaymentsLogPage({
               {leases.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
             <select
+              className="fsel"
               value={filter.method}
               onChange={e => set({ method: e.target.value as MethodFilter })}
               aria-label="How it was paid"
@@ -282,6 +284,7 @@ export default function PaymentsLogPage({
               {METHOD_FILTERS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
             <select
+              className="fsel"
               value={filter.range}
               onChange={e => set({ range: e.target.value as RangeFilter })}
               aria-label="When"
@@ -289,6 +292,7 @@ export default function PaymentsLogPage({
               {RANGE_FILTERS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
             <input
+              className="fsearch"
               type="search"
               value={filter.query}
               placeholder="Search a tenant, address or month"
@@ -586,22 +590,15 @@ const CSS = `
   .meta-row { margin-top: 12px; }
   .seg.sm .seg-btn { padding: 5px 11px; min-height: 28px; font-size: 12.5px; }
 
-  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 15px 17px 14px; }
-  .tile.bad { background: #fff8f7; border-color: #f6cfcb; }
-  .tile-label { font-size: 11.5px; font-weight: 500; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.055em; }
-  .tile-value { font-size: 26px; font-weight: 600; letter-spacing: -0.024em; margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .tile.bad .tile-value { color: var(--bad); }
-  .tile-meta { font-size: 12px; color: var(--ink-3); margin-top: 4px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+  /* The summary row is the area's shared .kpis / .kpi — this page used to
+     carry its own near-identical copy, one corner radius and one label case
+     away from the rest of the money screens. */
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
   .controls { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
   .pickers { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pickers .spacer { flex: 1; }
-  .pickers select, .pickers input[type="search"] {
-    font-family: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
-    border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; letter-spacing: -0.01em;
-  }
-  .pickers input[type="search"] { min-width: 260px; }
+  .pickers .fsearch { min-width: 260px; }
 
   .table-wrap {
     background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
@@ -612,8 +609,8 @@ const CSS = `
   .pay-table thead th {
     position: sticky; top: 0; z-index: 1;
     background: var(--surface-2); border-bottom: 1px solid var(--line);
-    font-size: 11.5px; font-weight: 500; color: var(--ink-2);
-    text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
+    font-size: 11.5px; font-weight: 500; color: var(--ink-3);
+    letter-spacing: -0.005em; white-space: nowrap;
   }
   .pay-table .num { text-align: right; font-variant-numeric: tabular-nums; }
   .pay-table thead th.num { text-align: right; }
@@ -681,12 +678,12 @@ const CSS = `
   @media (max-width: 1280px) {
     /* The columns that are nice rather than necessary go first. The table keeps
        a horizontal scroll underneath, so nothing is ever unreachable. */
-    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 900px) {
     .pay-wrap { padding: 24px 16px 90px; }
     .table-wrap { overflow-x: auto; }
     .pay-table { min-width: 1080px; }
-    .pickers input[type="search"] { min-width: 0; flex: 1; }
+    .pickers .fsearch { min-width: 0; flex: 1; }
   }
 `
