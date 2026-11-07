@@ -269,7 +269,7 @@ export default function PortfolioPage({
             {/* The portfolio in one line, so the tree below has a total to be
                 read against. */}
             <div className="kpis">
-              <div className="kpi">
+              <div className="kpi hero">
                 <div className="kpi-label">Contracted rent</div>
                 <div className="kpi-value">{fmtCurrency(tree.monthly)}<small>/mo</small></div>
                 <div className="kpi-meta">
