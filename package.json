@@ -22,7 +22,9 @@
     "verify:renewals": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-renewals.mjs",
     "verify:amendments": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-amendments.mjs",
     "amendment:preview": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-aleeya-pet-amendment.mjs",
-    "amendment:send": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-aleeya-pet-amendment.mjs --send"
+    "amendment:send": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-aleeya-pet-amendment.mjs --send",
+    "remind:preview": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-gauge-rent-reminder.mjs",
+    "remind:send": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-gauge-rent-reminder.mjs --send"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.1.0",
