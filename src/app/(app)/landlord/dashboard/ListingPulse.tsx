@@ -57,14 +57,14 @@ function Tile({
   label, value, sub, accent,
 }: { label: string; value: string; sub: React.ReactNode; accent?: string }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
-        {accent && <span style={{ width: 8, height: 8, borderRadius: 2, background: accent, flexShrink: 0 }} />}
-        <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.7 }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 16, padding: '15px 17px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
+        {accent && <span style={{ width: 9, height: 9, borderRadius: 3, background: accent, flexShrink: 0 }} />}
+        <span style={{ fontSize: 11.5, fontWeight: 500, color: C.muted, letterSpacing: '-0.005em' }}>
           {label}
         </span>
       </div>
-      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 26, fontWeight: 300, color: C.ink, letterSpacing: -1, lineHeight: 1 }}>
+      <div style={{ fontSize: 26, fontWeight: 600, color: C.ink, letterSpacing: '-0.028em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
         {value}
       </div>
       <div style={{ marginTop: 5, lineHeight: 1.4 }}>{sub}</div>
@@ -239,12 +239,12 @@ function BenchmarkChip({ b }: { b: Benchmark }) {
   const fmt = (n: number | null) => (n == null ? '—' : b.unit === '%' ? `${n}%` : `${n}`)
 
   return (
-    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, padding: '11px 13px' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, padding: '12px 14px' }}>
+      <div style={{ fontSize: 11.5, fontWeight: 500, color: C.muted, letterSpacing: '-0.005em', marginBottom: 7 }}>
         {b.label}
       </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
-        <span style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300, color: C.ink, letterSpacing: -0.8 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 21, fontWeight: 600, color: C.ink, letterSpacing: '-0.024em', fontVariantNumeric: 'tabular-nums' }}>
           {fmt(b.you)}
         </span>
         <span style={{ fontSize: 11, fontWeight: 700, color: look.fg }}>
@@ -304,25 +304,22 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '4px 0 12px' }}>
         <div>
-          <div className="db-section-title" style={{ margin: 0 }}>👀 Listing pulse</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+          <div className="db-section-title" style={{ margin: 0 }}>Listing pulse</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
             Who opened your listing {windowDays === 7 ? 'this week' : 'this month'}
             {asOfLabel ? ` · last ${windowDays} days through ${asOfLabel}` : ''}
           </div>
         </div>
-        <div style={{ display: 'inline-flex', border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' }}>
+        <div className="seg sm" role="tablist" aria-label="Window">
           {PULSE_WINDOWS.map(w => (
             <button
               key={w}
+              role="tab"
+              aria-selected={windowDays === w}
+              className={`seg-btn${windowDays === w ? ' on' : ''}`}
               onClick={() => setWindowDays(w)}
-              style={{
-                padding: '5px 12px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                background: windowDays === w ? '#8C1D40' : '#fff',
-                color: windowDays === w ? '#fff' : '#64748b',
-              }}
             >
-              {w}d
+              {w} days
             </button>
           ))}
         </div>
@@ -445,7 +442,8 @@ export default function ListingPulse({ slug }: { slug: string | null }) {
               <TrafficChart days={p.days} windowDays={windowDays} />
               <button
                 onClick={() => setShowTable(v => !v)}
-                style={{ marginTop: 10, background: 'none', border: 'none', padding: 0, fontSize: 12, color: '#8C1D40', fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                className="btn-quiet"
+                style={{ marginTop: 10, fontSize: 12.5 }}
               >
                 {showTable ? 'Hide the numbers' : 'Show the numbers'}
               </button>
