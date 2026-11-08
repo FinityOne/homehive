@@ -13,12 +13,18 @@ export const C = {
   views:     '#BE2A55',
   visitors:  '#1197B0',
   inquiries: '#B07D08',
-  ink:       '#0f172a',
-  ink2:      '#475569',
-  muted:     '#94a3b8',
-  faint:     '#f1f5f9',
-  line:      '#e2e8f0',
-  surface:   '#fff',
+  // The neutrals are the money area's tokens, written out as literals because
+  // this palette is consumed by SVG attributes and inline styles where a CSS
+  // custom property cannot be read. They must stay in step with
+  // `FINANCE_THEME` — the pulse sits inside a page built from it, and a
+  // half-shade difference in border grey is exactly the kind of seam that
+  // makes one screen look like two.
+  ink:       '#1d1d1f',   // --ink
+  ink2:      '#6e6e73',   // --ink-2
+  muted:     '#8e8e93',   // --ink-3
+  faint:     '#f0f0f2',   // --line-2
+  line:      '#e5e5ea',   // --line
+  surface:   '#ffffff',   // --surface
 } as const
 
 /** Light → dark, for funnel stages. Index 0 is the widest stage. */
@@ -31,11 +37,14 @@ export const HEAT_RAMP = [
   '#EAF6F9', '#C3E6EE', '#8FD1E0', '#4FB4CB', '#1197B0', '#0A6F84',
 ] as const
 
+/** One colour per meaning, matching the money area: green received, red
+ *  failed, amber needs attention, grey nothing to do. Every tone carries an
+ *  icon as well, so none of them is read by colour alone. */
 export const TONE: Record<PulseTone, { bg: string; border: string; fg: string; icon: string }> = {
-  good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d', icon: '✓' },
-  warn: { bg: '#fffbeb', border: '#fde68a', fg: '#b45309', icon: '!' },
-  bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c', icon: '!' },
-  info: { bg: '#f8fafc', border: '#e2e8f0', fg: '#475569', icon: 'i' },
+  good: { bg: '#e8f5ed', border: '#cfe9d9', fg: '#0f7a43', icon: '✓' },
+  warn: { bg: '#fdf1e3', border: '#f6dcc0', fg: '#b25000', icon: '!' },
+  bad:  { bg: '#fdeceb', border: '#f3c6c2', fg: '#d13b30', icon: '!' },
+  info: { bg: '#fafafb', border: '#e5e5ea', fg: '#6e6e73', icon: 'i' },
 }
 
 /** Pick a ramp step for a 0–1 intensity. */

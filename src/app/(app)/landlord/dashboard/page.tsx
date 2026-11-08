@@ -1,290 +1,160 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { getCurrentUser } from '@/lib/supabase'
+/**
+ * The landlord Overview — the portal's front door.
+ *
+ * ── What changed and why ───────────────────────────────────────────────────
+ *
+ * This screen used to be a 960px column of six identical stat tiles followed
+ * by eight panels of the same weight, in a typeface and palette of its own.
+ * Three things were wrong with that, and all three are the same mistake:
+ * nothing on the page was louder than anything else.
+ *
+ *   1. **It was narrow.** The portal shell is full-bleed and the rest of the
+ *      money area has been full-bleed since the admin shell landed. A
+ *      dashboard rendered down the middle of a 2560px monitor with grey either
+ *      side is a reading layout applied to an instrument.
+ *   2. **Six equal tiles are not a summary.** Six figures at the same size is
+ *      a list, and a list has to be read in full before it can be understood.
+ *      Four cards, exactly one of them filled, can be understood in a glance
+ *      and then read if the glance says to.
+ *   3. **It spoke a second dialect.** Fraunces headings, `#8C1D40` maroon
+ *      controls, slate borders — none of which exist anywhere else a landlord
+ *      goes. Clicking from here into Financials changed the application.
+ *
+ * So the page now speaks the money area's language: `FINANCE_THEME` tokens,
+ * the `Panels` glance kit, and the same `Signals` component Financials uses
+ * for "what needs doing". Nothing here is styled locally that the theme
+ * already has a name for.
+ *
+ * ── The shape ──────────────────────────────────────────────────────────────
+ *
+ *   1. A header that says how the portfolio is doing in one sentence.
+ *   2. Four stat cards. Revenue is the filled one — it is the reason a
+ *      landlord is here — and the other three are white.
+ *   3. What needs attention, worst first, with the evidence folded under.
+ *   4. Collection month by month, beside the properties as a grid of peers.
+ *   5. Enquiries over time, beside the pipeline they feed.
+ *   6. The traffic pulse — unchanged, and deliberately below the lead charts
+ *      that can only answer "nobody enquired" when it can answer why.
+ *   7. The newest leads as the familiar admin table, and a row of doors.
+ *
+ * ── On the scope toggle ────────────────────────────────────────────────────
+ *
+ * The toggle scopes everything *below the stat cards*. The cards stay
+ * portfolio-wide on purpose: they are the answer to "how is the business", and
+ * a landlord who has filtered to one property and then forgotten they did so
+ * should never be able to read a single building's arrears as the whole of it.
+ */
+
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getPropertiesByOwner, Property } from '@/lib/properties'
-import { getLeadsForOwner, Lead } from '@/lib/leads'
-import { getLeasesForOwner, getLeaseStatus, formatLeaseDate, Lease } from '@/lib/leases'
-import { getPlansForOwner, PaymentPlan } from '@/lib/payments'
 import Link from 'next/link'
+import { getCurrentUser } from '@/lib/supabase'
+import { getPropertiesByOwner, type Property } from '@/lib/properties'
+import { getLeadsForOwner, type Lead } from '@/lib/leads'
+import { getLeasesForOwner, formatLeaseDate, type Lease } from '@/lib/leases'
+import { getPlansForOwner, fmtCurrency, type PaymentPlan } from '@/lib/payments'
+import { buildOverview, overviewSignals, daysUntil } from '@/lib/overviewModel'
+import { FINANCE_THEME } from '@/lib/financeTheme'
+import Glyph, { GLYPH_CSS, type GlyphName } from '@/components/finance/Glyph'
+import { VIZ_CSS } from '@/components/finance/Charts'
+import Signals from '@/components/finance/Signals'
+import {
+  StatCard, MiniCard, TrendPill, StatusDot, GradientBars, PANEL_CSS, type BarPoint,
+} from '@/components/finance/Panels'
+import TrendArea, { TREND_AREA_CSS, type TrendPoint } from './TrendArea'
 import ListingPulse from './ListingPulse'
 
-function getGreeting(name: string) {
+/** Signals shown before the rest are deferred to the pages that own them. */
+const SIGNALS_SHOWN = 3
+/** Rows in the recent-leads table. One screenful, not a log. */
+const LEAD_ROWS = 6
+/** Properties shown as peers before the grid defers to Listings. */
+const PEERS_SHOWN = 4
+
+const initials = (name: string) =>
+  name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('') || '—'
+
+const leadName = (l: Lead) =>
+  [l.first_name, l.last_name].filter(Boolean).join(' ') || l.email
+
+function greeting(name: string) {
   const h = new Date().getHours()
   if (h < 12) return `Good morning, ${name}`
   if (h < 17) return `Good afternoon, ${name}`
   return `Good evening, ${name}`
 }
 
-const fmtCurrency = (n: number) =>
-  n >= 1000
-    ? `$${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`
-    : `$${n.toLocaleString()}`
+/**
+ * Enquiries bucketed for the chart: one point per day over 30, one per week
+ * over 90.
+ *
+ * Ninety daily points on a 700px panel is four pixels a point, which is noise
+ * rather than a trend — the longer window is asking a coarser question and
+ * gets a coarser bucket.
+ */
+function leadBuckets(leads: Lead[], range: 30 | 90): TrendPoint[] {
+  const start = new Date(); start.setHours(0, 0, 0, 0)
+  const stamps = leads
+    .map(l => (l.created_at ? new Date(l.created_at).getTime() : null))
+    .filter((t): t is number => t !== null)
+  const between = (from: Date, to: Date) =>
+    stamps.filter(t => t >= from.getTime() && t < to.getTime()).length
 
-const fmtFull = (n: number) => `$${n.toLocaleString()}`
-
-function daysUntil(dateStr: string) {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const d = new Date(dateStr + 'T00:00:00')
-  return Math.round((d.getTime() - today.getTime()) / 86400000)
-}
-
-const LEAD_STAGES = ['new', 'contacted', 'engaged', 'qualified', 'tour_scheduled'] as const
-const STAGE_LABEL: Record<string, string> = {
-  new: 'New', contacted: 'Contacted', engaged: 'Engaged',
-  qualified: 'Qualified', tour_scheduled: 'Tour Sched.',
-}
-const STAGE_COLOR: Record<string, { color: string; bg: string; border: string }> = {
-  new:            { color: '#1d4ed8', bg: '#eff6ff',  border: '#bfdbfe' },
-  contacted:      { color: '#0891b2', bg: '#ecfeff',  border: '#a5f3fc' },
-  engaged:        { color: '#d97706', bg: '#fffbeb',  border: '#fde68a' },
-  qualified:      { color: '#16a34a', bg: '#f0fdf4',  border: '#bbf7d0' },
-  tour_scheduled: { color: '#7c3aed', bg: '#f5f3ff',  border: '#ddd6fe' },
-  closed:         { color: '#6b7280', bg: '#f9fafb',  border: '#e5e7eb' },
-}
-
-// ─── Portfolio charts (dependency-free SVG/HTML; reuse the .panel styling) ──────
-const DONUT_STATUS: Record<string, { label: string; color: string }> = {
-  new:            { label: 'New',            color: '#1d4ed8' },
-  contacted:      { label: 'Contacted',      color: '#0891b2' },
-  follow_up:      { label: 'Follow-up',      color: '#c2410c' },
-  engaged:        { label: 'Engaged',        color: '#d97706' },
-  qualified:      { label: 'Qualified',      color: '#16a34a' },
-  tour_scheduled: { label: 'Qualified',      color: '#16a34a' },
-  matching:       { label: 'Roommate match', color: '#7c3aed' },
-  cold:           { label: 'Cold',           color: '#94a3b8' },
-  closed:         { label: 'Closed',         color: '#6b7280' },
-}
-
-function LeadsTrendPanel({ dates }: { dates: (string | null | undefined)[] }) {
-  const [range, setRange] = useState<30 | 90>(30)
-  const buckets = (() => {
-    const out: { label: string; full: string; count: number }[] = []
-    const start = new Date(); start.setHours(0, 0, 0, 0)
-    const countIn = (from: Date, to: Date) => dates.filter(d => {
-      if (!d) return false
-      const t = new Date(d).getTime()
-      return t >= from.getTime() && t < to.getTime()
-    }).length
-    if (range === 30) {
-      for (let i = 29; i >= 0; i--) {
-        const day = new Date(start); day.setDate(day.getDate() - i)
-        const next = new Date(day); next.setDate(next.getDate() + 1)
-        out.push({ label: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), full: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), count: countIn(day, next) })
-      }
-    } else {
-      for (let i = 12; i >= 0; i--) {
-        const ws = new Date(start); ws.setDate(ws.getDate() - i * 7 - 6)
-        const we = new Date(start); we.setDate(we.getDate() - i * 7 + 1)
-        out.push({ label: ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), full: `Week of ${ws.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, count: countIn(ws, we) })
-      }
+  const out: TrendPoint[] = []
+  if (range === 30) {
+    for (let i = 29; i >= 0; i--) {
+      const day = new Date(start); day.setDate(day.getDate() - i)
+      const next = new Date(day);  next.setDate(next.getDate() + 1)
+      out.push({
+        label: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        longLabel: day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        value: between(day, next),
+      })
     }
-    return out
-  })()
-  const n = buckets.length
-  const total = buckets.reduce((s, b) => s + b.count, 0)
-  const maxCount = Math.max(1, ...buckets.map(b => b.count))
-  const niceMax = maxCount <= 4 ? maxCount : Math.ceil(maxCount / 5) * 5
-  const W = 720, H = 190, padL = 26, padR = 12, padT = 12, padB = 22
-  const innerW = W - padL - padR, innerH = H - padT - padB
-  const x = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW)
-  const y = (v: number) => padT + innerH - (v / niceMax) * innerH
-  const line = buckets.map((b, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(b.count).toFixed(1)}`).join(' ')
-  const area = `${line} L ${x(n - 1).toFixed(1)} ${y(0).toFixed(1)} L ${x(0).toFixed(1)} ${y(0).toFixed(1)} Z`
-  const labelEvery = range === 30 ? 5 : 2
-
-  return (
-    <div className="panel">
-      <div className="panel-hd">
-        <span className="panel-title">Leads over time</span>
-        <div style={{ display: 'inline-flex', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-          {([30, 90] as const).map(r => (
-            <button key={r} onClick={() => setRange(r)} style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", background: range === r ? '#8C1D40' : '#fff', color: range === r ? '#fff' : '#64748b' }}>{r}d</button>
-          ))}
-        </div>
-      </div>
-      <div className="panel-body">
-        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>
-          <strong style={{ color: '#0f172a', fontSize: 15 }}>{total}</strong> new lead{total !== 1 ? 's' : ''} in the last {range} days
-        </div>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-          <defs>
-            <linearGradient id="dbLeadArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8C1D40" stopOpacity="0.18" />
-              <stop offset="100%" stopColor="#8C1D40" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {[0, niceMax / 2, niceMax].map((v, i) => (
-            <g key={i}>
-              <line x1={padL} y1={y(v)} x2={W - padR} y2={y(v)} stroke="#f1f5f9" strokeWidth="1" />
-              <text x={padL - 6} y={y(v) + 3} textAnchor="end" fontSize="9" fill="#cbd5e1">{Math.round(v)}</text>
-            </g>
-          ))}
-          <path d={area} fill="url(#dbLeadArea)" />
-          <path d={line} fill="none" stroke="#8C1D40" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          {buckets.map((b, i) => (
-            <g key={i}>
-              <circle cx={x(i)} cy={y(b.count)} r={b.count > 0 ? 2.5 : 0} fill="#8C1D40" />
-              <rect x={x(i) - innerW / n / 2} y={padT} width={innerW / n} height={innerH} fill="transparent"><title>{`${b.full}: ${b.count} lead${b.count !== 1 ? 's' : ''}`}</title></rect>
-              {i % labelEvery === 0 && <text x={x(i)} y={H - 7} textAnchor="middle" fontSize="9" fill="#94a3b8">{b.label}</text>}
-            </g>
-          ))}
-        </svg>
-      </div>
-    </div>
-  )
-}
-
-function LeadStatusDonut({ leads }: { leads: Lead[] }) {
-  const agg: Record<string, { label: string; color: string; count: number }> = {}
-  for (const l of leads) {
-    const meta = DONUT_STATUS[l.status] || { label: l.status, color: '#cbd5e1' }
-    if (agg[meta.label]) agg[meta.label].count++
-    else agg[meta.label] = { label: meta.label, color: meta.color, count: 1 }
+  } else {
+    for (let i = 12; i >= 0; i--) {
+      const from = new Date(start); from.setDate(from.getDate() - i * 7 - 6)
+      const to   = new Date(start); to.setDate(to.getDate() - i * 7 + 1)
+      out.push({
+        label: from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        longLabel: `Week of ${from.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`,
+        value: between(from, to),
+      })
+    }
   }
-  const segs = Object.values(agg).sort((a, b) => b.count - a.count)
-  const total = segs.reduce((s, x) => s + x.count, 0)
-  const r = 52, sw = 22, C = 2 * Math.PI * r
-  let acc = 0
-
-  return (
-    <div className="panel">
-      <div className="panel-hd"><span className="panel-title">Lead status mix</span></div>
-      <div className="panel-body">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <svg viewBox="0 0 140 140" style={{ width: 120, height: 120, flexShrink: 0 }}>
-            <g transform="rotate(-90 70 70)">
-              {total === 0 ? (
-                <circle cx="70" cy="70" r={r} fill="none" stroke="#f1f5f9" strokeWidth={sw} />
-              ) : segs.map((x, i) => {
-                const dash = (x.count / total) * C
-                const seg = <circle key={i} cx="70" cy="70" r={r} fill="none" stroke={x.color} strokeWidth={sw} strokeDasharray={`${dash.toFixed(2)} ${(C - dash).toFixed(2)}`} strokeDashoffset={(-acc).toFixed(2)} />
-                acc += dash
-                return seg
-              })}
-            </g>
-            <text x="70" y="67" textAnchor="middle" fontSize="25" fontWeight="700" fill="#0f172a">{total}</text>
-            <text x="70" y="85" textAnchor="middle" fontSize="10" fill="#94a3b8">leads</text>
-          </svg>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 110 }}>
-            {segs.length === 0 ? <span style={{ fontSize: 12, color: '#94a3b8' }}>No leads yet</span> :
-              segs.map((x, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: x.color, flexShrink: 0 }} />
-                  <span style={{ color: '#475569', flex: 1 }}>{x.label}</span>
-                  <span style={{ color: '#0f172a', fontWeight: 700 }}>{x.count}</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+  return out
 }
 
-function OccupancyByProperty({ properties }: { properties: Property[] }) {
-  const rows = properties
-    .filter(p => (p.total_rooms || 0) > 0)
-    .map(p => {
-      const total = p.total_rooms || 0, vacant = p.available || 0, occ = total - vacant
-      return { name: p.name, total, occ, vacant, pct: total > 0 ? Math.round((occ / total) * 100) : 0 }
-    })
-    .sort((a, b) => b.total - a.total)
-
-  return (
-    <div className="panel">
-      <div className="panel-hd"><span className="panel-title">Occupancy by property</span></div>
-      <div className="panel-body">
-        {rows.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '12px 0' }}>No rooms configured yet</div>
-        ) : rows.map(r => (
-          <div key={r.name} style={{ marginBottom: 11 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-              <span style={{ color: '#475569', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-              <span style={{ color: '#94a3b8', flexShrink: 0, marginLeft: 8 }}>{r.occ}/{r.total} filled · {r.pct}%</span>
-            </div>
-            <div style={{ height: 14, background: '#e2e8f0', borderRadius: 5, overflow: 'hidden' }}>
-              <div style={{ width: `${r.pct}%`, height: '100%', background: r.pct >= 80 ? '#16a34a' : r.pct >= 50 ? '#d97706' : '#dc2626', borderRadius: 5 }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CollectionsBars({ payments }: { payments: { due_date: string; amount: number; paid_amount: number }[] }) {
-  const now = new Date()
-  const months: { label: string; due: number; paid: number }[] = []
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const y = d.getFullYear(), m = d.getMonth()
-    const inMonth = payments.filter(p => {
-      const pd = new Date(p.due_date + 'T00:00:00')
-      return pd.getFullYear() === y && pd.getMonth() === m
-    })
-    months.push({ label: d.toLocaleDateString('en-US', { month: 'short' }), due: inMonth.reduce((s, p) => s + p.amount, 0), paid: inMonth.reduce((s, p) => s + p.paid_amount, 0) })
-  }
-  const max = Math.max(1, ...months.map(mo => mo.due))
-  const fmt = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k` : `$${n}`
-  const totalPaid = months.reduce((s, mo) => s + mo.paid, 0)
-
-  return (
-    <div className="panel">
-      <div className="panel-hd"><span className="panel-title">Collections — last 6 months</span></div>
-      <div className="panel-body">
-        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
-          <strong style={{ color: '#0f172a', fontSize: 15 }}>{fmt(totalPaid)}</strong> collected
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 130 }}>
-          {months.map(mo => {
-            const h = (mo.due / max) * 100
-            const paidH = mo.due > 0 ? (mo.paid / mo.due) * 100 : 0
-            return (
-              <div key={mo.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: '100%', height: 104, display: 'flex', alignItems: 'flex-end' }}>
-                  <div title={`${mo.label}: ${fmt(mo.paid)} paid / ${fmt(mo.due)} due`} style={{ width: '100%', height: `${Math.max(h, mo.due > 0 ? 6 : 0)}%`, minHeight: mo.due > 0 ? 4 : 0, background: '#e2e8f0', borderRadius: '5px 5px 0 0', overflow: 'hidden', display: 'flex', alignItems: 'flex-end' }}>
-                    <div style={{ width: '100%', height: `${paidH}%`, background: '#8C1D40' }} />
-                  </div>
-                </div>
-                <div style={{ fontSize: 10, color: '#94a3b8' }}>{mo.label}</div>
-              </div>
-            )
-          })}
-        </div>
-        <div style={{ display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: '#94a3b8' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: '#8C1D40' }} /> Collected</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: '#e2e8f0' }} /> Billed</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default function LandlordDashboard() {
+export default function LandlordOverview() {
   const router = useRouter()
-  const [userName, setUserName] = useState('')
+  const [name, setName] = useState('')
   const [properties, setProperties] = useState<Property[]>([])
-  const [leads, setLeads]           = useState<Lead[]>([])
-  const [leases, setLeases]         = useState<Lease[]>([])
-  const [plans, setPlans]           = useState<PaymentPlan[]>([])
-  const [dashProperty, setDashProperty] = useState('all')
-  const [loading, setLoading]       = useState(true)
+  const [leads, setLeads]   = useState<Lead[]>([])
+  const [leases, setLeases] = useState<Lease[]>([])
+  const [plans, setPlans]   = useState<PaymentPlan[]>([])
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => { document.title = 'Dashboard — Landlord | HomeHive' }, [])
+  const [scope, setScope] = useState('all')
+  const [span, setSpan]   = useState<'6m' | '12m'>('6m')
+  const [range, setRange] = useState<30 | 90>(30)
+
+  useEffect(() => { document.title = 'Overview — Landlord | HomeHive' }, [])
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
-      setUserName(user.user_metadata?.full_name?.split(' ')[0] || 'there')
       const [props, lds, lss, pls] = await Promise.all([
         getPropertiesByOwner(user.id),
         getLeadsForOwner(user.id),
         getLeasesForOwner(user.id),
         getPlansForOwner(user.id),
       ])
+      if (cancelled) return
+      setName(user.user_metadata?.full_name?.split(' ')[0] || 'there')
       setProperties(props)
       setLeads(lds)
       setLeases(lss)
@@ -292,622 +162,708 @@ export default function LandlordDashboard() {
       setLoading(false)
     }
     load()
+    return () => { cancelled = true }
   }, [router])
+
+  // The portfolio-wide answer, for the header and the stat cards.
+  const o = useMemo(
+    () => buildOverview(properties, leads, leases, plans),
+    [properties, leads, leases, plans],
+  )
+
+  // The same model again, narrowed — so a scoped panel is computed by exactly
+  // the code that computes the unscoped one, rather than by a second filter
+  // that drifts away from it.
+  const s = useMemo(() => {
+    if (scope === 'all') return o
+    return buildOverview(
+      properties.filter(p => p.slug === scope),
+      leads.filter(l => l.property === scope),
+      leases.filter(l => l.property?.slug === scope),
+      plans.filter(p => p.property?.slug === scope),
+    )
+  }, [o, scope, properties, leads, leases, plans])
+
+  const sigs = useMemo(() => overviewSignals(o), [o])
+
+  const bars = useMemo<BarPoint[]>(() => {
+    const take = span === '6m' ? 6 : 12
+    return s.history.slice(-take).map(m => ({
+      key: m.key,
+      label: m.label,
+      longLabel: m.longLabel,
+      value: m.collected,
+      rows: [
+        { label: 'Collected', value: fmtCurrency(m.collected) },
+        { label: 'Billed', value: fmtCurrency(m.billed) },
+        ...(m.billed > m.collected
+          ? [{ label: 'Still out', value: fmtCurrency(m.billed - m.collected) }] : []),
+        ...(m.rate !== null ? [{ label: 'Rate', value: `${m.rate}%` }] : []),
+      ],
+    }))
+  }, [s.history, span])
+
+  const collectedInSpan = bars.reduce((n, b) => n + b.value, 0)
+  const trend = useMemo(() => leadBuckets(s.leads, range), [s.leads, range])
+  const trendTotal = trend.reduce((n, p) => n + p.value, 0)
+  const recentLeads = s.leads.slice(0, LEAD_ROWS)
+  /* The funnel bars are relative to the widest stage, not to the total: the
+     question is where the pipeline narrows, and scaling to the total leaves
+     every bar a sliver as soon as one stage dominates. */
+  const widest = Math.max(1, ...s.funnel.map(f => f.count))
+
+  const CSS_ALL = `${FINANCE_THEME}${GLYPH_CSS}${VIZ_CSS}${PANEL_CSS}${TREND_AREA_CSS}${LEGACY_CSS}${CSS}`
 
   if (loading) {
     return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#94a3b8' }}>
-        Loading...
-      </div>
+      <>
+        <style>{CSS_ALL}</style>
+        <div className="fin fin-wrap">
+          <div className="skeleton" style={{ height: 54, maxWidth: 420, marginBottom: 22 }} />
+          <div className="stats">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="statc"><div className="skeleton" style={{ height: 128 }} /></div>
+            ))}
+          </div>
+          <div className="skeleton-hero" />
+        </div>
+      </>
     )
   }
 
-  // ─── Lease metrics ──────────────────────────────────────────────────────────
-  const currentLeases  = leases.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'current')
-  const upcomingLeases = leases.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'upcoming')
-  const monthlyRevenue = currentLeases.reduce((s, l) => s + (l.rent_amount || 0), 0)
-  const annualRevenue  = monthlyRevenue * 12
-
-  // Expiring within 60 days
-  const expiringSoon = currentLeases
-    .map(l => ({ lease: l, days: daysUntil(l.end_date) }))
-    .filter(x => x.days >= 0 && x.days <= 60)
-    .sort((a, b) => a.days - b.days)
-
-  // ─── Property metrics ────────────────────────────────────────────────────────
-  const totalRooms   = properties.reduce((s, p) => s + (p.total_rooms || 0), 0)
-  const vacantRooms  = properties.reduce((s, p) => s + (p.available || 0), 0)
-  const occupiedRooms = totalRooms - vacantRooms
-  const occupancyPct = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
-  // "Live" means approved by HomeHive *and* switched on by the landlord —
-  // a listing marked Rented or Inactive isn't out there working for them.
-  // "Live" needs all three axes to agree: approved by HomeHive, switched on by
-  // the landlord, and a plan we are being paid for. A listing missing the last
-  // one is finished and invisible, which is the case worth surfacing loudly.
-  const liveProps    = properties.filter(p =>
-    p.admin_status === 'active'
-    && (p.listing_status ?? 'active') === 'active'
-    && p.owner_plan_active !== false
-  ).length
-  const unpaidProps  = properties.filter(p => p.owner_plan_active === false)
-
-  // ─── Payment metrics ─────────────────────────────────────────────────────────
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const thisMonth = { y: today.getFullYear(), m: today.getMonth() }
-
-  const allSPs = plans.flatMap(p => p.scheduled_payments || [])
-
-  // ─── Property-scoped views for the analytics section (top stats stay portfolio-wide) ──
-  const scopedLeads      = dashProperty === 'all' ? leads : leads.filter(l => l.property === dashProperty)
-  const scopedPlans      = dashProperty === 'all' ? plans : plans.filter(p => p.property?.slug === dashProperty)
-  const scopedSPs        = scopedPlans.flatMap(p => p.scheduled_payments || [])
-  const scopedProperties = dashProperty === 'all' ? properties : properties.filter(p => p.slug === dashProperty)
-
-  const thisMonthSPs = allSPs.filter(sp => {
-    const d = new Date(sp.due_date + 'T00:00:00')
-    return d.getFullYear() === thisMonth.y && d.getMonth() === thisMonth.m
-  })
-
-  const monthDue     = thisMonthSPs.reduce((s, sp) => s + sp.amount, 0)
-  const monthPaid    = thisMonthSPs.reduce((s, sp) => s + sp.paid_amount, 0)
-  const monthPending = monthDue - monthPaid
-
-  const overdueSPs = allSPs.filter(sp => {
-    const d = new Date(sp.due_date + 'T00:00:00')
-    return d < today && ['missed', 'late', 'partial', 'pending'].includes(sp.status) && sp.paid_amount < sp.amount
-  })
-  const overdueTotal = overdueSPs.reduce((s, sp) => s + (sp.amount - sp.paid_amount), 0)
-
-  // Collection rate this month
-  const collectionRate = monthDue > 0 ? Math.round((monthPaid / monthDue) * 100) : null
-
-  // Overdue grouped by plan/property for the mini list
-  type OverdueSummary = { planId: string; propertyName: string; owed: number; count: number }
-  const overdueByPlan = new Map<string, OverdueSummary>()
-  for (const sp of overdueSPs) {
-    const plan = plans.find(p => p.id === sp.plan_id)
-    if (!plan) continue
-    const key = sp.plan_id
-    const existing = overdueByPlan.get(key)
-    const owed = sp.amount - sp.paid_amount
-    if (existing) {
-      existing.owed += owed
-      existing.count++
-    } else {
-      overdueByPlan.set(key, {
-        planId: plan.id,
-        propertyName: plan.property?.name || 'Unknown',
-        owed,
-        count: 1,
-      })
-    }
+  if (o.empty) {
+    return (
+      <>
+        <style>{CSS_ALL}</style>
+        <div className="fin fin-wrap">
+          <h1 className="ov-title">{greeting(name)}.</h1>
+          <p className="sub">Your portfolio lives here once there is something in it.</p>
+          <div className="empty" style={{ marginTop: 22 }}>
+            <div className="empty-title">No listings yet</div>
+            <p className="empty-sub">
+              It takes about five minutes to go live. Once a listing is up, this screen fills in
+              on its own: who is looking at it, who enquired, who signed, and who has paid.
+            </p>
+            <Link href="/landlord/listings/new" className="btn-primary">Create your first listing</Link>
+          </div>
+        </div>
+      </>
+    )
   }
-  const overdueList = Array.from(overdueByPlan.values()).sort((a, b) => b.owed - a.owed)
-
-  // ─── Lead pipeline ───────────────────────────────────────────────────────────
-  const activeLeads   = leads.filter(l => l.status !== 'closed')
-  const stageCounts   = LEAD_STAGES.map(s => ({ stage: s, count: leads.filter(l => l.status === s).length }))
-  const totalActive   = activeLeads.length
-  const qualifiedCount = leads.filter(l => l.status === 'qualified' || l.status === 'tour_scheduled').length
-  const recentLeads   = leads.slice(0, 6)
-
-  // Property name map
-  const propNameBySlug = Object.fromEntries(properties.map(p => [p.slug, p.name]))
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,300;1,9..144,600&family=DM+Sans:wght@300;400;500;600&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      <style>{CSS_ALL}</style>
+      <div className="fin fin-wrap">
 
-        .db { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; font-family: 'DM Sans', sans-serif; }
-
-        .db-greeting { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 300; color: #0f172a; letter-spacing: -0.5px; line-height: 1.2; }
-        .db-sub      { font-size: 13px; color: #94a3b8; margin-top: 4px; margin-bottom: 28px; }
-
-        .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 32px; }
-        .stat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
-        .stat-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 8px; }
-        .stat-num   { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 300; color: #0f172a; letter-spacing: -1px; line-height: 1; }
-        .stat-sub   { font-size: 11px; color: #94a3b8; margin-top: 5px; }
-
-        .db-section-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; color: #0f172a; letter-spacing: -0.3px; margin: 4px 0 14px; }
-        .db-analytics-hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
-        .db-prop-toggle { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; max-width: 100%; }
-        .db-prop-pill { white-space: nowrap; flex-shrink: 0; padding: 6px 13px; border-radius: 100px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; border: 1px solid #e2e8f0; background: #fff; color: #475569; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-        .db-prop-pill:hover { border-color: #8C1D40; color: #8C1D40; }
-        .db-prop-pill.is-active { background: #8C1D40; border-color: #8C1D40; color: #fff; }
-        .db-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-        .db-row-full { margin-bottom: 24px; }
-
-        .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
-        .panel-hd { padding: 14px 18px 12px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
-        .panel-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.7px; }
-        .panel-link  { font-size: 12px; color: #8C1D40; font-weight: 500; text-decoration: none; }
-        .panel-link:hover { text-decoration: underline; }
-        .panel-body  { padding: 14px 18px; }
-
-        .row-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #f8fafc; gap: 8px; }
-        .row-item:last-child { border-bottom: none; padding-bottom: 0; }
-        .row-item-first { padding-top: 0; }
-
-        .pill { display: inline-flex; align-items: center; border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; border: 1px solid; white-space: nowrap; }
-
-        .funnel { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
-        .funnel-seg { flex: 1; min-width: 60px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 8px; text-align: center; }
-        .funnel-n  { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 300; color: #0f172a; line-height: 1; }
-        .funnel-lbl { font-size: 10px; color: #94a3b8; margin-top: 3px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
-
-        .prog-bar { height: 6px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 4px; }
-        .prog-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
-
-        .badge-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-
-        .pending-banner { background: linear-gradient(135deg,#fffbeb,#fefce8); border: 1.5px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px; }
-
-        @media (max-width: 620px) {
-          .stat-grid { grid-template-columns: repeat(2, 1fr); }
-          .db-row    { grid-template-columns: 1fr; }
-        }
-      `}</style>
-
-      <div className="db">
-
-        {/* Header */}
-        <div className="db-greeting">{getGreeting(userName)}.</div>
-        <div className="db-sub">
-          {properties.length === 0
-            ? 'Get started by listing your first property'
-            : `${liveProps} live propert${liveProps !== 1 ? 'ies' : 'y'} · ${occupancyPct}% occupied · ${fmtFull(monthlyRevenue)}/mo revenue`
-          }
-        </div>
-
-        {/* Nothing waits on a human any more — payment is the only gate left.
-            A landlord with finished, invisible listings needs to be told that
-            in the first thing they see, not left to wonder why it went quiet. */}
-        {unpaidProps.length > 0 && (
-          <div className="pending-banner">
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#92400e', marginBottom: 3 }}>
-                  {unpaidProps.length === 1
-                    ? 'Your listing is ready — add a plan to publish it'
-                    : `${unpaidProps.length} listings are ready — add a plan to publish them`}
-                </div>
-                <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.6 }}>
-                  Students only see a listing while your plan is active. There is no review
-                  queue — {unpaidProps.length === 1 ? 'it goes' : 'they go'} live the moment you subscribe.
-                </div>
-              </div>
-              <span style={{ background: '#f59e0b', color: '#fff', borderRadius: 20, padding: '3px 11px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                not published
-              </span>
-            </div>
-            <Link href="/landlord/subscribe" style={{ fontSize: 13, fontWeight: 600, color: '#92400e', textDecoration: 'none', borderBottom: '1px solid #f59e0b' }}>
-              Publish {unpaidProps.length === 1 ? 'my listing' : 'my listings'} →
+        {/* ══ HEADER ══ */}
+        <header className="ov-hd">
+          <div className="ov-hd-id">
+            <h1 className="ov-title">{greeting(name)}.</h1>
+            <p className="sub">
+              {o.liveCount} live propert{o.liveCount !== 1 ? 'ies' : 'y'}
+              {o.occupancyPct !== null && <> · {o.occupancyPct}% occupied</>}
+              {' '}· {fmtCurrency(o.monthlyRevenue)} contracted a month
+              {o.owed > 0 && <> · <span className="ov-flag">{fmtCurrency(o.owed)} past due</span></>}
+            </p>
+          </div>
+          <div className="ov-hd-act">
+            <Link className="btn-secondary" href="/landlord/financials">Financials</Link>
+            <Link className="btn-primary" href="/landlord/listings/new">
+              <Glyph name="building" size={15} />
+              New listing
             </Link>
           </div>
-        )}
+        </header>
 
-        {/* ── STAT CARDS ── */}
-        <div className="stat-grid">
+        {/* ══ 1. THE FOUR FIGURES ══ */}
+        <div className="stats">
+          <StatCard
+            primary
+            icon="wallet"
+            title="Contracted rent"
+            sub={`From ${o.currentLeases.length} lease${o.currentLeases.length !== 1 ? 's' : ''} running now`}
+            value={fmtCurrency(o.monthlyRevenue)}
+            foot={o.monthlyRevenue > 0
+              ? `${fmtCurrency(o.annualRevenue)} a year at today's leases`
+              : 'No lease is running yet'}
+            href="/landlord/leases"
+            footLabel="See leases"
+          />
 
-          <div className="stat-card">
-            <div className="stat-label">Monthly Revenue</div>
-            <div className="stat-num" style={{ color: monthlyRevenue > 0 ? '#0f172a' : '#94a3b8' }}>
-              {monthlyRevenue > 0 ? fmtCurrency(monthlyRevenue) : '—'}
-            </div>
-            <div className="stat-sub">
-              {annualRevenue > 0 ? `${fmtCurrency(annualRevenue)}/yr from ${currentLeases.length} lease${currentLeases.length !== 1 ? 's' : ''}` : 'no active leases'}
-            </div>
-          </div>
+          <StatCard
+            icon="users"
+            tone={o.occupancyPct !== null && o.occupancyPct < 60 ? 'warn' : undefined}
+            title="Occupancy"
+            sub={o.totalRooms > 0
+              ? `${o.occupiedRooms} of ${o.totalRooms} rooms filled`
+              : 'No rooms configured yet'}
+            value={o.occupancyPct !== null ? `${o.occupancyPct}%` : '—'}
+            foot={o.vacantRooms > 0
+              ? `${o.vacantRooms} room${o.vacantRooms !== 1 ? 's' : ''} earning nothing right now`
+              : 'Every room is filled'}
+            href="/landlord/performance"
+            footLabel="Listing performance"
+          />
 
-          <div className="stat-card">
-            <div className="stat-label">Occupancy</div>
-            <div className="stat-num" style={{ color: occupancyPct >= 80 ? '#16a34a' : occupancyPct >= 50 ? '#d97706' : '#dc2626' }}>
-              {totalRooms > 0 ? `${occupancyPct}%` : '—'}
-            </div>
-            <div className="stat-sub">{occupiedRooms} of {totalRooms} rooms filled · {vacantRooms} vacant</div>
-          </div>
+          <StatCard
+            icon="check"
+            // Deliberately untoned, however bad the arrears are. This figure
+            // is money that *arrived*, and the area's one rule about colour is
+            // that green means received and red means late. Painting a
+            // collection figure red because a different figure is overdue
+            // breaks that for the one number on the screen a landlord is
+            // pleased to see. The arrears live in the footer, in words.
+            title={`Collected in ${o.monthLabel}`}
+            sub={o.collectionRate !== null
+              ? `${o.collectionRate}% of ${fmtCurrency(o.monthBilled)} billed`
+              : 'Nothing is billed this month'}
+            value={fmtCurrency(o.pace.toDate)}
+            pill={o.pace.comparable
+              ? <TrendPill pct={o.pace.deltaPct} basis={o.pace.basis} goodWhen="up" />
+              : undefined}
+            foot={o.owed > 0
+              ? `${fmtCurrency(o.owed)} past due across ${o.owedCount} charge${o.owedCount !== 1 ? 's' : ''}`
+              : o.pace.lastToSame !== null
+                ? `${fmtCurrency(o.pace.lastToSame)} by the same point of last month`
+                : 'Everyone is up to date'}
+            href={o.owed > 0 ? '/landlord/financials/collections' : '/landlord/financials'}
+            footLabel={o.owed > 0 ? 'Work collections' : 'Open financials'}
+          />
 
-          <div className="stat-card">
-            <div className="stat-label">Collections — This Month</div>
-            <div className="stat-num" style={{ color: overdueTotal > 0 ? '#dc2626' : '#0f172a' }}>
-              {monthDue > 0 ? fmtCurrency(monthPaid) : '—'}
-            </div>
-            <div className="stat-sub">
-              {monthDue > 0
-                ? collectionRate === 100
-                  ? `100% collected · ${fmtFull(monthDue)} due`
-                  : `${collectionRate ?? 0}% of ${fmtFull(monthDue)} due · ${fmtFull(monthPending)} pending`
-                : 'no payments this month'
-              }
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-label">Overdue Balance</div>
-            <div className="stat-num" style={{ color: overdueTotal > 0 ? '#dc2626' : '#94a3b8' }}>
-              {overdueTotal > 0 ? fmtCurrency(overdueTotal) : '$0'}
-            </div>
-            <div className="stat-sub">
-              {overdueTotal > 0 ? `${overdueSPs.length} payment${overdueSPs.length !== 1 ? 's' : ''} past due` : 'all payments current'}
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-label">Active Leases</div>
-            <div className="stat-num">{currentLeases.length}</div>
-            <div className="stat-sub">
-              {upcomingLeases.length > 0
-                ? `${upcomingLeases.length} upcoming · ${expiringSoon.length > 0 ? `${expiringSoon.length} expiring soon` : 'none expiring'}`
-                : expiringSoon.length > 0
-                  ? `${expiringSoon.length} expiring within 60 days`
-                  : `${leases.length} total leases on file`
-              }
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-label">Lead Pipeline</div>
-            <div className="stat-num" style={{ color: totalActive > 0 ? '#0f172a' : '#94a3b8' }}>
-              {totalActive}
-            </div>
-            <div className="stat-sub">
-              {qualifiedCount > 0
-                ? `${qualifiedCount} qualified · ${leads.filter(l => l.status === 'new').length} new`
-                : leads.filter(l => l.status === 'new').length > 0
-                  ? `${leads.filter(l => l.status === 'new').length} new, awaiting pre-screen`
-                  : `${leads.length} total leads`
-              }
-            </div>
-          </div>
-
+          <StatCard
+            icon="bolt"
+            title="Open leads"
+            sub={o.newLeads > 0
+              ? `${o.newLeads} not contacted yet`
+              : `${o.qualifiedLeads} qualified`}
+            value={String(o.activeLeads)}
+            pill={<TrendPill pct={o.leadDelta.pct} basis={o.leadDelta.basis} goodWhen="up" />}
+            foot={`${o.leadDelta.recent} enquir${o.leadDelta.recent !== 1 ? 'ies' : 'y'} in the last 30 days`}
+            href="/landlord/leads/list"
+            footLabel="Open the pipeline"
+          />
         </div>
 
-        {/* ── SCOPE ──
-            One toggle for everything below it: the traffic pulse and the
-            portfolio charts both answer to it, because a landlord asking
-            "how is Maple Street doing" means the whole answer, not half of it. */}
+        {/* ══ 2. WHAT NEEDS DOING ══ */}
+        <Signals
+          signals={sigs}
+          limit={SIGNALS_SHOWN}
+          moreHref="/landlord/financials/insights"
+          title="Needs your attention"
+        />
+
+        {/* ══ SCOPE ══
+            One toggle for everything below it. The traffic pulse, the charts
+            and the lead table all answer to it, because a landlord asking "how
+            is Maple Street doing" means the whole answer, not half of it. */}
         {properties.length > 1 && (
-          <div className="db-analytics-hd">
-            <div className="db-prop-toggle">
-              {[{ slug: 'all', name: 'All properties' }, ...properties].map(p => {
-                const active = dashProperty === p.slug
-                return (
-                  <button
-                    key={p.slug}
-                    onClick={() => setDashProperty(p.slug)}
-                    className={`db-prop-pill${active ? ' is-active' : ''}`}
-                  >
-                    {p.name}
-                  </button>
-                )
-              })}
+          <div className="ov-scope">
+            <span className="ov-scope-lbl">Showing</span>
+            <div className="seg" role="tablist" aria-label="Property">
+              {[{ slug: 'all', name: 'All properties' }, ...properties].map(p => (
+                <button
+                  key={p.slug}
+                  role="tab"
+                  aria-selected={scope === p.slug}
+                  className={`seg-btn${scope === p.slug ? ' on' : ''}`}
+                  onClick={() => setScope(p.slug)}
+                >
+                  {p.name}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* ── LISTING PULSE ──
-            Deliberately above the lead charts. When no leads come in, every
-            panel below this one reads as a flat line, and the landlord's next
-            question — "is anyone even seeing it?" — is answered only here. */}
-        <ListingPulse slug={dashProperty === 'all' ? null : dashProperty} />
-
-        {/* ── CHARTS ── */}
-        <div className="db-section-title">
-          📊 {dashProperty === 'all' ? 'Portfolio analytics' : 'Property analytics'}
-        </div>
-        <div className="db-row-full">
-          <LeadsTrendPanel dates={scopedLeads.map(l => l.created_at)} />
-        </div>
-        <div className="db-row">
-          <LeadStatusDonut leads={scopedLeads} />
-          <OccupancyByProperty properties={scopedProperties} />
-        </div>
-        <div className="db-row-full">
-          <CollectionsBars payments={scopedSPs} />
-        </div>
-
-        {/* ── ROW: Payments + Leases ── */}
-        <div className="db-row">
-
-          {/* Payments mini */}
-          <div className="panel">
-            <div className="panel-hd">
-              <span className="panel-title">Payments</span>
-              <Link href="/landlord/financials" className="panel-link">View all →</Link>
+        {/* ══ 3. MONEY IN, AND THE PROPERTIES IT CAME FROM ══ */}
+        <div className="grid-2">
+          <section className="card">
+            <div className="card-hd top">
+              <div>
+                <h2 className="card-title">Rent collected</h2>
+                <div className="card-big">{fmtCurrency(collectedInSpan)}</div>
+                <p className="card-sub">received over the last {bars.length} months</p>
+              </div>
+              <div className="seg sm pill" role="tablist" aria-label="Span">
+                <button
+                  role="tab" aria-selected={span === '6m'}
+                  className={`seg-btn${span === '6m' ? ' on' : ''}`}
+                  onClick={() => setSpan('6m')}
+                >6 months</button>
+                <button
+                  role="tab" aria-selected={span === '12m'}
+                  className={`seg-btn${span === '12m' ? ' on' : ''}`}
+                  onClick={() => setSpan('12m')}
+                >12 months</button>
+              </div>
             </div>
-            <div className="panel-body">
 
-              {plans.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '16px 0' }}>
-                  No payment plans yet
+            {collectedInSpan === 0 ? (
+              <p className="muted">
+                No rent has been collected on these leases yet. Money a tenant pays online lands
+                here the moment it settles, and anything you record by hand appears too.
+              </p>
+            ) : (
+              <>
+                <GradientBars
+                  points={bars}
+                  onSelect={key => router.push(`/landlord/financials/schedule?month=${key}`)}
+                />
+                <div className="card-ft">
+                  <span>Hover a month for the detail; click to open it.</span>
+                  <Link className="btn-quiet sm" href="/landlord/financials/trends">
+                    Health over time →
+                  </Link>
                 </div>
-              ) : (
-                <>
-                  {/* This month summary bar */}
-                  {monthDue > 0 && (
-                    <div style={{ marginBottom: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12 }}>
-                        <span style={{ color: '#64748b', fontWeight: 600 }}>This month</span>
-                        <span style={{ color: monthPending > 0 ? '#d97706' : '#16a34a', fontWeight: 700 }}>
-                          {fmtFull(monthPaid)} / {fmtFull(monthDue)}
-                        </span>
-                      </div>
-                      <div className="prog-bar">
-                        <div className="prog-fill" style={{
-                          width: `${Math.min(100, Math.round((monthPaid / monthDue) * 100))}%`,
-                          background: monthPending > 0 ? '#f59e0b' : '#10b981',
-                        }} />
-                      </div>
-                      {monthPending > 0 && (
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>
-                          {fmtFull(monthPending)} pending
-                        </div>
-                      )}
-                    </div>
-                  )}
+              </>
+            )}
+          </section>
 
-                  {/* Overdue list */}
-                  {overdueList.length > 0 ? (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                        Overdue
-                      </div>
-                      {overdueList.slice(0, 4).map(item => (
-                        <div key={item.planId} className="row-item">
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{item.propertyName}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.count} payment{item.count !== 1 ? 's' : ''} past due</div>
-                          </div>
-                          <Link href={`/landlord/financials?plan=${item.planId}`} style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', textDecoration: 'none', flexShrink: 0 }}>
-                            {fmtFull(item.owed)}
-                          </Link>
-                        </div>
-                      ))}
-                    </>
-                  ) : monthDue > 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#16a34a', fontWeight: 600 }}>
-                      <span style={{ fontSize: 16 }}>✓</span> All payments current
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 13, color: '#94a3b8' }}>No payments due this month</div>
-                  )}
-
-                  {/* Plan list */}
-                  {plans.length > 0 && (
-                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                        Active plans
-                      </div>
-                      {plans.slice(0, 4).map(plan => {
-                        const planPaid  = (plan.scheduled_payments || []).filter(sp => sp.status === 'paid').length
-                        const planTotal = (plan.scheduled_payments || []).length
-                        return (
-                          <div key={plan.id} className="row-item">
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
-                                {plan.property?.name || 'Unknown'}
-                              </div>
-                              <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                                {plan.tenants.map(t => t.name).join(', ')} · {planPaid}/{planTotal} paid
-                              </div>
-                            </div>
-                            <Link href={`/landlord/financials?plan=${plan.id}`} style={{ fontSize: 11, color: '#8C1D40', textDecoration: 'none', fontWeight: 500, flexShrink: 0 }}>
-                              View →
-                            </Link>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
+          <section className="card">
+            <div className="card-hd top">
+              <div>
+                <h2 className="card-title">Your properties</h2>
+                <p className="card-sub">
+                  {s.properties.length} propert{s.properties.length !== 1 ? 'ies' : 'y'} ·
+                  {' '}{fmtCurrency(s.monthlyRevenue)}/mo contracted
+                </p>
+              </div>
+              <Link className="btn-secondary sm" href="/landlord/listings">Manage all</Link>
             </div>
-          </div>
 
-          {/* Leases mini */}
-          <div className="panel">
-            <div className="panel-hd">
-              <span className="panel-title">Active Leases</span>
-              <Link href="/landlord/leases" className="panel-link">View all →</Link>
+            <div className="minis">
+              {s.properties.slice(0, PEERS_SHOWN).map(p => (
+                <MiniCard
+                  key={p.id}
+                  badge={initials(p.name)}
+                  label={p.name}
+                  value={p.monthly > 0 ? `${fmtCurrency(p.monthly)}/mo` : fmtCurrency(p.price)}
+                  caption={p.totalRooms > 0
+                    ? `${p.totalRooms - p.vacantRooms} of ${p.totalRooms} rooms filled`
+                    : `${p.activeLeases} lease${p.activeLeases !== 1 ? 's' : ''}`}
+                  status={PEER_STATUS[p.state](p)}
+                  statusTone={PEER_TONE[p.state]}
+                  href={`/landlord/listings/${p.slug}`}
+                />
+              ))}
             </div>
-            <div className="panel-body">
 
-              {currentLeases.length === 0 && upcomingLeases.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '16px 0' }}>
-                  No active leases
-                </div>
-              ) : (
-                <>
-                  {/* This warning used to be a dead end: it named the problem
-                      and offered nowhere to go. Renewals is where it is solved. */}
-                  {expiringSoon.length > 0 && (
-                    <Link
-                      href="/landlord/renewals"
-                      style={{ display: 'block', background: '#fef3cd', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#92400e', fontWeight: 500, textDecoration: 'none' }}
-                    >
-                      ⚠ {expiringSoon.length} lease{expiringSoon.length !== 1 ? 's' : ''} expiring within 60 days
-                      <span style={{ float: 'right', fontWeight: 700 }}>Send renewals →</span>
-                    </Link>
-                  )}
+            {s.properties.length > PEERS_SHOWN && (
+              <p className="card-more">
+                and {s.properties.length - PEERS_SHOWN} more —{' '}
+                <Link className="lnk" href="/landlord/listings">open your listings</Link>
+              </p>
+            )}
+          </section>
+        </div>
 
-                  {[...currentLeases].slice(0, 5).map(lease => {
-                    const days = daysUntil(lease.end_date)
-                    const expiring = days <= 60
-                    const tenantNames = lease.tenants.map(t => t.name).filter(Boolean).join(', ') || 'No tenant'
+        {/* ══ 4. ENQUIRIES, AND THE PIPELINE THEY FEED ══ */}
+        <div className="grid-2">
+          <section className="card">
+            <div className="card-hd top">
+              <div>
+                <h2 className="card-title">Enquiries over time</h2>
+                <div className="card-big">{trendTotal}</div>
+                <p className="card-sub">
+                  new lead{trendTotal !== 1 ? 's' : ''} in the last {range} days
+                </p>
+              </div>
+              <div className="seg sm pill" role="tablist" aria-label="Range">
+                {([30, 90] as const).map(r => (
+                  <button
+                    key={r}
+                    role="tab" aria-selected={range === r}
+                    className={`seg-btn${range === r ? ' on' : ''}`}
+                    onClick={() => setRange(r)}
+                  >{r} days</button>
+                ))}
+              </div>
+            </div>
+
+            {trendTotal === 0 ? (
+              <p className="muted">
+                No enquiries in this window. The traffic pulse below says whether anyone is
+                reaching the listing at all — a flat line here with views there is a listing
+                problem, and a flat line in both is a reach problem.
+              </p>
+            ) : (
+              <TrendArea points={trend} unit="lead" />
+            )}
+          </section>
+
+          <section className="card">
+            <div className="card-hd top">
+              <div>
+                <h2 className="card-title">Pipeline</h2>
+                <p className="card-sub">Where the {s.leads.length} lead{s.leads.length !== 1 ? 's' : ''} on this scope stand</p>
+              </div>
+              <Link className="btn-secondary sm" href="/landlord/leads">Full pipeline</Link>
+            </div>
+
+            {s.leads.length === 0 ? (
+              <p className="muted">
+                Nobody has enquired yet. Leads appear the moment a student asks about a listing.
+              </p>
+            ) : (
+              <>
+                {/* The funnel as rows rather than columns: a stage's name and
+                    its count sit on the same line as its bar, so the shape and
+                    the numbers are read in one pass instead of two. */}
+                <div className="fnl">
+                  {s.funnel.map(f => {
                     return (
-                      <div key={lease.id} className="row-item">
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {tenantNames}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                            {lease.property?.name} · ends {formatLeaseDate(lease.end_date)}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          {expiring ? (
-                            <span className="pill" style={{ color: '#c2410c', background: '#fff7ed', borderColor: '#fed7aa' }}>
-                              {days}d left
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 11, color: '#94a3b8' }}>{days}d left</span>
-                          )}
-                          {lease.rent_amount && lease.rent_amount > 0 && (
-                            <div style={{ fontSize: 12, fontWeight: 600, color: '#10b981', marginTop: 2 }}>
-                              {fmtCurrency(lease.rent_amount)}/mo
-                            </div>
-                          )}
-                        </div>
+                      <div key={f.stage} className="fnl-row">
+                        <span className="fnl-lbl">{f.label}</span>
+                        <span className="fnl-track">
+                          <span
+                            className={`fnl-fill${f.count === 0 ? ' empty' : ''}`}
+                            style={{ width: `${Math.max(f.count === 0 ? 0 : 3, (f.count / widest) * 100)}%` }}
+                          />
+                        </span>
+                        <span className="fnl-n">{f.count}</span>
                       </div>
                     )
                   })}
-
-                  {upcomingLeases.length > 0 && (
-                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                        Upcoming
-                      </div>
-                      {upcomingLeases.slice(0, 2).map(lease => {
-                        const tenantNames = lease.tenants.map(t => t.name).filter(Boolean).join(', ') || 'No tenant'
-                        const startsIn = daysUntil(lease.start_date)
-                        return (
-                          <div key={lease.id} className="row-item" style={{ paddingTop: 6, paddingBottom: 6 }}>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{tenantNames}</div>
-                              <div style={{ fontSize: 11, color: '#94a3b8' }}>{lease.property?.name}</div>
-                            </div>
-                            <span className="pill" style={{ color: '#1d4ed8', background: '#eff6ff', borderColor: '#bfdbfe' }}>
-                              starts in {startsIn}d
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-        </div>
-
-        {/* ── Lead Pipeline ── */}
-        <div className="db-row-full">
-          <div className="panel">
-            <div className="panel-hd">
-              <span className="panel-title">Lead Pipeline</span>
-              <Link href="/landlord/leads" className="panel-link">Full pipeline →</Link>
-            </div>
-            <div className="panel-body">
-              {leads.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>
-                  No leads yet — they&apos;ll appear here once tenants inquire about your properties.
                 </div>
-              ) : (
-                <>
-                  {/* Funnel */}
-                  <div className="funnel">
-                    {stageCounts.map(({ stage, count }) => (
-                      <div key={stage} className="funnel-seg">
-                        <div className="funnel-n" style={{ color: count > 0 ? '#0f172a' : '#cbd5e1' }}>{count}</div>
-                        <div className="funnel-lbl">{STAGE_LABEL[stage]}</div>
-                      </div>
-                    ))}
-                  </div>
 
-                  {/* Recent leads */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 8 }}>
-                    {recentLeads.map(lead => {
-                      const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email
-                      const initials = (name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-                      const cfg = STAGE_COLOR[lead.status] || STAGE_COLOR.closed
-                      const propName = lead.property ? (propNameBySlug[lead.property] || lead.property) : null
-                      return (
-                        <Link key={lead.id} href={`/landlord/leads/${lead.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10, background: '#f8fafc', borderRadius: 10, padding: '10px 12px', border: '1px solid #f1f5f9' }}>
-                          <div style={{ width: 34, height: 34, borderRadius: '50%', background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: cfg.color, flexShrink: 0 }}>
-                            {initials}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8' }}>{propName || 'No property'}</div>
-                          </div>
-                          <span className="pill" style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}>
-                            {STAGE_LABEL[lead.status] || lead.status}
-                          </span>
-                        </Link>
-                      )
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                <div className="mix">
+                  {s.statusMix.map(m => (
+                    <span key={m.label} className="mix-item">
+                      <i style={{ background: m.color }} aria-hidden="true" />
+                      {m.label}
+                      <em>{m.count}</em>
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
         </div>
 
-        {/* ── Properties ── */}
-        <div className="db-row-full">
-          <div className="panel">
-            <div className="panel-hd">
-              <span className="panel-title">Your Properties</span>
-              <Link href="/landlord/listings" className="panel-link">Manage all →</Link>
-            </div>
-            {properties.length === 0 ? (
-              <div style={{ padding: '28px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>No listings yet</div>
-                <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>It takes about 5 minutes to go live.</div>
-                <Link href="/landlord/listings/new" style={{ background: '#0f172a', color: '#34d399', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
-                  Create your first listing →
-                </Link>
-              </div>
-            ) : (
-              <div>
-                {properties.map((p, i) => {
-                  const propLeads   = leads.filter(l => l.property === p.slug)
-                  const propCurrent = currentLeases.filter(l => l.property?.slug === p.slug)
-                  const propPlan    = plans.find(pl => pl.property?.slug === p.slug)
-                  const propOverdue = propPlan
-                    ? (propPlan.scheduled_payments || []).filter(sp => {
-                        const d = new Date(sp.due_date + 'T00:00:00')
-                        return d < today && sp.paid_amount < sp.amount && ['missed','late','partial','pending'].includes(sp.status)
-                      }).reduce((s, sp) => s + sp.amount - sp.paid_amount, 0)
-                    : 0
+        {/* ══ 5. THE TRAFFIC PULSE ══
+            Below the lead charts, because those can only ever say "nobody
+            enquired" and this is the band that says why. */}
+        <ListingPulse slug={scope === 'all' ? null : scope} />
 
-                  return (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderBottom: i < properties.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                      {p.images?.[0]
-                        ? <img src={p.images[0]} alt={p.name} style={{ width: 52, height: 44, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-                        : <div style={{ width: 52, height: 44, borderRadius: 8, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏠</div>
-                      }
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
-                          {p.admin_status === 'active'   && <span className="pill" style={{ color: '#065f46', background: '#d1fae5', borderColor: '#a7f3d0' }}>Live</span>}
-                          {p.owner_plan_active === false && <span className="pill" style={{ color: '#92400e', background: '#fef3c7', borderColor: '#fde68a' }}>Not published</span>}
-                          {p.admin_status === 'pending'  && <span className="pill" style={{ color: '#92400e', background: '#fef3c7', borderColor: '#fde68a' }}>Review</span>}
-                          {p.admin_status === 'inactive' && <span className="pill" style={{ color: '#6b7280', background: '#f9fafb', borderColor: '#e5e7eb' }}>Inactive</span>}
-                          {p.admin_status === 'rejected' && <span className="pill" style={{ color: '#9f1239', background: '#fff1f2', borderColor: '#fecdd3' }}>Rejected</span>}
-                        </div>
-                        <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#94a3b8', flexWrap: 'wrap' }}>
-                          <span>${p.price?.toLocaleString()}/mo</span>
-                          <span>{p.available} of {p.total_rooms} vacant</span>
-                          {propCurrent.length > 0 && <span style={{ color: '#16a34a' }}>{propCurrent.length} active lease{propCurrent.length !== 1 ? 's' : ''}</span>}
-                          {propLeads.length > 0 && <span>{propLeads.length} lead{propLeads.length !== 1 ? 's' : ''}</span>}
-                          {propOverdue > 0 && <span style={{ color: '#dc2626', fontWeight: 600 }}>⚠ {fmtFull(propOverdue)} overdue</span>}
-                        </div>
-                      </div>
-                      <Link href={`/landlord/listings/${p.slug}`} style={{ fontSize: 12, fontWeight: 500, color: '#8C1D40', textDecoration: 'none', flexShrink: 0 }}>Manage →</Link>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+        {/* ══ 6. THE NEWEST LEADS ══ */}
+        <section className="card flush">
+          <div className="card-hd top">
+            <div>
+              <h2 className="card-title">Newest leads</h2>
+              <p className="card-sub">The last {recentLeads.length} to come in</p>
+            </div>
+            <Link className="btn-secondary sm" href="/landlord/leads/list">
+              <Glyph name="search" size={14} />
+              All leads
+            </Link>
           </div>
+
+          {recentLeads.length === 0 ? (
+            <p className="muted card-prose">
+              No leads on this scope yet. They land here the moment a student asks about a listing.
+            </p>
+          ) : (
+            <div className="tbl-scroll">
+              <table className="tbl roomy">
+                <thead>
+                  <tr>
+                    <th>Renter</th>
+                    <th>Property</th>
+                    <th>Enquired</th>
+                    <th>Moving in</th>
+                    <th>Stage</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentLeads.map(l => {
+                    const prop = properties.find(p => p.slug === l.property)
+                    const stage = STAGE_VIEW[l.status] ?? { label: l.status, tone: 'idle' as const }
+                    return (
+                      <tr key={l.id} className="click" onClick={() => router.push(`/landlord/leads/${l.id}`)}>
+                        <td>
+                          <span className="at-who">
+                            <span className="at-avatar">{initials(leadName(l))}</span>
+                            <span>
+                              <span className="at-name">{leadName(l)}</span>
+                              <span className="at-sub">{l.email}</span>
+                            </span>
+                          </span>
+                        </td>
+                        <td>{prop?.name ?? l.property ?? '—'}</td>
+                        <td>{l.created_at
+                          ? new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          : '—'}</td>
+                        <td>{l.move_in_date ? formatLeaseDate(l.move_in_date) : '—'}</td>
+                        <td><StatusDot tone={stage.tone}>{stage.label}</StatusDot></td>
+                        <td className="at-more" aria-hidden="true">⋮</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* ══ WHERE ELSE TO GO ══ */}
+        <div className="dests">
+          <Dest icon="calendar" title="Leases"
+            stat={String(o.currentLeases.length)}
+            line={o.expiring.length > 0
+              ? `${o.expiring.length} ending within 60 days`
+              : `${o.upcomingLeases.length} starting soon`}
+            href="/landlord/leases" />
+          <Dest icon="wallet" title="Financials"
+            stat={o.collectionRate !== null ? `${o.collectionRate}%` : '—'}
+            line="Collected, overdue, and what is coming"
+            href="/landlord/financials" />
+          <Dest icon="building" title="Listings"
+            stat={`${o.liveCount} / ${o.properties.length}`}
+            line="Live, rented, and not yet published"
+            href="/landlord/listings" />
+          <Dest icon="clock" title="Renewals"
+            stat={String(o.expiring.length)}
+            line={o.expiring.length > 0
+              ? `Soonest in ${daysUntil(o.expiring[0].lease.end_date)} days`
+              : 'Nothing ending yet'}
+            href="/landlord/renewals" />
         </div>
 
       </div>
     </>
   )
 }
+
+// ─── SMALL PIECES ────────────────────────────────────────────────────────────
+
+function Dest({
+  icon, title, stat, line, href,
+}: {
+  icon: GlyphName
+  title: string
+  stat: string
+  line: string
+  href: string
+}) {
+  return (
+    <Link className="dest" href={href}>
+      <span className="gl-plate"><Glyph name={icon} size={15} /></span>
+      <span className="dest-main">
+        <span className="dest-title">{title}</span>
+        <span className="dest-stat">{stat}</span>
+        <span className="dest-line">{line}</span>
+      </span>
+      <span className="row-chev" aria-hidden="true" />
+    </Link>
+  )
+}
+
+/** A peer card's one-line state. Money owed outranks everything else. */
+const PEER_STATUS: Record<
+  string,
+  (p: { owed: number; vacantRooms: number; activeLeases: number }) => string
+> = {
+  live:     p => p.owed > 0 ? `${fmtCurrency(p.owed)} overdue`
+                : p.vacantRooms > 0 ? `${p.vacantRooms} room${p.vacantRooms !== 1 ? 's' : ''} empty`
+                : 'Full and current',
+  unpaid:   () => 'Not published',
+  rented:   p => p.owed > 0 ? `${fmtCurrency(p.owed)} overdue` : 'Rented out',
+  inactive: () => 'Switched off',
+  pending:  () => 'Awaiting review',
+  rejected: () => 'Rejected',
+}
+
+const PEER_TONE: Record<string, 'good' | 'bad' | 'warn' | 'idle'> = {
+  live: 'good', unpaid: 'warn', rented: 'idle',
+  inactive: 'idle', pending: 'warn', rejected: 'bad',
+}
+
+/** A lead status as the table shows it. Colour never carries it alone. */
+const STAGE_VIEW: Record<string, { label: string; tone: 'good' | 'bad' | 'warn' | 'idle' }> = {
+  new:            { label: 'New',            tone: 'warn' },
+  contacted:      { label: 'Contacted',      tone: 'idle' },
+  follow_up:      { label: 'Follow-up',      tone: 'warn' },
+  engaged:        { label: 'Engaged',        tone: 'good' },
+  qualified:      { label: 'Qualified',      tone: 'good' },
+  tour_scheduled: { label: 'Qualified',      tone: 'good' },
+  matching:       { label: 'Roommate match', tone: 'good' },
+  cold:           { label: 'Cold',           tone: 'idle' },
+  closed:         { label: 'Closed',         tone: 'idle' },
+}
+
+// ─── STYLES ──────────────────────────────────────────────────────────────────
+
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+  .fin .ov-hd {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 18px; flex-wrap: wrap; margin-bottom: 22px;
+  }
+  .fin .ov-hd-id { min-width: 0; }
+  .fin .ov-title {
+    font-size: 27px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15;
+  }
+  .fin .ov-flag { color: var(--late); font-weight: 500; }
+  .fin .ov-hd-act { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  .fin .ov-scope {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 20px 0 16px;
+  }
+  /* Sentence case, like every other label in the area. The uppercase
+     micro-caps went when the money screens were restyled: a label is a name,
+     not a column head, and small caps at 11px are the first thing to turn to
+     mush on a laptop screen. */
+  .fin .ov-scope-lbl {
+    font-size: 12px; font-weight: 500; color: var(--ink-3); letter-spacing: -0.01em;
+  }
+
+  /* The two-up band. Uneven on purpose — a pair of exactly equal panels reads
+     as indecision, and in both bands one side is the chart. */
+  .fin .grid-2 {
+    display: grid; grid-template-columns: minmax(0, 1.16fr) minmax(0, 0.84fr);
+    gap: 16px; margin-bottom: 18px;
+  }
+  /* A card standing on its own in the page's flow — the signals panel, the
+     leads table — carries the band rhythm. A card inside the two-up grid does
+     not: the grid's own gap spaces it, and a margin there would hang off the
+     bottom of the shorter column. */
+  .fin-wrap > .card { margin-bottom: 18px; }
+
+  /* The bar chart, capped.
+     GradientBars divides its width evenly between the columns, which is
+     right in the money area's narrower panels and wrong here: six months
+     across a full-bleed panel gives 125px slabs that read as blocks of colour
+     rather than as measurements. Capping the column and centring the group
+     keeps a bar a bar at any width, and at twelve months the cap never binds
+     so the chart still fills the panel. */
+  .fin .gb-cols { justify-content: center; }
+  .fin .gb-col { max-width: 92px; }
+
+  /* ── The funnel, as rows ──────────────────────────────────────────────── */
+  .fin .fnl { display: flex; flex-direction: column; gap: 9px; }
+  .fin .fnl-row { display: flex; align-items: center; gap: 12px; }
+  .fin .fnl-lbl {
+    width: 78px; flex-shrink: 0; font-size: 12.5px; color: var(--ink-2);
+    letter-spacing: -0.01em;
+  }
+  .fin .fnl-track {
+    flex: 1; min-width: 0; height: 22px; border-radius: 7px;
+    background: var(--surface-2); border: 1px solid var(--line-2); overflow: hidden;
+  }
+  .fin .fnl-fill {
+    display: block; height: 100%; border-radius: 6px;
+    background: linear-gradient(90deg, #178d4e 0%, #0f7a43 100%);
+    transition: width 0.4s var(--ease);
+  }
+  .fin .fnl-fill.empty { background: none; }
+  .fin .fnl-n {
+    width: 34px; flex-shrink: 0; text-align: right; font-size: 13.5px; font-weight: 600;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.015em;
+  }
+
+  .fin .mix {
+    display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 16px;
+    padding-top: 14px; border-top: 1px solid var(--line-2);
+  }
+  .fin .mix-item {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11.5px; color: var(--ink-2);
+  }
+  .fin .mix-item i { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .fin .mix-item em {
+    font-style: normal; font-weight: 600; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Destinations ─────────────────────────────────────────────────────── */
+  .fin .dests {
+    display: grid; gap: 12px; margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
+  .fin .dest {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    padding: 15px 16px; text-decoration: none; color: inherit; min-width: 0;
+    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  }
+  .fin .dest:hover { border-color: #d9d9de; box-shadow: var(--lift-1); }
+  .fin .dest .row-chev { margin-top: 9px; }
+  .fin .dest-main { flex: 1; min-width: 0; }
+  .fin .dest-title {
+    display: block; font-size: 12px; font-weight: 500;
+    letter-spacing: -0.01em; color: var(--ink-2);
+  }
+  .fin .dest-stat {
+    display: block; font-size: 19px; font-weight: 600; letter-spacing: -0.022em;
+    margin-top: 4px; font-variant-numeric: tabular-nums; line-height: 1.15;
+  }
+  .fin .dest-line {
+    display: block; font-size: 11.5px; color: var(--ink-2); line-height: 1.45; margin-top: 4px;
+  }
+
+  @media (max-width: 1100px) {
+    .fin .grid-2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 700px) {
+    .fin .ov-title { font-size: 23px; }
+    .fin .ov-hd-act { width: 100%; }
+    .fin .ov-hd-act > a { flex: 1; justify-content: center; }
+    .fin .fnl-lbl { width: 66px; font-size: 12px; }
+  }
+`
+
+/**
+ * The traffic pulse's furniture.
+ *
+ * `ListingPulse` and its four sub-panels are a large, well-tested section that
+ * draws itself with `.panel`, `.db-row` and friends — classes this page used
+ * to define in a slate-and-maroon dialect of its own. Rather than rewrite that
+ * section to restyle it, the same class names are redefined here in the money
+ * area's tokens, so the pulse inherits the new surface, radius and ink without
+ * a line of its own changing.
+ *
+ * This block is the seam between the old section and the new page, and it is
+ * meant to be deleted: when the pulse is rebuilt on `card`, this goes with
+ * it. It is kept to one screen and nothing new is built on it.
+ */
+const LEGACY_CSS = `
+  .fin .panel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    overflow: hidden; min-width: 0;
+  }
+  .fin .panel-hd {
+    padding: 16px 20px 13px; border-bottom: 1px solid var(--line-2);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .fin .panel-title {
+    font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -0.012em;
+    text-transform: none;
+  }
+  .fin .panel-link {
+    font-size: 12.5px; color: var(--accent); font-weight: 500; text-decoration: none;
+    white-space: nowrap;
+  }
+  .fin .panel-link:hover { text-decoration: underline; }
+  .fin .panel-body { padding: 16px 20px 18px; }
+
+  .fin .db-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
+  .fin .db-row-full { margin-bottom: 14px; }
+  .fin .db-section-title { font-size: 16px; font-weight: 600; letter-spacing: -0.018em; }
+
+  .fin .row-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--line-2);
+  }
+  .fin .row-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .fin .row-item-first { padding-top: 0; }
+
+  .fin .prog-bar {
+    height: 7px; background: var(--line-2); border-radius: 99px; overflow: hidden; margin-top: 4px;
+  }
+  .fin .prog-fill { height: 100%; border-radius: 99px; transition: width 0.4s var(--ease); }
+
+  @media (max-width: 1100px) { .fin .db-row { grid-template-columns: 1fr; } }
+`
