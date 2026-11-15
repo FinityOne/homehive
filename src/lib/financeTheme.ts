@@ -1057,4 +1057,5 @@ export type HubTab =
   | 'collections'  // who is behind, and the work on it
   | 'schedule'     // what falls due when
   | 'payments'     // what actually arrived
+  | 'expenses'     // what it cost to run
   | 'reminders'    // what was emailed about it

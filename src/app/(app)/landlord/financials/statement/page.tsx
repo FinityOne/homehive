@@ -37,6 +37,10 @@ import { monthKeyOf, monthLabel, type MonthKey } from '@/lib/financialsMonth'
 import { statement, statementCsv, statementMonths } from '@/lib/financialsStatement'
 import MoneyHub from '@/components/finance/MoneyHub'
 import Glyph, { GLYPH_CSS } from '@/components/finance/Glyph'
+import { useExpenses } from '@/lib/useExpenses'
+import {
+  CATEGORY_META, GROUP_META, GROUP_ORDER, noi, totalExpenses,
+} from '@/lib/propertyExpenses'
 import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
 import { Meter, VIZ_CSS } from '@/components/finance/Charts'
 import { FINANCE_THEME } from '@/lib/financeTheme'
@@ -48,6 +52,7 @@ export default function StatementPage({
 }) {
   const sp = use(searchParams)
   const { plans, waivers, bounced, loading } = useMoney()
+  const { items: allExpenses } = useExpenses()
   const [find, setFind] = useState(false)
   usePaletteShortcut(useCallback(() => setFind(true), []))
 
@@ -79,6 +84,27 @@ export default function StatementPage({
     () => (propertyId ? statement(plans, propertyId, month) : null),
     [plans, propertyId, month],
   )
+
+  /**
+   * The month's costs, and what the property therefore earned.
+   *
+   * Computed here rather than inside `statement()` on purpose. That model
+   * balances — opening + billed − collected − recovered = closing — and that
+   * identity is the entire value of the document. Costs have nothing to do
+   * with it: they are not rent, they do not move arrears, and folding them in
+   * would either break the identity or quietly redefine one of its terms.
+   *
+   * So they sit outside it, exactly as deposits and late fees already do, and
+   * the section says so.
+   */
+  const costs = useMemo(() => {
+    if (!propertyId) return null
+    const mine = allExpenses.filter(
+      e => e.property_id === propertyId && e.incurred_on.slice(0, 7) === month,
+    )
+    const totals = totalExpenses(mine)
+    return { totals, items: mine, pnl: noi(s ? s.collected + s.feesCollected : 0, totals) }
+  }, [allExpenses, propertyId, month, s])
 
   useEffect(() => {
     document.title = s
@@ -290,6 +316,78 @@ export default function StatementPage({
                   </p>
                 </section>
 
+                {/* ── What it cost, and therefore what it earned ── */}
+                <section className="stmt-sec">
+                  <h3 className="stmt-h">What the property cost this month</h3>
+
+                  {!costs || costs.totals.count === 0 ? (
+                    <p className="stmt-note">
+                      No costs are recorded against this property for {s.monthLabel}, so this
+                      statement reports income only. Anybody reading it should know that:
+                      without the mortgage interest, tax, insurance and repairs, the figures
+                      above are what the property <em>collected</em> and not what it{' '}
+                      <em>earned</em>. Costs are entered on the{' '}
+                      <Link className="lnk" href={`/landlord/financials/expenses?property=${propertyId}`}>
+                        Expenses
+                      </Link>{' '}
+                      tab and appear here automatically.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="stmt-rows">
+                        {GROUP_ORDER.filter(g => costs.totals.byGroup[g] > 0).map(g => (
+                          <Row
+                            key={g}
+                            label={GROUP_META[g].label}
+                            hint={costs.totals.byCategory
+                              .filter(c => c.group === g)
+                              .map(c => CATEGORY_META[c.category].label.toLowerCase())
+                              .join(', ')}
+                            value={costs.totals.byGroup[g]}
+                          />
+                        ))}
+                        <Row
+                          label="Operating cost"
+                          hint="fixed and operating — the figure NOI subtracts"
+                          value={costs.totals.operating}
+                          strong
+                        />
+                        <Row
+                          label="Net operating income"
+                          hint="received less operating cost, debt excluded"
+                          value={costs.pnl.noi}
+                          tone={costs.pnl.noi < 0 ? 'bad' : 'good'}
+                          strong
+                        />
+                        {costs.totals.financing > 0 && (
+                          <Row
+                            label="Cash flow after debt service"
+                            hint="what was actually left, before any improvements"
+                            value={costs.pnl.cashFlow}
+                            tone={costs.pnl.cashFlow < 0 ? 'bad' : 'good'}
+                            strong
+                          />
+                        )}
+                      </div>
+                      <p className="stmt-note">
+                        These figures sit outside the rent arithmetic above and do not affect
+                        it — a cost is not rent and does not move arrears, and the identity
+                        that makes this statement checkable is rent against rent.
+                        {costs.totals.capital > 0 && (
+                          <>
+                            {' '}The {fmtCurrency(costs.totals.capital)} of capital
+                            improvements in the month is shown in its group but excluded from
+                            operating cost, NOI and cash flow: an improvement is depreciated
+                            over years rather than deducted now.
+                          </>
+                        )}
+                        {' '}NOI deliberately excludes mortgage interest so the figure
+                        describes the building rather than the loan on it.
+                      </p>
+                    </>
+                  )}
+                </section>
+
                 {/* ── Per tenant ── */}
                 {s.payers.length > 0 && (
                   <section className="stmt-sec">
@@ -395,21 +493,27 @@ export default function StatementPage({
 
 /** One line of the statement's arithmetic. */
 function Row({
-  label, hint, value, sign, tone,
+  label, hint, value, sign, tone, strong,
 }: {
   label: string
   hint: string
   value: number
   sign?: '+' | '−'
-  tone?: 'good'
+  /** `bad` reuses the arrears colour, which is already what red means here. */
+  tone?: 'good' | 'bad'
+  /** A subtotal within a section. Reuses the `.total` row style the closing
+   *  arrears line already wears, so a statement has one weight for a total. */
+  strong?: boolean
 }) {
   return (
-    <div className="stmt-row">
+    <div className={`stmt-row${strong ? ' total' : ''}`}>
       <span className="stmt-lbl">
         {label}
         <em>{hint}</em>
       </span>
-      <span className={`stmt-val${tone === 'good' && value > 0 ? ' good' : ''}`}>
+      <span className={`stmt-val${
+        tone === 'good' && value > 0 ? ' good' : tone === 'bad' ? ' owed' : ''
+      }`}>
         {sign && value > 0 && <span className="stmt-sign">{sign}</span>}
         {fmtCurrency(value)}
       </span>

@@ -51,7 +51,7 @@ import { buildDashboard } from '@/lib/financialsDashboard'
 import { signals, pulse } from '@/lib/financialsSignals'
 import { forecast } from '@/lib/financialsForecast'
 import { pace, arrearsMove } from '@/lib/financialsHistory'
-import { leaseHref, planHref } from '@/lib/financialsTree'
+import { leaseHref, planHref, propertyHref } from '@/lib/financialsTree'
 import { monthLabel, type Charge } from '@/lib/financialsMonth'
 import { METHOD_META } from '@/lib/financialsRollup'
 import MoneyHub from '@/components/finance/MoneyHub'
@@ -365,7 +365,7 @@ export default function FinancialsOverview({
                         ? `${fmtCurrency(prop.owed)} overdue`
                         : prop.activeLeases === 0 ? 'No live lease' : 'Up to date'}
                       statusTone={prop.owed > 0 ? 'bad' : prop.activeLeases === 0 ? 'idle' : 'good'}
-                      href={`/landlord/financials/portfolio#p-${prop.propertyId}`}
+                      href={propertyHref(prop.propertyId)}
                     />
                   ))}
                 </div>
@@ -528,6 +528,10 @@ export default function FinancialsOverview({
                 stat={`${d.tree.propertyCount} / ${d.tree.leaseCount}`}
                 line="Property → lease → plan → tenant"
                 href="/landlord/financials/portfolio" />
+              <Dest icon="wallet" title="Rent roll"
+                stat={fmtCurrency(d.monthly)}
+                line="Every unit, let or empty — the one to hand over"
+                href="/landlord/financials/rent-roll" />
               <Dest icon="trend-up" title="Trends"
                 stat={d.rate12 !== null ? `${d.rate12}%` : '—'}
                 line="Arrears carried, on-time share, any span"

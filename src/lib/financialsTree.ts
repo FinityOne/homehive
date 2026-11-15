@@ -603,5 +603,7 @@ export function findLease(tree: MoneyTree, key: string): TreeLease | null {
  * Every link into the money area goes through here, so that changing the shape
  * of the URL is one edit rather than a search for string concatenation.
  */
+export const propertyHref = (propertyId: string) =>
+  `/landlord/financials/property/${propertyId}`
 export const leaseHref = (key: string) => `/landlord/financials/lease/${key}`
 export const planHref = (planId: string) => `/landlord/financials/plan/${planId}`

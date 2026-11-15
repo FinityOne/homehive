@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtCurrency } from '@/lib/payments'
-import { leaseHref, planHref, type MoneyTree } from '@/lib/financialsTree'
+import { leaseHref, planHref, type MoneyTree, propertyHref } from '@/lib/financialsTree'
 import Glyph, { type GlyphName } from '@/components/finance/Glyph'
 
 type Item = {
@@ -79,7 +79,10 @@ function index(tree: MoneyTree): Item[] {
       name: p.propertyName,
       sub: `${p.leases.length} lease${p.leases.length !== 1 ? 's' : ''} · ${
         p.payerCount} payer${p.payerCount !== 1 ? 's' : ''} · ${fmtCurrency(p.monthly)}/mo`,
-      href: `/landlord/financials/portfolio#p-${p.propertyId}`,
+      // The property's own money page, not an anchor on the tree: searching
+      // for a building and landing on a collapsed row was the one result here
+      // that did not take you anywhere.
+      href: propertyHref(p.propertyId),
       icon: 'building',
       fig: p.owed > 0 ? fmtCurrency(p.owed) : undefined,
       owed: p.owed > 0,

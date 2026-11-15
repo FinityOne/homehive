@@ -39,7 +39,7 @@ import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
-import { buildTree, findLease, planHref, type TreePayer } from '@/lib/financialsTree'
+import { buildTree, findLease, planHref, type TreePayer, propertyHref } from '@/lib/financialsTree'
 import { allCharges, type Charge } from '@/lib/financialsMonth'
 import MoneyHub from '@/components/finance/MoneyHub'
 import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
@@ -149,7 +149,7 @@ export default function LeaseMoneyPage({
           crumbs={[
             { label: 'Financials', href: '/landlord/financials' },
             { label: 'Portfolio', href: '/landlord/financials/portfolio' },
-            { label: lease.propertyName, href: `/landlord/financials/portfolio#p-${lease.propertyId}` },
+            { label: lease.propertyName, href: propertyHref(lease.propertyId) },
             { label: lease.label },
           ]}
           title={lease.propertyName}

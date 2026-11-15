@@ -44,7 +44,7 @@ import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
-import { buildTree, leaseHref, planHref, type TreeLease, type TreePlan, type TreePayer, type TreeProperty } from '@/lib/financialsTree'
+import { buildTree, leaseHref, planHref, type TreeLease, type TreePlan, type TreePayer, type TreeProperty, propertyHref } from '@/lib/financialsTree'
 import {
   filterPlans, stageCounts, arrears, LEASE_FILTERS, type LeaseFilter,
 } from '@/lib/financialsMonth'
@@ -363,6 +363,7 @@ export default function PortfolioPage({
                     Terms, offers and renewal decisions live on the renewals page — this is only
                     the money side of them.
                   </span>
+                  <Link className="btn-quiet sm" href="/landlord/financials/rent-roll">Rent roll →</Link>
                   <Link className="btn-quiet sm" href="/landlord/renewals">Renewals →</Link>
                 </div>
               </section>
@@ -467,13 +468,19 @@ function PropertyNode({
               />
             </div>
           ))}
-          {p.propertySlug && (
-            <div className="tfoot">
+          {/* The property's own money page. Expanding this node answers "which
+              lease", and this answers "how is the building doing" — net of what
+              it costs, which nothing in the tree can show. */}
+          <div className="tfoot">
+            <Link className="btn-secondary sm" href={propertyHref(p.propertyId)}>
+              {p.propertyName}’s money →
+            </Link>
+            {p.propertySlug && (
               <Link className="btn-quiet sm" href={`/landlord/listings/${p.propertySlug}`}>
-                The listing for {p.propertyName} →
+                The listing →
               </Link>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>
