@@ -2,6 +2,7 @@
 
 import '@/styles/brand-tokens.css'
 import { Suspense, useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { getProperties, type Property } from '@/lib/properties'
 import { PLANS, formatMonthly } from '@/lib/landlordPlans'
@@ -431,6 +432,25 @@ function ListingCard({ h }: { h: Property }) {
   )
 }
 
+// ─── HERO CONTENT ────────────────────────────────────────────────────────────
+// The three promises that answer "why not Facebook Marketplace?" — kept short
+// enough to sit on one line under the CTA.
+const LEAD_PROOF = [
+  'ID-verified hosts',
+  'Photos refreshed every 60 days',
+  'Hosts who ghost get delisted',
+]
+
+// Shortcuts, not calls to action. If one of these ever earns a fill, the hero
+// no longer has a single CTA.
+const LEAD_SHORTCUTS = [
+  { href: '/homes?price_max=700', label: 'Under $700' },
+  { href: '/homes?q=furnished',   label: 'Furnished'  },
+  { href: '/homes?q=sublease',    label: 'Subleases'  },
+  { href: '/homes?q=female',      label: 'Female-only' },
+  { href: '/roommates',           label: 'Find roommates' },
+]
+
 // ─── LIST-YOUR-PLACE CTA ─────────────────────────────────────────────────────
 // Rendered in both the empty and populated branches, so it lives here rather
 // than inline twice. The price comes from the landlord paywall's own source of
@@ -486,12 +506,13 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
 
         /* ── BANNERS ── */
-        .landlord-bar { background: #f0fdf4; border-bottom: 1px solid #bbf7d0; padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: var(--hh-sz-small); color: #166534; position: relative; }
-        .landlord-bar a { color: #166534; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+        .landlord-bar { background: var(--hh-accent-wash); border-bottom: 1px solid var(--hh-accent-soft); padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: var(--hh-sz-small); color: var(--hh-text-2); position: relative; }
+        .landlord-bar a { color: var(--hh-accent-strong); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+        .landlord-bar a:hover { color: var(--hh-ink-900); }
         .landlord-bar-close { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--hh-text-muted); font-size: 16px; padding: 4px; line-height: 1; }
-        .personal-bar { background: var(--hh-ink-900); padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: var(--hh-sz-small); color: var(--hh-ink-300); }
+        .personal-bar { background: var(--hh-surface-dark); padding: 9px 24px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: var(--hh-sz-small); color: var(--hh-ink-300); }
         .personal-bar strong { color: var(--hh-accent); font-weight: 500; }
-        .pbar-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; flex-shrink: 0; }
+        .pbar-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hh-status-live); animation: pulse 2s infinite; flex-shrink: 0; }
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
         /* ── HERO ── */
@@ -579,32 +600,82 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         /* ── DIVIDER ── */
         .section-divider { border: none; border-top: 1px solid var(--hh-border-faint); margin: 40px 0; }
 
-        /* ── LEAD BAND (compact, listings-first) ── */
-        .lead-band { padding: 38px 0 24px; }
-        .lead-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--hh-text-muted); display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-        .lead-eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: livePulse 2.4s ease-in-out infinite; }
-        .lead-h1 { font-family: var(--hh-font-display); font-size: clamp(32px, 4.8vw, 56px); font-weight: 350; line-height: 1.04; letter-spacing: -0.03em; color: var(--hh-text); margin: 0 0 14px; }
+        /* ── LEAD BAND (compact, listings-first) ──────────────────────────
+           Hierarchy here is deliberate and load-bearing: exactly ONE honey
+           element in this band (.lead-cta). Everything else — live pill,
+           proof row, popular searches — is deliberately quiet so the eye
+           lands on the CTA first. Don't give the chips a fill. */
+        .lead-band { position: relative; padding: 48px 0 30px; }
+
+        /* Warm wash behind the headline so cream-on-cream isn't flat. */
+        .lead-glow { position: absolute; inset: -40px -10% auto -10%; height: 340px; pointer-events: none; z-index: 0;
+          background:
+            radial-gradient(52% 72% at 14% 18%, rgba(217,161,74,0.16) 0%, rgba(217,161,74,0) 68%),
+            radial-gradient(46% 62% at 86% 6%, rgba(47,74,72,0.10) 0%, rgba(47,74,72,0) 70%); }
+        .lead-inner { position: relative; z-index: 1; }
+
+        /* Live inventory — social proof, reads as a status not a button. */
+        .lead-live { display: inline-flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--hh-border-faint);
+          border-radius: 100px; padding: 6px 14px 6px 11px; font-size: 12px; font-weight: 600; letter-spacing: 0.01em;
+          color: var(--hh-text-2); box-shadow: var(--hh-shadow-sm); margin-bottom: 18px; }
+        .lead-live-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--hh-status-live); flex-shrink: 0; }
+        .lead-live-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--hh-status-live);
+          animation: livePulse 2.4s ease-out infinite; }
+        @keyframes livePulse { 0% { transform: scale(0.6); opacity: 0.9 } 70%,100% { transform: scale(1.5); opacity: 0 } }
+        @media (prefers-reduced-motion: reduce) { .lead-live-dot::after { animation: none; opacity: 0.35 } }
+
+        .lead-h1 { font-family: var(--hh-font-display); font-size: clamp(34px, 5vw, 60px); font-weight: 350; line-height: 1.03; letter-spacing: -0.03em; color: var(--hh-text); margin: 0 0 16px; }
         .lead-h1 em { font-style: italic; color: var(--hh-primary); }
-        .lead-sub { font-size: 15px; line-height: 1.6; color: var(--hh-text-muted); max-width: 560px; margin: 0 0 22px; }
-        .lead-chips { display: flex; flex-wrap: wrap; gap: 9px; }
-        .lead-chip { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--hh-text-2); background: var(--hh-bg-alt); border: 1px solid var(--hh-border); border-radius: 100px; padding: 8px 15px; text-decoration: none; transition: color 0.15s, border-color 0.15s, transform 0.15s, background 0.15s; white-space: nowrap; }
-        .lead-chip:hover { border-color: var(--hh-primary); color: var(--hh-primary); transform: translateY(-1px); }
-        .lead-chip--all { background: var(--hh-ink-900); color: #fff; border-color: var(--hh-ink-900); font-weight: 600; }
-        .lead-chip--all:hover { background: var(--hh-hive-800); color: #fff; border-color: var(--hh-hive-800); }
+        .lead-sub { font-size: 16px; line-height: 1.6; color: var(--hh-text-2); max-width: 540px; margin: 0 0 28px; }
+        .lead-sub strong { font-weight: 600; color: var(--hh-text); }
+
+        /* ── THE one call to action ── */
+        .lead-cta-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+        .lead-cta { display: inline-flex; align-items: center; gap: 10px; background: var(--hh-accent); color: var(--hh-ink-900);
+          font-family: var(--hh-font-ui); font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+          padding: 16px 28px; border-radius: 100px; border: none; text-decoration: none; white-space: nowrap;
+          box-shadow: var(--hh-shadow-cta); transition: background 0.16s, transform 0.16s, box-shadow 0.16s; }
+        .lead-cta:hover { background: var(--hh-accent-strong); color: #fff; transform: translateY(-2px); box-shadow: 0 14px 32px -10px rgba(184,131,47,0.75); }
+        .lead-cta:active { transform: translateY(0); box-shadow: var(--hh-shadow-sm); }
+        .lead-cta:focus-visible { outline: none; box-shadow: var(--hh-ring-accent), var(--hh-shadow-cta); }
+        .lead-cta-arrow { display: inline-block; transition: transform 0.16s; }
+        .lead-cta:hover .lead-cta-arrow { transform: translateX(3px); }
+        .lead-cta-note { font-size: 13px; color: var(--hh-text-muted); }
+
+        /* Secondary action — outline teal, never honey. */
+        .lead-cta--ghost { background: transparent; color: var(--hh-primary); border: 1.5px solid var(--hh-border);
+          font-size: 15px; padding: 13px 26px; box-shadow: none; }
+        .lead-cta--ghost:hover { background: var(--hh-hive-50); color: var(--hh-primary); border-color: var(--hh-primary); box-shadow: none; }
+
+        /* Proof row — honey ticks, muted copy. */
+        .lead-proof { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--hh-border-faint); }
+        .lead-proof-item { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--hh-text-2); }
+        .lead-proof-tick { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%;
+          background: var(--hh-accent-wash); border: 1px solid var(--hh-accent-soft); color: var(--hh-accent-strong);
+          font-size: 10px; font-weight: 800; flex-shrink: 0; }
+
+        /* Popular searches — shortcuts, intentionally lighter than the CTA. */
+        .lead-jump { margin-top: 22px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .lead-jump-label { font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-text-placeholder); white-space: nowrap; }
+        .lead-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .lead-chip { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--hh-text-2); background: transparent; border: 1px solid var(--hh-border-faint); border-radius: 100px; padding: 7px 14px; text-decoration: none; transition: color 0.15s, border-color 0.15s, background 0.15s; white-space: nowrap; }
+        .lead-chip:hover { background: var(--hh-hive-50); border-color: var(--hh-primary); color: var(--hh-primary); }
 
         /* ── LISTINGS GRID ── */
         .lc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px 20px; }
         .lc-card { text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: transform 0.18s; }
         .lc-card:hover { transform: translateY(-3px); }
-        .lc-media { position: relative; aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: var(--hh-bg-alt); box-shadow: 0 1px 3px rgba(34,40,16,0.06); }
+        .lc-media { position: relative; aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: var(--hh-bg-alt); box-shadow: var(--hh-shadow-sm); transition: box-shadow 0.18s; }
+        .lc-card:hover .lc-media { box-shadow: var(--hh-shadow-md); }
         .lc-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
         .lc-card:hover .lc-media img { transform: scale(1.045); }
         .lc-media-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 40px; background: linear-gradient(135deg, #ede9e0 0%, #d9d2c5 100%); }
-        .lc-badge { position: absolute; left: 12px; bottom: 12px; background: rgba(22,24,16,0.82); backdrop-filter: blur(8px); color: #fff; font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 100px; }
+        .lc-badge { position: absolute; left: 12px; bottom: 12px; background: rgba(30,46,44,0.84); backdrop-filter: blur(8px); color: #fff; font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 100px; }
         .lc-type { position: absolute; top: 12px; left: 12px; background: var(--hh-accent); color: #1a1a1a; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 9px; border-radius: 6px; }
         .lc-body { padding: 12px 4px 4px; }
         .lc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-        .lc-name { font-size: 15px; font-weight: 600; color: var(--hh-text); line-height: 1.3; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lc-name { font-size: 15px; font-weight: 600; color: var(--hh-text); line-height: 1.3; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.15s; }
+        .lc-card:hover .lc-name { color: var(--hh-primary); }
         .lc-score { flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--hh-text); }
         .lc-meta { font-size: 13px; color: var(--hh-text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .lc-price { font-size: 14px; color: var(--hh-text); margin-top: 8px; }
@@ -612,7 +683,6 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .lc-price span { color: var(--hh-text-muted); font-size: 13px; }
         @media (max-width: 600px) {
           .lc-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 12px; }
-          .lead-band { padding: 26px 0 18px; }
         }
 
         /* ── EDITORIAL PICKS ── */
@@ -716,42 +786,42 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .ep-view-all:hover { color: var(--hh-text); border-color: var(--hh-text); }
 
         /* ── LIST CTA ── */
-        .list-cta { background: var(--hh-ink-900); border-radius: 16px; padding: 44px; display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 64px; flex-wrap: wrap; }
+        .list-cta { background: var(--hh-surface-dark); border-radius: 16px; padding: 44px; display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 64px; flex-wrap: wrap; }
         .list-cta-eyebrow { font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: rgba(255,255,255,0.35); margin-bottom: 10px; }
         .list-cta-title { font-family: var(--hh-font-display); font-size: 30px; font-weight: 300; color: #fff; letter-spacing: -0.5px; line-height: 1.15; }
         .list-cta-title em { font-style: italic; color: var(--hh-accent); }
         .list-cta-sub { font-size: var(--hh-sz-small); color: rgba(255,255,255,0.45); margin-top: 8px; }
-        .list-cta-btn { background: var(--hh-accent); color: var(--hh-ink-900); font-size: 14px; font-weight: 700; padding: 15px 30px; border-radius: 100px; text-decoration: none; white-space: nowrap; font-family: var(--hh-font-ui); transition: background 0.15s, transform 0.15s; flex-shrink: 0; }
-        .list-cta-btn:hover { background: #c48e40; transform: translateY(-1px); }
+        .list-cta-btn { background: var(--hh-accent); color: var(--hh-ink-900); font-size: 15px; font-weight: 700; padding: 15px 30px; border-radius: 100px; text-decoration: none; white-space: nowrap; font-family: var(--hh-font-ui); box-shadow: var(--hh-shadow-cta); transition: background 0.15s, transform 0.15s, box-shadow 0.15s; flex-shrink: 0; }
+        .list-cta-btn:hover { background: var(--hh-accent-strong); color: #fff; transform: translateY(-1px); }
 
         /* ── SHIMMER ── */
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
         /* ── ROOMMATES SECTION ── */
-        .rm-section { background: #dfe8e0; padding: 72px 24px; }
+        .rm-section { background: var(--hh-surface-tint); padding: 72px 24px; border-top: 1px solid rgba(47,74,72,0.10); }
         .rm-inner { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.6fr; gap: 64px; align-items: center; }
         .rm-eyebrow { font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-primary); margin-bottom: 16px; opacity: 0.8; }
         .rm-title { font-family: var(--hh-font-display); font-size: clamp(36px, 4.5vw, 58px); font-weight: 350; line-height: 1.05; letter-spacing: -0.03em; color: var(--hh-text); margin-bottom: 18px; }
         .rm-title em { font-style: italic; color: var(--hh-text); }
         .rm-desc { font-size: 15px; line-height: 1.7; color: var(--hh-text-muted); margin-bottom: 32px; max-width: 380px; }
         .rm-btns { display: flex; gap: 10px; flex-wrap: wrap; }
-        .rm-btn-primary { display: inline-flex; align-items: center; background: var(--hh-ink-900); color: #fff; font-size: 13px; font-weight: 600; padding: 11px 22px; border-radius: 100px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
+        .rm-btn-primary { display: inline-flex; align-items: center; background: var(--hh-surface-dark); color: #fff; font-size: 13px; font-weight: 600; padding: 11px 22px; border-radius: 100px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
         .rm-btn-primary:hover { background: var(--hh-primary); transform: translateY(-1px); }
         .rm-btn-ghost { display: inline-flex; align-items: center; background: transparent; color: var(--hh-text-2); font-size: 13px; font-weight: 500; padding: 11px 22px; border-radius: 100px; border: 1.5px solid rgba(34,40,16,0.2); text-decoration: none; transition: border-color 0.15s, color 0.15s; }
         .rm-btn-ghost:hover { border-color: var(--hh-text); color: var(--hh-text); }
 
         /* Cards row */
         .rm-right { display: flex; gap: 12px; align-items: flex-start; padding-top: 16px; }
-        .rm-card { background: #fff; border-radius: 18px; overflow: hidden; flex: 1; box-shadow: 0 2px 16px rgba(34,40,16,0.09); transition: transform 0.2s, box-shadow 0.2s; }
-        .rm-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(34,40,16,0.14); }
-        .rm-card--featured { transform: translateY(-12px); box-shadow: 0 8px 28px rgba(34,40,16,0.13); }
+        .rm-card { background: #fff; border-radius: 18px; overflow: hidden; flex: 1; box-shadow: var(--hh-shadow-md); transition: transform 0.2s, box-shadow 0.2s; }
+        .rm-card:hover { transform: translateY(-4px); box-shadow: var(--hh-shadow-lg); }
+        .rm-card--featured { transform: translateY(-12px); box-shadow: var(--hh-shadow-lg); }
         .rm-card--featured:hover { transform: translateY(-16px); }
 
         /* Photo area */
         .rm-card-photo { position: relative; aspect-ratio: 3/4; display: flex; align-items: flex-end; justify-content: flex-start; padding: 12px; }
         .rm-card-photo-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.5); font-weight: 400; }
         .rm-verified-pill { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.9); backdrop-filter: blur(6px); border-radius: 100px; padding: 4px 10px; font-size: 10px; font-weight: 600; color: #1a1a1a; }
-        .rm-verified-dot { width: 7px; height: 7px; border-radius: 50%; background: #D9A14A; flex-shrink: 0; }
+        .rm-verified-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--hh-accent); flex-shrink: 0; }
 
         /* Card body */
         .rm-card-body { padding: 16px 16px 14px; }
@@ -759,17 +829,17 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .rm-card-meta { font-size: 11px; color: var(--hh-text-muted); margin-bottom: 10px; line-height: 1.4; }
         .rm-card-quote { font-size: 12px; line-height: 1.6; color: var(--hh-text-2); margin-bottom: 14px; }
         .rm-say-hi { display: block; text-align: center; background: #fff; border: 1.5px solid var(--hh-border); border-radius: 100px; padding: 8px 0; font-size: 13px; font-weight: 500; color: var(--hh-text); text-decoration: none; transition: background 0.15s, border-color 0.15s; }
-        .rm-say-hi:hover { background: var(--hh-bg-alt); border-color: var(--hh-text); }
+        .rm-say-hi:hover { background: var(--hh-hive-50); border-color: var(--hh-primary); color: var(--hh-primary); }
 
         /* ── TRUST SECTION ── */
-        .trust-section { display: grid; grid-template-columns: 1fr 1.4fr; gap: 64px; align-items: center; background: #1a1c12; border-radius: 24px; padding: 56px 56px 56px 52px; margin-bottom: 72px; }
+        .trust-section { display: grid; grid-template-columns: 1fr 1.4fr; gap: 64px; align-items: center; background: var(--hh-surface-dark); border-radius: 24px; padding: 56px 56px 56px 52px; margin-bottom: 72px; }
         .trust-eyebrow { font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-accent); margin-bottom: 18px; opacity: 0.9; }
         .trust-title { font-family: var(--hh-font-display); font-size: clamp(38px, 4.5vw, 60px); font-weight: 350; line-height: 1.05; letter-spacing: -0.03em; color: #fff; margin-bottom: 20px; }
         .trust-title em { font-style: italic; color: var(--hh-accent); }
         .trust-desc { font-size: 15px; line-height: 1.7; color: rgba(255,255,255,0.5); margin-bottom: 32px; max-width: 360px; }
         .trust-btns { display: flex; gap: 10px; flex-wrap: wrap; }
-        .trust-btn-primary { display: inline-flex; align-items: center; background: var(--hh-accent); color: #1a1c12; font-size: 13px; font-weight: 700; padding: 11px 22px; border-radius: 100px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
-        .trust-btn-primary:hover { background: #c48e40; transform: translateY(-1px); }
+        .trust-btn-primary { display: inline-flex; align-items: center; background: var(--hh-accent); color: var(--hh-ink-900); font-size: 13px; font-weight: 700; padding: 11px 22px; border-radius: 100px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
+        .trust-btn-primary:hover { background: var(--hh-accent-strong); color: #fff; transform: translateY(-1px); }
         .trust-btn-ghost { display: inline-flex; align-items: center; background: transparent; color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 500; padding: 11px 22px; border-radius: 100px; border: 1.5px solid rgba(255,255,255,0.18); text-decoration: none; transition: border-color 0.15s, color 0.15s; }
         .trust-btn-ghost:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
 
@@ -790,7 +860,8 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .hiw-guide-link:hover { color: var(--hh-text); border-color: var(--hh-text); }
 
         .hiw-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-        .hiw-card { background: var(--hh-bg-alt); border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--hh-border-faint); }
+        .hiw-card { background: var(--hh-bg-alt); border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--hh-border-faint); transition: border-color 0.18s, box-shadow 0.18s; }
+        .hiw-card:hover { border-color: var(--hh-accent-soft); box-shadow: var(--hh-shadow-sm); }
         .hiw-card-top { padding: 28px 28px 24px; flex: 1; }
         .hiw-step-label { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; }
         .hiw-step-word { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hh-accent); }
@@ -819,6 +890,14 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         }
         @media (max-width: 640px) {
           .wrap { padding: 0 16px; }
+          /* One CTA, full width — the easiest thing on the screen to hit. */
+          .lead-band { padding: 30px 0 22px; }
+          .lead-glow { inset: -24px -20% auto -20%; height: 260px; }
+          .lead-cta-row { gap: 12px; }
+          .lead-cta { width: 100%; justify-content: center; font-size: 15px; padding: 15px 22px; }
+          .lead-cta-note { width: 100%; text-align: center; }
+          .lead-proof { gap: 10px 16px; margin-top: 22px; padding-top: 18px; }
+          .lead-jump { flex-direction: column; align-items: flex-start; gap: 10px; }
           .hero-h1 { font-size: 42px; }
           .hero-stats { gap: 20px; }
           .sf-bar { grid-template-columns: 1fr; }
@@ -861,24 +940,52 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
 
       <div className="wrap">
 
-        {/* ── LEAD BAND — tight, direct, then straight into listings ── */}
+        {/* ── LEAD BAND — one call to action, then straight into listings ──
+             The CTA is the only honey element in this band on purpose. The
+             filter shortcuts below it are outlined, not filled, so a first-time
+             visitor has exactly one obvious next move. */}
         <div className="lead-band">
-          <div className="lead-eyebrow">
-            <span className="lead-eyebrow-dot" />
-            ASU Tempe · {loading ? '…' : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live now`}
-          </div>
-          <h1 className="lead-h1">
-            Your next place near ASU —<br />
-            <em>found in minutes, not weeks.</em>
-          </h1>
-          <p className="lead-sub">ID-verified hosts. Real photos. No broker fees. Tap a home to apply in two minutes.</p>
-          <div className="lead-chips">
-            <a href="/homes" className="lead-chip lead-chip--all">Browse all homes →</a>
-            <a href="/homes?price_max=700" className="lead-chip">Under $700</a>
-            <a href="/homes?q=furnished" className="lead-chip">Furnished</a>
-            <a href="/homes?q=sublease" className="lead-chip">Subleases</a>
-            <a href="/homes?q=female" className="lead-chip">Female-only</a>
-            <a href="/roommates" className="lead-chip">Find roommates</a>
+          <div className="lead-glow" aria-hidden="true" />
+          <div className="lead-inner">
+            <div className="lead-live">
+              <span className="lead-live-dot" aria-hidden="true" />
+              {loading
+                ? 'Verified homes near ASU Tempe'
+                : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live near ASU Tempe`}
+            </div>
+            <h1 className="lead-h1">
+              Your next place near ASU —<br />
+              <em>found in minutes, not weeks.</em>
+            </h1>
+            <p className="lead-sub">
+              Every host is ID-verified and every listing is kept current. <strong>No broker fees, ever.</strong>
+            </p>
+
+            <div className="lead-cta-row">
+              <Link href="/homes" className="lead-cta">
+                <span>{loading || properties.length === 0 ? 'Browse verified homes' : `Browse ${properties.length} verified homes`}</span>
+                <span className="lead-cta-arrow" aria-hidden="true">→</span>
+              </Link>
+              <span className="lead-cta-note">Free for students · apply in 2 minutes</span>
+            </div>
+
+            <div className="lead-proof">
+              {LEAD_PROOF.map(item => (
+                <span key={item} className="lead-proof-item">
+                  <span className="lead-proof-tick" aria-hidden="true">✓</span>
+                  {item}
+                </span>
+              ))}
+            </div>
+
+            <div className="lead-jump">
+              <span className="lead-jump-label">Popular right now</span>
+              <div className="lead-chips">
+                {LEAD_SHORTCUTS.map(c => (
+                  <Link key={c.href} href={c.href} className="lead-chip">{c.label}</Link>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -900,7 +1007,10 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
               {gridHomes.map(h => <ListingCard key={h.slug} h={h} />)}
             </div>
             <div style={{ textAlign: 'center', marginTop: 28 }}>
-              <a href="/homes" className="lead-chip lead-chip--all">See all {properties.length} homes →</a>
+              <Link href="/homes" className="lead-cta lead-cta--ghost">
+                <span>See all {properties.length} homes</span>
+                <span className="lead-cta-arrow" aria-hidden="true">→</span>
+              </Link>
             </div>
 
             <hr className="section-divider" />

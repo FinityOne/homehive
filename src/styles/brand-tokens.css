@@ -16,9 +16,17 @@
   --hh-cream-50:  #FAF8F3;   /* page background — default */
   --hh-cream-100: #F4F1EA;   /* card alt / section bg */
 
-  /* Brand */
-  --hh-hive-800:  #2F4A48;   /* PRIMARY — headlines, CTAs */
-  --hh-honey-600: #D9A14A;   /* ACCENT  — verified, links, focus */
+  /* Brand — teal structure, honey action */
+  --hh-hive-900:  #1E2E2C;   /* dark surfaces — trust panel, landlord band */
+  --hh-hive-800:  #2F4A48;   /* PRIMARY — headlines, structure, hover */
+  --hh-hive-100:  #DDE7E4;   /* tinted full-bleed band */
+  --hh-hive-50:   #EDF2F0;   /* faint tint — hover wash */
+
+  /* Honey is the ONE action colour. Nothing else wears it. */
+  --hh-honey-700: #B8832F;   /* pressed / large text only (3.2:1 on cream) */
+  --hh-honey-600: #D9A14A;   /* ACCENT  — the primary CTA, verified marks */
+  --hh-honey-200: #F2DFBE;   /* accent hairline */
+  --hh-honey-50:  #FBF4E6;   /* accent wash */
 
   /* Ink (warm-toned neutral scale) */
   --hh-ink-900:   #222810;   /* body & display text */
@@ -30,6 +38,7 @@
 
   /* Status */
   --hh-status-verified: #2a7d4f;
+  --hh-status-live:     #35A05F;   /* the "homes live now" pulse */
   --hh-status-pending:  #D9A14A;
   --hh-status-error:    #c0392b;
 
@@ -44,6 +53,19 @@
   --hh-border-faint:   var(--hh-ink-200);
   --hh-primary:        var(--hh-hive-800);
   --hh-accent:         var(--hh-honey-600);
+  --hh-accent-strong:  var(--hh-honey-700);
+  --hh-accent-soft:    var(--hh-honey-200);
+  --hh-accent-wash:    var(--hh-honey-50);
+  --hh-surface-dark:   var(--hh-hive-900);
+  --hh-surface-tint:   var(--hh-hive-100);
+
+  /* ── Elevation ─────────────────────────────────── */
+  /* Shadows are tinted with the brand teal, never neutral grey. */
+  --hh-shadow-sm:  0 1px 3px rgba(30,46,44,0.07);
+  --hh-shadow-md:  0 4px 18px rgba(30,46,44,0.09);
+  --hh-shadow-lg:  0 18px 48px -16px rgba(30,46,44,0.28);
+  --hh-shadow-cta: 0 10px 26px -10px rgba(184,131,47,0.65);
+  --hh-ring-accent: 0 0 0 4px rgba(217,161,74,0.28);
 
   /* ── Typography ────────────────────────────────── */
   --hh-font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
