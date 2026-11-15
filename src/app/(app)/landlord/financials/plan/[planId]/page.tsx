@@ -30,7 +30,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
 import { useMoney } from '@/lib/useMoney'
-import { buildTree, leaseHref } from '@/lib/financialsTree'
+import { buildTree, leaseHref, propertyHref } from '@/lib/financialsTree'
 import MoneyHub from '@/components/finance/MoneyHub'
 import CommandPalette, { usePaletteShortcut } from '@/components/finance/CommandPalette'
 import { GLYPH_CSS } from '@/components/finance/Glyph'
@@ -74,7 +74,7 @@ export default function PlanLedgerPage({
             { label: 'Portfolio', href: '/landlord/financials/portfolio' },
             ...(lease
               ? [
-                  { label: lease.propertyName, href: `/landlord/financials/portfolio#p-${lease.propertyId}` },
+                  { label: lease.propertyName, href: propertyHref(lease.propertyId) },
                   { label: lease.label, href: leaseHref(lease.key) },
                 ]
               : []),

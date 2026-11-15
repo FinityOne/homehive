@@ -24,6 +24,7 @@
  *   Collections  — who owes what, aged, with the actions. The work.
  *   Schedule     — what falls due when. The calendar.
  *   Payments     — what actually arrived. The reconciliation log.
+ *   Expenses     — what it cost. The other half of the only real question.
  *   Reminders    — what was emailed about it.
  *
  * Each tab is allowed to be dense, because its reader asked for that question.
@@ -74,6 +75,10 @@ const TABS: TabSpec[] = [
   {
     id: 'payments', label: 'Payments', href: '/landlord/financials/payments',
     title: 'Every payment collected: what cleared, what is still clearing, what bounced',
+  },
+  {
+    id: 'expenses', label: 'Expenses', href: '/landlord/financials/expenses',
+    title: 'What the properties cost to run, and what they actually earn net',
   },
 ]
 
