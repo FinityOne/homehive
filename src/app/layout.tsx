@@ -125,7 +125,7 @@ const websiteJsonLd = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: '#f5f4f0' }}>
+      <body style={{ margin: 0, background: '#FAF8F3' }}>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
