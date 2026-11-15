@@ -99,10 +99,13 @@ export const STATUS_META: Record<AmendmentStatus, {
 }
 
 /** The kinds of change this file knows how to write. */
-export type AmendmentKind = 'pet_addition' | 'other'
+export type AmendmentKind = 'pet_addition' | 'assistance_animal' | 'other'
 
 export const KIND_META: Record<AmendmentKind, { label: string; noun: string }> = {
   pet_addition: { label: 'Pet addition', noun: 'pet addendum' },
+  assistance_animal: {
+    label: 'Assistance animal', noun: 'assistance animal addendum',
+  },
   other:        { label: 'Other change', noun: 'lease amendment' },
 }
 
@@ -238,6 +241,16 @@ export function chargesOf(doc: AmendmentDocument): AmendmentCharge[] {
   return doc.charges.filter(c => c.amount > 0)
 }
 
+/** The charges this amendment takes away, in the order a reader meets them. */
+export function removalsOf(doc: AmendmentDocument): AmendmentCharge[] {
+  return (doc.removals ?? []).filter(c => c.amount > 0)
+}
+
+/** The recurring money this amendment stops. */
+export function monthlyRemoved(doc: AmendmentDocument): number {
+  return removalsOf(doc).filter(c => c.kind === 'monthly').reduce((s, c) => s + c.amount, 0)
+}
+
 /** Everything due when the tenant signs: the deposits and the one-time fees. */
 export function dueOnExecution(doc: AmendmentDocument): number {
   return chargesOf(doc).filter(c => c.kind !== 'monthly').reduce((s, c) => s + c.amount, 0)
@@ -265,13 +278,40 @@ function joinList(items: string[]): string {
  * set and then closing it is the whole difference between a clear document and
  * a cheap one.
  */
-export function buildChargesClosingClause(charges: AmendmentCharge[]): string {
+export function buildChargesClosingClause(
+  charges: AmendmentCharge[],
+  removals: AmendmentCharge[] = [],
+): string {
   const live = charges.filter(c => c.amount > 0)
+  const gone = removals.filter(c => c.amount > 0)
+
+  // The sentence that says what this amendment stops charging. Appended to
+  // whichever clause below applies, never written on its own, so a document
+  // that both adds and removes money discloses both halves.
+  const removalSentence = gone.length > 0
+    ? `This Amendment eliminates ${joinList(gone.map(c => c.phrase))}, which the Tenant shall ` +
+      `not owe for any period on or after the Effective Date, and which shall not be ` +
+      `reinstated for the remainder of the Lease term.`
+    : ''
+
   if (live.length === 0) {
-    return 'No charge of any kind arises under this Amendment. The Tenant’s rent, ' +
-      'security deposit and every other amount owed under the Lease are unchanged.'
+    // Deliberately two different sentences. "No charge arises under this
+    // Amendment" is true of both an amendment that costs nothing and one that
+    // cancels a charge, but only the first leaves the tenant's rent where it
+    // was — and a tenant whose rent just fell by $65 must not be handed a
+    // document telling them nothing about their money changed.
+    return gone.length === 0
+      ? 'No charge of any kind arises under this Amendment. The Tenant’s rent, ' +
+        'security deposit and every other amount owed under the Lease are unchanged.'
+      : `No charge of any kind arises under this Amendment. ${removalSentence} Apart from ` +
+        `that elimination, the Tenant’s base monthly rent, the security deposit held under ` +
+        `the Lease and every other amount owed under the Lease are unchanged, and no pet ` +
+        `fee, pet deposit, administrative fee, recurring charge or move-in charge of any ` +
+        `kind arises under this Amendment. Nothing in this paragraph limits the Tenant’s ` +
+        `obligation under this Amendment or the Lease to pay for actual damage.`
   }
-  return (
+
+  const added = (
     `The amounts stated in this Amendment — ${joinList(live.map(c => c.phrase))} — are ` +
     `the complete list of charges arising under it. No other pet fee, pet deposit, ` +
     `administrative fee, recurring charge or move-in charge of any kind arises under this ` +
@@ -279,6 +319,7 @@ export function buildChargesClosingClause(charges: AmendmentCharge[]): string {
     `pet security deposit expressly stated above. Nothing in this paragraph limits the ` +
     `Tenant’s obligation under this Amendment or the Lease to pay for actual damage.`
   )
+  return removalSentence ? `${added} ${removalSentence}` : added
 }
 
 // ── The document ─────────────────────────────────────────────────────────────
@@ -333,6 +374,17 @@ export type AmendmentDocument = {
   respondBy: string | null
   /** Every amount owed under this amendment. Drives the closing clause. */
   charges: AmendmentCharge[]
+  /**
+   * Charges the Lease currently carries that this amendment *eliminates*.
+   *
+   * Optional, and absent on every document written before assistance-animal
+   * amendments existed — which is why every reader uses `removalsOf()` rather
+   * than touching the field. An amendment that takes a charge away is not the
+   * same as one that adds none: the first changes what the tenant pays and the
+   * second does not, and the closing clause has to say which of the two this
+   * is or it tells the tenant their rent is unchanged when it just fell.
+   */
+  removals?: AmendmentCharge[]
   /** The at-a-glance block above the recitals. */
   summary: Array<[label: string, value: string]>
   recitals: string[]
@@ -809,6 +861,324 @@ export function buildPetAdditionDocument(input: PetAdditionInput): AmendmentDocu
   }
 }
 
+/** What a landlord fills in to reclassify an animal as an assistance animal. */
+export type AssistanceAnimalInput = {
+  propertyAddress: string
+  landlordName: string
+  tenantName: string
+  leaseStartDate: string
+  leaseEndDate: string
+  effectiveDate: string
+  agreementDate: string
+  /**
+   * The animal, identified exactly as the pet addendum identified it.
+   *
+   * The identification is reused rather than re-entered because the whole
+   * document turns on this being the *same* animal whose pet rent is being
+   * cancelled. A second description, typed afresh, is how a document ends up
+   * cancelling the rent for an animal that is not the one in the home.
+   */
+  animal: PetIdentity
+  /** Which kind of assistance animal, as the law distinguishes them. */
+  role?: 'emotional_support' | 'service'
+  /** The monthly pet rent this amendment stops. Whole dollars. */
+  removedMonthlyPetRent: number
+  /** A pet deposit being released, if one was ever collected. 0 for none. */
+  removedPetDeposit?: number
+  /** A one-time pet fee being cancelled or refunded. 0 for none. */
+  removedOneTimeFee?: number
+  /**
+   * What the tenant's own monthly total becomes once the pet rent is gone.
+   *
+   * Stated in the document because "your pet rent is cancelled" leaves a
+   * tenant on a shared lease doing arithmetic against a figure they are not
+   * certain of. Null to omit the sentence rather than guess at it.
+   */
+  monthlyTotalAfter?: number | null
+  /** The tenant's base monthly rent, unchanged by this amendment. */
+  baseMonthlyRent?: number | null
+  /** The pet addendum this supersedes, named so the record is unambiguous. */
+  supersedes?: { title: string; effectiveDate: string; wasSigned: boolean } | null
+  /** True when the landlord has the reliable documentation on file. */
+  documentationOnFile?: boolean
+  /** Last day the tenant may sign. Null for no deadline. */
+  respondBy?: string | null
+  /** Anything the landlord wants to add, verbatim, as a final clause. */
+  additionalTerms?: string | null
+}
+
+/**
+ * Build the assistance-animal addendum.
+ *
+ * Why this is its own builder rather than a pet addendum with the rent set to
+ * zero: an assistance animal is not a discounted pet. Under the federal Fair
+ * Housing Act an assistance animal is an accommodation, which means the pet
+ * rent, the pet deposit and the pet fee may not be charged at all, the breed
+ * and weight limits do not apply to it, and — the one that matters most on a
+ * six-tenant house — the approval cannot be made conditional on the other
+ * tenants consenting. A pet addendum priced at $0 would carry all three of
+ * those conditions in its clauses while appearing to cost nothing, which is
+ * exactly the document a tenant would later be right to complain about.
+ *
+ * The clause order answers the questions in the order they are asked: what the
+ * animal now is, what that does to the money, what happened to the addendum
+ * signed before, what the tenant is still on the hook for, and then that
+ * nothing else about the lease moved.
+ */
+export function buildAssistanceAnimalDocument(input: AssistanceAnimalInput): AmendmentDocument {
+  const {
+    propertyAddress, landlordName, tenantName, leaseStartDate, leaseEndDate,
+    effectiveDate, agreementDate, animal, additionalTerms,
+  } = input
+
+  const role = input.role ?? 'emotional_support'
+  const roleName = role === 'service' ? 'service animal' : 'emotional support animal'
+  const roleShort = role === 'service' ? 'service animal' : 'assistance animal'
+  const petRent = Math.max(0, Math.round(input.removedMonthlyPetRent))
+  const petDeposit = Math.max(0, Math.round(input.removedPetDeposit ?? 0))
+  const petFee = Math.max(0, Math.round(input.removedOneTimeFee ?? 0))
+  const respondBy = input.respondBy?.trim() || null
+  const species = animal.species.trim() || 'animal'
+  const speciesLower = species.toLowerCase()
+  const animalDesc = describePet(animal)
+  const named = animal.name.trim()
+
+  const isBackdated =
+    DATE_RE.test(effectiveDate) && DATE_RE.test(agreementDate) && effectiveDate < agreementDate
+
+  // Nothing is charged. Everything is taken away. Both lists are modelled so
+  // the closing clause and the guard read the same data the prose does.
+  const charges: AmendmentCharge[] = []
+  const removals: AmendmentCharge[] = []
+  if (petRent > 0) {
+    removals.push({
+      kind: 'monthly', label: 'Pet rent', amount: petRent,
+      phrase: `the monthly pet rent of ${fmtMoneyWithWords(petRent)}`,
+    })
+  }
+  if (petDeposit > 0) {
+    removals.push({
+      kind: 'deposit', label: 'Pet security deposit', amount: petDeposit,
+      phrase: `the pet security deposit of ${fmtMoneyWithWords(petDeposit)}`,
+    })
+  }
+  if (petFee > 0) {
+    removals.push({
+      kind: 'fee', label: 'One-time pet fee', amount: petFee,
+      phrase: `the one-time pet fee of ${fmtMoneyWithWords(petFee)}`,
+    })
+  }
+
+  const summary: Array<[string, string]> = [
+    ['Tenant', tenantName],
+    [
+      'Assistance animal',
+      `One (1) ${species}${named ? ` — “${named}”` : ''}`,
+    ],
+    ['Now classified as', `${roleName.replace(/^./, c => c.toUpperCase())} — not a pet`],
+  ]
+  for (const c of removals) {
+    summary.push([
+      `${c.label} removed`,
+      c.kind === 'monthly'
+        ? `${fmtDollars(c.amount)} a month — no longer charged`
+        : `${fmtDollars(c.amount)} — no longer charged`,
+    ])
+  }
+  if (typeof input.monthlyTotalAfter === 'number') {
+    summary.push(['Your new monthly total', `${fmtDollars(input.monthlyTotalAfter)} a month`])
+  }
+  summary.push(['Due on signing', 'Nothing'])
+  if (isBackdated) {
+    summary.push(['Effective as of', `${fmtLegalDate(effectiveDate)} (before signing)`])
+  }
+
+  const recitals = [
+    `This Residential Change Lease Agreement (this “Amendment”) is made as of ` +
+    `${fmtLegalDate(agreementDate)} between ${landlordName} (“Landlord”) and ` +
+    `${tenantName} (“Tenant”).`,
+
+    `Landlord and Tenant are parties to a residential lease agreement for the ` +
+    `premises at ${propertyAddress} (the “Premises”), with a term running from ` +
+    `${fmtLegalDate(leaseStartDate)} to ${fmtLegalDate(leaseEndDate)} (the “Lease”).`,
+
+    `Tenant keeps ${animalDesc} at the Premises. Tenant has asked that the ${speciesLower} be ` +
+    `recognised as ${role === 'service' ? 'a service animal' : 'an emotional support animal'} ` +
+    `rather than as a pet, as a reasonable accommodation for a disability.` +
+    (input.documentationOnFile
+      ? ` Landlord has received documentation Landlord considers reliable in support of that ` +
+        `request and has approved it.`
+      : ` Landlord has approved that request.`),
+
+    `Landlord and Tenant therefore agree as follows.`,
+  ]
+
+  if (isBackdated) {
+    recitals.push(
+      `This Amendment is signed on or about ${fmtLegalDate(agreementDate)} but takes effect as ` +
+      `of ${fmtLegalDate(effectiveDate)}, which the parties intend and agree. Every amount ` +
+      `this Amendment eliminates is eliminated from ${fmtLegalDate(effectiveDate)} onward, so ` +
+      `Tenant owes none of it for the period between that date and the date of signing.`
+    )
+  }
+
+  const clauses: AmendmentClause[] = []
+
+  clauses.push({
+    heading:
+      `The ${speciesLower} is ` +
+      `${role === 'service' ? 'a service animal' : 'an assistance animal'}, not a pet`,
+    paragraphs: [
+      `Effective ${fmtLegalDate(effectiveDate)}, ${animalDesc} is recognised and approved as ` +
+      `Tenant’s ${roleName} at the Premises. The ${speciesLower} is not a pet for any ` +
+      `purpose under the Lease, and no provision of the Lease or of any addendum to it that ` +
+      `applies to pets applies to ${named ? `“${named}”` : `the ${speciesLower}`}.`,
+
+      `This approval is granted as a reasonable accommodation under the federal Fair Housing ` +
+      `Act (42 U.S.C. § 3601 et seq.) and the Arizona Fair Housing Act (A.R.S. ` +
+      `§ 41-1491 et seq.). Accordingly, no breed, size, weight or species restriction ` +
+      `in the Lease applies to the ${speciesLower}, and Landlord shall not require Tenant to ` +
+      `remove it on the ground that it is a pet.`,
+
+      `This Amendment recognises ` +
+      `${named ? `the specific ${speciesLower} named “${named}”` : `this specific ${speciesLower}`} ` +
+      `and is not approval for any additional animal. A further assistance animal, or a ` +
+      `replacement for this one, requires a further accommodation request.`,
+    ],
+  })
+
+  // The money. Named clause of its own, because it is the clause the tenant
+  // opened the email to read.
+  const moneyParas: string[] = []
+  if (removals.length > 0) {
+    moneyParas.push(
+      `Because the ${speciesLower} is ` +
+      `${role === 'service' ? 'a service animal' : 'an assistance animal'} ` +
+      `and not a pet, no pet rent, pet deposit or pet fee may be or is charged for it. ` +
+      `Effective ${fmtLegalDate(effectiveDate)}, ` +
+      `${joinList(removals.map(c => `${c.label.toLowerCase()} of ${fmtDollars(c.amount)}`))} ` +
+      `${removals.length === 1 ? 'is' : 'are'} cancelled in full and shall not be charged to ` +
+      `Tenant for any period on or after that date.`
+    )
+  }
+  if (typeof input.baseMonthlyRent === 'number' && input.baseMonthlyRent > 0) {
+    moneyParas.push(
+      `Tenant’s base monthly rent under the Lease is and remains ` +
+      `${fmtDollars(input.baseMonthlyRent)} a month. This Amendment does not change it, and ` +
+      `does not change the security deposit held under the Lease.`
+    )
+  }
+  if (typeof input.monthlyTotalAfter === 'number') {
+    moneyParas.push(
+      `Tenant’s total monthly amount payable under the Lease, after the cancellation ` +
+      `above and including any utility or other recurring amount Tenant already owed, is ` +
+      `${fmtDollars(input.monthlyTotalAfter)} a month from ${monthName(effectiveDate)}.`
+    )
+  }
+  // The clause the guard checks, and the last word on money.
+  moneyParas.push(buildChargesClosingClause(charges, removals))
+  clauses.push({ heading: 'No pet rent, pet deposit or pet fee', paragraphs: moneyParas })
+
+  if (input.supersedes) {
+    clauses.push({
+      heading: 'The pet addendum no longer applies',
+      paragraphs: [
+        `The ${input.supersedes.title} between Landlord and Tenant, effective ` +
+        `${fmtLegalDate(input.supersedes.effectiveDate)}, which approved the ${speciesLower} as ` +
+        `a pet and charged pet rent for it, is superseded by this Amendment and is of no ` +
+        `further force or effect.` +
+        (input.supersedes.wasSigned
+          ? ` It is terminated as of ${fmtLegalDate(effectiveDate)}.`
+          : ` It was never signed by Tenant, and Landlord has withdrawn it.`),
+
+        `No obligation under that addendum survives it. In particular, Tenant owes no pet ` +
+        `rent, pet deposit or pet fee under it for any period, whether before or after the ` +
+        `Effective Date of this Amendment.`,
+      ],
+    })
+  }
+
+  // What the FHA does *not* excuse. Stating it is in both parties' interest:
+  // an accommodation that is widely believed to also waive damage liability is
+  // an accommodation landlords quietly resist granting.
+  clauses.push({
+    heading: 'Tenant remains responsible for the animal',
+    paragraphs: [
+      `Nothing in this Amendment limits Tenant’s responsibility for the ` +
+      `${speciesLower}. Tenant remains liable for any damage to the Premises caused by it, ` +
+      `beyond ordinary wear and tear, and for any injury or damage it causes to any other ` +
+      `person or their property, on the same terms as any other damage Tenant is liable for ` +
+      `under the Lease.`,
+
+      `Tenant shall keep the ${speciesLower} under control, shall clean up after it, and ` +
+      `shall not permit it to create a nuisance or a documented threat to the health or ` +
+      `safety of others at the Premises. This Amendment does not waive any Lease provision ` +
+      `about noise, cleanliness, damage or the quiet enjoyment of the other occupants.`,
+    ],
+  })
+
+  if (additionalTerms?.trim()) {
+    clauses.push({ heading: 'Additional terms', paragraphs: [additionalTerms.trim()] })
+  }
+
+  clauses.push({
+    heading: 'The rest of the Lease is unchanged',
+    paragraphs: [CLAUSE_NO_MODIFICATION],
+  })
+
+  const acceptance: string[] = [
+    `Landlord has signed and issued this Amendment on ${fmtLegalDate(agreementDate)}. It ` +
+    `becomes a binding change lease agreement, in addition to the Lease, when Tenant signs ` +
+    `it electronically below.`,
+  ]
+  // No deadline is threatened. The cancellation of the pet rent is not an offer
+  // that lapses — the charge is wrong whether or not she gets round to signing
+  // — so a "sign by" sentence here would be a false pressure.
+  if (respondBy) {
+    acceptance.push(
+      `Landlord asks Tenant to sign this Amendment by ${fmtLegalDate(respondBy)} so that the ` +
+      `change is on the record. The amounts cancelled by this Amendment are cancelled from ` +
+      `the Effective Date regardless of when, or whether, Tenant signs it.`
+    )
+  }
+  acceptance.push(
+    `Tenant acknowledges receipt of a copy of this Amendment. Tenant may ask Landlord any ` +
+    `question about it before signing.`
+  )
+
+  return {
+    version: 2,
+    title: 'Residential Change Lease Agreement',
+    notice: DOCUMENT_NOTICE,
+    sectionTitle:
+      `${roleShort.replace(/^./, c => c.toUpperCase())} recognition and lease amendment`,
+    premises: propertyAddress,
+    landlordName,
+    tenantName,
+    leaseStartDate,
+    leaseEndDate,
+    effectiveDate,
+    agreementDate,
+    respondBy,
+    charges,
+    removals,
+    summary,
+    recitals,
+    clauses,
+    acceptance,
+    // An accommodation is never put to a vote of the housemates.
+    requiresCotenantConsent: false,
+    isBackdated,
+    signatureStatement:
+      `By typing my full legal name below and submitting this form, I am signing this ` +
+      `Amendment electronically. I agree that my electronic signature is the legal ` +
+      `equivalent of my handwritten signature under the Arizona Electronic Transactions Act ` +
+      `(A.R.S. § 44-7001 et seq.) and the federal E-SIGN Act, and that it binds me to ` +
+      `this Amendment. I confirm that I have read this Amendment in full and that I have ` +
+      `been able to download or print a copy of it.`,
+  }
+}
+
 /**
  * Refuse to send a document that is missing the protections it promises.
  *
@@ -866,7 +1236,8 @@ export function verifyAmendmentDocument(doc: AmendmentDocument): string[] {
   // Either way the tenant would be signing an amount the document does not
   // disclose, and the document does not go out.
   const live = doc.charges.filter(c => c.amount > 0)
-  if (!all.includes(buildChargesClosingClause(doc.charges))) {
+  const gone = removalsOf(doc)
+  if (!all.includes(buildChargesClosingClause(doc.charges, doc.removals ?? []))) {
     problems.push(
       live.length > 0
         ? 'The charges on this amendment are not the charges its "no other charges" clause ' +
@@ -882,6 +1253,16 @@ export function verifyAmendmentDocument(doc: AmendmentDocument): string[] {
     if (!all.includes(fmtDollars(c.amount))) {
       problems.push(
         `${c.label} of ${fmtDollars(c.amount)} is charged but never stated in the document.`
+      )
+    }
+  }
+  // A removal is held to the same standard as a charge. An amendment whose
+  // whole purpose is to stop a $65 charge, and which never prints $65, leaves
+  // the tenant unable to check that the right charge was the one that stopped.
+  for (const c of gone) {
+    if (!all.includes(fmtDollars(c.amount))) {
+      problems.push(
+        `${c.label} of ${fmtDollars(c.amount)} is removed but never stated in the document.`
       )
     }
   }

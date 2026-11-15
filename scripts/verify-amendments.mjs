@@ -23,6 +23,7 @@
  */
 const {
   buildPetAdditionDocument, verifyAmendmentDocument, renderAmendmentText,
+  buildAssistanceAnimalDocument, removalsOf, monthlyRemoved,
   buildChargesClosingClause, chargesOf, dueOnExecution, monthlyTotal,
   describePet, dollarsInWords, fmtMoneyWithWords, fmtDollars, fmtLegalDate,
   monthName, amendmentPath, signingToday, daysBetweenDates,
@@ -475,6 +476,107 @@ check('a declined one is not a task either',
   check('within a status, newest first', ordered, ['new', 'old'])
 }
 
+// ── Taking a charge away ──────────────────────────────────────────────────
+//
+// The assistance-animal amendment is the first one that *removes* money, and
+// the failure it invites is the exact opposite of the one the charges guard was
+// built for: not an undisclosed fee, but a document that cancels $65 a month
+// while its own closing clause tells the tenant their rent is unchanged. The
+// cases below pin the wording to the thing that actually happened.
+{
+  const esa = (over = {}) => buildAssistanceAnimalDocument({
+    propertyAddress: '820 W 9th Street, Tempe, AZ 85281',
+    landlordName: 'Heran Maharaja',
+    tenantName: 'Aleeya Cruz',
+    leaseStartDate: '2026-08-03',
+    leaseEndDate: '2027-07-31',
+    effectiveDate: '2026-11-01',
+    agreementDate: TODAY,
+    removedMonthlyPetRent: 65,
+    monthlyTotalAfter: 870.66,
+    baseMonthlyRent: 849,
+    documentationOnFile: true,
+    supersedes: {
+      title: 'Residential Change Lease Agreement',
+      effectiveDate: '2026-11-01',
+      wasSigned: false,
+    },
+    animal: {
+      name: 'Dewey', species: 'Dog', breed: 'Alaskan Husky', color: 'Brown',
+      sex: 'Male', weight: '33 lbs 15 oz', dob: '2024-09-16',
+      microchip: '985113014014128', sterilized: true, vaccinated: true,
+    },
+    ...over,
+  })
+
+  const doc = esa()
+  const prose = [
+    ...doc.recitals,
+    ...doc.clauses.flatMap(c => c.paragraphs),
+    ...doc.acceptance,
+  ].join('\n')
+
+  check('an amendment that only removes money is safe to send',
+    verifyAmendmentDocument(doc), [])
+  check('it charges nothing', chargesOf(doc).length, 0)
+  check('nothing is due when she signs', dueOnExecution(doc), 0)
+  check('it adds no monthly money', monthlyTotal(doc), 0)
+  check('it removes $65 a month', monthlyRemoved(doc), 65)
+  check('the removal is modelled, not just written', removalsOf(doc).map(c => c.label), ['Pet rent'])
+
+  // The whole point: the closing clause must not claim nothing changed.
+  check('the closing clause does NOT claim the rent is unchanged',
+    prose.includes('The Tenant’s rent, security deposit and every other amount owed under ' +
+      'the Lease are unchanged.'), false)
+  check('the closing clause says the pet rent is eliminated',
+    prose.includes('This Amendment eliminates the monthly pet rent of'), true)
+  check('the amount removed is stated in the prose', prose.includes('$65.00'), true)
+  check('the new monthly total is stated', prose.includes('$870.66'), true)
+  check('the base rent is stated as unchanged', prose.includes('$849.00'), true)
+
+  // An accommodation is not a pet, and not a vote.
+  check('an assistance animal is not conditional on the housemates',
+    doc.requiresCotenantConsent, false)
+  check('the pet addendum is expressly superseded',
+    prose.includes('is superseded by this Amendment and is of no further force or effect'), true)
+  check('breed and weight limits are disapplied',
+    /no breed, size, weight or species restriction/.test(prose), true)
+  check('damage liability survives the accommodation',
+    /remains liable for any damage to the Premises/.test(prose), true)
+  check('the rest of the lease is still locked down',
+    prose.includes(CLAUSE_NO_MODIFICATION), true)
+  check('the animal is identified, so the right animal is the one reclassified',
+    prose.includes('microchip no. 985113014014128'), true)
+
+  // Backdated to the 1st, drawn up on the 3rd: it must say so, and it must say
+  // the cancellation reaches back rather than starting when she signs.
+  check('a backdated removal is declared', doc.isBackdated, true)
+  check('the backdating recital explains the reach-back',
+    /owes none of it for the period between that date and the date of signing/.test(prose), true)
+
+  // The guard must still bite when the prose and the model disagree — the
+  // removal path gets the same treatment as the charge path.
+  const tampered = esa()
+  tampered.clauses = tampered.clauses.map(c => ({
+    ...c,
+    paragraphs: c.paragraphs.map(t => t.replace(/\$65\.00/g, '$0.00')),
+  }))
+  check('a removal the prose no longer states is refused',
+    verifyAmendmentDocument(tampered).length > 0, true)
+
+  const softened = esa()
+  softened.removals = []
+  check('dropping the removal from the model is refused too',
+    verifyAmendmentDocument(softened).length > 0, true)
+
+  // And a document with neither charges nor removals keeps the old sentence,
+  // which is what every amendment written before today relies on.
+  check('a no-money amendment still says nothing changed',
+    buildChargesClosingClause([], []),
+    'No charge of any kind arises under this Amendment. The Tenant’s rent, ' +
+    'security deposit and every other amount owed under the Lease are unchanged.')
+}
+
 // ── The link ──────────────────────────────────────────────────────────────
 
 check('the tenant signs behind the login, not on a bare token page',
@@ -493,6 +595,7 @@ console.log(
   'rest of the lease is unchanged, states retroactive effect rather than hiding it ' +
   'while never letting the SIGNATURE be backdated, refuses a late signature, ' +
   'derives expiry and "in force" rather than storing them, holds a conditional ' +
-  'approval short of in force, and keeps asking until the agreed money reaches ' +
-  'the ledger\n'
+  'approval short of in force, keeps asking until the agreed money reaches ' +
+  'the ledger, and — when it takes a charge away — says so instead of telling ' +
+  'the tenant nothing changed\n'
 )

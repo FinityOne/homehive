@@ -22,6 +22,7 @@
 import { emailShell, emailButton, esc } from './emailShell'
 import {
   fmtLegalDate, fmtDollars, monthName, chargesOf, dueOnExecution, monthlyTotal,
+  removalsOf, monthlyRemoved,
   type AmendmentDocument, type LeaseAmendment,
 } from './leaseAmendments'
 
@@ -70,12 +71,23 @@ function unchangedNote(doc: AmendmentDocument): string {
     ? `Your existing security deposit is untouched — the pet deposit in this document is a ` +
       `separate, additional one, held and returned under the same rules.`
     : `Your security deposit stays exactly as it is.`
+  // When the amendment takes a charge away, "your monthly rent stays exactly as
+  // it is" is false — it is the one thing that did move, and in the tenant's
+  // favour. Saying it anyway would be a strange way to deliver good news, and
+  // would contradict the document attached to the same email.
+  const removed = removalsOf(doc)
+  const rentLine = removed.length === 0
+    ? `Your monthly rent, your move-out date and everyone on the lease all stay exactly as they are.`
+    : `Your base rent, your move-out date and everyone on the lease all stay exactly as they are — ` +
+      `the only thing that changes is that ` +
+      `${joinPlain(removed.map(c => `the ${c.label.toLowerCase()} of ${fmtDollars(c.amount)}`))} ` +
+      `${removed.length === 1 ? 'comes off' : 'come off'} your account.`
   return (
     `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:20px;">` +
     `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#166534;margin-bottom:6px;">` +
     `Your lease is otherwise unchanged</div>` +
     `<div style="font-size:13px;color:#166534;line-height:1.6;">` +
-    `Your monthly rent, your move-out date and everyone on the lease all stay exactly as they are. ` +
+    `${rentLine} ` +
     `${depositLine} Nothing else in your lease changes — it says so in writing, in the clause headed ` +
     `<em>“The rest of the Lease is unchanged”</em>.` +
     `</div></div>`
@@ -97,9 +109,23 @@ const firstName = (name: string | null | undefined, fallback = 'there') =>
 function termRows(doc: AmendmentDocument): Array<[string, string]> {
   const rows: Array<[string, string]> = [['Document', doc.title], ['Home', doc.premises]]
   const charges = chargesOf(doc)
+  const removed = removalsOf(doc)
+
+  // What this amendment stops charging, before what it charges. On an
+  // assistance-animal amendment it is the entire substance of the document,
+  // and a table that opened with "Cost: No charge" would read as though the
+  // tenant had been sent a contract about nothing.
+  for (const c of removed) {
+    rows.push([
+      `${c.label} removed`,
+      c.kind === 'monthly'
+        ? `${fmtDollars(c.amount)} a month — no longer charged`
+        : `${fmtDollars(c.amount)} — no longer charged`,
+    ])
+  }
 
   if (charges.length === 0) {
-    rows.push(['Cost', 'No charge'])
+    rows.push(['Cost', removed.length > 0 ? 'Nothing to pay' : 'No charge'])
   } else {
     for (const c of charges) {
       rows.push([
@@ -145,9 +171,12 @@ export function buildAmendmentRequestEmail(input: {
   const from = landlordName ? esc(landlordName) : 'Your landlord'
 
   const monthly = monthlyTotal(doc)
+  const dropped = monthlyRemoved(doc)
   const subject = monthly > 0
     ? `Sign your ${shortNoun(doc)} — ${fmtDollars(monthly)}/mo, and your rent doesn’t change`
-    : `Sign your ${shortNoun(doc)} — nothing else about your lease changes`
+    : dropped > 0
+      ? `Sign your ${shortNoun(doc)} — ${fmtDollars(dropped)}/mo comes off your rent`
+      : `Sign your ${shortNoun(doc)} — nothing else about your lease changes`
 
   const body = [
     p(`Hi ${esc(first)},`),
@@ -192,6 +221,152 @@ export function buildAmendmentRequestEmail(input: {
       banner: 'Signature needed',
       bannerSubject: doc.title,
       tone: 'action',
+      hero: input.heroImage ?? undefined,
+      heroAlt: doc.premises,
+      body,
+    }),
+    text,
+  }
+}
+
+/**
+ * The adjustment notice: a charge has been taken off, here is the document.
+ *
+ * A separate email from `buildAmendmentRequestEmail` because the two have
+ * opposite jobs. The request email's work is reassurance — it is asking
+ * somebody to take on a new obligation, so it leads with the terms and spends
+ * its length proving nothing else moved. This email is telling a tenant that a
+ * charge they were told they owed is cancelled. Leading that with "your
+ * signature is needed" buries it, and a tenant who skims the first line and
+ * closes the email goes on believing they owe the money.
+ *
+ * So the order is inverted: what came off, what they now pay, why, and only
+ * then the signature. The signature is also described honestly — the
+ * cancellation is not contingent on it, and saying otherwise would invent a
+ * deadline on money that is simply not owed.
+ */
+export function buildAmendmentAdjustmentEmail(input: {
+  doc: AmendmentDocument
+  tenantName: string | null
+  landlordName: string | null
+  signUrl: string
+  heroImage?: string | null
+  /** What their total monthly payment becomes. Null to leave it unsaid. */
+  newMonthlyTotal?: number | null
+  /** A one-off charge for this item that has been cancelled unpaid. */
+  cancelledCharge?: { label: string; amount: number } | null
+}): BuiltEmail {
+  const { doc, tenantName, landlordName, signUrl } = input
+  const first = firstName(tenantName)
+  const from = landlordName ? esc(landlordName) : 'Your landlord'
+  const removed = removalsOf(doc)
+  const dropped = monthlyRemoved(doc)
+  const cancelled = input.cancelledCharge
+
+  const subject = dropped > 0
+    ? `Your pet rent is cancelled — ${fmtDollars(dropped)}/mo comes off your account`
+    : `A charge has been removed from your lease`
+
+  // The headline figure, stated as a block rather than a sentence so it is the
+  // first thing the eye lands on.
+  const headline = dropped > 0
+    ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 18px;margin:0 0 20px;">` +
+      `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#166534;margin-bottom:6px;">` +
+      `Removed from your account</div>` +
+      `<div style="font-size:22px;font-weight:700;color:#14532d;line-height:1.2;">` +
+      `${esc(fmtDollars(dropped))} a month</div>` +
+      `<div style="font-size:13px;color:#166534;line-height:1.6;margin-top:6px;">` +
+      `Pet rent, cancelled from ${esc(fmtLegalDate(doc.effectiveDate))}. You will not be ` +
+      `charged it again for the rest of your lease.</div>` +
+      `</div>`
+    : ''
+
+  const rows: Array<[string, string]> = []
+  for (const c of removed) {
+    rows.push([
+      `${c.label} removed`,
+      c.kind === 'monthly'
+        ? `${fmtDollars(c.amount)} a month`
+        : fmtDollars(c.amount),
+    ])
+  }
+  if (cancelled) rows.push([cancelled.label, `${fmtDollars(cancelled.amount)} — cancelled, not owed`])
+  if (typeof input.newMonthlyTotal === 'number') {
+    rows.push(['Your new monthly total', `${fmtDollars(input.newMonthlyTotal)} a month`])
+  }
+  rows.push(['Due now because of this', 'Nothing'])
+  rows.push(['Effective', fmtLegalDate(doc.effectiveDate)])
+
+  const body = [
+    p(`Hi ${esc(first)},`),
+    p(
+      `Good news, and the short version first: the pet rent on your account at ` +
+      `<strong>${esc(doc.premises)}</strong> has been removed.`
+    ),
+    headline,
+    p(
+      `${from} has recorded your animal on the lease as an <strong>assistance animal</strong> ` +
+      `rather than as a pet. An assistance animal is not a pet under the Fair Housing Act, and ` +
+      `no pet rent, pet deposit or pet fee can be charged for one — so the charge has come off, ` +
+      `and the pet addendum that carried it no longer applies.`
+    ),
+    terms(rows),
+    cancelled
+      ? p(
+          `The separate charge for <strong>${esc(cancelled.label)}</strong> of ` +
+          `${esc(fmtDollars(cancelled.amount))} that was sitting on your account has been ` +
+          `cancelled. You do not owe it, and there is nothing for you to pay or ask for back.`
+        )
+      : '',
+    p(
+      `There is a signed document for this, and it is worth keeping: it is what proves the ` +
+      `reclassification and the cancellation if anyone ever asks. ${from} has already signed ` +
+      `it. When you add your signature it becomes part of your lease, and you will get a copy.`
+    ),
+    `<div style="margin:22px 0 6px;">${emailButton({ label: 'Read and sign the document', url: signUrl })}</div>`,
+    p(
+      `<span style="font-size:12.5px;color:#9b9b9b;">Nothing here depends on you signing. The ` +
+      `pet rent is already off your account and stays off either way — signing just puts the ` +
+      `change on the record properly. If anything above doesn’t match what you expected, reply ` +
+      `to this email.</span>`
+    ),
+  ].filter(Boolean).join('\n')
+
+  const text = [
+    `Hi ${first},`, '',
+    `Good news, and the short version first: the pet rent on your account at ${doc.premises}`,
+    `has been removed.`,
+    '',
+    ...(dropped > 0
+      ? [`  ${fmtDollars(dropped)} a month — pet rent, cancelled from ${fmtLegalDate(doc.effectiveDate)}.`, '']
+      : []),
+    `${landlordName || 'Your landlord'} has recorded your animal on the lease as an assistance`,
+    `animal rather than as a pet. An assistance animal is not a pet under the Fair Housing`,
+    `Act, and no pet rent, pet deposit or pet fee can be charged for one — so the charge has`,
+    `come off, and the pet addendum that carried it no longer applies.`,
+    '',
+    ...rows.map(([k, v]) => `  ${k}: ${v}`),
+    '',
+    ...(cancelled
+      ? [
+          `The separate charge for ${cancelled.label} of ${fmtDollars(cancelled.amount)} on`,
+          `your account has been cancelled. You do not owe it.`,
+          '',
+        ]
+      : []),
+    `There is a signed document for this. Read and sign it here:`,
+    signUrl,
+    '',
+    `Nothing here depends on you signing — the pet rent is already off your account and`,
+    `stays off either way. Signing just puts the change on the record properly.`,
+  ].join('\n')
+
+  return {
+    subject,
+    html: emailShell({
+      banner: 'Charge removed',
+      bannerSubject: doc.title,
+      tone: 'good',
       hero: input.heroImage ?? undefined,
       heroAlt: doc.premises,
       body,
