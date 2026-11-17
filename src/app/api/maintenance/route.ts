@@ -84,6 +84,12 @@ export async function POST(req: NextRequest) {
       reported_by: str(body.reported_by),
       notes: str(body.notes),
       inspection_item_id: str(body.inspection_item_id),
+      // Shared with the property's tenants only on an explicit `true`. Coerced
+      // rather than passed through, so a stray `"false"` string from a client
+      // cannot publish an item — the default has to be private even when the
+      // caller is confused.
+      tenant_visible: body.tenant_visible === true,
+      tenant_note: str(body.tenant_note),
     })
     .select('*, property:properties ( id, name, slug )')
     .single()

@@ -9,6 +9,15 @@ import {
   KIND_META, PRIORITY_META, STATUS_META, KIND_ORDER, PRIORITY_ORDER, STATUS_ORDER,
   type WorkItem, type WorkKind, type WorkPriority, type WorkStatus, type WorkItemInput,
 } from '@/lib/maintenance'
+import {
+  shareAudience, describeAudience, TENANT_STATUS_META, tenantKindLabel,
+  type AudienceLease,
+} from '@/lib/tenantMaintenance'
+import {
+  getUpdatesForItems, addUpdate, addPhotos, deleteUpdate, deletePhoto,
+  setUpdateShared, setUpdateBody, setPhotoCaption, updateReach, photoCount,
+  type WorkItemUpdate, type WorkItemPhoto,
+} from '@/lib/workItemUpdates'
 
 type Property = { id: string; name: string; slug: string }
 
@@ -23,7 +32,12 @@ const BLANK = (propertyId: string): WorkItemInput => ({
   estimated_cost: null,
   target_date: null,
   vendor_name: '',
+  tenant_visible: false,
+  tenant_note: '',
 })
+
+/** Which items the resident filter lets through. */
+type ShareView = 'all' | 'shared' | 'private'
 
 /**
  * Maintenance & upgrades — one list per portfolio, filtered to a property.
@@ -33,11 +47,32 @@ const BLANK = (propertyId: string): WorkItemInput => ({
  * it cost". So it's one list with a `kind` on each row: the same priorities,
  * costs and statuses apply to a broken faucet and to new flooring, and both
  * roll into one budget.
+ *
+ * The page is built around the three things a landlord actually does here, in
+ * descending order of frequency: **move a job along** (one click on the row),
+ * **tell the tenant where it's up to** (the share control, also on the row),
+ * and **change its details** (the drawer). Everything that is neither of those
+ * — the vendor's number, the quote, the private note, deleting the thing — is
+ * in the drawer, off the daily path, where it can't be hit by accident.
  */
 export default function MaintenancePage() {
   const router = useRouter()
   const [items, setItems] = useState<WorkItem[]>([])
   const [properties, setProperties] = useState<Property[]>([])
+  /**
+   * Active tenancies, purely so the share control can name its audience.
+   * Optional data: it fails quiet and the control then says nothing about
+   * reach rather than blocking the page.
+   */
+  const [leases, setLeases] = useState<AudienceLease[]>([])
+  /**
+   * Progress updates, keyed by item id.
+   *
+   * Loaded for the whole list in one query so a row can show "3 updates · 2
+   * photos" without opening anything — a log you have to go looking for is a
+   * log nobody keeps.
+   */
+  const [updates, setUpdates] = useState<Record<string, WorkItemUpdate[]>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null)
@@ -46,6 +81,7 @@ export default function MaintenancePage() {
   const [propertyFilter, setPropertyFilter] = useState<string>('all')
   const [kindFilter, setKindFilter] = useState<WorkKind | 'all'>('all')
   const [statusView, setStatusView] = useState<'open' | 'all' | 'completed'>('open')
+  const [shareView, setShareView] = useState<ShareView>('all')
   const [search, setSearch] = useState('')
 
   // Add form
@@ -61,7 +97,15 @@ export default function MaintenancePage() {
   useEffect(() => { document.title = 'Maintenance & Upgrades — Landlord | HomeHive' }, [])
 
   const load = useCallback(async (userId: string) => {
-    setItems(await getWorkItems(userId))
+    const list = await getWorkItems(userId)
+    setItems(list)
+    setUpdates(await getUpdatesForItems(list.map(i => i.id)))
+  }, [])
+
+  /** Re-read one item's log after the drawer changes it. */
+  const reloadUpdates = useCallback(async (itemId: string) => {
+    const fresh = await getUpdatesForItems([itemId])
+    setUpdates(prev => ({ ...prev, [itemId]: fresh[itemId] ?? [] }))
   }, [])
 
   useEffect(() => {
@@ -73,6 +117,13 @@ export default function MaintenancePage() {
       ])
       setProperties(props ?? [])
       setLoading(false)
+
+      // After the list is usable, never before it.
+      supabase
+        .from('leases')
+        .select('id, property_id, start_date, end_date, tenants:lease_tenants ( id )')
+        .eq('owner_id', user.id)
+        .then(({ data }) => setLeases((data ?? []) as unknown as AudienceLease[]))
     })
   }, [router, load])
 
@@ -88,6 +139,8 @@ export default function MaintenancePage() {
       if (kindFilter !== 'all' && i.kind !== kindFilter) return false
       if (statusView === 'open' && !isOpen(i)) return false
       if (statusView === 'completed' && i.status !== 'completed') return false
+      if (shareView === 'shared' && !i.tenant_visible) return false
+      if (shareView === 'private' && i.tenant_visible) return false
       if (q && !(
         i.title.toLowerCase().includes(q) ||
         (i.description ?? '').toLowerCase().includes(q) ||
@@ -97,13 +150,45 @@ export default function MaintenancePage() {
       return true
     })
     return sortWorkItems(filtered)
-  }, [items, propertyFilter, kindFilter, statusView, search])
+  }, [items, propertyFilter, kindFilter, statusView, shareView, search])
+
+  /**
+   * The list, grouped by property.
+   *
+   * A portfolio list sorted only by urgency reads as a single undifferentiated
+   * queue, and a landlord's actual unit of attention is a building: they go to
+   * one address and do the three things waiting there. Grouping is skipped when
+   * a property is already selected, or when there is only one — a heading over
+   * the only group is just noise.
+   */
+  const groups = useMemo(() => {
+    if (propertyFilter !== 'all' || properties.length < 2) {
+      return [{ id: null as string | null, name: null as string | null, items: visible }]
+    }
+    const byProperty = new Map<string, WorkItem[]>()
+    for (const i of visible) {
+      const list = byProperty.get(i.property_id)
+      if (list) list.push(i); else byProperty.set(i.property_id, [i])
+    }
+    // Property order follows the already-urgency-sorted list, so the building
+    // with the emergency in it comes first rather than the one starting with A.
+    return [...byProperty.entries()].map(([id, list]) => ({
+      id,
+      name: list[0]?.property?.name ?? properties.find(p => p.id === id)?.name ?? 'Property',
+      items: list,
+    }))
+  }, [visible, propertyFilter, properties])
 
   // Totals follow the property filter but ignore the open/completed view, so
   // the money never changes just because you switched tabs.
   const totals = useMemo(() => computeTotals(
     items.filter(i => propertyFilter === 'all' || i.property_id === propertyFilter)
   ), [items, propertyFilter])
+
+  const audienceFor = useCallback(
+    (propertyId: string) => shareAudience(propertyId, leases),
+    [leases],
+  )
 
   async function submitDraft() {
     if (!draft.title.trim()) return say(false, 'Give the item a title.')
@@ -124,11 +209,37 @@ export default function MaintenancePage() {
     if (error) { say(false, 'Could not save that change.'); await reload() }
   }
 
+  /**
+   * Flip an item's visibility to the tenants of this property.
+   *
+   * Confirmed in one direction only. Sharing publishes a title a tenant will
+   * read and may act on, so it is worth a sentence that names the audience;
+   * un-sharing only ever takes something away, and a landlord who has realised
+   * they published the wrong thing should not have to get past a dialog to fix
+   * it.
+   */
+  async function toggleShare(item: WorkItem) {
+    const next = !item.tenant_visible
+    if (next) {
+      const a = audienceFor(item.property_id)
+      const who = a.residents === 0
+        ? 'No resident is on an active lease here yet, so nobody will see it until a tenancy starts.'
+        : `${a.residents} ${a.residents === 1 ? 'resident' : 'residents'} on an active lease will see it.`
+      if (!confirm(`Share "${item.title}" with the tenants of this home?\n\n${who}\n\nThey see the title, type, status and dates — never your costs, vendor details or private notes.`)) return
+    }
+    await patch(item, { tenant_visible: next })
+    say(true, next
+      ? 'Shared with the residents of that home.'
+      : 'Hidden from residents again.')
+  }
+
   async function remove(item: WorkItem) {
-    if (!confirm(`Delete "${item.title}"?`)) return
+    if (!confirm(`Delete "${item.title}"? This cannot be undone.`)) return
     const { error } = await deleteWorkItem(item.id)
     if (error) return say(false, 'Could not delete that item.')
+    setEditing(null)
     await reload()
+    say(true, 'Item deleted.')
   }
 
   if (loading) {
@@ -148,7 +259,8 @@ export default function MaintenancePage() {
             <h1 className="mt-title">Maintenance &amp; Upgrades</h1>
             <p className="mt-sub">
               Everything that needs doing across your properties — repairs, planned upgrades,
-              tenant issues and turnover work, in one prioritised list.
+              tenant issues and turnover work, in one prioritised list. Share an item to put it
+              on your residents&apos; portal.
             </p>
           </div>
           <button
@@ -172,10 +284,18 @@ export default function MaintenancePage() {
           </div>
         ) : (
           <>
-            {/* Money & pressure at a glance */}
+            {/* Pressure, then money. "Shared" sits with them because what your
+                residents can see is a standing fact about this list, not a
+                filter you remember to check. */}
             <div className="kpis">
               <Kpi label="Open items" value={String(totals.open)} sub={totals.emergencies > 0 ? `${totals.emergencies} emergency` : undefined} tone={totals.emergencies > 0 ? 'bad' : undefined} />
               <Kpi label="Overdue" value={String(totals.overdue)} tone={totals.overdue > 0 ? 'warn' : undefined} />
+              <Kpi
+                label="Shared with residents"
+                value={String(totals.shared)}
+                sub={totals.open > 0 ? `of ${totals.open} open` : 'nothing open'}
+                onClick={totals.shared > 0 ? () => { setShareView('shared'); setStatusView('open') } : undefined}
+              />
               <Kpi label="Estimated to come" value={fmtMoney(totals.estimatedOpen)} />
               <Kpi
                 label="Spent (completed)"
@@ -195,6 +315,7 @@ export default function MaintenancePage() {
                   <ItemForm
                     value={draft}
                     properties={properties}
+                    audience={draft.property_id ? audienceFor(draft.property_id) : null}
                     onChange={setDraft}
                     showStatus={false}
                     showActual={false}
@@ -222,6 +343,20 @@ export default function MaintenancePage() {
                     onClick={() => setStatusView(v)}
                   >
                     {v === 'open' ? 'Open' : v === 'completed' ? 'Completed' : 'All'}
+                  </button>
+                ))}
+              </div>
+              {/* The audit view: "what exactly have I published to my tenants?"
+                  is a question a landlord asks at the worst possible moment,
+                  and it should take one click to answer. */}
+              <div className="seg">
+                {(['all', 'shared', 'private'] as ShareView[]).map(v => (
+                  <button
+                    key={v}
+                    className={`seg-btn${shareView === v ? ' on' : ''}`}
+                    onClick={() => setShareView(v)}
+                  >
+                    {v === 'all' ? 'Everything' : v === 'shared' ? 'Shared' : 'Private'}
                   </button>
                 ))}
               </div>
@@ -254,14 +389,31 @@ export default function MaintenancePage() {
                 </div>
               </div>
             ) : (
-              visible.map(item => (
-                <Row
-                  key={item.id}
-                  item={item}
-                  onPatch={patch}
-                  onEdit={() => setEditing(item)}
-                  onDelete={() => remove(item)}
-                />
+              groups.map(g => (
+                <div key={g.id ?? 'all'} className="group">
+                  {g.name && (
+                    <div className="group-hd">
+                      <span className="group-name">{g.name}</span>
+                      <span className="group-meta">
+                        {g.items.filter(isOpen).length} open
+                        {g.items.filter(i => i.tenant_visible && isOpen(i)).length > 0 &&
+                          ` · ${g.items.filter(i => i.tenant_visible && isOpen(i)).length} shared`}
+                      </span>
+                    </div>
+                  )}
+                  {g.items.map(item => (
+                    <Row
+                      key={item.id}
+                      item={item}
+                      showProperty={!g.name}
+                      audience={audienceFor(item.property_id)}
+                      updates={updates[item.id] ?? []}
+                      onPatch={patch}
+                      onToggleShare={() => toggleShare(item)}
+                      onEdit={() => setEditing(item)}
+                    />
+                  ))}
+                </div>
               ))
             )}
           </>
@@ -273,8 +425,12 @@ export default function MaintenancePage() {
         <EditModal
           item={editing}
           properties={properties}
+          audience={audienceFor(editing.property_id)}
+          updates={updates[editing.id] ?? []}
+          onUpdatesChanged={() => reloadUpdates(editing.id)}
           onClose={() => setEditing(null)}
           onSaved={async () => { setEditing(null); await reload(); say(true, 'Item updated.') }}
+          onDelete={() => remove(editing)}
           onFlash={say}
         />
       )}
@@ -284,113 +440,516 @@ export default function MaintenancePage() {
 
 // ── Pieces ───────────────────────────────────────────────────────────────────
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'bad' | 'warn' }) {
-  return (
-    <div className="kpi">
+function Kpi({
+  label, value, sub, tone, onClick,
+}: {
+  label: string; value: string; sub?: string; tone?: 'bad' | 'warn'; onClick?: () => void
+}) {
+  const body = (
+    <>
       <div className="kpi-label">{label}</div>
       <div className={`kpi-val${tone ? ` ${tone}` : ''}`}>{value}</div>
       {sub && <div className="kpi-sub">{sub}</div>}
-    </div>
+    </>
   )
+  return onClick
+    ? <button className="kpi tappable" onClick={onClick} title="Show these">{body}</button>
+    : <div className="kpi">{body}</div>
 }
 
-/** One row. Status and priority are editable inline — that's the daily action. */
+const fmtDay = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+/** Date and time: two updates on one day are normal on a job that's moving. */
+const fmtStamp = (ts: string) =>
+  new Date(ts).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+
+/** The newest few photos across a log, for the row's thumbnail strip. */
+const latestPhotos = (updates: WorkItemUpdate[], limit = 3): WorkItemPhoto[] =>
+  updates.flatMap(u => u.photos).slice(0, limit)
+
+/**
+ * One row.
+ *
+ * Three tiers down the row, in the order a landlord reads them: what and where,
+ * then what it costs, then what to do about it. The actions live in a footer
+ * strip rather than a third column — the old three-column layout gave the two
+ * dropdowns and a red "Delete" link equal weight with the title, so the most
+ * destructive control on the page sat in the easiest place to mis-click. Delete
+ * now lives in the drawer; the footer holds only the moves you make daily.
+ */
 function Row({
-  item, onPatch, onEdit, onDelete,
+  item, showProperty, audience, updates, onPatch, onToggleShare, onEdit,
 }: {
   item: WorkItem
+  showProperty: boolean
+  audience: { leases: number; residents: number }
+  updates: WorkItemUpdate[]
   onPatch: (item: WorkItem, changes: Partial<WorkItemInput>) => Promise<void>
+  onToggleShare: () => void
   onEdit: () => void
-  onDelete: () => void
 }) {
   const kind = KIND_META[item.kind]
   const priority = PRIORITY_META[item.priority]
   const status = STATUS_META[item.status]
   const overdue = isOverdue(item)
+  const open = isOpen(item)
   const [cost, setCost] = useState(item.actual_cost?.toString() ?? '')
 
   const variance = item.estimated_cost != null && item.actual_cost != null
     ? item.actual_cost - item.estimated_cost
     : null
 
+  // Medium and low are the default and the shrug. Printing them on every row
+  // trains the eye to skip the priority tag entirely, which is exactly when an
+  // "Emergency" stops being visible.
+  const loudPriority = item.priority === 'emergency' || item.priority === 'high'
+
   return (
-    <div className={`row${isOpen(item) ? '' : ' done'}${item.priority === 'emergency' && isOpen(item) ? ' urgent' : ''}`}>
-      <div className="row-main">
-        <div className="row-top">
-          <span className="tag" style={{ background: kind.bg, color: kind.color }}>{kind.icon} {kind.label}</span>
-          <span className="tag" style={{ background: priority.bg, color: priority.color }}>{priority.label}</span>
-          {overdue && <span className="tag overdue">Overdue</span>}
-        </div>
+    <div className={`row${open ? '' : ' done'}${item.priority === 'emergency' && open ? ' urgent' : ''}`}>
+      <div className="row-body">
+        <div className="row-main">
+          <div className="row-top">
+            <span className="tag" style={{ background: kind.bg, color: kind.color }}>{kind.icon} {kind.label}</span>
+            {loudPriority && <span className="tag" style={{ background: priority.bg, color: priority.color }}>{priority.label}</span>}
+            {overdue && <span className="tag overdue">Overdue</span>}
+          </div>
 
-        <button className="row-title" onClick={onEdit} title="Edit item">{item.title}</button>
+          <button className="row-title" onClick={onEdit} title="Open details">{item.title}</button>
 
-        <div className="row-meta">
-          {item.property?.name}
-          {item.area ? ` · ${item.area}` : ''}
-          {item.target_date ? ` · target ${new Date(item.target_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
-          {item.vendor_name ? ` · ${item.vendor_name}` : ''}
-        </div>
+          <div className="row-meta">
+            {[
+              showProperty ? item.property?.name : null,
+              item.area,
+              item.scheduled_for ? `booked ${fmtDay(item.scheduled_for)}` : null,
+              item.target_date ? `target ${fmtDay(item.target_date)}` : null,
+              item.vendor_name,
+            ].filter(Boolean).join(' · ')}
+          </div>
 
-        {item.description && <div className="row-desc">{item.description}</div>}
-      </div>
+          {item.description && <div className="row-desc">{item.description}</div>}
 
-      <div className="row-money">
-        <div className="money-line">
-          <span className="money-k">Est.</span>
-          <span className="money-v">{item.estimated_cost != null ? fmtMoney(item.estimated_cost) : '—'}</span>
-        </div>
-        <div className="money-line">
-          <span className="money-k">Actual</span>
-          {isOpen(item) ? (
-            <span className="money-v muted">—</span>
-          ) : (
-            <input
-              className="inp cost"
-              type="number" min="0" step="0.01"
-              placeholder="0.00"
-              value={cost}
-              onChange={e => setCost(e.target.value)}
-              onBlur={() => {
-                const v = cost === '' ? null : Number(cost)
-                if (v !== item.actual_cost) onPatch(item, { actual_cost: v })
-              }}
-            />
+          {/* A thumbnail strip, not just a count: the latest photo of a job is
+              the fastest way to remember which job this is, and seeing it on
+              the row is what makes a landlord keep adding them. */}
+          {updates.length > 0 && (
+            <button className="row-log" onClick={onEdit} title="Open the progress log">
+              {latestPhotos(updates).map(p => (
+                <img key={p.id} className="row-thumb" src={p.url} alt="" loading="lazy" />
+              ))}
+              <span className="row-log-txt">
+                {updates.length} {updates.length === 1 ? 'update' : 'updates'}
+                {photoCount(updates) > 0 && ` · ${photoCount(updates)} photo${photoCount(updates) === 1 ? '' : 's'}`}
+              </span>
+            </button>
           )}
         </div>
-        {variance !== null && Math.abs(variance) >= 0.01 && (
-          <div className={`variance${variance > 0 ? ' over' : ' under'}`}>
-            {variance > 0 ? '+' : '−'}{fmtMoney(Math.abs(variance))} vs est.
+
+        <div className="row-money">
+          <div className="money-line">
+            <span className="money-k">Est.</span>
+            <span className="money-v">{item.estimated_cost != null ? fmtMoney(item.estimated_cost) : '—'}</span>
           </div>
-        )}
+          <div className="money-line">
+            <span className="money-k">Actual</span>
+            {open ? (
+              <span className="money-v muted">—</span>
+            ) : (
+              <input
+                className="inp cost"
+                type="number" min="0" step="0.01"
+                placeholder="0.00"
+                value={cost}
+                onChange={e => setCost(e.target.value)}
+                onBlur={() => {
+                  const v = cost === '' ? null : Number(cost)
+                  if (v !== item.actual_cost) onPatch(item, { actual_cost: v })
+                }}
+              />
+            )}
+          </div>
+          {variance !== null && Math.abs(variance) >= 0.01 && (
+            <div className={`variance${variance > 0 ? ' over' : ' under'}`}>
+              {variance > 0 ? '+' : '−'}{fmtMoney(Math.abs(variance))} vs est.
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="row-actions">
+      <div className="row-foot">
         <select
-          className="inp sm status"
+          className="inp pill status"
           value={item.status}
           style={{ color: status.color, background: status.bg, borderColor: status.bg }}
           onChange={e => onPatch(item, { status: e.target.value as WorkStatus })}
         >
           {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
         </select>
-        <select
-          className="inp sm"
-          value={item.priority}
-          onChange={e => onPatch(item, { priority: e.target.value as WorkPriority })}
-        >
-          {PRIORITY_ORDER.map(p => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}
-        </select>
-        <button className="btn-link-danger" onClick={onDelete}>Delete</button>
+
+        {/* The one-click version of the commonest edit on the page. */}
+        {open && (
+          <button className="btn-soft" onClick={() => onPatch(item, { status: 'completed' })}>
+            Mark done
+          </button>
+        )}
+
+        <div className="foot-right">
+          {/* The share state is a *fact about this row*, so it is readable at a
+              glance and flippable in place — burying it in the drawer makes
+              "what have I told my tenants" a thing you have to go and audit. */}
+          <button
+            className={`btn-share${item.tenant_visible ? ' on' : ''}`}
+            onClick={onToggleShare}
+            title={item.tenant_visible
+              ? `Visible on the tenant portal. ${describeAudience(audience)}.`
+              : `Private to you. ${describeAudience(audience)}.`}
+          >
+            {item.tenant_visible ? '👁 Shared with residents' : 'Private'}
+          </button>
+          {item.tenant_visible && audience.residents === 0 && (
+            <span className="foot-warn" title="There is no active tenancy at this property">no audience yet</span>
+          )}
+          <button className="btn-soft" onClick={onEdit}>Details</button>
+        </div>
       </div>
     </div>
   )
 }
 
+/**
+ * The share control, in full, for the add form and the drawer.
+ *
+ * A toggle plus the sentence the tenant will read plus a statement of who will
+ * read it. The note matters more than it looks: without it a shared item says
+ * only "Replace bedroom 2 flooring — Scheduled", and the tenant's next move is
+ * an email asking the questions the note would have answered.
+ */
+function ShareField({
+  value, audience, onChange,
+}: {
+  value: WorkItemInput
+  audience: { leases: number; residents: number } | null
+  onChange: (patch: Partial<WorkItemInput>) => void
+}) {
+  const on = !!value.tenant_visible
+  return (
+    <div className={`share${on ? ' on' : ''}`}>
+      <label className="share-top">
+        <input type="checkbox" checked={on} onChange={e => onChange({ tenant_visible: e.target.checked })} />
+        <span>
+          <span className="share-lbl">Show this to the residents of this home</span>
+          <span className="share-sub">
+            {audience ? describeAudience(audience) : 'Only tenants on an active lease here will see it'}
+            {' '}· they never see your costs, vendor details, private notes or priority.
+          </span>
+        </span>
+      </label>
+
+      {on && (
+        <div className="share-body">
+          <label className="lbl">Note to residents</label>
+          <textarea
+            className="inp" rows={2}
+            value={value.tenant_note ?? ''}
+            onChange={e => onChange({ tenant_note: e.target.value })}
+            placeholder="The plumber is booked for Thursday morning — you don't need to be home."
+          />
+          <div className="hint">
+            Written to them, not about the job. Your &quot;details&quot; field above stays private.
+          </div>
+          <div className="share-preview">
+            <div className="share-preview-k">What they&apos;ll see</div>
+            <div className="share-preview-row">
+              <div>
+                <div className="share-preview-t">{value.title.trim() || 'Your item title'}</div>
+                <div className="share-preview-m">
+                  {tenantKindLabel(value.kind)}
+                  {value.area ? ` · ${value.area}` : ''}
+                  {value.scheduled_for ? ` · Booked for ${fmtDay(value.scheduled_for)}`
+                    : value.target_date ? ` · Aiming for ${fmtDay(value.target_date)}` : ''}
+                </div>
+                {value.tenant_note && <div className="share-preview-n">{value.tenant_note}</div>}
+              </div>
+              <span
+                className="share-preview-pill"
+                style={{
+                  background: TENANT_STATUS_META[value.status as keyof typeof TENANT_STATUS_META]?.bg ?? '#f1f5f9',
+                  color: TENANT_STATUS_META[value.status as keyof typeof TENANT_STATUS_META]?.color ?? '#475569',
+                }}
+              >
+                {TENANT_STATUS_META[value.status as keyof typeof TENANT_STATUS_META]?.label ?? value.status}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The progress log for one item: a composer, then the entries.
+ *
+ * This is the half of maintenance that makes a tenant trust the other half. A
+ * status pill moving to "Completed" is an assertion; a photo of the finished
+ * floor with "all done, new LVP throughout" under it is evidence. The composer
+ * is therefore the first thing in the section rather than the last, and sharing
+ * is **on by default** here — the whole reason to write an update is to tell
+ * someone, and an update nobody reads is a worse outcome than one shared a
+ * little too readily (it can be un-shared in one click; an un-sent one is just
+ * gone).
+ *
+ * Each entry's reach is stated in words via `updateReach`, because "shared" on
+ * an update whose *item* is private reaches nobody and a landlord would
+ * otherwise never find that out.
+ */
+function UpdateLog({
+  item, ownerId, updates, onChanged, onFlash,
+}: {
+  item: WorkItem
+  ownerId: string | null
+  updates: WorkItemUpdate[]
+  onChanged: () => Promise<void> | void
+  onFlash: (ok: boolean, text: string) => void
+}) {
+  const [body, setBody] = useState('')
+  const [shareNew, setShareNew] = useState(true)
+  const [pending, setPending] = useState<File[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const done = item.status === 'completed'
+
+  async function post() {
+    if (!ownerId) return onFlash(false, 'Please sign in again.')
+    if (!body.trim() && pending.length === 0) {
+      return onFlash(false, 'Write a note or add a photo first.')
+    }
+    setBusy(true)
+    const { update, error } = await addUpdate({
+      workItemId: item.id,
+      ownerId,
+      body: body.trim() || null,
+      tenantVisible: shareNew,
+    })
+    if (error || !update) { setBusy(false); return onFlash(false, error ?? 'Could not save.') }
+
+    if (pending.length > 0) {
+      const { failed } = await addPhotos({ updateId: update.id, ownerId, files: pending })
+      // Partial success is reported, not hidden: four of five photos landing is
+      // a good outcome the landlord still needs to know about.
+      if (failed.length > 0) onFlash(false, `Saved, but ${failed.join('; ')}.`)
+    }
+
+    setBody(''); setPending([]); setShareNew(true)
+    setBusy(false)
+    await onChanged()
+    if (shareNew && !item.tenant_visible) {
+      onFlash(false, 'Update saved — but this job is still private, so nobody can see it yet. Share the job to publish it.')
+    } else if (shareNew) {
+      onFlash(true, 'Update posted to your residents.')
+    } else {
+      onFlash(true, 'Update saved privately.')
+    }
+  }
+
+  async function attach(update: WorkItemUpdate, files: File[]) {
+    if (!ownerId || files.length === 0) return
+    setBusy(true)
+    const { failed } = await addPhotos({
+      updateId: update.id, ownerId, files, startPosition: update.photos.length,
+    })
+    setBusy(false)
+    await onChanged()
+    if (failed.length > 0) onFlash(false, failed.join('; '))
+  }
+
+  async function toggle(update: WorkItemUpdate) {
+    const { error } = await setUpdateShared(update.id, !update.tenant_visible)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function removeUpdate(update: WorkItemUpdate) {
+    if (!confirm('Delete this update and its photos? This cannot be undone.')) return
+    const { error } = await deleteUpdate(update)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function removePhoto(photo: WorkItemPhoto) {
+    if (!confirm('Remove this photo?')) return
+    const { error } = await deletePhoto(photo)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function saveCaption(photo: WorkItemPhoto, caption: string) {
+    if ((photo.caption ?? '') === caption.trim()) return
+    const { error } = await setPhotoCaption(photo.id, caption)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function saveBody(update: WorkItemUpdate, next: string) {
+    if ((update.body ?? '') === next.trim()) return
+    const { error } = await setUpdateBody(update.id, next)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  return (
+    <div className="fieldset log">
+      <div className="fieldset-hd">
+        Progress &amp; photos
+        <span className="fieldset-note">{updates.length === 0 ? 'nothing logged yet' : `${updates.length} logged`}</span>
+      </div>
+
+      {/* Marking a job done without saying so to the tenant is the single most
+          common way this list stops being believed, so the prompt appears
+          exactly when it's relevant. */}
+      {done && updates.filter(u => u.tenant_visible).length === 0 && (
+        <div className="log-nudge">
+          This job is marked completed and your residents haven&apos;t been shown anything.
+          A photo of the finished work is the difference between &quot;they say it&apos;s done&quot;
+          and &quot;it&apos;s done&quot;.
+        </div>
+      )}
+
+      <div className="log-new">
+        <textarea
+          className="inp"
+          rows={2}
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          placeholder={done
+            ? 'All finished — new LVP throughout bedroom 2, old carpet taken away.'
+            : 'The plumber is booked for Thursday morning; you don’t need to be home.'}
+        />
+
+        {pending.length > 0 && (
+          <div className="log-pending">
+            {pending.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="chip">
+                {f.name}
+                <button onClick={() => setPending(p => p.filter((_, j) => j !== i))} title="Remove">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="log-new-ft">
+          <label className="btn-soft file">
+            {pending.length > 0 ? `${pending.length} photo${pending.length === 1 ? '' : 's'} attached` : '+ Add photos'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,image/*"
+              multiple
+              hidden
+              disabled={busy}
+              onChange={e => {
+                // Snapshot synchronously. `input.files` is a live FileList and
+                // the reset below empties it, so anything that reads it after
+                // an await sees zero files and uploads nothing, silently.
+                const picked = Array.from(e.target.files ?? [])
+                e.target.value = ''
+                setPending(p => [...p, ...picked])
+              }}
+            />
+          </label>
+
+          <label className="log-share">
+            <input type="checkbox" checked={shareNew} onChange={e => setShareNew(e.target.checked)} />
+            Show to residents
+          </label>
+
+          <button className="btn-dark sm" onClick={post} disabled={busy}>
+            {busy ? 'Posting…' : 'Post update'}
+          </button>
+        </div>
+
+        {shareNew && !item.tenant_visible && (
+          <div className="log-warn">
+            This job is private, so a shared update still won&apos;t reach anyone. Tick
+            &quot;show this to the residents&quot; above to publish the job itself.
+          </div>
+        )}
+      </div>
+
+      {updates.map(u => {
+        const reach = updateReach(u, item)
+        return (
+          <div key={u.id} className={`log-row${reach.shown ? ' shown' : ''}`}>
+            <div className="log-row-hd">
+              <span className="log-when">{fmtStamp(u.created_at)}</span>
+              <button
+                className={`btn-share tiny${reach.shown ? ' on' : ''}`}
+                onClick={() => toggle(u)}
+                title={reach.why ?? (reach.shown ? 'Visible to residents — click to hide' : 'Private — click to share')}
+              >
+                {reach.shown ? '👁 Shared' : reach.label}
+              </button>
+              <button className="btn-link-danger tiny" onClick={() => removeUpdate(u)}>Delete</button>
+            </div>
+
+            {reach.why && <div className="log-warn">{reach.why}</div>}
+
+            <textarea
+              className="inp log-body"
+              rows={2}
+              defaultValue={u.body ?? ''}
+              placeholder="Add a note to this update…"
+              onBlur={e => saveBody(u, e.target.value)}
+            />
+
+            {u.photos.length > 0 && (
+              <div className="log-shots">
+                {u.photos.map(p => (
+                  <div key={p.id} className="log-shot">
+                    <a href={p.url} target="_blank" rel="noreferrer" title="Open full size">
+                      <img src={p.url} alt={p.caption ?? ''} loading="lazy" />
+                    </a>
+                    <input
+                      className="inp cap"
+                      defaultValue={p.caption ?? ''}
+                      placeholder="Caption"
+                      onBlur={e => saveCaption(p, e.target.value)}
+                    />
+                    <button className="shot-x" onClick={() => removePhoto(p)} title="Remove photo">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <label className="btn-soft file tiny">
+              + Photo
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,image/*"
+                multiple
+                hidden
+                disabled={busy}
+                onChange={e => {
+                  const picked = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  attach(u, picked)
+                }}
+              />
+            </label>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ItemForm({
-  value, properties, onChange, showStatus, showActual,
+  value, properties, audience, onChange, showStatus, showActual,
 }: {
   value: WorkItemInput
   properties: Property[]
+  audience: { leases: number; residents: number } | null
   onChange: (v: WorkItemInput) => void
   showStatus: boolean
   showActual: boolean
@@ -428,23 +987,6 @@ function ItemForm({
       </div>
 
       <div className="grid3">
-        <Field label="Estimated cost">
-          <input className="inp" type="number" min="0" step="0.01"
-            value={value.estimated_cost ?? ''}
-            onChange={e => set({ estimated_cost: e.target.value === '' ? null : Number(e.target.value) })}
-            placeholder="1200.00" />
-        </Field>
-        {showActual && (
-          <Field label="Actual cost" hint="Fill in once the work is done">
-            <input className="inp" type="number" min="0" step="0.01"
-              value={value.actual_cost ?? ''}
-              onChange={e => set({ actual_cost: e.target.value === '' ? null : Number(e.target.value) })} />
-          </Field>
-        )}
-        <Field label="Target date">
-          <input className="inp" type="date" value={value.target_date ?? ''}
-            onChange={e => set({ target_date: e.target.value || null })} />
-        </Field>
         {showStatus && (
           <Field label="Status">
             <select className="inp" value={value.status} onChange={e => set({ status: e.target.value as WorkStatus })}>
@@ -452,36 +994,69 @@ function ItemForm({
             </select>
           </Field>
         )}
+        <Field label="Target date" hint="When it needs to be done by">
+          <input className="inp" type="date" value={value.target_date ?? ''}
+            onChange={e => set({ target_date: e.target.value || null })} />
+        </Field>
+        <Field label="Booked for" hint="The date the work actually happens">
+          <input className="inp" type="date" value={value.scheduled_for ?? ''}
+            onChange={e => set({ scheduled_for: e.target.value || null })} />
+        </Field>
       </div>
 
-      <Field label="Details">
+      <Field label="Details" hint="Private to you — never shown to residents.">
         <textarea className="inp" rows={2} value={value.description ?? ''}
           onChange={e => set({ description: e.target.value })}
           placeholder="Carpet is stained beyond cleaning — replace with LVP throughout." />
       </Field>
 
-      <div className="grid3">
-        <Field label="Vendor">
-          <input className="inp" value={value.vendor_name ?? ''} onChange={e => set({ vendor_name: e.target.value })} placeholder="Tempe Flooring Co." />
-        </Field>
-        <Field label="Vendor contact">
-          <input className="inp" value={value.vendor_contact ?? ''} onChange={e => set({ vendor_contact: e.target.value })} placeholder="480-555-0134" />
-        </Field>
-        <Field label="Reported by" hint="For tenant-reported issues">
-          <input className="inp" value={value.reported_by ?? ''} onChange={e => set({ reported_by: e.target.value })} />
-        </Field>
+      {/* Residents, as its own block. It is a publishing decision, and a
+          checkbox lost in a row of cost fields is one people tick by accident
+          in both directions. */}
+      <ShareField value={value} audience={audience} onChange={set} />
+
+      <div className="fieldset">
+        <div className="fieldset-hd">Costs &amp; vendor <span className="fieldset-note">private</span></div>
+        <div className="grid3">
+          <Field label="Estimated cost">
+            <input className="inp" type="number" min="0" step="0.01"
+              value={value.estimated_cost ?? ''}
+              onChange={e => set({ estimated_cost: e.target.value === '' ? null : Number(e.target.value) })}
+              placeholder="1200.00" />
+          </Field>
+          {showActual && (
+            <Field label="Actual cost" hint="Fill in once the work is done">
+              <input className="inp" type="number" min="0" step="0.01"
+                value={value.actual_cost ?? ''}
+                onChange={e => set({ actual_cost: e.target.value === '' ? null : Number(e.target.value) })} />
+            </Field>
+          )}
+          <Field label="Vendor">
+            <input className="inp" value={value.vendor_name ?? ''} onChange={e => set({ vendor_name: e.target.value })} placeholder="Tempe Flooring Co." />
+          </Field>
+          <Field label="Vendor contact">
+            <input className="inp" value={value.vendor_contact ?? ''} onChange={e => set({ vendor_contact: e.target.value })} placeholder="480-555-0134" />
+          </Field>
+          <Field label="Reported by" hint="For tenant-reported issues">
+            <input className="inp" value={value.reported_by ?? ''} onChange={e => set({ reported_by: e.target.value })} />
+          </Field>
+        </div>
       </div>
     </>
   )
 }
 
 function EditModal({
-  item, properties, onClose, onSaved, onFlash,
+  item, properties, audience, updates, onUpdatesChanged, onClose, onSaved, onDelete, onFlash,
 }: {
   item: WorkItem
   properties: Property[]
+  audience: { leases: number; residents: number }
+  updates: WorkItemUpdate[]
+  onUpdatesChanged: () => Promise<void> | void
   onClose: () => void
   onSaved: () => Promise<void>
+  onDelete: () => void
   onFlash: (ok: boolean, text: string) => void
 }) {
   const [value, setValue] = useState<WorkItemInput>({
@@ -501,6 +1076,8 @@ function EditModal({
     assigned_to: item.assigned_to,
     reported_by: item.reported_by,
     notes: item.notes,
+    tenant_visible: item.tenant_visible,
+    tenant_note: item.tenant_note,
   })
   const [saving, setSaving] = useState(false)
 
@@ -517,22 +1094,55 @@ function EditModal({
     <div className="modal-back" onClick={() => !saving && onClose()}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-hd">
-          <div className="modal-title">Edit item</div>
+          <div>
+            <div className="modal-title">Item details</div>
+            <div className="modal-sub">
+              {item.property?.name}
+              {item.tenant_visible ? ' · shared with residents' : ' · private'}
+            </div>
+          </div>
           <button className="modal-x" onClick={onClose} disabled={saving}>×</button>
         </div>
         <div className="modal-body">
-          <ItemForm value={value} properties={properties} onChange={setValue} showStatus showActual />
-          <Field label="Notes">
+          <ItemForm
+            value={value}
+            properties={properties}
+            audience={audience}
+            onChange={setValue}
+            showStatus
+            showActual
+          />
+          <Field label="Private notes" hint="Yours alone. Quotes, who said what, why it's stalled.">
             <textarea className="inp" rows={2} value={value.notes ?? ''}
               onChange={e => setValue({ ...value, notes: e.target.value })}
               placeholder="Quote received 08/10, work booked for the 22nd." />
           </Field>
+
+          {/* The log is part of managing the item, so it lives in the same
+              drawer — a separate screen for "updates" is a screen nobody
+              opens while they have the job in front of them.
+
+              Its writes save immediately rather than waiting for "Save
+              changes": posting an update and then losing it by closing the
+              drawer is the kind of thing that stops people writing them. */}
+          <UpdateLog
+            item={item}
+            ownerId={item.owner_id}
+            updates={updates}
+            onChanged={onUpdatesChanged}
+            onFlash={onFlash}
+          />
         </div>
         <div className="modal-ft">
-          <button className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn-dark" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
+          {/* Destructive action, kept here and only here: off the row, behind a
+              confirm, and visually separated from the thing you came to click. */}
+          <button className="btn-link-danger" onClick={onDelete} disabled={saving}>Delete item</button>
+          <div className="ft-right">
+            <button className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn-dark" onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -556,26 +1166,35 @@ const CSS = `
   .mt-wrap { max-width: 1040px; margin: 0 auto; padding: 28px 20px 90px; font-family: 'DM Sans', sans-serif; }
   .mt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
   .mt-title { font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: -0.4px; }
-  .mt-sub { font-size: 13px; color: #64748b; margin-top: 4px; max-width: 560px; line-height: 1.55; }
+  .mt-sub { font-size: 13px; color: #64748b; margin-top: 4px; max-width: 580px; line-height: 1.55; }
 
-  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
-  .kpi { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; text-align: left; font-family: inherit; }
+  .kpi.tappable { cursor: pointer; }
+  .kpi.tappable:hover { border-color: #cbd5e1; }
   .kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 5px; }
   .kpi-val { font-size: 20px; font-weight: 700; color: #0f172a; }
   .kpi-val.bad { color: #dc2626; }
   .kpi-val.warn { color: #b45309; }
   .kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 
-  .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
   .seg { display: inline-flex; background: #f1f5f9; border-radius: 9px; padding: 3px; }
-  .seg-btn { background: none; border: none; border-radius: 7px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; color: #64748b; cursor: pointer; font-family: inherit; }
+  .seg-btn { background: none; border: none; border-radius: 7px; padding: 6px 13px; font-size: 12.5px; font-weight: 600; color: #64748b; cursor: pointer; font-family: inherit; }
   .seg-btn.on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px rgba(15,23,42,0.08); }
   .inp.sm { padding: 7px 10px; font-size: 12.5px; width: auto; }
-  .inp.grow { flex: 1; min-width: 160px; }
+  .inp.grow { flex: 1; min-width: 150px; }
 
-  .row { display: flex; align-items: flex-start; gap: 16px; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .group { margin-bottom: 10px; }
+  .group-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 2px 7px; margin-top: 18px; }
+  .group-name { font-size: 13px; font-weight: 700; color: #0f172a; letter-spacing: -0.1px; }
+  .group-meta { font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .row { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
   .row.urgent { border-left: 4px solid #dc2626; }
-  .row.done { opacity: 0.72; background: #fafbfc; }
+  .row.done { background: #fafbfc; }
+  .row.done .row-body { opacity: 0.72; }
+  .row-body { display: flex; align-items: flex-start; gap: 16px; padding: 14px 16px 12px; }
   .row-main { flex: 1; min-width: 0; }
   .row-top { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
   .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 8px; border-radius: 20px; }
@@ -595,8 +1214,16 @@ const CSS = `
   .variance.over { color: #b45309; }
   .variance.under { color: #059669; }
 
-  .row-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
-  .inp.status { font-weight: 600; }
+  .row-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 16px; border-top: 1px solid #f1f5f9; background: #fcfdfe; }
+  .foot-right { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .foot-warn { font-size: 10.5px; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: 0.4px; }
+  .inp.pill { padding: 5px 9px; font-size: 12px; font-weight: 600; width: auto; border-radius: 20px; }
+  .btn-soft { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #475569; cursor: pointer; font-family: inherit; }
+  .btn-soft:hover { border-color: #cbd5e1; color: #0f172a; }
+  .btn-share { background: #fff; border: 1.5px dashed #cbd5e1; border-radius: 20px; padding: 5px 12px; font-size: 11.5px; font-weight: 700; color: #94a3b8; cursor: pointer; font-family: inherit; }
+  .btn-share:hover { border-color: #94a3b8; color: #475569; }
+  .btn-share.on { background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #047857; }
+  .btn-share.on:hover { border-color: #34d399; }
 
   .card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }
   .add-card { border-color: #cbd5e1; }
@@ -613,10 +1240,61 @@ const CSS = `
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 13px; }
   .hint { font-size: 11px; color: #94a3b8; margin-top: 4px; line-height: 1.45; }
 
+  .fieldset { border: 1.5px solid #f1f5f9; border-radius: 11px; padding: 14px 15px 2px; margin-bottom: 14px; }
+  .fieldset-hd { font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 11px; }
+  .fieldset-note { font-weight: 600; color: #94a3b8; letter-spacing: 0.3px; }
+
+  .share { border: 1.5px solid #e2e8f0; border-radius: 11px; padding: 13px 15px; margin-bottom: 14px; background: #fcfdfe; }
+  .share.on { border-color: #a7f3d0; background: #f6fffb; }
+  .share-top { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .share-top input { margin-top: 3px; width: 15px; height: 15px; accent-color: #059669; flex-shrink: 0; }
+  .share-lbl { display: block; font-size: 13.5px; font-weight: 600; color: #0f172a; }
+  .share-sub { display: block; font-size: 11.5px; color: #64748b; margin-top: 3px; line-height: 1.5; }
+  .share-body { margin-top: 13px; padding-top: 13px; border-top: 1px solid #e2f5ec; }
+  .share-preview { margin-top: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 11px 13px; }
+  .share-preview-k { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #94a3b8; margin-bottom: 8px; }
+  .share-preview-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .share-preview-t { font-size: 13.5px; font-weight: 600; color: #0f172a; }
+  .share-preview-m { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  .share-preview-n { font-size: 12px; color: #475569; margin-top: 5px; line-height: 1.5; }
+  .share-preview-pill { flex-shrink: 0; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+
+  /* ── Progress log ───────────────────────────────────────────────────────── */
+  .row-log { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding: 0; background: none; border: none; cursor: pointer; font-family: inherit; }
+  .row-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; border: 1px solid #e2e8f0; display: block; }
+  .row-log-txt { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+  .row-log:hover .row-log-txt { color: #0f172a; }
+
+  .log { background: #fcfdfe; }
+  .log-nudge { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 9px; padding: 10px 13px; font-size: 12px; line-height: 1.55; margin-bottom: 12px; }
+  .log-warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 8px 11px; font-size: 11.5px; line-height: 1.5; margin-top: 8px; }
+  .log-new { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 11px; padding: 12px 13px; margin-bottom: 14px; }
+  .log-new-ft { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .log-share { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #475569; cursor: pointer; }
+  .log-share input { width: 14px; height: 14px; accent-color: #059669; }
+  .btn-dark.sm { padding: 7px 14px; font-size: 12.5px; margin-left: auto; }
+  .btn-soft.file { cursor: pointer; display: inline-block; }
+  .btn-soft.file.tiny, .btn-link-danger.tiny { font-size: 11px; padding: 4px 9px; }
+  .log-pending { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: #f1f5f9; border-radius: 20px; padding: 3px 5px 3px 10px; font-size: 11px; color: #475569; max-width: 220px; }
+  .chip button { background: none; border: none; color: #94a3b8; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 3px; }
+
+  .log-row { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 11px; padding: 11px 13px; margin-bottom: 9px; }
+  .log-row.shown { border-color: #a7f3d0; }
+  .log-row-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .log-when { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-right: auto; }
+  .btn-share.tiny { font-size: 10.5px; padding: 3px 9px; }
+  textarea.inp.log-body { font-size: 12.5px; padding: 7px 9px; }
+  .log-shots { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 9px; }
+  .log-shot { position: relative; width: 104px; }
+  .log-shot img { display: block; width: 100%; height: 78px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; }
+  .inp.cap { margin-top: 4px; padding: 4px 7px; font-size: 11px; }
+  .shot-x { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(15,23,42,0.72); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; }
+
   .btn-dark { background: #0f172a; color: #34d399; border: none; border-radius: 9px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .btn-dark:disabled { opacity: .5; cursor: not-allowed; }
   .btn-ghost { background: #fff; color: #475569; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 15px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
-  .btn-link-danger { background: none; border: none; color: #dc2626; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-link-danger { background: none; border: none; color: #dc2626; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .btn-link-danger:hover { text-decoration: underline; }
   .btn-row { display: flex; gap: 9px; margin-top: 6px; }
 
@@ -628,18 +1306,19 @@ const CSS = `
   .empty-sub { font-size: 13.5px; color: #64748b; line-height: 1.6; max-width: 460px; margin: 0 auto; }
 
   .modal-back { position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 400; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 640px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
-  .modal-hd { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
+  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 660px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+  .modal-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 15px 20px; border-bottom: 1px solid #f1f5f9; }
   .modal-title { font-size: 16px; font-weight: 700; color: #0f172a; }
+  .modal-sub { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
   .modal-x { background: none; border: none; font-size: 22px; line-height: 1; color: #94a3b8; cursor: pointer; }
   .modal-body { flex: 1; overflow: auto; padding: 18px 20px; }
-  .modal-ft { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid #f1f5f9; }
+  .modal-ft { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 14px 20px; border-top: 1px solid #f1f5f9; }
+  .ft-right { display: flex; gap: 9px; }
 
   @media (max-width: 860px) {
-    .kpis { grid-template-columns: repeat(2, 1fr); }
     .grid2, .grid3 { grid-template-columns: 1fr; }
-    .row { flex-direction: column; gap: 12px; }
+    .row-body { flex-direction: column; gap: 12px; }
     .row-money { width: 100%; display: flex; gap: 18px; align-items: center; }
-    .row-actions { flex-direction: row; align-items: center; width: 100%; }
+    .foot-right { margin-left: 0; width: 100%; }
   }
 `

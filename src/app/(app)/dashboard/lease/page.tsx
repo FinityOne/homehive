@@ -12,6 +12,9 @@ import Link from 'next/link'
 import {
   fmtShortDate as fmtAmendDate, fmtDollars as fmtAmendDollars, amendmentPath,
 } from '@/lib/leaseAmendments'
+import {
+  TENANT_STATUS_META, tenantKindLabel, type TenantWorkItem,
+} from '@/lib/tenantMaintenance'
 
 /** Just enough of an amendment to put it on this page and link to it. */
 type MyAmendment = {
@@ -80,10 +83,31 @@ type Tenancy = {
   specials: Special[]
 }
 
-type Tab = 'overview' | 'payments' | 'lease'
+type Tab = 'overview' | 'payments' | 'maintenance' | 'lease'
+
+/** One home's shared maintenance, as `/api/tenant/maintenance` returns it. */
+type MaintenanceHome = {
+  lease_id: string
+  property_id: string
+  property: { id: string; name: string; address: string } | null
+  unit_number: string | null
+  pending: TenantWorkItem[]
+  completed: TenantWorkItem[]
+  summary: { pendingCount: number; completedCount: number; scheduledNext: TenantWorkItem | null; headline: string }
+}
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+
+/**
+ * A timestamp on a progress update. Date and time, because two updates on the
+ * same day are normal on a job that is moving and a bare date makes them look
+ * like duplicates.
+ */
+const fmtStamp = (ts: string) =>
+  new Date(ts).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
 
 /** "June 2026" — how a tenant refers to a month's rent. */
 const fmtMonthYear = (d: string) =>
@@ -123,6 +147,20 @@ export default function MyLeasePage() {
    * seeing their rent.
    */
   const [amendments, setAmendments] = useState<MyAmendment[]>([])
+  /**
+   * Maintenance the landlord has chosen to share on the homes this tenant
+   * currently rents. Loaded after the rent, like the amendments: a tenant who
+   * came here to pay must never wait on a repair list, and a failure fetching
+   * it must not blank the page.
+   */
+  const [maintenance, setMaintenance] = useState<MaintenanceHome[] | null>(null)
+  /**
+   * Tracked separately from an empty result, because the two mean opposite
+   * things to a tenant: "nothing is shared on your home" is information, and
+   * "we couldn't load it" is a reason to refresh. Collapsing them tells someone
+   * their tenancy looks inactive when in fact a fetch failed.
+   */
+  const [maintenanceFailed, setMaintenanceFailed] = useState(false)
   /** The fee whose detail sheet is open, keyed by its charge id. */
   const [openFee, setOpenFee] = useState<string | null>(null)
   // Set from the URL on mount, cleared once acted on — a ref, not state, so
@@ -139,7 +177,7 @@ export default function MyLeasePage() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
     const q = p.get('tab')
-    if (q === 'payments' || q === 'lease' || q === 'overview') setTab(q)
+    if (q === 'payments' || q === 'lease' || q === 'overview' || q === 'maintenance') setTab(q)
     autoPay.current = p.get('pay') === '1'
   }, [])
 
@@ -168,6 +206,16 @@ export default function MyLeasePage() {
       .then(r => (r.ok ? r.json() : { amendments: [] }))
       .then(j => setAmendments(j.amendments ?? []))
       .catch(() => {})
+
+    fetch('/api/tenant/maintenance', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async r => {
+        if (!r.ok) throw new Error(String(r.status))
+        const j = await r.json()
+        setMaintenance(j.homes ?? [])
+      })
+      .catch(() => { setMaintenanceFailed(true); setMaintenance([]) })
   }, [router])
 
   useEffect(() => { load() }, [load])
@@ -205,6 +253,19 @@ export default function MyLeasePage() {
   }, [load])
 
   const t = tenancies[active]
+
+  /**
+   * The shared maintenance for the tenancy currently being viewed.
+   *
+   * Matched on the lease, not the property: two tenancies can sit in the same
+   * building, and the route already scoped each group to one active lease.
+   * `null` while it is still loading, so the tab can hold its count back rather
+   * than flash a confident "0".
+   */
+  const myMaintenance = useMemo(
+    () => (maintenance === null || !t ? null : maintenance.find(h => h.lease_id === t.lease.id) ?? null),
+    [maintenance, t],
+  )
 
   /**
    * A lease schedules every month up front, so most rows sit unsettled for
@@ -426,9 +487,18 @@ export default function MyLeasePage() {
         </div>
 
         <div className="tabs">
-          {(['overview', 'payments', 'lease'] as Tab[]).map(x => (
+          {(['overview', 'payments', 'maintenance', 'lease'] as Tab[]).map(x => (
             <button key={x} className={`tab${tab === x ? ' on' : ''}`} onClick={() => setTab(x)}>
-              {x === 'overview' ? 'Overview' : x === 'payments' ? 'Payments' : 'Lease details'}
+              {x === 'overview' ? 'Overview'
+                : x === 'payments' ? 'Payments'
+                : x === 'maintenance' ? 'Maintenance'
+                : 'Lease details'}
+              {/* The count is the reason to click, so it rides on the tab. Held
+                  back until the fetch lands — a "0" that turns into a "2" is
+                  worse than a tab that is briefly just a word. */}
+              {x === 'maintenance' && myMaintenance && myMaintenance.pending.length > 0 && (
+                <span className="tab-badge">{myMaintenance.pending.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -771,6 +841,20 @@ export default function MyLeasePage() {
         )}
 
         {/* ══ LEASE DETAILS ══ */}
+        {/* ══ MAINTENANCE ══
+            What is being done to the home they live in. Shown only where the
+            landlord shared the item and only to an active lease holder — the
+            route decides both; this just draws what it was handed. No costs,
+            no vendor numbers: that is the landlord's ledger, not the tenant's
+            business, and the engine never sends it. */}
+        {tab === 'maintenance' && (
+          <MaintenancePanel
+            home={myMaintenance}
+            loading={maintenance === null}
+            failed={maintenanceFailed}
+          />
+        )}
+
         {tab === 'lease' && (
           <div className="card">
             <div className="card-hd"><span className="card-title">Lease details</span></div>
@@ -842,6 +926,189 @@ export default function MyLeasePage() {
  * amendments are deliberately kept — a tenant who said no should be able to see
  * that they said no, rather than wonder whether they imagined being asked.
  */
+/**
+ * The tenant's maintenance panel: what's open on their home, and what's done.
+ *
+ * Two lists, because that is the whole question — "is anyone dealing with my
+ * thing" and "did the stuff they promised actually happen". The completed list
+ * is not filler: it is the only evidence a tenant has that reporting something
+ * here leads anywhere, and it is what makes them report the next thing instead
+ * of waiting for it to become an emergency.
+ *
+ * Deliberately read-only. A "report an issue" button belongs here eventually,
+ * but half a reporting flow — a form with no routing, no acknowledgement and no
+ * SLA — is worse than an honest "contact your landlord", which is what the
+ * footer says.
+ */
+function MaintenancePanel({
+  home, loading, failed,
+}: {
+  home: MaintenanceHome | null; loading: boolean; failed: boolean
+}) {
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="card-bd"><div className="muted">Loading maintenance…</div></div>
+      </div>
+    )
+  }
+
+  // Said before the "no active tenancy" message below, because a failed fetch
+  // must never be reported as a fact about this person's lease.
+  if (failed) {
+    return (
+      <div className="card">
+        <div className="card-hd"><span className="card-title">Maintenance</span></div>
+        <div className="card-bd">
+          <div className="muted">
+            We couldn&apos;t load your maintenance updates just now. Refresh the page to try again —
+            your rent and payment history above are unaffected.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // No group at all means this tenancy isn't active (ended, or not started) —
+  // the route only builds groups for live leases. Say that plainly rather than
+  // showing an empty list that looks broken.
+  if (!home) {
+    return (
+      <div className="card">
+        <div className="card-hd"><span className="card-title">Maintenance</span></div>
+        <div className="card-bd">
+          <div className="muted">
+            Maintenance updates are shown while your tenancy is active. If you think this is
+            wrong, check the dates on your lease or contact your landlord.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const { pending, completed, summary } = home
+
+  return (
+    <>
+      <div className="mx-head">
+        <div className="mx-headline">{summary.headline}</div>
+        {summary.scheduledNext && (
+          <div className="mx-next">
+            Next date booked: <strong>
+              {fmtDate(summary.scheduledNext.scheduled_for || summary.scheduledNext.target_date)}
+            </strong>{' '}— {summary.scheduledNext.title}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-hd">
+          <span className="card-title">Open</span>
+          {pending.length > 0 && <span className="card-count">{pending.length}</span>}
+        </div>
+        <div className="card-bd">
+          {pending.length === 0 ? (
+            <div className="muted">Nothing is open on this home right now.</div>
+          ) : (
+            pending.map(i => <MxRow key={i.id} item={i} />)
+          )}
+        </div>
+      </div>
+
+      {completed.length > 0 && (
+        <div className="card">
+          <div className="card-hd">
+            <span className="card-title">Completed</span>
+            <span className="card-count">{completed.length}</span>
+          </div>
+          <div className="card-bd">
+            {completed.map(i => <MxRow key={i.id} item={i} />)}
+          </div>
+        </div>
+      )}
+
+      <div className="hint" style={{ marginTop: 4 }}>
+        This is the work your landlord has chosen to share with you — it may not be everything
+        they have planned for the building. Something urgent or unlisted? Contact them directly.
+      </div>
+    </>
+  )
+}
+
+/** One maintenance item as a tenant reads it. No money, ever. */
+function MxRow({ item }: { item: TenantWorkItem }) {
+  // `cancelled` is filtered out upstream in both the route and the engine, so
+  // the lookup is always a hit; the fallback keeps a hand-written status from
+  // throwing in a tenant's face.
+  const s = TENANT_STATUS_META[item.status as keyof typeof TENANT_STATUS_META]
+    ?? { label: item.status, blurb: '', color: '#475569', bg: '#f1f5f9', done: false }
+
+  // One date line, and it says what the date *means*. "Nov 20" alone next to an
+  // open job is ambiguous in the worst direction — the tenant reads it as a
+  // promise whichever kind of date it actually was.
+  const when = item.status === 'completed' && item.completed_at
+    ? `Completed ${fmtDate(item.completed_at.slice(0, 10))}`
+    : item.scheduled_for
+      ? `Booked for ${fmtDate(item.scheduled_for)}`
+      : item.target_date
+        ? `Aiming for ${fmtDate(item.target_date)}`
+        : null
+
+  return (
+    <div className={`mx-row${s.done ? ' done' : ''}`}>
+      <div className="mx-main">
+        <div className="mx-title">{item.title}</div>
+        <div className="mx-meta">
+          {tenantKindLabel(item.kind)}
+          {item.area ? ` · ${item.area}` : ''}
+          {when ? ` · ${when}` : ''}
+        </div>
+        {/* The landlord's own `description` is never sent here — only the note
+            they wrote to the tenant. See shapeForTenant. */}
+        {item.note && <div className="mx-note">{item.note}</div>}
+
+        {/* The progress log. This is the part that answers "is anything
+            actually happening", which the status pill alone never does — and
+            the photos are what make a "completed" believable. */}
+        {item.updates.length > 0 && (
+          <div className="mx-updates">
+            {item.updates.map(u => (
+              <div key={u.id} className="mx-update">
+                <div className="mx-update-when">{fmtStamp(u.created_at)}</div>
+                {u.body && <div className="mx-update-body">{u.body}</div>}
+                {u.photos.length > 0 && (
+                  <div className="mx-shots">
+                    {u.photos.map(p => (
+                      // A plain link, not a lightbox: opening the real image in
+                      // a new tab lets a tenant zoom, save and forward it with
+                      // their own tools, which is what they do with a photo of
+                      // their own home anyway.
+                      <a
+                        key={p.id}
+                        className="mx-shot"
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={p.caption ?? 'Open photo'}
+                      >
+                        <img src={p.url} alt={p.caption ?? 'Maintenance photo'} loading="lazy" />
+                        {p.caption && <span className="mx-shot-cap">{p.caption}</span>}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <span className="mx-pill" style={{ background: s.bg, color: s.color }} title={s.blurb}>
+        {s.label}
+      </span>
+    </div>
+  )
+}
+
 function AmendmentNotices({ amendments }: { amendments: MyAmendment[] }) {
   if (amendments.length === 0) return null
   const pending = amendments.filter(a => a.status === 'sent')
@@ -943,6 +1210,33 @@ const CSS = `
   .tabs { display: flex; gap: 2px; border-bottom: 1px solid #e2e8f0; margin-bottom: 18px; }
   .tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 11px 16px; font-size: 13.5px; font-weight: 500; color: #64748b; cursor: pointer; font-family: inherit; }
   .tab.on { color: #0f172a; font-weight: 700; border-bottom-color: #0f172a; }
+  .tab-badge { display: inline-block; margin-left: 6px; min-width: 17px; padding: 1px 5px; border-radius: 20px; background: #0f172a; color: #fff; font-size: 10.5px; font-weight: 700; line-height: 15px; }
+
+  /* ── Tenant maintenance ─────────────────────────────────────────────────── */
+  .mx-head { margin-bottom: 14px; }
+  .mx-headline { font-size: 15px; font-weight: 600; color: #0f172a; line-height: 1.45; }
+  .mx-next { font-size: 12.5px; color: #475569; margin-top: 5px; line-height: 1.5; }
+  .mx-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+  .mx-row:last-child { border-bottom: none; padding-bottom: 2px; }
+  .mx-row:first-child { padding-top: 2px; }
+  .mx-row.done { opacity: 0.74; }
+  .mx-main { min-width: 0; }
+  .mx-title { font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.4; }
+  .mx-meta { font-size: 11.5px; color: #94a3b8; margin-top: 3px; }
+  .mx-note { font-size: 12.5px; color: #475569; margin-top: 6px; line-height: 1.55; }
+  .mx-pill { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 4px 9px; border-radius: 20px; white-space: nowrap; }
+
+  /* The progress log. Indented behind a rule so it reads as "things that
+     happened to the job above", not as more jobs. */
+  .mx-updates { margin-top: 10px; padding-left: 12px; border-left: 2px solid #e2e8f0; display: flex; flex-direction: column; gap: 11px; }
+  .mx-update-when { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
+  .mx-update-body { font-size: 12.5px; color: #334155; line-height: 1.55; margin-top: 3px; white-space: pre-wrap; }
+  .mx-shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .mx-shot { display: block; width: 96px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; text-decoration: none; background: #f8fafc; }
+  .mx-shot img { display: block; width: 100%; height: 72px; object-fit: cover; }
+  .mx-shot-cap { display: block; padding: 4px 6px; font-size: 10px; color: #64748b; line-height: 1.35; }
+  .mx-shot:hover { border-color: #94a3b8; }
+  .card-count { font-size: 11.5px; font-weight: 700; color: #94a3b8; }
 
   .card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }
   .card-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 17px; border-bottom: 1px solid #f1f5f9; }
