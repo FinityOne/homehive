@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { resolveUpload } from '@/lib/photoUpload'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1297,25 +1298,10 @@ export async function removeItem(id: string): Promise<{ error: any }> {
 
 /**
  * Phone cameras are the main source here, and they don't always label their
- * output: iOS often reports an empty `File.type` for HEIC, and some browsers
- * send `application/octet-stream`. The bucket restricts mime types, so an
- * unlabelled file gets rejected. Derive the type from the extension instead of
- * trusting the browser.
+ * output — see `resolveUpload` in src/lib/photoUpload.ts for why the content
+ * type is derived from the extension rather than read off the browser. Shared
+ * with the maintenance photos, which hit exactly the same wall.
  */
-const MIME_BY_EXT: Record<string, string> = {
-  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
-  heic: 'image/heic', heif: 'image/heif', gif: 'image/gif', avif: 'image/avif',
-}
-
-function resolveUpload(file: File): { ext: string; contentType: string } {
-  const rawExt = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-  const byExt = MIME_BY_EXT[rawExt]
-  const byBrowser = file.type && file.type.startsWith('image/') ? file.type : null
-  const contentType = byExt ?? byBrowser ?? 'image/jpeg'
-  const ext = rawExt || (contentType.split('/')[1] || 'jpg')
-  return { ext, contentType }
-}
-
 export async function uploadItemPhoto(
   file: File,
   ownerId: string,

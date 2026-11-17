@@ -13,6 +13,11 @@ import {
   shareAudience, describeAudience, TENANT_STATUS_META, tenantKindLabel,
   type AudienceLease,
 } from '@/lib/tenantMaintenance'
+import {
+  getUpdatesForItems, addUpdate, addPhotos, deleteUpdate, deletePhoto,
+  setUpdateShared, setUpdateBody, setPhotoCaption, updateReach, photoCount,
+  type WorkItemUpdate, type WorkItemPhoto,
+} from '@/lib/workItemUpdates'
 
 type Property = { id: string; name: string; slug: string }
 
@@ -60,6 +65,14 @@ export default function MaintenancePage() {
    * reach rather than blocking the page.
    */
   const [leases, setLeases] = useState<AudienceLease[]>([])
+  /**
+   * Progress updates, keyed by item id.
+   *
+   * Loaded for the whole list in one query so a row can show "3 updates · 2
+   * photos" without opening anything — a log you have to go looking for is a
+   * log nobody keeps.
+   */
+  const [updates, setUpdates] = useState<Record<string, WorkItemUpdate[]>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null)
@@ -84,7 +97,15 @@ export default function MaintenancePage() {
   useEffect(() => { document.title = 'Maintenance & Upgrades — Landlord | HomeHive' }, [])
 
   const load = useCallback(async (userId: string) => {
-    setItems(await getWorkItems(userId))
+    const list = await getWorkItems(userId)
+    setItems(list)
+    setUpdates(await getUpdatesForItems(list.map(i => i.id)))
+  }, [])
+
+  /** Re-read one item's log after the drawer changes it. */
+  const reloadUpdates = useCallback(async (itemId: string) => {
+    const fresh = await getUpdatesForItems([itemId])
+    setUpdates(prev => ({ ...prev, [itemId]: fresh[itemId] ?? [] }))
   }, [])
 
   useEffect(() => {
@@ -386,6 +407,7 @@ export default function MaintenancePage() {
                       item={item}
                       showProperty={!g.name}
                       audience={audienceFor(item.property_id)}
+                      updates={updates[item.id] ?? []}
                       onPatch={patch}
                       onToggleShare={() => toggleShare(item)}
                       onEdit={() => setEditing(item)}
@@ -404,6 +426,8 @@ export default function MaintenancePage() {
           item={editing}
           properties={properties}
           audience={audienceFor(editing.property_id)}
+          updates={updates[editing.id] ?? []}
+          onUpdatesChanged={() => reloadUpdates(editing.id)}
           onClose={() => setEditing(null)}
           onSaved={async () => { setEditing(null); await reload(); say(true, 'Item updated.') }}
           onDelete={() => remove(editing)}
@@ -436,6 +460,16 @@ function Kpi({
 const fmtDay = (d: string) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
+/** Date and time: two updates on one day are normal on a job that's moving. */
+const fmtStamp = (ts: string) =>
+  new Date(ts).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+
+/** The newest few photos across a log, for the row's thumbnail strip. */
+const latestPhotos = (updates: WorkItemUpdate[], limit = 3): WorkItemPhoto[] =>
+  updates.flatMap(u => u.photos).slice(0, limit)
+
 /**
  * One row.
  *
@@ -447,11 +481,12 @@ const fmtDay = (d: string) =>
  * now lives in the drawer; the footer holds only the moves you make daily.
  */
 function Row({
-  item, showProperty, audience, onPatch, onToggleShare, onEdit,
+  item, showProperty, audience, updates, onPatch, onToggleShare, onEdit,
 }: {
   item: WorkItem
   showProperty: boolean
   audience: { leases: number; residents: number }
+  updates: WorkItemUpdate[]
   onPatch: (item: WorkItem, changes: Partial<WorkItemInput>) => Promise<void>
   onToggleShare: () => void
   onEdit: () => void
@@ -495,6 +530,21 @@ function Row({
           </div>
 
           {item.description && <div className="row-desc">{item.description}</div>}
+
+          {/* A thumbnail strip, not just a count: the latest photo of a job is
+              the fastest way to remember which job this is, and seeing it on
+              the row is what makes a landlord keep adding them. */}
+          {updates.length > 0 && (
+            <button className="row-log" onClick={onEdit} title="Open the progress log">
+              {latestPhotos(updates).map(p => (
+                <img key={p.id} className="row-thumb" src={p.url} alt="" loading="lazy" />
+              ))}
+              <span className="row-log-txt">
+                {updates.length} {updates.length === 1 ? 'update' : 'updates'}
+                {photoCount(updates) > 0 && ` · ${photoCount(updates)} photo${photoCount(updates) === 1 ? '' : 's'}`}
+              </span>
+            </button>
+          )}
         </div>
 
         <div className="row-money">
@@ -639,6 +689,261 @@ function ShareField({
   )
 }
 
+/**
+ * The progress log for one item: a composer, then the entries.
+ *
+ * This is the half of maintenance that makes a tenant trust the other half. A
+ * status pill moving to "Completed" is an assertion; a photo of the finished
+ * floor with "all done, new LVP throughout" under it is evidence. The composer
+ * is therefore the first thing in the section rather than the last, and sharing
+ * is **on by default** here — the whole reason to write an update is to tell
+ * someone, and an update nobody reads is a worse outcome than one shared a
+ * little too readily (it can be un-shared in one click; an un-sent one is just
+ * gone).
+ *
+ * Each entry's reach is stated in words via `updateReach`, because "shared" on
+ * an update whose *item* is private reaches nobody and a landlord would
+ * otherwise never find that out.
+ */
+function UpdateLog({
+  item, ownerId, updates, onChanged, onFlash,
+}: {
+  item: WorkItem
+  ownerId: string | null
+  updates: WorkItemUpdate[]
+  onChanged: () => Promise<void> | void
+  onFlash: (ok: boolean, text: string) => void
+}) {
+  const [body, setBody] = useState('')
+  const [shareNew, setShareNew] = useState(true)
+  const [pending, setPending] = useState<File[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const done = item.status === 'completed'
+
+  async function post() {
+    if (!ownerId) return onFlash(false, 'Please sign in again.')
+    if (!body.trim() && pending.length === 0) {
+      return onFlash(false, 'Write a note or add a photo first.')
+    }
+    setBusy(true)
+    const { update, error } = await addUpdate({
+      workItemId: item.id,
+      ownerId,
+      body: body.trim() || null,
+      tenantVisible: shareNew,
+    })
+    if (error || !update) { setBusy(false); return onFlash(false, error ?? 'Could not save.') }
+
+    if (pending.length > 0) {
+      const { failed } = await addPhotos({ updateId: update.id, ownerId, files: pending })
+      // Partial success is reported, not hidden: four of five photos landing is
+      // a good outcome the landlord still needs to know about.
+      if (failed.length > 0) onFlash(false, `Saved, but ${failed.join('; ')}.`)
+    }
+
+    setBody(''); setPending([]); setShareNew(true)
+    setBusy(false)
+    await onChanged()
+    if (shareNew && !item.tenant_visible) {
+      onFlash(false, 'Update saved — but this job is still private, so nobody can see it yet. Share the job to publish it.')
+    } else if (shareNew) {
+      onFlash(true, 'Update posted to your residents.')
+    } else {
+      onFlash(true, 'Update saved privately.')
+    }
+  }
+
+  async function attach(update: WorkItemUpdate, files: File[]) {
+    if (!ownerId || files.length === 0) return
+    setBusy(true)
+    const { failed } = await addPhotos({
+      updateId: update.id, ownerId, files, startPosition: update.photos.length,
+    })
+    setBusy(false)
+    await onChanged()
+    if (failed.length > 0) onFlash(false, failed.join('; '))
+  }
+
+  async function toggle(update: WorkItemUpdate) {
+    const { error } = await setUpdateShared(update.id, !update.tenant_visible)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function removeUpdate(update: WorkItemUpdate) {
+    if (!confirm('Delete this update and its photos? This cannot be undone.')) return
+    const { error } = await deleteUpdate(update)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function removePhoto(photo: WorkItemPhoto) {
+    if (!confirm('Remove this photo?')) return
+    const { error } = await deletePhoto(photo)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function saveCaption(photo: WorkItemPhoto, caption: string) {
+    if ((photo.caption ?? '') === caption.trim()) return
+    const { error } = await setPhotoCaption(photo.id, caption)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  async function saveBody(update: WorkItemUpdate, next: string) {
+    if ((update.body ?? '') === next.trim()) return
+    const { error } = await setUpdateBody(update.id, next)
+    if (error) return onFlash(false, error)
+    await onChanged()
+  }
+
+  return (
+    <div className="fieldset log">
+      <div className="fieldset-hd">
+        Progress &amp; photos
+        <span className="fieldset-note">{updates.length === 0 ? 'nothing logged yet' : `${updates.length} logged`}</span>
+      </div>
+
+      {/* Marking a job done without saying so to the tenant is the single most
+          common way this list stops being believed, so the prompt appears
+          exactly when it's relevant. */}
+      {done && updates.filter(u => u.tenant_visible).length === 0 && (
+        <div className="log-nudge">
+          This job is marked completed and your residents haven&apos;t been shown anything.
+          A photo of the finished work is the difference between &quot;they say it&apos;s done&quot;
+          and &quot;it&apos;s done&quot;.
+        </div>
+      )}
+
+      <div className="log-new">
+        <textarea
+          className="inp"
+          rows={2}
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          placeholder={done
+            ? 'All finished — new LVP throughout bedroom 2, old carpet taken away.'
+            : 'The plumber is booked for Thursday morning; you don’t need to be home.'}
+        />
+
+        {pending.length > 0 && (
+          <div className="log-pending">
+            {pending.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="chip">
+                {f.name}
+                <button onClick={() => setPending(p => p.filter((_, j) => j !== i))} title="Remove">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="log-new-ft">
+          <label className="btn-soft file">
+            {pending.length > 0 ? `${pending.length} photo${pending.length === 1 ? '' : 's'} attached` : '+ Add photos'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,image/*"
+              multiple
+              hidden
+              disabled={busy}
+              onChange={e => {
+                // Snapshot synchronously. `input.files` is a live FileList and
+                // the reset below empties it, so anything that reads it after
+                // an await sees zero files and uploads nothing, silently.
+                const picked = Array.from(e.target.files ?? [])
+                e.target.value = ''
+                setPending(p => [...p, ...picked])
+              }}
+            />
+          </label>
+
+          <label className="log-share">
+            <input type="checkbox" checked={shareNew} onChange={e => setShareNew(e.target.checked)} />
+            Show to residents
+          </label>
+
+          <button className="btn-dark sm" onClick={post} disabled={busy}>
+            {busy ? 'Posting…' : 'Post update'}
+          </button>
+        </div>
+
+        {shareNew && !item.tenant_visible && (
+          <div className="log-warn">
+            This job is private, so a shared update still won&apos;t reach anyone. Tick
+            &quot;show this to the residents&quot; above to publish the job itself.
+          </div>
+        )}
+      </div>
+
+      {updates.map(u => {
+        const reach = updateReach(u, item)
+        return (
+          <div key={u.id} className={`log-row${reach.shown ? ' shown' : ''}`}>
+            <div className="log-row-hd">
+              <span className="log-when">{fmtStamp(u.created_at)}</span>
+              <button
+                className={`btn-share tiny${reach.shown ? ' on' : ''}`}
+                onClick={() => toggle(u)}
+                title={reach.why ?? (reach.shown ? 'Visible to residents — click to hide' : 'Private — click to share')}
+              >
+                {reach.shown ? '👁 Shared' : reach.label}
+              </button>
+              <button className="btn-link-danger tiny" onClick={() => removeUpdate(u)}>Delete</button>
+            </div>
+
+            {reach.why && <div className="log-warn">{reach.why}</div>}
+
+            <textarea
+              className="inp log-body"
+              rows={2}
+              defaultValue={u.body ?? ''}
+              placeholder="Add a note to this update…"
+              onBlur={e => saveBody(u, e.target.value)}
+            />
+
+            {u.photos.length > 0 && (
+              <div className="log-shots">
+                {u.photos.map(p => (
+                  <div key={p.id} className="log-shot">
+                    <a href={p.url} target="_blank" rel="noreferrer" title="Open full size">
+                      <img src={p.url} alt={p.caption ?? ''} loading="lazy" />
+                    </a>
+                    <input
+                      className="inp cap"
+                      defaultValue={p.caption ?? ''}
+                      placeholder="Caption"
+                      onBlur={e => saveCaption(p, e.target.value)}
+                    />
+                    <button className="shot-x" onClick={() => removePhoto(p)} title="Remove photo">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <label className="btn-soft file tiny">
+              + Photo
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,image/*"
+                multiple
+                hidden
+                disabled={busy}
+                onChange={e => {
+                  const picked = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  attach(u, picked)
+                }}
+              />
+            </label>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ItemForm({
   value, properties, audience, onChange, showStatus, showActual,
 }: {
@@ -742,11 +1047,13 @@ function ItemForm({
 }
 
 function EditModal({
-  item, properties, audience, onClose, onSaved, onDelete, onFlash,
+  item, properties, audience, updates, onUpdatesChanged, onClose, onSaved, onDelete, onFlash,
 }: {
   item: WorkItem
   properties: Property[]
   audience: { leases: number; residents: number }
+  updates: WorkItemUpdate[]
+  onUpdatesChanged: () => Promise<void> | void
   onClose: () => void
   onSaved: () => Promise<void>
   onDelete: () => void
@@ -810,6 +1117,21 @@ function EditModal({
               onChange={e => setValue({ ...value, notes: e.target.value })}
               placeholder="Quote received 08/10, work booked for the 22nd." />
           </Field>
+
+          {/* The log is part of managing the item, so it lives in the same
+              drawer — a separate screen for "updates" is a screen nobody
+              opens while they have the job in front of them.
+
+              Its writes save immediately rather than waiting for "Save
+              changes": posting an update and then losing it by closing the
+              drawer is the kind of thing that stops people writing them. */}
+          <UpdateLog
+            item={item}
+            ownerId={item.owner_id}
+            updates={updates}
+            onChanged={onUpdatesChanged}
+            onFlash={onFlash}
+          />
         </div>
         <div className="modal-ft">
           {/* Destructive action, kept here and only here: off the row, behind a
@@ -936,6 +1258,38 @@ const CSS = `
   .share-preview-m { font-size: 11px; color: #94a3b8; margin-top: 2px; }
   .share-preview-n { font-size: 12px; color: #475569; margin-top: 5px; line-height: 1.5; }
   .share-preview-pill { flex-shrink: 0; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+
+  /* ── Progress log ───────────────────────────────────────────────────────── */
+  .row-log { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding: 0; background: none; border: none; cursor: pointer; font-family: inherit; }
+  .row-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; border: 1px solid #e2e8f0; display: block; }
+  .row-log-txt { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+  .row-log:hover .row-log-txt { color: #0f172a; }
+
+  .log { background: #fcfdfe; }
+  .log-nudge { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 9px; padding: 10px 13px; font-size: 12px; line-height: 1.55; margin-bottom: 12px; }
+  .log-warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 8px 11px; font-size: 11.5px; line-height: 1.5; margin-top: 8px; }
+  .log-new { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 11px; padding: 12px 13px; margin-bottom: 14px; }
+  .log-new-ft { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .log-share { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #475569; cursor: pointer; }
+  .log-share input { width: 14px; height: 14px; accent-color: #059669; }
+  .btn-dark.sm { padding: 7px 14px; font-size: 12.5px; margin-left: auto; }
+  .btn-soft.file { cursor: pointer; display: inline-block; }
+  .btn-soft.file.tiny, .btn-link-danger.tiny { font-size: 11px; padding: 4px 9px; }
+  .log-pending { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: #f1f5f9; border-radius: 20px; padding: 3px 5px 3px 10px; font-size: 11px; color: #475569; max-width: 220px; }
+  .chip button { background: none; border: none; color: #94a3b8; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 3px; }
+
+  .log-row { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 11px; padding: 11px 13px; margin-bottom: 9px; }
+  .log-row.shown { border-color: #a7f3d0; }
+  .log-row-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .log-when { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-right: auto; }
+  .btn-share.tiny { font-size: 10.5px; padding: 3px 9px; }
+  textarea.inp.log-body { font-size: 12.5px; padding: 7px 9px; }
+  .log-shots { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 9px; }
+  .log-shot { position: relative; width: 104px; }
+  .log-shot img { display: block; width: 100%; height: 78px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; }
+  .inp.cap { margin-top: 4px; padding: 4px 7px; font-size: 11px; }
+  .shot-x { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(15,23,42,0.72); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; }
 
   .btn-dark { background: #0f172a; color: #34d399; border: none; border-radius: 9px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .btn-dark:disabled { opacity: .5; cursor: not-allowed; }

@@ -27,7 +27,7 @@ import { NextRequest } from 'next/server'
 import { loadTenantIdentity } from '@/lib/tenantIdentity'
 import {
   visibleToTenant, splitForTenant, summarise, leaseIsActive,
-  type ShareableWorkRow, type LeaseWindow,
+  type ShareableWorkRow, type ShareableUpdateRow, type LeaseWindow,
 } from '@/lib/tenantMaintenance'
 
 const supabaseAdmin = createClient(
@@ -103,7 +103,36 @@ export async function GET(req: NextRequest) {
     // `splitForTenant`, so a future caller of this route inherits the rule.
     .neq('status', 'cancelled')
 
-  const items = visibleToTenant((rows ?? []) as unknown as ShareableWorkRow[], leases)
+  /**
+   * The shared progress updates on those items, with their photos.
+   *
+   * Filtered to `tenant_visible` here as well as in `visibleUpdates`, so the
+   * landlord's private work diary — before-photos for an insurance claim, what
+   * the contractor really said — never enters this process at all. The item
+   * gate is applied in `visibleUpdates`: an update shared against a job that is
+   * still private must stay invisible, or publishing the update reveals the
+   * job.
+   *
+   * Column lists again rather than `*`, including on the embedded photos:
+   * `storage_path` and `owner_id` are on that table and neither belongs in a
+   * tenant's browser.
+   */
+  const workItems = (rows ?? []) as unknown as ShareableWorkRow[]
+  const workItemIds = workItems.map(r => r.id)
+  const { data: updateRows } = workItemIds.length > 0
+    ? await supabaseAdmin
+        .from('work_item_updates')
+        .select('id, work_item_id, body, tenant_visible, created_at, photos:work_item_photos ( id, url, caption, position )')
+        .eq('tenant_visible', true)
+        .in('work_item_id', workItemIds)
+    : { data: [] }
+
+  const items = visibleToTenant(
+    workItems,
+    leases,
+    new Date(),
+    (updateRows ?? []) as unknown as ShareableUpdateRow[],
+  )
 
   /**
    * Grouped by home, not returned as one flat list.

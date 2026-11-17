@@ -99,6 +99,16 @@ type MaintenanceHome = {
 const fmtDate = (d: string | null) =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
+/**
+ * A timestamp on a progress update. Date and time, because two updates on the
+ * same day are normal on a job that is moving and a bare date makes them look
+ * like duplicates.
+ */
+const fmtStamp = (ts: string) =>
+  new Date(ts).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+
 /** "June 2026" — how a tenant refers to a month's rent. */
 const fmtMonthYear = (d: string) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -1056,6 +1066,41 @@ function MxRow({ item }: { item: TenantWorkItem }) {
         {/* The landlord's own `description` is never sent here — only the note
             they wrote to the tenant. See shapeForTenant. */}
         {item.note && <div className="mx-note">{item.note}</div>}
+
+        {/* The progress log. This is the part that answers "is anything
+            actually happening", which the status pill alone never does — and
+            the photos are what make a "completed" believable. */}
+        {item.updates.length > 0 && (
+          <div className="mx-updates">
+            {item.updates.map(u => (
+              <div key={u.id} className="mx-update">
+                <div className="mx-update-when">{fmtStamp(u.created_at)}</div>
+                {u.body && <div className="mx-update-body">{u.body}</div>}
+                {u.photos.length > 0 && (
+                  <div className="mx-shots">
+                    {u.photos.map(p => (
+                      // A plain link, not a lightbox: opening the real image in
+                      // a new tab lets a tenant zoom, save and forward it with
+                      // their own tools, which is what they do with a photo of
+                      // their own home anyway.
+                      <a
+                        key={p.id}
+                        className="mx-shot"
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={p.caption ?? 'Open photo'}
+                      >
+                        <img src={p.url} alt={p.caption ?? 'Maintenance photo'} loading="lazy" />
+                        {p.caption && <span className="mx-shot-cap">{p.caption}</span>}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <span className="mx-pill" style={{ background: s.bg, color: s.color }} title={s.blurb}>
         {s.label}
@@ -1180,6 +1225,17 @@ const CSS = `
   .mx-meta { font-size: 11.5px; color: #94a3b8; margin-top: 3px; }
   .mx-note { font-size: 12.5px; color: #475569; margin-top: 6px; line-height: 1.55; }
   .mx-pill { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 4px 9px; border-radius: 20px; white-space: nowrap; }
+
+  /* The progress log. Indented behind a rule so it reads as "things that
+     happened to the job above", not as more jobs. */
+  .mx-updates { margin-top: 10px; padding-left: 12px; border-left: 2px solid #e2e8f0; display: flex; flex-direction: column; gap: 11px; }
+  .mx-update-when { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
+  .mx-update-body { font-size: 12.5px; color: #334155; line-height: 1.55; margin-top: 3px; white-space: pre-wrap; }
+  .mx-shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .mx-shot { display: block; width: 96px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; text-decoration: none; background: #f8fafc; }
+  .mx-shot img { display: block; width: 100%; height: 72px; object-fit: cover; }
+  .mx-shot-cap { display: block; padding: 4px 6px; font-size: 10px; color: #64748b; line-height: 1.35; }
+  .mx-shot:hover { border-color: #94a3b8; }
   .card-count { font-size: 11.5px; font-weight: 700; color: #94a3b8; }
 
   .card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; }

@@ -22,9 +22,12 @@
  */
 const {
   shapeForTenant, leaseIsActive, visibleToTenant, splitForTenant, summarise,
-  shareAudience, describeAudience, TENANT_STATUS_META, tenantKindLabel,
+  shareAudience, describeAudience, visibleUpdates,
+  TENANT_STATUS_META, tenantKindLabel,
 } = await import('../src/lib/tenantMaintenance.ts')
 const { computeTotals } = await import('../src/lib/maintenance.ts')
+const { updateReach, isEmptyUpdate, photoCount, sharedCount } =
+  await import('../src/lib/workItemUpdates.ts')
 
 const pass = []
 const fail = []
@@ -83,7 +86,11 @@ const lease = (over = {}) => ({
 check('shaped item exposes exactly these keys',
   Object.keys(shapeForTenant(row())).sort(),
   ['area', 'completed_at', 'created_at', 'id', 'kind', 'note', 'property_id',
-   'scheduled_for', 'status', 'target_date', 'title', 'updated_at'])
+   'scheduled_for', 'status', 'target_date', 'title', 'updated_at', 'updates'])
+
+// `updates` is read as `item.updates.length` all over the UI, so it has to be
+// an array on an item nobody has ever updated — not undefined.
+check('updates is always an array', Array.isArray(shapeForTenant(row()).updates), true)
 
 // Named individually as well, because the list above is easy to update without
 // reading, and each of these has its own reason for being a secret.
@@ -152,6 +159,110 @@ check('an ended tenancy does not unlock its property',
     [lease(), lease({ id: 'l2', property_id: 'p2', start_date: '2024-01-01', end_date: '2025-12-31' })],
     NOW,
   ).length, 0)
+
+// ── 2b. Progress updates and photos ──────────────────────────────────────────
+
+const upd = (over = {}) => ({
+  id: 'u1',
+  work_item_id: 'w1',
+  body: 'The fitters are coming Thursday.',
+  tenant_visible: true,
+  created_at: '2026-11-10T10:00:00Z',
+  photos: [{
+    id: 'ph1', url: 'https://cdn/x.jpg', caption: 'Before', position: 0,
+    // Must not cross:
+    storage_path: 'owner/updates/u1/x.jpg', owner_id: 'o1', update_id: 'u1',
+    created_at: '2026-11-10T10:00:00Z',
+  }],
+  ...over,
+})
+
+// THE gate that is easy to miss. An update shared against a job that is still
+// private must stay invisible, or publishing the update reveals the job — "the
+// plumber comes Thursday" tells a tenant about work they were never told about.
+check('a shared update on a PRIVATE job reaches nobody',
+  visibleUpdates({ id: 'w1', tenant_visible: false }, [upd()]).length, 0)
+check('a private update on a shared job reaches nobody',
+  visibleUpdates({ id: 'w1', tenant_visible: true }, [upd({ tenant_visible: false })]).length, 0)
+check('both shared → visible',
+  visibleUpdates({ id: 'w1', tenant_visible: true }, [upd()]).map(u => u.id), ['u1'])
+
+// And the same rule through the real entry point, not just the helper.
+check('the item gate applies through shapeForTenant too',
+  shapeForTenant(row({ tenant_visible: false }), [upd()]).updates.length, 0)
+check('a shared item carries its shared updates',
+  shapeForTenant(row(), [upd()]).updates.length, 1)
+
+check('an update belonging to another item is not mixed in',
+  visibleUpdates({ id: 'w1', tenant_visible: true }, [upd({ work_item_id: 'w9' })]).length, 0)
+
+// A row with no note and no photo renders as a timestamped bubble saying
+// nothing, which reads as a bug rather than as an update.
+check('an empty update is dropped',
+  visibleUpdates({ id: 'w1', tenant_visible: true },
+    [upd({ body: '   ', photos: [] })]).length, 0)
+// `rows.map(shapeForTenant)` is the natural way to call the shaper, and
+// Array.map hands it the index as a second argument. That used to throw.
+check('shapeForTenant survives being passed straight to Array.map',
+  [row(), row({ id: 'w2' })].map(shapeForTenant).map(i => i.updates.length), [0, 0])
+
+check('a photo-only update is kept',
+  visibleUpdates({ id: 'w1', tenant_visible: true },
+    [upd({ body: null })]).length, 1)
+check('a note-only update is kept',
+  visibleUpdates({ id: 'w1', tenant_visible: true },
+    [upd({ photos: [] })]).length, 1)
+
+const shapedUpdate = visibleUpdates({ id: 'w1', tenant_visible: true }, [upd()])[0]
+check('a tenant update exposes exactly these keys',
+  Object.keys(shapedUpdate).sort(), ['body', 'created_at', 'id', 'photos'])
+// No `tenant_visible`: by the time one of these exists it has passed both
+// gates, and shipping the flag invites a client to re-decide it.
+check('the update does not carry its own visibility flag',
+  'tenant_visible' in shapedUpdate, false)
+check('a tenant photo exposes exactly these keys',
+  Object.keys(shapedUpdate.photos[0]).sort(), ['caption', 'id', 'url'])
+for (const leaked of ['storage_path', 'owner_id', 'update_id', 'position', 'created_at']) {
+  check(`tenant photo hides ${leaked}`, leaked in shapedUpdate.photos[0], false)
+}
+
+check('photos follow their position, not their insertion order',
+  visibleUpdates({ id: 'w1', tenant_visible: true }, [upd({
+    photos: [
+      { id: 'b', url: 'u/b', caption: null, position: 2 },
+      { id: 'a', url: 'u/a', caption: null, position: 1 },
+      { id: 'c', url: 'u/c', caption: null, position: 3 },
+    ],
+  })])[0].photos.map(p => p.id), ['a', 'b', 'c'])
+
+// Newest first: the tenant's live question is "where is this now".
+check('updates read newest first',
+  visibleUpdates({ id: 'w1', tenant_visible: true }, [
+    upd({ id: 'old', created_at: '2026-11-01T10:00:00Z' }),
+    upd({ id: 'new', created_at: '2026-11-15T10:00:00Z' }),
+    upd({ id: 'mid', created_at: '2026-11-08T10:00:00Z' }),
+  ]).map(u => u.id), ['new', 'mid', 'old'])
+
+// The landlord's own reading of reach. Three states, and the third is the one
+// a two-state label would lie about.
+check('reach: private update', updateReach({ tenant_visible: false }, { tenant_visible: true }).label, 'Private')
+check('reach: shared update on a shared job', updateReach({ tenant_visible: true }, { tenant_visible: true }).label, 'Shared')
+check('reach: shared update on a private job is NOT reported as shared',
+  updateReach({ tenant_visible: true }, { tenant_visible: false }).label, 'Not shown yet')
+check('…and it says why',
+  !!updateReach({ tenant_visible: true }, { tenant_visible: false }).why, true)
+check('…and it is not shown',
+  updateReach({ tenant_visible: true }, { tenant_visible: false }).shown, false)
+check('a private update needs no explanation',
+  updateReach({ tenant_visible: false }, { tenant_visible: true }).why, null)
+
+check('an update with nothing in it is empty',
+  isEmptyUpdate({ body: '  ', photos: [] }), true)
+check('photos alone are not empty', isEmptyUpdate({ body: null, photos: [{ id: 'p' }] }), false)
+check('photoCount sums across updates',
+  photoCount([{ photos: [{}, {}] }, { photos: [{}] }, { photos: [] }]), 3)
+check('sharedCount counts shared updates',
+  sharedCount([{ tenant_visible: true }, { tenant_visible: false }, { tenant_visible: true }]), 2)
 
 // ── 3. How it reads ──────────────────────────────────────────────────────────
 

@@ -26,6 +26,37 @@ import { STATUS_META, KIND_META, type WorkKind, type WorkStatus } from './mainte
 
 // ── What crosses the line ────────────────────────────────────────────────────
 
+/** A photo as a tenant receives it: the image and its caption, nothing else. */
+export type TenantPhoto = {
+  id: string
+  url: string
+  caption: string | null
+}
+
+/**
+ * One progress update as a tenant receives it.
+ *
+ * No `tenant_visible` — by the time one of these exists it has already passed
+ * both gates, and shipping the flag would invite a client to re-decide a
+ * question the server has answered.
+ */
+export type TenantWorkUpdate = {
+  id: string
+  body: string | null
+  photos: TenantPhoto[]
+  created_at: string
+}
+
+/** The update row shape this module reads. A superset arrives. */
+export type ShareableUpdateRow = {
+  id: string
+  work_item_id: string
+  body: string | null
+  tenant_visible: boolean
+  created_at: string
+  photos?: { id: string; url: string; caption: string | null; position?: number }[] | null
+}
+
 /** A work item as the tenant portal receives it. Deliberately small. */
 export type TenantWorkItem = {
   id: string
@@ -42,6 +73,12 @@ export type TenantWorkItem = {
   completed_at: string | null
   created_at: string
   updated_at: string
+  /**
+   * The shared progress log, newest first. Always an array, never absent —
+   * `item.updates.length` is read all over the UI and an optional field there
+   * is a crash waiting for the one item nobody has updated.
+   */
+  updates: TenantWorkUpdate[]
 }
 
 /** The row shape this module needs. A superset arrives; only this is read. */
@@ -69,7 +106,52 @@ export type ShareableWorkRow = {
  * undefined }` is the version of this function that leaks: it leaks the next
  * column somebody adds, and it leaks it silently.
  */
-export function shapeForTenant(row: ShareableWorkRow): TenantWorkItem {
+/**
+ * The progress updates on one item that this tenant may read.
+ *
+ * **Two gates, and the second is the one that is easy to miss.** An update is
+ * shown only when the update is shared *and the item itself is shared*. An
+ * update published against a private job would otherwise reveal the job — "the
+ * plumber comes Thursday" tells a tenant about plumbing work they were never
+ * told about, which is exactly the leak the item-level flag exists to prevent.
+ * A landlord who shares an update and forgets the item has published nothing,
+ * and the landlord UI says so in words (`updateReach`).
+ *
+ * Empty updates are dropped: a row with no note and no photo renders as a
+ * timestamped bubble saying nothing, which reads as a bug.
+ *
+ * Newest first, because the tenant's live question is "where is this now".
+ */
+export function visibleUpdates(
+  item: { id: string; tenant_visible: boolean },
+  updates: ShareableUpdateRow[],
+): TenantWorkUpdate[] {
+  if (!item.tenant_visible) return []
+  // `rows.map(shapeForTenant)` is the obvious way to call the shaper, and
+  // `Array.prototype.map` passes the *index* as the second argument — so this
+  // arrives as `0` and `.filter` throws. Guarding here rather than trusting
+  // every call site to write the arrow out.
+  if (!Array.isArray(updates)) return []
+  return updates
+    .filter(u => u.work_item_id === item.id && u.tenant_visible)
+    .map(u => ({
+      id: u.id,
+      body: u.body?.trim() || null,
+      // Built field by field, like the item itself — `storage_path` and
+      // `owner_id` are on the row and neither is the tenant's business.
+      photos: [...(u.photos ?? [])]
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        .map(p => ({ id: p.id, url: p.url, caption: p.caption ?? null })),
+      created_at: u.created_at,
+    }))
+    .filter(u => !!u.body || u.photos.length > 0)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
+}
+
+export function shapeForTenant(
+  row: ShareableWorkRow,
+  updates: ShareableUpdateRow[] = [],
+): TenantWorkItem {
   return {
     id: row.id,
     property_id: row.property_id,
@@ -83,6 +165,7 @@ export function shapeForTenant(row: ShareableWorkRow): TenantWorkItem {
     completed_at: row.completed_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    updates: visibleUpdates(row, updates),
   }
 }
 
@@ -125,6 +208,7 @@ export function visibleToTenant(
   rows: ShareableWorkRow[],
   leases: LeaseWindow[],
   now = new Date(),
+  updates: ShareableUpdateRow[] = [],
 ): TenantWorkItem[] {
   const active = leases.filter(l => leaseIsActive(l, now))
   if (active.length === 0) return []
@@ -136,7 +220,7 @@ export function visibleToTenant(
       r.tenant_visible &&
       properties.has(r.property_id) &&
       (r.lease_id === null || leaseIds.has(r.lease_id)))
-    .map(shapeForTenant)
+    .map(r => shapeForTenant(r, updates))
 }
 
 /** An active lease plus the people on it, for counting an audience. */
