@@ -169,3 +169,97 @@ export function formatPropertyLimit(limit: number): string {
 export function smallestTierFor(count: number): PlanTier {
   return PLAN_ORDER.find(t => PLANS[t].propertyLimit >= count) ?? 'unlimited'
 }
+
+// ─── WHAT A PLAN ROW IS WORTH ────────────────────────────────────────────────
+//
+// `landlord_plans.plan_type` outlives the price list. Rows sold before the
+// self-serve tiers are still in the table, and a revenue report that prices
+// them at zero is worse than no report — so the retired prices live here beside
+// the live ones, in one map, and every surface that turns a plan row into money
+// reads it: `/api/admin/payments` (MRR), `src/lib/financials.ts` (the P&L) and
+// the admin Products tab.
+//
+// The failure this replaces: each of those three kept its own literal, and the
+// admin API's copy was never given the new tiers — so MRR read $0 for every
+// landlord actually paying us.
+
+/** List price of every plan type, live and retired, in cents per period. */
+export const PLAN_PRICE_CENTS: Record<PlanType, number> = {
+  // Live tiers — the numbers Stripe charges, straight from the definitions.
+  starter:        PLANS.starter.priceCents,
+  growth:         PLANS.growth.priceCents,
+  unlimited:      PLANS.unlimited.priceCents,
+  // Retired. Nobody can buy these; existing rows still count as revenue.
+  single_listing:  2999,
+  two_listing:     4999,
+  lifetime:       29900,
+  per_lead:         199,
+  legacy_free:         0,
+}
+
+/** Plan types nobody can buy any more. Everything else is on the price list. */
+export const RETIRED_PLAN_TYPES: LegacyPlanType[] =
+  ['single_listing', 'two_listing', 'lifetime', 'per_lead', 'legacy_free']
+
+/**
+ * What one plan row bills per month, in cents.
+ *
+ * `lifetime` answers 0: it was a one-time charge, so counting it in MRR would
+ * book the same $299 every month for ever. Its revenue is recognised once, at
+ * purchase. `per_lead` was never a subscription either.
+ */
+export function planMonthlyCents(planType: string | null | undefined): number {
+  if (!planType) return 0
+  if (planType === 'lifetime' || planType === 'per_lead') return 0
+  return PLAN_PRICE_CENTS[planType as PlanType] ?? 0
+}
+
+/** The list price of a plan row, monthly or one-time, in cents. */
+export function planPriceCents(planType: string | null | undefined): number {
+  if (!planType) return 0
+  return PLAN_PRICE_CENTS[planType as PlanType] ?? 0
+}
+
+/** True for a plan type nobody can buy any more. */
+export const isRetiredPlan = (planType: string | null | undefined): boolean =>
+  !!planType && (RETIRED_PLAN_TYPES as string[]).includes(planType)
+
+/**
+ * The colour a plan type wears in admin charts. Live tiers get the three
+ * brand-adjacent hues; everything retired is grey on purpose, so one glance at
+ * a chart separates the business we are in from the business we were in.
+ */
+export const PLAN_CHART_COLORS: Record<string, string> = {
+  starter:        '#0f7a43',
+  growth:         '#1f7a8c',
+  unlimited:      '#b4792b',
+  single_listing: '#8a918e',
+  two_listing:    '#8a918e',
+  lifetime:       '#a8a29e',
+  per_lead:       '#b9bfbc',
+  legacy_free:    '#cbd2cf',
+}
+
+/** A plan's price as a string, with the interval it bills on. */
+export function planPriceLabel(planType: string | null | undefined): string {
+  if (!planType) return '—'
+  const cents = planPriceCents(planType)
+  if (cents === 0) return planType === 'legacy_free' ? 'Comped' : '—'
+  if (planType === 'lifetime') return `${formatUsd(cents)} once`
+  if (planType === 'per_lead') return `${formatUsd(cents)} each`
+  return formatMonthly(cents)
+}
+
+/** Short label for a plan type — the live tiers keep their product name. */
+export function planShortName(planType: string | null | undefined): string {
+  if (!planType) return 'Free'
+  if (isPlanTier(planType)) return PLANS[planType].name
+  switch (planType) {
+    case 'lifetime':       return 'Lifetime'
+    case 'two_listing':    return 'Legacy · 2'
+    case 'single_listing': return 'Legacy · 1'
+    case 'legacy_free':    return 'Grandfathered'
+    case 'per_lead':       return 'Pay/Lead'
+    default:               return planType
+  }
+}

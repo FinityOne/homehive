@@ -116,21 +116,21 @@ export default function AdminUpgradeRequestsPage() {
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .ur-page { background: #f4f4f5; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
+        .ur-page { background: #f5f8f8; min-height: 100vh; font-family: 'DM Sans', sans-serif; }
 
-        .ur-header { background: #18181b; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-        .ur-title { font-size: 20px; font-weight: 700; color: #fafafa; }
-        .ur-subtitle { font-size: 12px; color: rgba(250,250,250,0.45); margin-top: 2px; }
+        .ur-header { background: #fff; border-bottom: 1px solid #e5e5ea; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+        .ur-title { font-size: 20px; font-weight: 700; color: #1d1d1f; }
+        .ur-subtitle { font-size: 12px; color: #8e8e93; margin-top: 2px; }
 
         .ur-filters { background: #fff; border-bottom: 1px solid #e4e4e7; padding: 10px 28px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
         .ur-pill { padding: 5px 14px; border-radius: 20px; border: 1.5px solid #e4e4e7; background: #fff; font-size: 12px; font-weight: 500; color: #71717a; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
-        .ur-pill.active { background: #18181b; color: #fafafa; border-color: #18181b; font-weight: 600; }
+        .ur-pill.active { background: #15191c; color: #fff; border-color: #15191c; font-weight: 600; }
 
         .ur-list { padding: 20px 28px; display: flex; flex-direction: column; gap: 10px; }
 
         .ur-card { background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 18px 20px; display: flex; align-items: flex-start; gap: 14px; }
-        .ur-card.is-pending { border-left: 3px solid #f59e0b; }
-        .ur-avatar { width: 40px; height: 40px; border-radius: 50%; background: #a78bfa; color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.3px; }
+        .ur-card.is-pending { border-left: 3px solid #b25000; }
+        .ur-avatar { width: 40px; height: 40px; border-radius: 50%; background: #146b7d; color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.3px; }
         .ur-body { flex: 1; min-width: 0; }
         .ur-name { font-size: 14px; font-weight: 700; color: #18181b; }
         .ur-email { font-size: 12px; color: #71717a; margin-top: 1px; }
@@ -141,7 +141,7 @@ export default function AdminUpgradeRequestsPage() {
         .ur-admin-note-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
 
         .ur-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
-        .btn-approve { background: #10b981; color: #fff; border: none; border-radius: 7px; padding: 7px 16px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: opacity 0.15s; }
+        .btn-approve { background: #0f7a43; color: #fff; border: none; border-radius: 7px; padding: 7px 16px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: opacity 0.15s; }
         .btn-approve:hover { opacity: 0.88; }
         .btn-reject { background: #fff; color: #9f1239; border: 1.5px solid #fecdd3; border-radius: 7px; padding: 7px 16px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; transition: all 0.15s; }
         .btn-reject:hover { background: #fff1f2; }
@@ -158,7 +158,7 @@ export default function AdminUpgradeRequestsPage() {
         .modal-textarea:focus { border-color: #8C1D40; }
         .modal-textarea::placeholder { color: #a1a1aa; }
         .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-        .modal-confirm-approve { flex: 1; background: #10b981; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
+        .modal-confirm-approve { flex: 1; background: #0f7a43; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
         .modal-confirm-approve:disabled { opacity: 0.5; cursor: not-allowed; }
         .modal-confirm-approve:not(:disabled):hover { opacity: 0.88; }
         .modal-confirm-reject { flex: 1; background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
@@ -166,7 +166,7 @@ export default function AdminUpgradeRequestsPage() {
         .modal-confirm-reject:not(:disabled):hover { opacity: 0.88; }
         .modal-cancel { background: #f4f4f5; color: #3f3f46; border: none; border-radius: 8px; padding: 11px 20px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 
-        .ur-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #18181b; color: #fafafa; padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
+        .ur-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #15191c; color: #fff; padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500; z-index: 999; white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,0.2); animation: toastIn 0.2s ease; }
         @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
 
         .ur-empty { padding: 60px 28px; text-align: center; }
@@ -240,7 +240,7 @@ export default function AdminUpgradeRequestsPage() {
             <div className="ur-title">
               Upgrade Requests
               {pendingCount > 0 && (
-                <span style={{ marginLeft: '10px', background: '#f59e0b', color: '#fff', fontSize: '12px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
+                <span style={{ marginLeft: '10px', background: '#b25000', color: '#fff', fontSize: '12px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px' }}>
                   {pendingCount} pending
                 </span>
               )}
@@ -255,7 +255,7 @@ export default function AdminUpgradeRequestsPage() {
             <button key={f} className={`ur-pill${filter === f ? ' active' : ''}`} onClick={() => setFilter(f)}>
               {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
               {f === 'pending' && pendingCount > 0 && (
-                <span style={{ marginLeft: '5px', background: '#f59e0b', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px' }}>
+                <span style={{ marginLeft: '5px', background: '#b25000', color: '#fff', fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px' }}>
                   {pendingCount}
                 </span>
               )}

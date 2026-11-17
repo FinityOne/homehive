@@ -115,7 +115,7 @@ function LeadVolumeChart({ data }: { data: Array<{ day: string; count: number }>
       g.selectAll('.bar').data(data).join('rect').attr('class', 'bar')
         .attr('x', d => x(d.day) ?? 0).attr('y', d => y(d.count))
         .attr('width', x.bandwidth()).attr('height', d => H - y(d.count))
-        .attr('fill', '#8C1D40').attr('opacity', 0.82).attr('rx', 2)
+        .attr('fill', '#146b7d').attr('opacity', 0.82).attr('rx', 2)
       g.append('g').attr('transform', `translate(0,${H})`).call(
         d3.axisBottom(x).tickValues(data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => d.day))
           .tickFormat(d => { const [, m, day] = (d as string).split('-'); return `${parseInt(m)}/${parseInt(day)}` })
@@ -222,12 +222,12 @@ function PlatformGrowthChart({ data }: { data: Array<{ date: Date; properties: n
         .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').attr('stroke', '#f0ede6') })
       const areaLeads = d3.area<typeof data[0]>().x(d => x(d.date)).y0(H).y1(d => y(d.leads)).curve(d3.curveMonotoneX)
       const areaProps = d3.area<typeof data[0]>().x(d => x(d.date)).y0(H).y1(d => y(d.properties)).curve(d3.curveMonotoneX)
-      g.append('path').datum(data).attr('fill', '#8C1D40').attr('opacity', 0.12).attr('d', areaLeads)
-      g.append('path').datum(data).attr('fill', '#a78bfa').attr('opacity', 0.14).attr('d', areaProps)
+      g.append('path').datum(data).attr('fill', '#146b7d').attr('opacity', 0.12).attr('d', areaLeads)
+      g.append('path').datum(data).attr('fill', '#b4792b').attr('opacity', 0.14).attr('d', areaProps)
       const lineLeads = d3.line<typeof data[0]>().x(d => x(d.date)).y(d => y(d.leads)).curve(d3.curveMonotoneX)
       const lineProps = d3.line<typeof data[0]>().x(d => x(d.date)).y(d => y(d.properties)).curve(d3.curveMonotoneX)
-      g.append('path').datum(data).attr('fill', 'none').attr('stroke', '#8C1D40').attr('stroke-width', 1.8).attr('d', lineLeads)
-      g.append('path').datum(data).attr('fill', 'none').attr('stroke', '#a78bfa').attr('stroke-width', 1.8).attr('d', lineProps)
+      g.append('path').datum(data).attr('fill', 'none').attr('stroke', '#146b7d').attr('stroke-width', 1.8).attr('d', lineLeads)
+      g.append('path').datum(data).attr('fill', 'none').attr('stroke', '#b4792b').attr('stroke-width', 1.8).attr('d', lineProps)
       g.append('g').attr('transform', `translate(0,${H})`).call(d3.axisBottom(x).ticks(4))
         .call(gg => { gg.select('.domain').attr('stroke', '#e8e4db'); gg.selectAll('line').attr('stroke', '#e8e4db'); gg.selectAll('text').attr('fill', '#9b9b9b').style('font-size', '10px').style('font-family', 'DM Sans, sans-serif') })
       g.append('g').call(d3.axisLeft(y).ticks(4))
@@ -241,7 +241,7 @@ function PlatformGrowthChart({ data }: { data: Array<{ date: Date; properties: n
     <div>
       <div ref={containerRef} style={{ width: '100%' }}><svg ref={svgRef} style={{ display: 'block' }} /></div>
       <div style={{ display: 'flex', gap: '16px', marginTop: '8px', justifyContent: 'center' }}>
-        {[{ color: '#8C1D40', label: 'Leads' }, { color: '#a78bfa', label: 'Properties' }].map(s => (
+        {[{ color: '#146b7d', label: 'Leads' }, { color: '#b4792b', label: 'Properties' }].map(s => (
           <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <div style={{ width: '20px', height: '2px', background: s.color, borderRadius: '1px' }} />
             <span style={{ fontSize: '11px', color: '#6b6b6b', fontFamily: 'DM Sans, sans-serif' }}>{s.label}</span>

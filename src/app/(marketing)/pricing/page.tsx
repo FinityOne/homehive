@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { PLANS, PLAN_ORDER, formatUsd, formatPropertyLimit } from '@/lib/landlordPlans'
+import { FREE_PROPERTY_LIMIT } from '@/lib/landlordAccess'
 
 type Tab = 'student' | 'landlord'
 
@@ -52,8 +53,16 @@ const FAQS_STUDENT = [
 
 const FAQS_LANDLORD = [
   {
+    q: 'Can I start without paying?',
+    a: `Yes. Sign up and build up to ${FREE_PROPERTY_LIMIT} properties for free — the full editor, photos, pricing, availability, and a preview of exactly how your listing will look. You only need a plan when you want those listings live in front of students, and to use the rest of the portal: leads, screening, leases, rent collection and move-out.`,
+  },
+  {
     q: 'What exactly am I paying for?',
-    a: "Access to the whole platform. Every plan includes the same tools — listings, leads, screening, tours, leases, rent collection, maintenance and move-out. The only difference between plans is how many properties you can have listed at once.",
+    a: "Publishing, and the whole platform behind it. Every plan includes the same tools — listings, leads, screening, tours, leases, rent collection, maintenance and move-out. The only difference between plans is how many properties you can have live at once.",
+  },
+  {
+    q: 'How do I pick a plan?',
+    a: `Count your doors. ${PLANS.starter.name} covers ${formatPropertyLimit(PLANS.starter.propertyLimit)} property at ${formatUsd(PLANS.starter.priceCents)}/mo, ${PLANS.growth.name} covers up to ${formatPropertyLimit(PLANS.growth.propertyLimit)} at ${formatUsd(PLANS.growth.priceCents)}/mo, and ${PLANS.unlimited.name} removes the ceiling at ${formatUsd(PLANS.unlimited.priceCents)}/mo. Nothing else changes between them — no tier holds a feature back.`,
   },
   {
     q: 'Are there any other fees?',
@@ -68,8 +77,12 @@ const FAQS_LANDLORD = [
     a: "Any time, from your billing page, in two clicks. You keep full access until the end of the period you have already paid for. We do not ask you to email anyone or sit through a retention call.",
   },
   {
-    q: 'What does the vetting process involve?',
-    a: "We verify property ownership, review listing accuracy, confirm pricing transparency, and do a quality check on photos — usually within 48 hours of your first listing. This protects your reputation as much as it protects our students.",
+    // The review queue is gone: a listing publishes the moment its landlord has
+    // an active plan. Promising a 48-hour vetting window described a gate that
+    // no longer exists, and undersold the thing that actually sells — a listing
+    // that is live this afternoon.
+    q: 'How soon can my listing go live?',
+    a: "Immediately. Once your plan is active, publishing is instant — there is no review queue and nothing to wait for. We keep quality up at the other end instead: every listing shows verified ownership, and we remove anything that misrepresents a property.",
   },
 ]
 
@@ -147,6 +160,19 @@ export default function PricingPage() {
         .price-cta-ghost { display: inline-flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); padding: 13px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; border: 1px solid rgba(255,255,255,0.2); transition: all 0.2s; margin-left: 10px; }
         .price-cta-ghost:hover { border-color: rgba(255,255,255,0.5); color: #fff; }
 
+        /* FREE TO START */
+        .free-start { background: #fff; border: 1.5px solid #e8e4db; border-left: 4px solid #0f7a43;
+          border-radius: 14px; padding: 24px 26px; margin-bottom: 18px;
+          display: grid; grid-template-columns: 1fr auto; gap: 26px; align-items: center; }
+        .free-start-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #0f7a43; margin-bottom: 7px; }
+        .free-start-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1a1a1a; line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.3px; }
+        .free-start-title em { font-style: italic; color: #0f7a43; }
+        .free-start-body { font-size: 13.5px; color: #6b6b6b; line-height: 1.7; max-width: 520px; }
+        .free-start-price { text-align: center; padding-left: 26px; border-left: 1px solid #f0ede6; min-width: 130px; }
+        .free-start-price-label { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #9b9b9b; }
+        .free-start-price-num { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 300; color: #1a1a1a; letter-spacing: -1.6px; line-height: 1.1; }
+        .free-start-price-sub { font-size: 11.5px; color: #9b9b9b; }
+
         /* TIER GRID */
         .tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
         .tier { background: #fff; border: 1.5px solid #e8e4db; border-radius: 14px; padding: 26px 22px; position: relative; display: flex; flex-direction: column; transition: border-color 0.15s, box-shadow 0.15s; }
@@ -206,6 +232,8 @@ export default function PricingPage() {
           .features-grid { grid-template-columns: 1fr; }
           .promise-strip { grid-template-columns: 1fr; }
           .tier-grid { grid-template-columns: 1fr; }
+          .free-start { grid-template-columns: 1fr; padding: 20px 22px; }
+          .free-start-price { text-align: left; padding-left: 0; border-left: none; border-top: 1px solid #f0ede6; padding-top: 14px; min-width: auto; }
           .future-box { grid-template-columns: 1fr; }
           .future-locked { min-width: auto; }
           .bottom-cta { padding: 36px 24px; }
@@ -300,6 +328,30 @@ export default function PricingPage() {
         {/* ── LANDLORD ── */}
         {tab === 'landlord' && (
           <>
+            {/* FREE TO START — the step before the ladder.
+                The page used to open on a price, which asks a landlord to
+                decide before they have seen anything. The first thing it says
+                now is that setting up costs nothing: you pay to publish. */}
+            <div className="free-start">
+              <div className="free-start-main">
+                <div className="free-start-eyebrow">Free to start</div>
+                <div className="free-start-title">
+                  Build your listing first. <em>Pay when you publish.</em>
+                </div>
+                <p className="free-start-body">
+                  Create an account and set up to {FREE_PROPERTY_LIMIT} properties at no cost — photos,
+                  rent, availability, house rules, and a preview of exactly what students
+                  will see. A plan is what takes them live and opens the rest of the
+                  portal: leads, screening, tours, leases and rent collection.
+                </p>
+              </div>
+              <div className="free-start-price">
+                <div className="free-start-price-label">Set-up</div>
+                <div className="free-start-price-num">$0</div>
+                <div className="free-start-price-sub">No card required</div>
+              </div>
+            </div>
+
             {/* THREE TIERS */}
             <div className="tier-grid">
               {PLAN_ORDER.map(t => {
@@ -323,8 +375,9 @@ export default function PricingPage() {
             </div>
 
             <p className="tier-foot">
-              Sign up, pay, and your portal opens immediately. Cancel any time — no contract,
-              no setup fee, and no commission when you fill a room.
+              Your listings publish the moment a plan is active — there is no review queue.
+              Move up a tier whenever you need another door and Stripe prorates the difference.
+              Cancel any time: no contract, no setup fee, and no commission when you fill a room.
             </p>
 
             {/* WHAT'S INCLUDED — same in every plan */}

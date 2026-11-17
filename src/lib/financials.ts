@@ -12,24 +12,11 @@ import {
   type Economics, type SettleMethod, type RevenueSource,
 } from './platformFees'
 
-/**
- * List price of each thing a landlord can buy, in cents.
- *
- * The retired plans stay here: their rows are still in the database and a
- * revenue report that silently prices them at zero is worse than no report.
- */
-const PLAN_PRICE_CENTS: Record<string, number> = {
-  // Current tiers, priced by property count.
-  starter:         1999,
-  growth:          4999,
-  unlimited:      19999,
-  // Retired — historical rows only.
-  single_listing:  2999,
-  two_listing:     4999,
-  lifetime:       29900,
-  per_lead:         199,
-  legacy_free:        0,
-}
+// List prices — live tiers and retired plans alike — come from
+// `landlordPlans.ts`, which is the one place a price is written down. This file
+// used to keep its own copy, which is how the admin API ended up pricing the
+// live tiers at zero while this one priced them correctly.
+import { planPriceCents } from './landlordPlans'
 
 /** What a subscription line should read as on the ledger. */
 const PLAN_LINE_ITEM: Record<string, string> = {
@@ -247,7 +234,7 @@ export function buildFinancials(input: FinancialsInput) {
 
   for (const s of subs) {
     if (isComped(s.stripe_subscription_id)) continue
-    const priceCents = PLAN_PRICE_CENTS[s.plan_type] ?? 0
+    const priceCents = planPriceCents(s.plan_type)
     if (priceCents === 0 || !s.created_at) continue
     const start = String(s.created_at).slice(0, 10)
 
@@ -291,7 +278,7 @@ export function buildFinancials(input: FinancialsInput) {
   for (const u of unlocks) {
     if (u.unlock_type !== 'per_lead' || !u.created_at) continue
     const date = String(u.created_at).slice(0, 10)
-    const e = economics({ passThroughCents: 0, feeCents: PLAN_PRICE_CENTS.per_lead, method: 'card' })
+    const e = economics({ passThroughCents: 0, feeCents: planPriceCents('per_lead'), method: 'card' })
     txns.push({
       id: `unlock:${u.id}`, kind: 'per_lead', source: 'per_lead',
       date, month: monthKey(date), status: 'paid', method: 'card', onPlatform: true, ...e,

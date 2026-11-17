@@ -1,4 +1,8 @@
 import type { Metadata } from 'next'
+// Prices in the rich-result schema are derived from the price list, so a
+// Google answer card can never quote a figure the checkout no longer charges.
+import { PLANS, formatUsd } from '@/lib/landlordPlans'
+import { FREE_PROPERTY_LIMIT } from '@/lib/landlordAccess'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 
@@ -43,7 +47,7 @@ const faqSchema = {
       name: 'How much does HomeHive cost for landlords?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Landlord plans are a flat monthly price based on how many properties you list: $19.99/month for one property, $49.99/month for up to five, and $199.99/month for unlimited properties. Every plan includes the full platform.',
+        text: `Landlord plans are a flat monthly price based on how many properties you list: ${formatUsd(PLANS.starter.priceCents)}/month for one property, ${formatUsd(PLANS.growth.priceCents)}/month for up to ${PLANS.growth.propertyLimit}, and ${formatUsd(PLANS.unlimited.priceCents)}/month for unlimited properties. Every plan includes the full platform, and building a property is free until you publish it.`,
       },
     },
     {
@@ -56,27 +60,27 @@ const faqSchema = {
     },
     {
       '@type': 'Question',
-      name: 'How do landlords get started on HomeHive?',
+      name: 'Can landlords use HomeHive for free?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Sign up at homehive.live, choose a plan, and your landlord portal opens immediately. Listings are quality-checked within 48 hours of going up.',
+        text: `Yes, to start. You can create an account and build up to ${FREE_PROPERTY_LIMIT} properties at no cost, including photos, pricing and a preview of the live listing. A paid plan is what publishes those listings to students and opens leads, screening, leases and rent collection.`,
       },
     },
     {
       '@type': 'Question',
-      name: 'What does the HomeHive landlord vetting process involve?',
+      name: 'How do landlords get started on HomeHive?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'We verify property ownership, review listing accuracy, confirm pricing transparency, and do a quality check on photos. It usually takes less than 48 hours.',
+        text: 'Sign up at homehive.live, build your property for free, then choose a plan to publish it. Listings go live immediately once a plan is active — there is no review queue.',
       },
     },
   ],
 }
 
 export const metadata: Metadata = {
-  title: 'Pricing — Free for ASU Students, Landlord Plans from $19.99/mo',
+  title: `Pricing — Free for ASU Students, Landlord Plans from ${formatUsd(PLANS.starter.priceCents)}/mo`,
   description:
-    'HomeHive is 100% free for ASU students — browse listings, find roommates, sign leases, and pay rent at no cost. Landlords pay a flat monthly plan starting at $19.99.',
+    `HomeHive is 100% free for ASU students — browse listings, find roommates, sign leases, and pay rent at no cost. Landlords build properties free and pay a flat monthly plan from ${formatUsd(PLANS.starter.priceCents)} to publish them.`,
   keywords: [
     'free student housing platform ASU',
     'no broker fee housing Tempe',
@@ -84,9 +88,9 @@ export const metadata: Metadata = {
     'student housing no fees Arizona State',
   ],
   openGraph: {
-    title: 'HomeHive Pricing — Free for Students, Plans from $19.99/mo for Landlords',
+    title: `HomeHive Pricing — Free for Students, Plans from ${formatUsd(PLANS.starter.priceCents)}/mo for Landlords`,
     description:
-      'ASU students pay nothing — ever. Landlord plans start at $19.99/month for one property. No broker fees, no per-lead charges, no commission.',
+      `ASU students pay nothing — ever. Landlord plans start at ${formatUsd(PLANS.starter.priceCents)}/month for one property. No broker fees, no per-lead charges, no commission.`,
     url: `${SITE_URL}/pricing`,
     siteName: 'HomeHive',
   },

@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { PLANS, PLAN_ORDER, formatUsd, formatPropertyLimit } from '@/lib/landlordPlans'
+import { FREE_PROPERTY_LIMIT } from '@/lib/landlordAccess'
 import '@/styles/brand-tokens.css'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
@@ -269,8 +270,9 @@ export default async function ForLandlordsPage() {
           <div className="section-label">Pricing</div>
           <div className="section-h2">One price. Every feature.</div>
           <div className="section-sub">
-            Plans are priced by how many properties you list — nothing else. No per-lead
-            charges, no commission when a room fills, no setup fee. Cancel any time.
+            Setting up is free — build up to {FREE_PROPERTY_LIMIT} properties before you pay anything.
+            A plan is what publishes them, priced by how many you list and nothing else. No
+            per-lead charges, no commission when a room fills, no setup fee. Cancel any time.
           </div>
 
           <div className="tier-row">
