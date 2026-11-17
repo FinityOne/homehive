@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import HomePageClient from './HomePageClient'
-import { getHomeCardsServer } from '@/lib/homeData'
+import { getHomeCardsServer, publicDb } from '@/lib/homeData'
+import { getPlatformStats, EMPTY_STATS } from '@/lib/platformStats'
+import { heroVisitCount } from '@/lib/heroActivity'
 import type { Property } from '@/lib/properties'
 import { PLANS, formatUsd } from '@/lib/landlordPlans'
 
@@ -307,7 +309,17 @@ export default async function HomePage() {
   // Fetch listings on the server so cards are in the initial HTML.
   // Homepage is a promotional surface — listings with marketing turned off,
   // or that aren't Live, stay out of it.
-  const initialProperties = await getHomeCardsServer({ marketingOnly: true })
+  //
+  // The hero's social proof comes from the same `security definer` aggregate
+  // the landlord pitch uses, so the two pages can never quote different
+  // demand. It is a full scan of `leads`/`site_visits`, which is only
+  // affordable here because this page is ISR-cached (`revalidate` above) — it
+  // runs once a minute, not once a visitor. A failed read degrades to zeros
+  // and the hero simply hides the counts rather than inventing them.
+  const [initialProperties, stats] = await Promise.all([
+    getHomeCardsServer({ marketingOnly: true }),
+    getPlatformStats(publicDb).catch(() => EMPTY_STATS),
+  ])
   const schemaHomes = schemaListings(initialProperties)
 
   return (
@@ -319,7 +331,12 @@ export default async function HomePage() {
       )}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
-      <HomePageClient initialProperties={initialProperties} />
+      <HomePageClient
+        initialProperties={initialProperties}
+        visitCount={heroVisitCount(stats.siteVisits)}
+        inquiryCount={stats.totalLeads}
+        renterCount={stats.distinctRenters}
+      />
     </>
   )
 }
