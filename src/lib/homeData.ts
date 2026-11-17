@@ -5,11 +5,18 @@
 import { createClient } from '@supabase/supabase-js'
 import { PROPERTY_CARD_SELECT, PUBLIC_STATUS_FILTER, mapPropertyCard, type Property } from './properties'
 
-const supabase = createClient(
+/**
+ * Shared anonymous, session-less client for the public marketing pages.
+ * Exported so the home page can read its hero figures through the same client
+ * instead of standing up a second one per request.
+ */
+export const publicDb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { auth: { persistSession: false } }
 )
+
+const supabase = publicDb
 
 /**
  * Card feed for the public pages.

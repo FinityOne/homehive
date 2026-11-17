@@ -6,6 +6,13 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { getProperties, type Property } from '@/lib/properties'
 import { PLANS, formatMonthly } from '@/lib/landlordPlans'
+import {
+  viewersRightNow,
+  nextVisitTick,
+  VISIT_TICK_MS,
+  COUNT_UP_MS,
+  COUNT_UP_RUNWAY,
+} from '@/lib/heroActivity'
 import SaveButton from '@/components/SaveButton'
 
 function fmtDate(d: string | null | undefined) {
@@ -451,6 +458,226 @@ const LEAD_SHORTCUTS = [
   { href: '/roommates',           label: 'Find roommates' },
 ]
 
+// ─── HERO FEATURE ────────────────────────────────────────────────────────────
+// 80% of this page's traffic is a student looking for a room, so the hero
+// leads with one home shot properly: the first thing on the page is the thing
+// they came for, at a size they can judge from. The second audience — someone
+// with a place to lease — is served by the same band reading busy, which is
+// what the activity strip underneath is for.
+
+/**
+ * The home the hero features.
+ *
+ * Pinned to the listing we have full photography for, but as a *preference*,
+ * never a hard reference. `properties` has already been filtered to Live,
+ * promotable, paid listings, so if that home is marked Rented or its
+ * landlord's plan lapses it is simply not in the list and the hero falls back
+ * to whatever is featured. Hard-coding a slug and then trusting it is the
+ * mistake the listing schema in `page.tsx` was rewritten to stop making.
+ */
+const HERO_SLUG = 'delrio-house'
+
+export function pickHeroHome(list: Property[]): Property | null {
+  return list.find(p => p.slug === HERO_SLUG)
+    ?? list.find(p => p.is_featured)
+    ?? list[0]
+    ?? null
+}
+
+/**
+ * Visit counter: counts up on first paint, then drifts upward while the tab
+ * is open.
+ *
+ * Renders `target` on the server and on the first client frame, so the figure
+ * in the HTML — and the one a visitor with JS off sees — is the real one. The
+ * animation only ever runs from just below it.
+ */
+function LiveVisitCounter({ target }: { target: number }) {
+  const [shown, setShown] = useState(target)
+
+  useEffect(() => {
+    if (target <= 0) return
+
+    let raf = 0
+    let timer = 0
+    let live = target
+
+    const drift = () => {
+      live = nextVisitTick(live, Math.random())
+      setShown(live)
+      timer = window.setTimeout(drift, VISIT_TICK_MS)
+    }
+
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduceMotion) {
+      // No count-up sweep, but the number still moves: that part is
+      // information, not decoration, so it survives the motion preference.
+      // The frame callback only matters if `target` changed after mount —
+      // on first mount it is already the rendered value.
+      raf = requestAnimationFrame(() => setShown(target))
+      timer = window.setTimeout(drift, VISIT_TICK_MS)
+    } else {
+      const from = Math.max(0, target - COUNT_UP_RUNWAY)
+      const begun = performance.now()
+      const step = (now: number) => {
+        const p = Math.min(1, (now - begun) / COUNT_UP_MS)
+        const eased = 1 - Math.pow(1 - p, 3)
+        setShown(Math.round(from + (target - from) * eased))
+        if (p < 1) raf = requestAnimationFrame(step)
+        else timer = window.setTimeout(drift, VISIT_TICK_MS)
+      }
+      raf = requestAnimationFrame(step)
+    }
+
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(timer) }
+  }, [target])
+
+  return <span className="hh-live-num">{shown.toLocaleString('en-US')}</span>
+}
+
+/**
+ * "N browsing now", over the photo.
+ *
+ * Mounts empty and fills in after hydration on purpose: the figure is modelled
+ * from the viewer's local hour, so server-rendering it would both mismatch and
+ * freeze one value into the ISR-cached HTML for a minute.
+ */
+function BrowsingNow() {
+  const [count, setCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    const read = () => setCount(viewersRightNow(new Date().getHours(), Math.random()))
+    read()
+    const id = window.setInterval(read, 9_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  if (count === null) return null
+  return (
+    <span className="hh-now">
+      <span className="hh-now-dot" aria-hidden="true" />
+      {count} browsing now
+    </span>
+  )
+}
+
+/** The big photo — one listing, at hero scale. */
+function HeroFeature({ home }: { home: Property }) {
+  const img = home.images?.[0]
+  const perRoom = home.rental_mode === 'by_room'
+  const distance = Number(home.asu_distance)
+  const dist = Number.isFinite(distance) && distance > 0
+    ? (distance <= 0.4 ? 'Walk to campus' : `${distance.toFixed(1)} mi to campus`)
+    : null
+  // Only meaningful when the home is let by the room — a whole-home listing is
+  // one unit, and "1 room open" on it reads like a bug.
+  const openRooms = perRoom ? Number(home.available) || 0 : 0
+  const meta = [
+    home.beds > 0 ? `${home.beds} bd` : null,
+    home.baths > 0 ? `${home.baths} ba` : null,
+    home.sqft ? `${home.sqft} sqft` : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <Link href={`/homes/${home.slug}`} className="hh-feat" aria-label={`See ${home.name}`}>
+      {/* The hero image is this page's LCP element: eager, high priority, and a
+          raw <img> because these photos are served from an R2 bucket that is
+          not in next.config's remotePatterns — next/image would reject it. */}
+      {img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={img}
+          alt={`${home.name} — ${home.beds}-bedroom student home near ASU in Tempe, AZ`}
+          fetchPriority="high"
+          decoding="async"
+        />
+      ) : (
+        <div className="hh-feat-ph" aria-hidden="true">🏠</div>
+      )}
+
+      {/* One row, not two anchored corners: on a phone the left pills and the
+          live count were wide enough to sit on top of each other. */}
+      <div className="hh-feat-chips">
+        <span className="hh-glass">
+          <span className="hh-glass-dot" aria-hidden="true" />
+          Verified host
+        </span>
+        {openRooms > 0 && <span className="hh-glass">{openRooms} rooms open</span>}
+        <BrowsingNow />
+      </div>
+
+      <div className="hh-feat-overlay">
+        <div className="hh-feat-eyebrow">Tempe{dist ? ` · ${dist}` : ''}</div>
+        <div className="hh-feat-name">{home.name}</div>
+        <div className="hh-feat-row">
+          <span className="hh-feat-price">
+            <strong>${home.price?.toLocaleString()}</strong>
+            <span>/mo{perRoom ? ' per room' : ''}</span>
+          </span>
+          {meta && <span className="hh-feat-meta">{meta}</span>}
+          <span className="hh-feat-btn">
+            See this home
+            <span className="lead-cta-arrow" aria-hidden="true">→</span>
+          </span>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+/**
+ * The buzz bar under the hero: one moving figure, two counted from live rows
+ * (see `platformStats.ts`), and the landlord's way in.
+ *
+ * A zero means the aggregate could not be read, and a zero reads as "nobody
+ * uses this platform", so a figure hides itself rather than printing one.
+ * None of these are honey — the band still has exactly one filled CTA.
+ */
+function LiveActivityStrip({
+  visitCount,
+  inquiryCount,
+  renterCount,
+}: {
+  visitCount: number
+  inquiryCount: number
+  renterCount: number
+}) {
+  const hasAny = visitCount > 0 || inquiryCount > 0 || renterCount > 0
+  return (
+    <div className="hh-live">
+      {hasAny && (
+        <div className="hh-live-figures">
+          {visitCount > 0 && (
+            <div className="hh-live-item">
+              <LiveVisitCounter target={visitCount} />
+              <span className="hh-live-label">
+                <span className="hh-live-dot" aria-hidden="true" />
+                visits to HomeHive
+              </span>
+            </div>
+          )}
+          {inquiryCount > 0 && (
+            <div className="hh-live-item">
+              <span className="hh-live-num">{inquiryCount.toLocaleString('en-US')}</span>
+              <span className="hh-live-label">inquiries sent to hosts</span>
+            </div>
+          )}
+          {renterCount > 0 && (
+            <div className="hh-live-item">
+              <span className="hh-live-num">{renterCount.toLocaleString('en-US')}</span>
+              <span className="hh-live-label">students house-hunting</span>
+            </div>
+          )}
+        </div>
+      )}
+      <Link href="/for-landlords" className="hh-live-landlord">
+        Own a place near campus? Get in front of this
+        <span className="lead-cta-arrow" aria-hidden="true">→</span>
+      </Link>
+    </div>
+  )
+}
+
 // ─── LIST-YOUR-PLACE CTA ─────────────────────────────────────────────────────
 // Rendered in both the empty and populated branches, so it lives here rather
 // than inline twice. The price comes from the landlord paywall's own source of
@@ -471,7 +698,17 @@ function ListYourPlaceCta() {
 }
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-function HomePageInner({ initialProperties }: { initialProperties?: Property[] }) {
+type HomePageProps = {
+  initialProperties?: Property[]
+  /** Real all-time visits lifted by the hero's floor — see heroActivity.ts. */
+  visitCount?: number
+  /** Inquiries ever sent through the platform. Counted, never floored. */
+  inquiryCount?: number
+  /** Distinct renters who have inquired. Counted, never floored. */
+  renterCount?: number
+}
+
+function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, renterCount = 0 }: HomePageProps) {
   const searchParams    = useSearchParams()
   const guestName       = searchParams.get('name') || ''
   const isPersonalized  = !!guestName
@@ -490,8 +727,13 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
     if (!sessionStorage.getItem('hh_landlord_bar_dismissed')) setShowLandlordBanner(true)
   }, [hasInitial])
 
+  // The hero already shows one home at full size; repeating it as the first
+  // card below reads as a bug, so it comes out of the grid.
+  const heroHome = pickHeroHome(properties)
+
   // Listings-first: surface featured, then closest/best-scored homes immediately.
-  const gridHomes = [...properties]
+  const gridHomes = properties
+    .filter(p => p.slug !== heroHome?.slug)
     .sort((a, b) => (b.is_featured ? 1 : 0) - (a.is_featured ? 1 : 0) || (b.asu_score || 0) - (a.asu_score || 0))
     .slice(0, 12)
 
@@ -608,7 +850,12 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .lead-band { position: relative; padding: 48px 0 30px; }
 
         /* Warm wash behind the headline so cream-on-cream isn't flat. */
-        .lead-glow { position: absolute; inset: -40px -10% auto -10%; height: 340px; pointer-events: none; z-index: 0;
+        /* Kept inside the band on purpose: the wash used to bleed 10% past each
+           edge, which on a phone (where the band is the full viewport width)
+           pushed the document wider than the screen and let the whole page
+           scroll sideways. Radial stops are relative to this box, so pulling
+           the bleed in costs nothing visually. */
+        .lead-glow { position: absolute; inset: -40px 0 auto 0; height: 340px; pointer-events: none; z-index: 0;
           background:
             radial-gradient(52% 72% at 14% 18%, rgba(217,161,74,0.16) 0%, rgba(217,161,74,0) 68%),
             radial-gradient(46% 62% at 86% 6%, rgba(47,74,72,0.10) 0%, rgba(47,74,72,0) 70%); }
@@ -660,6 +907,73 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .lead-chips { display: flex; flex-wrap: wrap; gap: 8px; }
         .lead-chip { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--hh-text-2); background: transparent; border: 1px solid var(--hh-border-faint); border-radius: 100px; padding: 7px 14px; text-decoration: none; transition: color 0.15s, border-color 0.15s, background 0.15s; white-space: nowrap; }
         .lead-chip:hover { background: var(--hh-hive-50); border-color: var(--hh-primary); color: var(--hh-primary); }
+
+        /* ── HERO FEATURE (the big photo) ─────────────────────────────────
+           Two columns: the pitch, and one home at a size a student can judge
+           from. Everything drawn over the photo is dark glass or white — the
+           band's single honey element is still .lead-cta, so the photo can be
+           loud without competing for "what do I click". */
+        .hh-hero-grid { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr); gap: 46px; align-items: center; }
+        .hh-hero-copy { min-width: 0; }
+        /* The headline now lives in a half-width column, so it is stepped down
+           from the full-bleed scale — at the old size it ran to four lines and
+           towered over the photo it is supposed to introduce. */
+        .hh-hero-copy .lead-h1 { font-size: clamp(30px, 3.2vw, 43px); }
+        .hh-hero-copy .lead-sub { max-width: 440px; margin-bottom: 24px; }
+
+        .hh-feat { position: relative; display: block; border-radius: 22px; overflow: hidden; background: var(--hh-bg-alt);
+          aspect-ratio: 4 / 3; box-shadow: var(--hh-shadow-lg); text-decoration: none; color: #fff;
+          transition: transform 0.22s ease, box-shadow 0.22s ease; }
+        .hh-feat:hover { transform: translateY(-3px); box-shadow: 0 26px 60px -18px rgba(30,46,44,0.38); }
+        .hh-feat:focus-visible { outline: none; box-shadow: var(--hh-ring-accent), var(--hh-shadow-lg); }
+        .hh-feat img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
+        .hh-feat:hover img { transform: scale(1.035); }
+        .hh-feat-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 52px;
+          background: linear-gradient(135deg, #ede9e0 0%, #d9d2c5 100%); }
+
+        /* Glass pills, top corners */
+        .hh-feat-chips { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 7px; flex-wrap: wrap; z-index: 2; }
+        /* Pushed to the far end, and onto its own line once the row wraps. */
+        .hh-now { margin-left: auto; }
+        .hh-glass, .hh-now { display: inline-flex; align-items: center; gap: 6px; background: rgba(22,32,30,0.72);
+          backdrop-filter: blur(10px); color: #fff; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+          padding: 6px 12px; border-radius: 100px; border: 1px solid rgba(255,255,255,0.16); white-space: nowrap; }
+        .hh-glass-dot, .hh-now-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hh-status-live); flex-shrink: 0; }
+        .hh-now-dot { position: relative; }
+        .hh-now-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--hh-status-live);
+          animation: livePulse 2.4s ease-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .hh-now-dot::after { animation: none; opacity: 0.35 } }
+
+        /* Bottom overlay — the listing's facts, legible over any photo */
+        .hh-feat-overlay { position: absolute; inset: auto 0 0 0; padding: 60px 22px 20px; z-index: 2;
+          background: linear-gradient(to top, rgba(14,22,21,0.90) 0%, rgba(14,22,21,0.62) 48%, rgba(14,22,21,0) 100%); }
+        .hh-feat-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+          color: rgba(255,255,255,0.78); margin-bottom: 7px; }
+        .hh-feat-name { font-family: var(--hh-font-display); font-size: clamp(22px, 2.4vw, 30px); font-weight: 400;
+          line-height: 1.12; letter-spacing: -0.02em; color: #fff; }
+        .hh-feat-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
+        .hh-feat-price { font-size: 14px; color: rgba(255,255,255,0.82); }
+        .hh-feat-price strong { font-size: 21px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+        .hh-feat-meta { font-size: 13px; color: rgba(255,255,255,0.78); }
+        .hh-feat-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,0.95);
+          color: var(--hh-ink-900); font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 100px;
+          transition: background 0.16s; }
+        .hh-feat:hover .hh-feat-btn { background: #fff; }
+        .hh-feat:hover .hh-feat-btn .lead-cta-arrow { transform: translateX(3px); }
+
+        /* ── ACTIVITY STRIP — the "this place is busy" bar ── */
+        .hh-live { display: flex; align-items: center; justify-content: space-between; gap: 20px 32px; flex-wrap: wrap;
+          margin-top: 38px; padding-top: 22px; border-top: 1px solid var(--hh-border-faint); }
+        .hh-live-figures { display: flex; align-items: flex-start; gap: 34px; flex-wrap: wrap; }
+        .hh-live-item { display: flex; flex-direction: column; gap: 3px; }
+        .hh-live-num { font-family: var(--hh-font-display); font-size: 27px; font-weight: 400; line-height: 1;
+          letter-spacing: -0.03em; color: var(--hh-text); font-variant-numeric: tabular-nums; }
+        .hh-live-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--hh-text-muted); }
+        .hh-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hh-status-live); flex-shrink: 0; }
+        .hh-live-landlord { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600;
+          color: var(--hh-primary); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.15s; }
+        .hh-live-landlord:hover { border-bottom-color: var(--hh-primary); }
+        .hh-live-landlord:hover .lead-cta-arrow { transform: translateX(3px); }
 
         /* ── LISTINGS GRID ── */
         .lc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px 20px; }
@@ -873,6 +1187,19 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
         .hiw-illustration-label { font-size: 10px; letter-spacing: 0.1em; text-transform: lowercase; color: var(--hh-ink-400); font-weight: 400; }
 
         /* ── RESPONSIVE ── */
+        @media (max-width: 1000px) {
+          /* Photo under the pitch, and wider — a half-width photo at tablet
+             size is neither a hero nor a card. */
+          .hh-hero-grid { grid-template-columns: 1fr; gap: 30px; }
+          /* Photo first once the columns stack. On a phone the pitch would
+             otherwise push the home itself a full screen down, and the home is
+             what the visitor came for. */
+          .hh-feat { order: -1; }
+          .hh-hero-copy .lead-h1 { font-size: clamp(32px, 4.6vw, 52px); text-wrap: balance; }
+          .hh-feat { aspect-ratio: 16 / 10; }
+          .hh-live-figures { gap: 26px; }
+        }
+
         @media (max-width: 900px) {
           .hero { grid-template-columns: 1fr; gap: 32px; padding: 36px 0 32px; }
           .hero-right { display: none; }
@@ -892,10 +1219,19 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
           .wrap { padding: 0 16px; }
           /* One CTA, full width — the easiest thing on the screen to hit. */
           .lead-band { padding: 30px 0 22px; }
-          .lead-glow { inset: -24px -20% auto -20%; height: 260px; }
+          .lead-glow { inset: -24px 0 auto 0; height: 260px; }
           .lead-cta-row { gap: 12px; }
           .lead-cta { width: 100%; justify-content: center; font-size: 15px; padding: 15px 22px; }
           .lead-cta-note { width: 100%; text-align: center; }
+          .hh-hero-copy .lead-h1 { font-size: 30px; }
+          .hh-feat { aspect-ratio: 4 / 3; border-radius: 16px; }
+          .hh-feat-overlay { padding: 52px 15px 15px; }
+          .hh-feat-btn { margin-left: 0; }
+          .hh-feat-row { gap: 10px; }
+          .hh-live { margin-top: 28px; gap: 16px 22px; }
+          .hh-live-figures { gap: 18px; width: 100%; }
+          .hh-live-num { font-size: 22px; }
+          .hh-live-label { font-size: 11.5px; }
           .lead-proof { gap: 10px 16px; margin-top: 22px; padding-top: 18px; }
           .lead-jump { flex-direction: column; align-items: flex-start; gap: 10px; }
           .hero-h1 { font-size: 42px; }
@@ -940,52 +1276,65 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
 
       <div className="wrap">
 
-        {/* ── LEAD BAND — one call to action, then straight into listings ──
+        {/* ── HERO — one call to action, one big home, then the listings ──
              The CTA is the only honey element in this band on purpose. The
-             filter shortcuts below it are outlined, not filled, so a first-time
-             visitor has exactly one obvious next move. */}
+             filter shortcuts below it are outlined, not filled, and everything
+             over the photo is glass or white, so a first-time visitor has
+             exactly one obvious next move. */}
         <div className="lead-band">
           <div className="lead-glow" aria-hidden="true" />
-          <div className="lead-inner">
-            <div className="lead-live">
-              <span className="lead-live-dot" aria-hidden="true" />
-              {loading
-                ? 'Verified homes near ASU Tempe'
-                : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live near ASU Tempe`}
-            </div>
-            <h1 className="lead-h1">
-              Your next place near ASU —<br />
-              <em>found in minutes, not weeks.</em>
-            </h1>
-            <p className="lead-sub">
-              Every host is ID-verified and every listing is kept current. <strong>No broker fees, ever.</strong>
-            </p>
+          <div className="lead-inner hh-hero-grid">
+            <div className="hh-hero-copy">
+              <div className="lead-live">
+                <span className="lead-live-dot" aria-hidden="true" />
+                {loading
+                  ? 'Verified homes near ASU Tempe'
+                  : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live near ASU Tempe`}
+              </div>
+              <h1 className="lead-h1">
+                Your next place near ASU —<br />
+                <em>found in minutes, not weeks.</em>
+              </h1>
+              <p className="lead-sub">
+                Every host is ID-verified and every listing is kept current. <strong>No broker fees, ever.</strong>
+              </p>
 
-            <div className="lead-cta-row">
-              <Link href="/homes" className="lead-cta">
-                <span>{loading || properties.length === 0 ? 'Browse verified homes' : `Browse ${properties.length} verified homes`}</span>
-                <span className="lead-cta-arrow" aria-hidden="true">→</span>
-              </Link>
-              <span className="lead-cta-note">Free for students · apply in 2 minutes</span>
-            </div>
+              <div className="lead-cta-row">
+                <Link href="/homes" className="lead-cta">
+                  <span>{loading || properties.length === 0 ? 'Browse verified homes' : `Browse ${properties.length} verified homes`}</span>
+                  <span className="lead-cta-arrow" aria-hidden="true">→</span>
+                </Link>
+                <span className="lead-cta-note">Free for students · apply in 2 minutes</span>
+              </div>
 
-            <div className="lead-proof">
-              {LEAD_PROOF.map(item => (
-                <span key={item} className="lead-proof-item">
-                  <span className="lead-proof-tick" aria-hidden="true">✓</span>
-                  {item}
-                </span>
-              ))}
-            </div>
-
-            <div className="lead-jump">
-              <span className="lead-jump-label">Popular right now</span>
-              <div className="lead-chips">
-                {LEAD_SHORTCUTS.map(c => (
-                  <Link key={c.href} href={c.href} className="lead-chip">{c.label}</Link>
+              <div className="lead-proof">
+                {LEAD_PROOF.map(item => (
+                  <span key={item} className="lead-proof-item">
+                    <span className="lead-proof-tick" aria-hidden="true">✓</span>
+                    {item}
+                  </span>
                 ))}
               </div>
+
+              <div className="lead-jump">
+                <span className="lead-jump-label">Popular right now</span>
+                <div className="lead-chips">
+                  {LEAD_SHORTCUTS.map(c => (
+                    <Link key={c.href} href={c.href} className="lead-chip">{c.label}</Link>
+                  ))}
+                </div>
+              </div>
             </div>
+
+            {heroHome && <HeroFeature home={heroHome} />}
+          </div>
+
+          <div className="lead-inner">
+            <LiveActivityStrip
+              visitCount={visitCount}
+              inquiryCount={inquiryCount}
+              renterCount={renterCount}
+            />
           </div>
         </div>
 
@@ -1032,10 +1381,10 @@ function HomePageInner({ initialProperties }: { initialProperties?: Property[] }
   )
 }
 
-export default function HomePageClient({ initialProperties }: { initialProperties?: Property[] }) {
+export default function HomePageClient(props: HomePageProps) {
   return (
     <Suspense fallback={null}>
-      <HomePageInner initialProperties={initialProperties} />
+      <HomePageInner {...props} />
     </Suspense>
   )
 }
