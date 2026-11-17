@@ -110,23 +110,23 @@ const dayLabel = (iso: string) =>
   new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
 const METHOD_META: Record<Txn['method'], { label: string; color: string }> = {
-  card:         { label: 'Card',    color: '#a78bfa' },
-  ach:          { label: 'ACH',     color: '#38bdf8' },
-  manual_zelle: { label: 'Zelle',   color: '#f59e0b' },
-  manual_other: { label: 'Manual',  color: '#71717a' },
+  card:         { label: 'Card',    color: '#146b7d' },
+  ach:          { label: 'ACH',     color: '#0d7f82' },
+  manual_zelle: { label: 'Zelle',   color: '#b25000' },
+  manual_other: { label: 'Manual',  color: '#8e8e93' },
 }
 
 const SOURCE_META: Record<string, { label: string; color: string }> = {
-  rent_card:    { label: 'Rent surcharge — card', color: '#a78bfa' },
-  rent_ach:     { label: 'Rent surcharge — ACH',  color: '#38bdf8' },
-  subscription: { label: 'Subscriptions',          color: '#10b981' },
-  lifetime:     { label: 'Lifetime deals',         color: '#f59e0b' },
-  per_lead:     { label: 'Lead unlocks',           color: '#3b82f6' },
+  rent_card:    { label: 'Rent surcharge — card', color: '#146b7d' },
+  rent_ach:     { label: 'Rent surcharge — ACH',  color: '#0d7f82' },
+  subscription: { label: 'Subscriptions',          color: '#0f7a43' },
+  lifetime:     { label: 'Lifetime deals',         color: '#b25000' },
+  per_lead:     { label: 'Lead unlocks',           color: '#0d7f82' },
 }
 
-const NET = '#34d399'
-const COST = '#fb7185'
-const VOLUME = '#818cf8'
+const NET = '#0f7a43'
+const COST = '#d13b30'
+const VOLUME = '#146b7d'
 
 const empty: Econ = { volumeCents: 0, passThroughCents: 0, feeCents: 0, costCents: 0, netCents: 0 }
 const addE = (a: Econ, b: Econ): Econ => ({
@@ -177,7 +177,7 @@ function Stat({
   return (
     <div className={`fin-stat${wide ? ' fin-stat-wide' : ''}`} title={hint}>
       <div className="fin-stat-label">{label}{hint && <span className="fin-info">?</span>}</div>
-      <div className="fin-stat-value" style={{ color: color ?? '#fafafa' }}>{value}</div>
+      <div className="fin-stat-value" style={{ color: color ?? '#1d1d1f' }}>{value}</div>
       {sub && <div className="fin-stat-sub">{sub}</div>}
     </div>
   )
@@ -244,7 +244,7 @@ function RevenueChart({ rows }: { rows: MonthRow[] }) {
 
       // Gridlines first, so nothing important sits under them.
       g.append('g').call(d3.axisLeft(y).ticks(4).tickSize(-iw).tickFormat(() => ''))
-        .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').attr('stroke', '#3f3f46').attr('stroke-dasharray', '2,3') })
+        .call(gg => { gg.select('.domain').remove(); gg.selectAll('line').attr('stroke', '#e5e5ea').attr('stroke-dasharray', '2,3') })
 
       // Stacked bar: what we kept, and what Stripe took, together = gross fees.
       const col = g.selectAll('.fin-bar').data(rows).join('g').attr('class', 'fin-bar')
@@ -285,9 +285,9 @@ function RevenueChart({ rows }: { rows: MonthRow[] }) {
       // Axis chrome: dim the labels, and on the value axes drop the rule and
       // ticks entirely — the gridlines already carry the scale.
       type Axis = d3.Selection<SVGGElement, unknown, null, undefined>
-      const style = (sel: Axis, { bare = false, tick = '#71717a' } = {}) => {
-        sel.select('.domain').attr('stroke', bare ? 'none' : '#3f3f46')
-        sel.selectAll('line').attr('stroke', bare ? 'none' : '#3f3f46')
+      const style = (sel: Axis, { bare = false, tick = '#8e8e93' } = {}) => {
+        sel.select('.domain').attr('stroke', bare ? 'none' : '#e5e5ea')
+        sel.selectAll('line').attr('stroke', bare ? 'none' : '#e5e5ea')
         sel.selectAll('text').attr('fill', tick)
           .style('font-size', '10px').style('font-family', 'DM Sans, sans-serif')
         return sel
@@ -473,7 +473,7 @@ export default function FinancialsTab() {
           <Stat label="Take rate" value={pct(takeRate, 2)} color={VOLUME}
             sub="Net kept per dollar processed"
             hint="Net revenue ÷ volume processed." />
-          <Stat label="Fee margin" value={pct(marginPct, 0)} color={marginPct >= 0.6 ? NET : '#fbbf24'}
+          <Stat label="Fee margin" value={pct(marginPct, 0)} color={marginPct >= 0.6 ? NET : '#b25000'}
             sub="Of gross fees, after Stripe"
             hint="Card charges keep ~40% of the surcharge; ACH keeps ~85%." />
           <Stat label="Net per payment" value={usd(avgNet)}
@@ -547,7 +547,7 @@ export default function FinancialsTab() {
         <Card title="Where revenue comes from" right={<span className="fin-card-note">All time</span>}>
           {sourceRows.length === 0 && <div className="fin-muted">No revenue recorded yet.</div>}
           {sourceRows.map(s => {
-            const meta = SOURCE_META[s.source] ?? { label: s.source, color: '#71717a' }
+            const meta = SOURCE_META[s.source] ?? { label: s.source, color: '#8e8e93' }
             return (
               <div key={s.source} className="fin-srow">
                 <div className="fin-srow-top">
@@ -582,8 +582,8 @@ export default function FinancialsTab() {
                       <span className="fin-sub"> {m.count}</span></td>
                     <td className="r">{usd0(m.volumeCents)}</td>
                     <td className="r">{usd(m.feeCents)}</td>
-                    <td className="r" style={{ color: m.costCents > 0 ? COST : '#52525b' }}>{m.costCents > 0 ? `−${usd(m.costCents)}` : '—'}</td>
-                    <td className="r" style={{ color: m.netCents > 0 ? NET : '#71717a', fontWeight: 700 }}>{usd(m.netCents)}</td>
+                    <td className="r" style={{ color: m.costCents > 0 ? COST : '#a1a1a6' }}>{m.costCents > 0 ? `−${usd(m.costCents)}` : '—'}</td>
+                    <td className="r" style={{ color: m.netCents > 0 ? NET : '#8e8e93', fontWeight: 700 }}>{usd(m.netCents)}</td>
                     <td className="r">{m.feeCents > 0 ? pct(mg, 0) : '—'}</td>
                   </tr>
                 )
@@ -603,7 +603,7 @@ export default function FinancialsTab() {
       <div className="fin-three">
         <div className="fin-mini">
           <div className="fin-mini-label">Settling now</div>
-          <div className="fin-mini-value" style={{ color: '#fbbf24' }}>{usd0(totals.inFlight.volumeCents)}</div>
+          <div className="fin-mini-value" style={{ color: '#b25000' }}>{usd0(totals.inFlight.volumeCents)}</div>
           <div className="fin-mini-sub">ACH in flight · {usd(totals.inFlight.netCents)} net once it clears. A debit can still bounce.</div>
         </div>
         <div className="fin-mini">
@@ -639,8 +639,8 @@ export default function FinancialsTab() {
                 <td className="r">{l.count}</td>
                 <td className="r">{usd0(l.volumeCents)}</td>
                 <td className="r">{usd(l.feeCents)}</td>
-                <td className="r" style={{ color: l.costCents > 0 ? COST : '#52525b' }}>{l.costCents > 0 ? `−${usd(l.costCents)}` : '—'}</td>
-                <td className="r" style={{ color: l.netCents > 0 ? NET : '#71717a', fontWeight: 700 }}>{usd(l.netCents)}</td>
+                <td className="r" style={{ color: l.costCents > 0 ? COST : '#a1a1a6' }}>{l.costCents > 0 ? `−${usd(l.costCents)}` : '—'}</td>
+                <td className="r" style={{ color: l.netCents > 0 ? NET : '#8e8e93', fontWeight: 700 }}>{usd(l.netCents)}</td>
               </tr>
             ))}
             {data.topLandlords.length === 0 && <tr><td colSpan={6} className="fin-muted">No payments recorded yet.</td></tr>}
@@ -708,8 +708,8 @@ export default function FinancialsTab() {
                 <td className="r">{usd(t.volumeCents)}</td>
                 <td className="r fin-sub">{t.passThroughCents > 0 ? usd(t.passThroughCents) : '—'}</td>
                 <td className="r">{t.feeCents > 0 ? usd(t.feeCents) : <span className="fin-muted">none</span>}</td>
-                <td className="r" style={{ color: t.costCents > 0 ? COST : '#52525b' }}>{t.costCents > 0 ? `−${usd(t.costCents)}` : '—'}</td>
-                <td className="r" style={{ color: t.netCents > 0 ? NET : '#71717a', fontWeight: 700 }}>{usd(t.netCents)}</td>
+                <td className="r" style={{ color: t.costCents > 0 ? COST : '#a1a1a6' }}>{t.costCents > 0 ? `−${usd(t.costCents)}` : '—'}</td>
+                <td className="r" style={{ color: t.netCents > 0 ? NET : '#8e8e93', fontWeight: 700 }}>{usd(t.netCents)}</td>
               </tr>
             ))}
             {ledger.length === 0 && (
@@ -736,121 +736,121 @@ export default function FinancialsTab() {
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 const CSS = `
   .fin-periods { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
-  .fin-period { padding: 6px 14px; border-radius: 20px; border: 1.5px solid #3f3f46; background: #27272a;
-    font-size: 12px; font-weight: 500; color: #a1a1aa; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all .15s; }
-  .fin-period:hover { color: #fafafa; border-color: #52525b; }
-  .fin-period.active { background: rgba(52,211,153,.14); color: #6ee7b7; border-color: rgba(52,211,153,.45); font-weight: 600; }
-  .fin-updated { margin-left: auto; font-size: 11px; color: #52525b; }
+  .fin-period { padding: 6px 14px; border-radius: 20px; border: 1.5px solid #e5e5ea; background: #ffffff;
+    font-size: 12px; font-weight: 500; color: #6e6e73; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all .15s; }
+  .fin-period:hover { color: #1d1d1f; border-color: #a1a1a6; }
+  .fin-period.active { background: rgba(15,122,67,.14); color: #cfe9d9; border-color: rgba(15,122,67,.45); font-weight: 600; }
+  .fin-updated { margin-left: auto; font-size: 11px; color: #a1a1a6; }
 
   .fin-hero { display: grid; grid-template-columns: minmax(280px, 1.1fr) 2fr; gap: 14px; margin-bottom: 16px; }
-  .fin-hero-main { background: linear-gradient(140deg, #1f2b26 0%, #27272a 60%); border: 1px solid #3f3f46;
+  .fin-hero-main { background: linear-gradient(140deg, #e8f5ed 0%, #ffffff 60%); border: 1px solid #e5e5ea;
     border-radius: 14px; padding: 22px 24px; }
-  .fin-hero-label { font-size: 11px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: .7px; }
-  .fin-hero-value { font-size: 44px; font-weight: 800; color: #6ee7b7; letter-spacing: -1.5px; line-height: 1.1; margin: 6px 0 4px; }
-  .fin-hero-sub { font-size: 12px; color: #a1a1aa; margin-bottom: 16px; }
+  .fin-hero-label { font-size: 11px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: .7px; }
+  .fin-hero-value { font-size: 44px; font-weight: 800; color: #cfe9d9; letter-spacing: -1.5px; line-height: 1.1; margin: 6px 0 4px; }
+  .fin-hero-sub { font-size: 12px; color: #6e6e73; margin-bottom: 16px; }
   .fin-hero-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 
-  .fin-stat { background: #27272a; border: 1px solid #3f3f46; border-radius: 12px; padding: 14px 16px; }
-  .fin-stat-label { font-size: 10px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .fin-stat { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 12px; padding: 14px 16px; }
+  .fin-stat-label { font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
   .fin-stat-value { font-size: 22px; font-weight: 800; letter-spacing: -.5px; line-height: 1.15; }
-  .fin-stat-sub { font-size: 11px; color: #71717a; margin-top: 4px; }
+  .fin-stat-sub { font-size: 11px; color: #8e8e93; margin-top: 4px; }
   .fin-info { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; margin-left: 5px;
-    border-radius: 50%; border: 1px solid #52525b; color: #52525b; font-size: 8px; cursor: help; }
+    border-radius: 50%; border: 1px solid #a1a1a6; color: #a1a1a6; font-size: 8px; cursor: help; }
 
   .fin-delta { font-weight: 600; }
-  .fin-up { color: #34d399; } .fin-down { color: #fb7185; } .fin-flat { color: #71717a; }
+  .fin-up { color: #0f7a43; } .fin-down { color: #d13b30; } .fin-flat { color: #8e8e93; }
 
   .fin-split { margin-top: 4px; }
-  .fin-split-track { display: flex; height: 8px; border-radius: 5px; overflow: hidden; background: #3f3f46; }
+  .fin-split-track { display: flex; height: 8px; border-radius: 5px; overflow: hidden; background: #e5e5ea; }
   .fin-split-net { background: ${NET}; } .fin-split-cost { background: ${COST}; }
-  .fin-split-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: #a1a1aa; }
+  .fin-split-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: #6e6e73; }
   .fin-split-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
 
   .fin-alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
   .fin-alert { display: flex; gap: 8px; align-items: flex-start; padding: 10px 14px; border-radius: 10px;
     font-size: 12px; border: 1px solid; }
-  .fin-alert-warn { background: rgba(251,113,133,.1); border-color: rgba(251,113,133,.32); color: #fda4af; }
-  .fin-alert-info { background: rgba(129,140,248,.1); border-color: rgba(129,140,248,.3); color: #a5b4fc; }
+  .fin-alert-warn { background: rgba(209,59,48,.1); border-color: rgba(209,59,48,.32); color: #f3c6c2; }
+  .fin-alert-info { background: rgba(20,107,125,.1); border-color: rgba(20,107,125,.3); color: #146b7d; }
 
-  .fin-card { background: #27272a; border: 1px solid #3f3f46; border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
+  .fin-card { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
   .fin-card-hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 12px 18px; border-bottom: 1px solid #3f3f46; flex-wrap: wrap; }
-  .fin-card-title { font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: .7px; }
-  .fin-card-note { font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: .5px; }
+    padding: 12px 18px; border-bottom: 1px solid #e5e5ea; flex-wrap: wrap; }
+  .fin-card-title { font-size: 11px; font-weight: 700; color: #6e6e73; text-transform: uppercase; letter-spacing: .7px; }
+  .fin-card-note { font-size: 10px; color: #a1a1a6; text-transform: uppercase; letter-spacing: .5px; }
   .fin-card-body { padding: 16px 18px; }
 
   .fin-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
   .fin-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
 
-  .fin-mini { background: #27272a; border: 1px solid #3f3f46; border-radius: 14px; padding: 16px 18px; }
-  .fin-mini-accent { border-color: rgba(52,211,153,.3); background: linear-gradient(150deg, #1f2b26, #27272a 70%); }
-  .fin-mini-label { font-size: 10px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: .6px; }
-  .fin-mini-value { font-size: 26px; font-weight: 800; color: #fafafa; letter-spacing: -.6px; margin: 5px 0 6px; }
-  .fin-mini-sub { font-size: 11.5px; color: #a1a1aa; line-height: 1.5; }
+  .fin-mini { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 14px; padding: 16px 18px; }
+  .fin-mini-accent { border-color: rgba(15,122,67,.3); background: linear-gradient(150deg, #e8f5ed, #ffffff 70%); }
+  .fin-mini-label { font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: .6px; }
+  .fin-mini-value { font-size: 26px; font-weight: 800; color: #1d1d1f; letter-spacing: -.6px; margin: 5px 0 6px; }
+  .fin-mini-sub { font-size: 11.5px; color: #6e6e73; line-height: 1.5; }
 
   .fin-srow { margin-bottom: 14px; }
   .fin-srow:last-child { margin-bottom: 0; }
   .fin-srow-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
-  .fin-srow-name { font-size: 12.5px; color: #d4d4d8; display: flex; align-items: center; gap: 7px; }
+  .fin-srow-name { font-size: 12.5px; color: #3a3a3c; display: flex; align-items: center; gap: 7px; }
   .fin-srow-name i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-  .fin-srow-net { font-size: 13px; font-weight: 700; color: #fafafa; }
-  .fin-srow-meta { font-size: 10.5px; color: #71717a; margin-top: 4px; }
-  .fin-bar-track { height: 6px; background: #3f3f46; border-radius: 3px; overflow: hidden; }
+  .fin-srow-net { font-size: 13px; font-weight: 700; color: #1d1d1f; }
+  .fin-srow-meta { font-size: 10.5px; color: #8e8e93; margin-top: 4px; }
+  .fin-bar-track { height: 6px; background: #e5e5ea; border-radius: 3px; overflow: hidden; }
   .fin-bar-fill { height: 100%; border-radius: 3px; transition: width .4s; }
 
-  .fin-chart-legend { display: flex; gap: 16px; font-size: 11px; color: #a1a1aa; margin-bottom: 4px; flex-wrap: wrap; }
+  .fin-chart-legend { display: flex; gap: 16px; font-size: 11px; color: #6e6e73; margin-bottom: 4px; flex-wrap: wrap; }
   .fin-chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
   .fin-chart-legend .fin-dash { height: 2px; width: 14px; border-radius: 1px; }
-  .fin-chart-foot { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: #d4d4d8;
-    border-top: 1px solid #3f3f46; margin-top: 8px; padding-top: 10px; min-height: 34px; align-items: center; }
+  .fin-chart-foot { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: #3a3a3c;
+    border-top: 1px solid #e5e5ea; margin-top: 8px; padding-top: 10px; min-height: 34px; align-items: center; }
 
   .fin-table { width: 100%; border-collapse: collapse; }
-  .fin-table thead th { background: #1f1f22; padding: 8px 14px; text-align: left; font-size: 10px; font-weight: 700;
-    color: #71717a; text-transform: uppercase; letter-spacing: .6px; border-bottom: 1px solid #3f3f46; white-space: nowrap; }
-  .fin-table td { padding: 10px 14px; font-size: 12.5px; color: #d4d4d8; border-bottom: 1px solid #3f3f46; vertical-align: top; }
+  .fin-table thead th { background: #fafafb; padding: 8px 14px; text-align: left; font-size: 10px; font-weight: 700;
+    color: #8e8e93; text-transform: uppercase; letter-spacing: .6px; border-bottom: 1px solid #e5e5ea; white-space: nowrap; }
+  .fin-table td { padding: 10px 14px; font-size: 12.5px; color: #3a3a3c; border-bottom: 1px solid #e5e5ea; vertical-align: top; }
   .fin-table tbody tr:last-child td { border-bottom: none; }
-  .fin-table tbody tr:hover { background: rgba(250,250,250,.03); }
+  .fin-table tbody tr:hover { background: rgba(20,24,27,.03); }
   .fin-table .r { text-align: right; white-space: nowrap; }
-  .fin-strong { color: #fafafa; font-weight: 600; }
-  .fin-sub { font-size: 11px; color: #71717a; }
-  .fin-muted { color: #52525b; font-size: 11.5px; }
-  .fin-note { padding: 10px 14px; font-size: 11px; color: #71717a; border-top: 1px solid #3f3f46; line-height: 1.6; }
+  .fin-strong { color: #1d1d1f; font-weight: 600; }
+  .fin-sub { font-size: 11px; color: #8e8e93; }
+  .fin-muted { color: #a1a1a6; font-size: 11.5px; }
+  .fin-note { padding: 10px 14px; font-size: 11px; color: #8e8e93; border-top: 1px solid #e5e5ea; line-height: 1.6; }
 
   .fin-recon { display: flex; flex-direction: column; }
   .fin-recon-row { display: grid; grid-template-columns: minmax(170px, auto) 1fr minmax(100px, auto);
-    gap: 14px; align-items: baseline; padding: 9px 0; font-size: 13px; color: #d4d4d8;
-    border-bottom: 1px solid #3f3f46; }
+    gap: 14px; align-items: baseline; padding: 9px 0; font-size: 13px; color: #3a3a3c;
+    border-bottom: 1px solid #e5e5ea; }
   .fin-recon-row:last-child { border-bottom: none; }
-  .fin-recon-note { font-size: 11px; color: #71717a; }
+  .fin-recon-note { font-size: 11px; color: #8e8e93; }
   .fin-recon-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .fin-recon-total { border-top: 2px solid #52525b; margin-top: 2px; padding-top: 12px; font-weight: 700; }
+  .fin-recon-total { border-top: 2px solid #a1a1a6; margin-top: 2px; padding-top: 12px; font-weight: 700; }
   .fin-recon-total .fin-recon-val { font-size: 18px; font-weight: 800; }
   @media (max-width: 720px) {
     .fin-recon-row { grid-template-columns: 1fr auto; }
     .fin-recon-note { grid-column: 1 / -1; order: 3; }
   }
-  .fin-footnote { font-size: 11px; color: #52525b; line-height: 1.6; margin: 4px 0 8px; max-width: 760px; }
+  .fin-footnote { font-size: 11px; color: #a1a1a6; line-height: 1.6; margin: 4px 0 8px; max-width: 760px; }
 
   .fin-pill { display: inline-flex; padding: 1px 8px; border-radius: 20px; font-size: 10.5px; font-weight: 600; border: 1px solid; }
-  .fin-pill-warn { color: #fbbf24; border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.12); margin-top: 4px; }
-  .fin-link { font-size: 10.5px; color: #818cf8; text-decoration: none; margin-left: 8px; white-space: nowrap; }
+  .fin-pill-warn { color: #b25000; border-color: rgba(178,80,0,.4); background: rgba(178,80,0,.12); margin-top: 4px; }
+  .fin-link { font-size: 10.5px; color: #146b7d; text-decoration: none; margin-left: 8px; white-space: nowrap; }
   .fin-link:hover { text-decoration: underline; }
 
   .fin-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .fin-search { padding: 6px 11px; border: 1.5px solid #3f3f46; border-radius: 8px; font-size: 12px; width: 220px;
-    background: #1f1f22; color: #fafafa; outline: none; font-family: 'DM Sans', sans-serif; }
-  .fin-search:focus { border-color: #34d399; }
-  .fin-select { padding: 6px 8px; border: 1.5px solid #3f3f46; border-radius: 8px; font-size: 12px;
-    background: #1f1f22; color: #d4d4d8; outline: none; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-  .fin-btn { padding: 6px 12px; border: 1.5px solid #3f3f46; border-radius: 8px; font-size: 12px; font-weight: 600;
-    background: #1f1f22; color: #d4d4d8; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-  .fin-btn:hover:not(:disabled) { border-color: #34d399; color: #6ee7b7; }
+  .fin-search { padding: 6px 11px; border: 1.5px solid #e5e5ea; border-radius: 8px; font-size: 12px; width: 220px;
+    background: #fafafb; color: #1d1d1f; outline: none; font-family: 'DM Sans', sans-serif; }
+  .fin-search:focus { border-color: #0f7a43; }
+  .fin-select { padding: 6px 8px; border: 1.5px solid #e5e5ea; border-radius: 8px; font-size: 12px;
+    background: #fafafb; color: #3a3a3c; outline: none; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+  .fin-btn { padding: 6px 12px; border: 1.5px solid #e5e5ea; border-radius: 8px; font-size: 12px; font-weight: 600;
+    background: #fafafb; color: #3a3a3c; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .fin-btn:hover:not(:disabled) { border-color: #0f7a43; color: #cfe9d9; }
   .fin-btn:disabled { opacity: .4; cursor: not-allowed; }
-  .fin-more { width: 100%; padding: 11px; background: #1f1f22; border: none; border-top: 1px solid #3f3f46;
-    color: #a1a1aa; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-  .fin-more:hover { color: #fafafa; }
+  .fin-more { width: 100%; padding: 11px; background: #fafafb; border: none; border-top: 1px solid #e5e5ea;
+    color: #6e6e73; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .fin-more:hover { color: #1d1d1f; }
 
-  .fin-empty { padding: 48px 20px; text-align: center; color: #71717a; font-size: 13px; }
+  .fin-empty { padding: 48px 20px; text-align: center; color: #8e8e93; font-size: 13px; }
 
   @media (max-width: 1000px) {
     .fin-hero { grid-template-columns: 1fr; }

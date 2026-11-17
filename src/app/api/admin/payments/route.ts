@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import {
+  planPriceCents, planMonthlyCents, PLAN_ORDER, RETIRED_PLAN_TYPES,
+} from '@/lib/landlordPlans'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -67,12 +70,12 @@ export async function GET() {
     months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
 
-  const PLAN_PRICE: Record<string, number> = {
-    single_listing: 29.99,
-    two_listing:    49.99,
-    lifetime:       299,
-    per_lead:       1.99,
-  }
+  // Prices come from `landlordPlans.ts` — the live tiers and the retired plans
+  // in one map. This route used to carry its own copy, and it was never given
+  // the self-serve tiers: every Starter/Growth/Unlimited subscriber priced at
+  // zero, so MRR, ARR and the revenue chart all read $0 while landlords were
+  // in fact being charged.
+  const planDollars = (planType: string) => planPriceCents(planType) / 100
 
   // Revenue per month: subscriptions started + per-lead unlocks + lifetime purchases
   const revenueByMonth: Record<string, number> = {}
@@ -85,7 +88,7 @@ export async function GET() {
     if (!(m in revenueByMonth)) continue
     const isPaid = p.stripe_subscription_id && p.stripe_subscription_id !== 'admin_override'
     if (isPaid) {
-      revenueByMonth[m] = +(revenueByMonth[m] + (PLAN_PRICE[p.plan_type] ?? 0)).toFixed(2)
+      revenueByMonth[m] = +(revenueByMonth[m] + planDollars(p.plan_type)).toFixed(2)
       newSubsByMonth[m] = (newSubsByMonth[m] ?? 0) + 1
     }
   }
@@ -94,7 +97,7 @@ export async function GET() {
     if (!u.created_at || u.unlock_type !== 'per_lead') continue
     const m = u.created_at.slice(0, 7)
     if (!(m in revenueByMonth)) continue
-    revenueByMonth[m] = +(revenueByMonth[m] + 1.99).toFixed(2)
+    revenueByMonth[m] = +(revenueByMonth[m] + planDollars('per_lead')).toFixed(2)
   }
 
   const monthlyRevenue = months.map(m => ({
@@ -119,13 +122,21 @@ export async function GET() {
   )
   const perLeadPaid = unlocks.filter(u => u.unlock_type === 'per_lead')
 
-  const mrr = activePaid.reduce((sum, p) => sum + (PLAN_PRICE[p.plan_type] ?? 0), 0)
+  // A lifetime row bills nothing monthly — `planMonthlyCents` answers 0 for it
+  // and for per-lead, so neither can inflate MRR.
+  const mrr = activePaid.reduce((sum, p) => sum + planMonthlyCents(p.plan_type) / 100, 0)
 
-  const lifetimeRevenue = lifetimePaid.length * 299
-  const perLeadRevenue  = perLeadPaid.length * 1.99
+  const lifetimeRevenue = lifetimePaid.length * planDollars('lifetime')
+  const perLeadRevenue  = perLeadPaid.length * planDollars('per_lead')
   const estimatedTotalRevenue = +(mrr + lifetimeRevenue + perLeadRevenue).toFixed(2)
 
-  const planTypeBreakdown = (['single_listing', 'two_listing', 'lifetime', 'per_lead'] as const).map(pt => ({
+  // Every plan type, live tiers first, then the retired ones — but only those
+  // that actually have rows, so the chart is not padded with dead categories.
+  const breakdownTypes = [
+    ...PLAN_ORDER,
+    ...RETIRED_PLAN_TYPES.filter(pt => plans.some(p => p.plan_type === pt)),
+  ]
+  const planTypeBreakdown = breakdownTypes.map(pt => ({
     plan_type: pt,
     active: plans.filter(p => p.plan_type === pt && p.status === 'active').length,
     total:  plans.filter(p => p.plan_type === pt).length,

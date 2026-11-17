@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { getAllPropertiesForAdmin } from '@/lib/properties'
 import type { Property, AdminStatus } from '@/lib/properties'
 import type { Lead } from '@/lib/leads'
+import { planShortName, isPlanTier } from '@/lib/landlordPlans'
 
 type Profile = {
   id: string
@@ -48,16 +49,15 @@ function scoreMeta(s: number) {
   return { label: 'Cold', color: '#9b9b9b', bg: '#f9fafb', border: '#e5e7eb' }
 }
 
-const PLAN_LABELS: Record<string, string> = {
-  per_lead: 'Pay/Lead',
-  single_listing: '1 Listing',
-  two_listing: 'Unlimited',
-  lifetime: 'Lifetime',
-}
-
+// Plan names come from `landlordPlans.ts`, so a landlord on Starter is not
+// labelled with one of the three retired products this map used to list.
 function planMeta(plan: Plan | null) {
   if (!plan || plan.status !== 'active') return { label: 'Free', color: '#9b9b9b', bg: '#f9fafb', border: '#e5e7eb' }
-  return { label: PLAN_LABELS[plan.plan_type] ?? plan.plan_type, color: '#8C1D40', bg: '#fdf2f5', border: '#f4c9d5' }
+  // A live tier wears the portal green; a retired plan stays grey, so scanning
+  // the list separates paying customers from grandfathered ones at a glance.
+  return isPlanTier(plan.plan_type)
+    ? { label: planShortName(plan.plan_type), color: '#0b6336', bg: '#e8f5ed', border: '#cfe9d9' }
+    : { label: planShortName(plan.plan_type), color: '#6e6e73', bg: '#f0f0f2', border: '#e5e5ea' }
 }
 
 const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string; bg: string; border: string }> = {
@@ -380,7 +380,7 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
                                 {u.company_name && <span>🏢 {u.company_name}</span>}
                                 {u.verified && <span style={{ color: '#166534', fontWeight: 600 }}>✓ Verified</span>}
                                 {u.plan && u.plan.status === 'active' && (
-                                  <span style={{ color: '#8C1D40', fontWeight: 600 }}>💳 {PLAN_LABELS[u.plan.plan_type] ?? u.plan.plan_type} plan</span>
+                                  <span style={{ color: '#0b6336', fontWeight: 600 }}>💳 {planShortName(u.plan.plan_type)} plan</span>
                                 )}
                                 <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#c5c1b8' }}>{u.id}</span>
                               </div>

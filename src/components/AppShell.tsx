@@ -111,21 +111,32 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
         { href: '/admin', label: 'Overview', icon: 'grid', exact: true, primary: true },
       ],
     },
+    // Grouped on the same principle as the landlord nav above: the groups
+    // follow the work, not the database. Who is on the platform → what they
+    // list → what it earns → how we grow it. "Operations" previously held
+    // properties, leads, payments and role requests in one undifferentiated
+    // run, so the money hub — the page an admin opens daily — was the third
+    // item in a four-item miscellany.
     {
       label: 'People',
       items: [
-        { href: '/admin/users/tenants',   label: 'Tenants',    icon: 'user',   primary: true },
-        { href: '/admin/users/landlords', label: 'Landlords',  icon: 'home',   primary: true },
-        { href: '/admin/users/admins',    label: 'Admin Team', icon: 'shield' },
+        { href: '/admin/users/tenants',   label: 'Tenants',          icon: 'user',   primary: true },
+        { href: '/admin/users/landlords', label: 'Landlords',        icon: 'home',   primary: true },
+        { href: '/admin/users/admins',    label: 'Admin Team',       icon: 'shield' },
+        { href: '/admin/upgrade-requests', label: 'Upgrade Requests', icon: 'arrowUpCircle', short: 'Upgrades' },
       ],
     },
     {
-      label: 'Operations',
+      label: 'Portfolio',
       items: [
-        { href: '/admin/properties',       label: 'Properties',       icon: 'building',      primary: true, short: 'Props' },
-        { href: '/admin/leads',            label: 'Leads',            icon: 'target' },
-        { href: '/admin/payments',         label: 'Payments',         icon: 'creditCard',    primary: true, short: 'Money' },
-        { href: '/admin/upgrade-requests', label: 'Upgrade Requests', icon: 'arrowUpCircle', short: 'Upgrades' },
+        { href: '/admin/properties', label: 'Properties', icon: 'building', primary: true, short: 'Props' },
+        { href: '/admin/leads',      label: 'Leads',      icon: 'target' },
+      ],
+    },
+    {
+      label: 'Money',
+      items: [
+        { href: '/admin/payments', label: 'Payments & Revenue', icon: 'creditCard', primary: true, short: 'Money' },
       ],
     },
     {
@@ -213,35 +224,56 @@ const THEMES = {
     '--brand-ink':        '#0b6336',
     '--brand-soft':       '#e8f4ed',
   },
+  /**
+   * The admin portal: the landlord shell, in teal.
+   *
+   * It was a dark zinc rail with a violet accent, and it made the back office
+   * look like a different product from the thing it administers — an admin who
+   * moves between the two all day was re-learning the chrome on every switch.
+   * The structure here is deliberately identical to `landlord` above (light
+   * rail, near-black active pill, one saturated accent reserved for actions),
+   * because it *is* the same application.
+   *
+   * Only the accent differs: teal rather than green. Enough to answer "which
+   * portal am I in" at a glance — together with the ADMIN badge beside the
+   * logo — without turning admin into its own visual language. Teal is also
+   * what the money area already uses for structure, and the admin portal is
+   * mostly money.
+   */
   admin: {
-    '--sb-bg':            '#18181b',
-    '--sb-border':        '#27272a',
-    '--tb-bg':            '#18181b',
-    '--tb-border':        '#27272a',
-    '--logo-color':       '#fafafa',
-    '--logo-em':          '#a78bfa',
-    '--nav-color':        'rgba(250,250,250,0.45)',
-    '--nav-hover-bg':     'rgba(250,250,250,0.06)',
-    '--nav-hover-color':  '#fafafa',
-    '--nav-active-bg':    'rgba(167,139,250,0.18)',
-    '--nav-active-color': '#c4b5fd',
-    '--avatar-bg':        'rgba(167,139,250,0.22)',
-    '--avatar-color':     '#a78bfa',
-    '--user-text':        '#fafafa',
-    '--user-sub':         'rgba(250,250,250,0.38)',
-    '--divider':          '#27272a',
-    '--so-color':         'rgba(250,250,250,0.38)',
-    '--so-hover-bg':      'rgba(250,250,250,0.06)',
-    '--so-hover-color':   '#fafafa',
-    '--ham-color':        'rgba(250,250,250,0.6)',
-    '--main-bg':          '#f4f4f5',
-    '--psw-hover-bg':     'rgba(250,250,250,0.06)',
-    '--dd-bg':            '#27272a',
-    '--dd-shadow':        '0 4px 20px rgba(0,0,0,0.40)',
+    '--sb-bg':            '#ffffff',
+    '--sb-border':        '#e7ebec',
+    '--tb-bg':            '#ffffff',
+    '--tb-border':        '#e7ebec',
+    '--logo-color':       '#14181b',
+    '--logo-em':          '#146b7d',
+    '--nav-color':        '#5c6360',
+    '--nav-hover-bg':     '#f2f5f6',
+    '--nav-hover-color':  '#14181b',
+    // Same dark pill as the landlord portal: position is marked by weight, not
+    // by colour, so the accent is free to mean "pressable".
+    '--nav-active-bg':    '#15191c',
+    '--nav-active-color': '#ffffff',
+    '--avatar-bg':        '#def0f3',
+    '--avatar-color':     '#146b7d',
+    '--user-text':        '#14181b',
+    '--user-sub':         '#8a918e',
+    '--divider':          '#eceeef',
+    '--so-color':         '#8a918e',
+    '--so-hover-bg':      '#fdeceb',
+    '--so-hover-color':   '#d13b30',
+    '--ham-color':        '#5c6360',
+    '--main-bg':          '#f5f8f8',
+    '--psw-hover-bg':     '#f2f5f6',
+    '--dd-bg':            '#ffffff',
+    '--dd-shadow':        '0 8px 30px rgba(20,24,27,0.12)',
+    '--brand':            '#146b7d',
+    '--brand-ink':        '#0f5663',
+    '--brand-soft':       '#e4f1f4',
   },
 }
 
-const PSW_DOT   = { tenant: '#FFC627', landlord: '#10b981', admin: '#a78bfa' }
+const PSW_DOT   = { tenant: '#FFC627', landlord: '#10b981', admin: '#146b7d' }
 const PSW_LABEL = { tenant: 'Tenant',  landlord: 'Landlord', admin: 'Admin' }
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
@@ -437,12 +469,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const badgeFor = (href: string): { count: number; color: string; prefix?: string } | null => {
     if (href === '/admin/upgrade-requests' && pendingUpgradeCount > 0)
       return { count: pendingUpgradeCount, color: '#f59e0b' }
+    // One badge colour per audience, all from the portal's own palette — these
+    // were a violet and a navy left over from the dark admin shell, which on a
+    // white rail read as three unrelated products' badges in one list.
     if (href === '/admin/users/tenants' && newUserCounts['tenant'] > 0)
-      return { count: newUserCounts['tenant'], color: '#0f766e', prefix: '+' }
+      return { count: newUserCounts['tenant'], color: '#146b7d', prefix: '+' }
     if (href === '/admin/users/landlords' && newUserCounts['landlord'] > 0)
-      return { count: newUserCounts['landlord'], color: '#6b21a8', prefix: '+' }
+      return { count: newUserCounts['landlord'], color: '#0f7a43', prefix: '+' }
     if (href === '/admin/users/admins' && newUserCounts['admin'] > 0)
-      return { count: newUserCounts['admin'], color: '#1e3a8a', prefix: '+' }
+      return { count: newUserCounts['admin'], color: '#15191c', prefix: '+' }
     if (href === '/landlord/financials' && overduePaymentsCount > 0)
       return { count: overduePaymentsCount, color: '#ef4444' }
     return null

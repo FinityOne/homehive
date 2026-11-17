@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getCurrentUser } from '@/lib/supabase'
+import {
+  PLAN_ORDER, PLANS, planDisplayName, planPriceLabel, planShortName,
+  planPriceCents, planMonthlyCents, propertyLimitFor,
+  formatUsd, formatMonthly, formatPropertyLimit,
+} from '@/lib/landlordPlans'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Profile = {
@@ -63,14 +68,16 @@ function fmtDate(d: string | null): string {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-const PLAN_LABELS: Record<string, string> = {
-  per_lead: 'Pay per Lead', single_listing: '1 Listing · $29.99/mo',
-  two_listing: 'Unlimited · $49.99/mo', lifetime: 'Lifetime Deal · $299',
+// Plan names and prices come from `landlordPlans.ts`. Both maps here used to be
+// written out by hand and still described the pre-tier price list ($29.99 /
+// $49.99 / $299 lifetime), so a landlord paying $49.99 for Growth was labelled
+// with a product we stopped selling.
+const planLabel = (planType: string | null | undefined) => {
+  const name = planDisplayName(planType)
+  const price = planPriceLabel(planType)
+  return price === '—' ? name : `${name} · ${price}`
 }
-const PLAN_SHORT: Record<string, string> = {
-  per_lead: 'Pay/Lead', single_listing: '1 Listing',
-  two_listing: 'Unlimited', lifetime: 'Lifetime',
-}
+const planShort = (planType: string | null | undefined) => planShortName(planType)
 
 // ─── Engagement score ───────────────────────────────────────────────────────────
 function computeScore(data: UserData): { score: number; breakdown: { recency: number; listings: number; leads: number } } {
@@ -108,10 +115,12 @@ function StatCard({ val, label, sub, color }: { val: string | number; label: str
   )
 }
 
-const UNLOCK_PRICES: Record<string, number> = { per_lead: 1.99 }
+// The per-lead unlock is a retired product, but accounts that bought one still
+// show it, so its price is read from the same list as everything else.
+const PER_LEAD_CENTS = planPriceCents('per_lead')
 
 function unlockLabel(type: string) {
-  if (type === 'per_lead') return { text: 'Per-lead unlock', amount: '$1.99', color: '#8C1D40' }
+  if (type === 'per_lead') return { text: 'Per-lead unlock', amount: formatUsd(PER_LEAD_CENTS), color: '#8C1D40' }
   if (type === 'subscription') return { text: 'Plan unlock', amount: '—', color: '#6b21a8' }
   return { text: 'Free unlock', amount: '$0', color: '#166534' }
 }
@@ -203,7 +212,7 @@ export default function AdminUserDetailPage() {
           const newAuditLog = d.auditEntry ? [d.auditEntry, ...prev.auditLog] : prev.auditLog
           return { ...prev, plan: overridePlan === 'free' ? null : d.plan, auditLog: newAuditLog }
         })
-        setOverrideMsg({ text: overridePlan === 'free' ? 'Plan revoked — user is now on free tier' : `Upgraded to ${PLAN_LABELS[overridePlan] ?? overridePlan} — no charge applied`, ok: true })
+        setOverrideMsg({ text: overridePlan === 'free' ? 'Plan revoked — user is now on free tier' : `Upgraded to ${planLabel(overridePlan)} — no charge applied`, ok: true })
         setOverridePlan('')
         setOverrideNote('')
       }
@@ -230,7 +239,13 @@ export default function AdminUserDetailPage() {
   const sm = scoreMeta(score)
   const activeProperties = properties.filter(p => p.admin_status === 'active')
   const perLeadUnlocks = unlocks.filter(u => u.unlock_type === 'per_lead')
-  const totalSpend = perLeadUnlocks.length * 1.99
+  // What this landlord actually pays us. Two separate numbers, because mixing
+  // a subscription with one-time purchases into one "spend" figure says
+  // nothing: the recurring one is the business, the other is history.
+  const perLeadCents = perLeadUnlocks.length * PER_LEAD_CENTS
+  const isComped = plan?.stripe_subscription_id === 'admin_override'
+  const monthlyCents =
+    plan?.status === 'active' && !isComped ? planMonthlyCents(plan.plan_type) : 0
   const leadsByProperty = leads.reduce<Record<string, number>>((acc, l) => {
     acc[l.property] = (acc[l.property] ?? 0) + 1
     return acc
@@ -293,7 +308,7 @@ export default function AdminUserDetailPage() {
                 {profile.verified && <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}>✓ Verified</span>}
                 {plan && plan.status === 'active' && (
                   <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 9px', borderRadius: '20px', background: '#fdf2f5', color: '#8C1D40', border: '1px solid #f4c9d5' }}>
-                    💳 {PLAN_SHORT[plan.plan_type] ?? plan.plan_type}
+                    💳 {planShort(plan.plan_type)}
                   </span>
                 )}
                 <span style={{ fontSize: '11px', color: '#9b9b9b' }}>Joined {fmtDate(profile.created_at)}</span>
@@ -325,12 +340,23 @@ export default function AdminUserDetailPage() {
           <StatCard val={leads.length} label="Total leads" color={leads.length > 0 ? '#8C1D40' : undefined} />
           <StatCard val={unlocks.length} label="Leads unlocked" />
           <StatCard
-            val={plan?.status === 'active' ? (PLAN_SHORT[plan.plan_type] ?? plan.plan_type) : 'Free'}
+            val={plan?.status === 'active' ? (planShort(plan.plan_type)) : 'Free'}
             label="Current plan"
             sub={plan?.status === 'active' ? `Renews ${fmtDate(plan.current_period_end)}` : 'No active subscription'}
             color={plan?.status === 'active' ? '#8C1D40' : undefined}
           />
-          <StatCard val={`$${totalSpend.toFixed(2)}`} label="Est. spend" sub={`${perLeadUnlocks.length} per-lead unlock${perLeadUnlocks.length !== 1 ? 's' : ''}`} />
+          <StatCard
+            val={monthlyCents > 0 ? formatUsd(monthlyCents) : '$0'}
+            label="Pays per month"
+            sub={
+              monthlyCents > 0
+                ? `${planDisplayName(plan?.plan_type)} subscription`
+                : isComped ? 'Comped by an admin'
+                : perLeadCents > 0 ? `${formatUsd(perLeadCents)} in retired purchases`
+                : 'Not subscribed'
+            }
+            color={monthlyCents > 0 ? '#0f7a43' : undefined}
+          />
         </div>
 
         {/* Info + Plan row */}
@@ -413,7 +439,7 @@ export default function AdminUserDetailPage() {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
                     <span style={{ fontSize: '14px', fontWeight: 700, color: plan.stripe_subscription_id === 'admin_override' ? '#166534' : '#8C1D40' }}>
-                      {PLAN_LABELS[plan.plan_type] ?? plan.plan_type}
+                      {planLabel(plan.plan_type)}
                     </span>
                     {plan.stripe_subscription_id === 'admin_override' && (
                       <span style={{ fontSize: '10px', fontWeight: 700, background: '#166534', color: '#fff', padding: '1px 7px', borderRadius: '20px', letterSpacing: '0.3px' }}>
@@ -428,11 +454,12 @@ export default function AdminUserDetailPage() {
                   </div>
                 </div>
                 {[
-                  { label: 'Plan type', val: plan.plan_type },
+                  { label: 'Plan', val: planLabel(plan.plan_type) },
+                  { label: 'Properties allowed', val: formatPropertyLimit(propertyLimitFor(plan.plan_type)) },
                   { label: 'Stripe sub ID', val: plan.stripe_subscription_id === 'admin_override' ? '— (admin grant)' : plan.stripe_subscription_id ? plan.stripe_subscription_id.slice(0, 22) + '…' : '—' },
                   { label: 'Customer ID', val: plan.stripe_customer_id ? plan.stripe_customer_id.slice(0, 22) + '…' : '—' },
                   { label: 'Plan since', val: fmtDate(plan.created_at) },
-                  { label: 'Per-lead purchases', val: perLeadUnlocks.length > 0 ? `${perLeadUnlocks.length} × $1.99 = $${totalSpend.toFixed(2)}` : '—' },
+                  { label: 'Per-lead purchases (retired)', val: perLeadUnlocks.length > 0 ? `${perLeadUnlocks.length} × ${formatUsd(PER_LEAD_CENTS)} = ${formatUsd(perLeadCents)}` : '—' },
                 ].map(({ label, val }) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f7f6f3', fontSize: '13px' }}>
                     <span style={{ color: '#9b9b9b' }}>{label}</span>
@@ -448,7 +475,7 @@ export default function AdminUserDetailPage() {
                     <div style={{ fontSize: '14px', fontWeight: 600, color: '#4a4a4a' }}>Free Tier</div>
                     <div style={{ fontSize: '12px', color: '#9b9b9b' }}>
                       {perLeadUnlocks.length > 0
-                        ? `${perLeadUnlocks.length} per-lead purchase${perLeadUnlocks.length !== 1 ? 's' : ''} · $${totalSpend.toFixed(2)} total`
+                        ? `${perLeadUnlocks.length} per-lead purchase${perLeadUnlocks.length !== 1 ? 's' : ''} · ${formatUsd(perLeadCents)} total`
                         : 'No purchases yet'}
                     </div>
                   </div>
@@ -484,10 +511,24 @@ export default function AdminUserDetailPage() {
                   }}
                 >
                   <option value="">Select a plan…</option>
+                  {/* The tiers we actually sell. This list used to offer only
+                      the three retired products, so there was no way to comp a
+                      landlord onto the plan they would otherwise be buying. */}
                   <optgroup label="Grant plan (no charge)">
-                    <option value="single_listing">1 Listing — $29.99/mo value</option>
-                    <option value="two_listing">Unlimited Listings — $49.99/mo value</option>
-                    <option value="lifetime">Lifetime Deal — $299 value</option>
+                    {PLAN_ORDER.map(tier => (
+                      <option key={tier} value={tier}>
+                        {PLANS[tier].name} — {formatMonthly(PLANS[tier].priceCents)} value
+                        {' · '}{formatPropertyLimit(PLANS[tier].propertyLimit)}
+                        {PLANS[tier].propertyLimit === 1 ? ' property' : ' properties'}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {/* Kept so a landlord already on a retired plan can have it
+                      reinstated after a mistaken revoke — not to sell it. */}
+                  <optgroup label="Reinstate retired plan">
+                    <option value="single_listing">Legacy — 1 listing</option>
+                    <option value="two_listing">Legacy — 2 listings</option>
+                    <option value="lifetime">Lifetime (founding member)</option>
                   </optgroup>
                   <optgroup label="Revoke">
                     <option value="free">Free tier (revoke subscription)</option>
@@ -580,8 +621,8 @@ export default function AdminUserDetailPage() {
               <tbody>
                 {auditLog.map(entry => {
                   const isGrant = entry.action === 'grant'
-                  const fromLabel = entry.from_plan_type ? (PLAN_SHORT[entry.from_plan_type] ?? entry.from_plan_type) : 'Free'
-                  const toLabel = entry.to_plan_type ? (PLAN_SHORT[entry.to_plan_type] ?? entry.to_plan_type) : 'Free'
+                  const fromLabel = entry.from_plan_type ? planShort(entry.from_plan_type) : 'Free'
+                  const toLabel = entry.to_plan_type ? planShort(entry.to_plan_type) : 'Free'
                   return (
                     <tr key={entry.id}>
                       <td style={{ color: '#6b6b6b', whiteSpace: 'nowrap', fontSize: '12px' }}>

@@ -45,11 +45,11 @@ const dayLabel = (iso: string | null) =>
   iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
 // Status tokens, reserved for state and never reused as a series colour.
-const GOOD = '#34d399'
-const WARN = '#fbbf24'
-const BAD  = '#fb7185'
-const INK  = '#d4d4d8'
-const MUTED = '#71717a'
+const GOOD = '#0f7a43'
+const WARN = '#b25000'
+const BAD  = '#d13b30'
+const INK  = '#3a3a3c'
+const MUTED = '#8e8e93'
 
 /** On-time rate reads as a state, not a measurement: colour it like one. */
 const punctualityColor = (rate: number | null) =>
@@ -169,7 +169,7 @@ function MoneyCells({ b }: { b: Books }) {
           </>
         ) : <span className="lb-muted">none</span>}
       </td>
-      <td className="r" style={{ color: e.costCents > 0 ? BAD : '#52525b' }}>
+      <td className="r" style={{ color: e.costCents > 0 ? BAD : '#a1a1a6' }}>
         {e.costCents > 0 ? `−${usd(e.costCents)}` : '—'}
       </td>
       <td className="r">
@@ -455,72 +455,72 @@ export default function LandlordBooksTab() {
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 const CSS = `
-  .lb-empty { padding: 48px; text-align: center; color: #71717a; font-size: 13px; }
+  .lb-empty { padding: 48px; text-align: center; color: #8e8e93; font-size: 13px; }
 
   .lb-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .lb-kpi { background: #27272a; border: 1px solid #3f3f46; border-radius: 12px; padding: 14px 16px; }
-  .lb-kpi-label { font-size: 10px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .lb-kpi { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 12px; padding: 14px 16px; }
+  .lb-kpi-label { font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
   .lb-kpi-value { font-size: 24px; font-weight: 800; letter-spacing: -.6px; line-height: 1.15; }
-  .lb-kpi-sub { font-size: 11px; color: #71717a; margin-top: 5px; line-height: 1.45; }
+  .lb-kpi-sub { font-size: 11px; color: #8e8e93; margin-top: 5px; line-height: 1.45; }
 
   .lb-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-  .lb-search { flex: 1 1 240px; min-width: 200px; padding: 7px 12px; border-radius: 8px; border: 1px solid #3f3f46;
-    background: #1f1f22; color: #fafafa; font-size: 12px; font-family: 'DM Sans', sans-serif; }
-  .lb-search::placeholder { color: #52525b; }
-  .lb-select { padding: 7px 10px; border-radius: 8px; border: 1px solid #3f3f46; background: #1f1f22;
-    color: #d4d4d8; font-size: 12px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-  .lb-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #a1a1aa; cursor: pointer; }
-  .lb-check input { accent-color: #a78bfa; cursor: pointer; }
-  .lb-count { font-size: 11px; color: #52525b; margin-left: auto; }
-  .lb-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid #3f3f46; background: #27272a;
-    color: #d4d4d8; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-  .lb-btn:hover:not(:disabled) { border-color: #52525b; color: #fafafa; }
+  .lb-search { flex: 1 1 240px; min-width: 200px; padding: 7px 12px; border-radius: 8px; border: 1px solid #e5e5ea;
+    background: #fafafb; color: #1d1d1f; font-size: 12px; font-family: 'DM Sans', sans-serif; }
+  .lb-search::placeholder { color: #a1a1a6; }
+  .lb-select { padding: 7px 10px; border-radius: 8px; border: 1px solid #e5e5ea; background: #fafafb;
+    color: #3a3a3c; font-size: 12px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+  .lb-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #6e6e73; cursor: pointer; }
+  .lb-check input { accent-color: #146b7d; cursor: pointer; }
+  .lb-count { font-size: 11px; color: #a1a1a6; margin-left: auto; }
+  .lb-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid #e5e5ea; background: #ffffff;
+    color: #3a3a3c; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .lb-btn:hover:not(:disabled) { border-color: #a1a1a6; color: #1d1d1f; }
   .lb-btn:disabled { opacity: .45; cursor: not-allowed; }
 
-  .lb-table-wrap { background: #27272a; border: 1px solid #3f3f46; border-radius: 12px; overflow-x: auto; }
+  .lb-table-wrap { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 12px; overflow-x: auto; }
   .lb-table { width: 100%; border-collapse: collapse; min-width: 1080px; }
-  .lb-table thead th { background: #1f1f22; padding: 9px 14px; text-align: left; font-size: 10px; font-weight: 700;
-    color: #71717a; text-transform: uppercase; letter-spacing: .6px; white-space: nowrap; position: sticky; top: 0; }
+  .lb-table thead th { background: #fafafb; padding: 9px 14px; text-align: left; font-size: 10px; font-weight: 700;
+    color: #8e8e93; text-transform: uppercase; letter-spacing: .6px; white-space: nowrap; position: sticky; top: 0; }
   .lb-table th.r, .lb-table td.r { text-align: right; }
-  .lb-table td { padding: 11px 14px; vertical-align: top; font-size: 13px; color: #d4d4d8;
-    border-top: 1px solid #3f3f46; }
+  .lb-table td { padding: 11px 14px; vertical-align: top; font-size: 13px; color: #3a3a3c;
+    border-top: 1px solid #e5e5ea; }
 
   .lb-row-landlord { cursor: pointer; transition: background .1s; }
-  .lb-row-landlord:hover { background: rgba(250,250,250,.035); }
-  .lb-row-landlord.open { background: rgba(167,139,250,.07); }
-  .lb-row-landlord:focus-visible { outline: 2px solid #a78bfa; outline-offset: -2px; }
-  .lb-row-landlord > td { border-top: 1px solid #52525b; }
-  .lb-row-property > td { background: rgba(0,0,0,.14); font-size: 12px; }
-  .lb-row-lease > td { background: rgba(0,0,0,.26); font-size: 12px; color: #a1a1aa; }
+  .lb-row-landlord:hover { background: rgba(20,24,27,.035); }
+  .lb-row-landlord.open { background: rgba(20,107,125,.07); }
+  .lb-row-landlord:focus-visible { outline: 2px solid #146b7d; outline-offset: -2px; }
+  .lb-row-landlord > td { border-top: 1px solid #a1a1a6; }
+  .lb-row-property > td { background: rgba(20,24,27,0.07); font-size: 12px; }
+  .lb-row-lease > td { background: rgba(20,24,27,0.10); font-size: 12px; color: #6e6e73; }
 
   .lb-landlord { display: flex; gap: 9px; align-items: flex-start; }
-  .lb-caret { color: #71717a; font-size: 11px; line-height: 1.6; width: 10px; flex: none; }
+  .lb-caret { color: #8e8e93; font-size: 11px; line-height: 1.6; width: 10px; flex: none; }
   .lb-indent-1 { padding-left: 38px !important; }
   .lb-indent-2 { padding-left: 60px !important; }
-  .lb-lease-name { color: #d4d4d8; font-weight: 600; }
+  .lb-lease-name { color: #3a3a3c; font-weight: 600; }
 
-  .lb-strong { font-weight: 600; color: #fafafa; }
-  .lb-sub { font-size: 11px; color: #71717a; margin-top: 2px; line-height: 1.45; }
-  .lb-muted { color: #52525b; }
-  .lb-pill { display: inline-block; padding: 1px 7px; border-radius: 10px; border: 1px solid #52525b;
-    font-size: 10px; font-weight: 600; color: #a1a1aa; }
+  .lb-strong { font-weight: 600; color: #1d1d1f; }
+  .lb-sub { font-size: 11px; color: #8e8e93; margin-top: 2px; line-height: 1.45; }
+  .lb-muted { color: #a1a1a6; }
+  .lb-pill { display: inline-block; padding: 1px 7px; border-radius: 10px; border: 1px solid #a1a1a6;
+    font-size: 10px; font-weight: 600; color: #6e6e73; }
   .lb-flag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 9px;
-    border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.12); color: #fbbf24;
+    border: 1px solid rgba(178,80,0,.45); background: rgba(178,80,0,.12); color: #b25000;
     font-size: 10px; font-weight: 600; cursor: help; }
 
   .lb-meter-wrap { display: flex; align-items: center; gap: 7px; min-width: 96px; }
-  .lb-meter-track { flex: 1; height: 5px; border-radius: 3px; background: #3f3f46; overflow: hidden; }
+  .lb-meter-track { flex: 1; height: 5px; border-radius: 3px; background: #e5e5ea; overflow: hidden; }
   .lb-meter-fill { height: 100%; border-radius: 3px; }
   .lb-meter-text { font-size: 11px; font-weight: 700; min-width: 30px; text-align: right; }
 
   .lb-late { display: flex; flex-direction: column; gap: 1px; }
 
-  .lb-more { width: 100%; padding: 11px; background: #1f1f22; border: none; border-top: 1px solid #3f3f46;
-    color: #a1a1aa; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-  .lb-more:hover { color: #fafafa; }
+  .lb-more { width: 100%; padding: 11px; background: #fafafb; border: none; border-top: 1px solid #e5e5ea;
+    color: #6e6e73; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .lb-more:hover { color: #1d1d1f; }
 
-  .lb-footnote { margin-top: 14px; font-size: 11px; color: #52525b; line-height: 1.65; max-width: 980px; }
-  .lb-footnote code { background: #27272a; padding: 1px 4px; border-radius: 4px; font-size: 10px; }
+  .lb-footnote { margin-top: 14px; font-size: 11px; color: #a1a1a6; line-height: 1.65; max-width: 980px; }
+  .lb-footnote code { background: #ffffff; padding: 1px 4px; border-radius: 4px; font-size: 10px; }
 
   @media (max-width: 900px) {
     .lb-count { margin-left: 0; }

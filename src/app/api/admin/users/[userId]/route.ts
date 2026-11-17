@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { NextRequest } from 'next/server'
+import { PLAN_ORDER } from '@/lib/landlordPlans'
 
 // Service-role client — bypasses RLS for admin reads/writes
 const supabaseAdmin = createClient(
@@ -8,7 +9,19 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const VALID_PLAN_TYPES = ['single_listing', 'two_listing', 'lifetime'] as const
+/**
+ * What an admin may comp a landlord onto.
+ *
+ * The live tiers come first and are the point: this list used to hold only
+ * `single_listing`, `two_listing` and `lifetime` — three retired products — so
+ * an admin physically could not grant a landlord Starter, Growth or Unlimited.
+ * The legacy types stay grantable because a landlord already on one may need it
+ * reinstated after a mistaken revoke.
+ */
+const VALID_PLAN_TYPES = [
+  ...PLAN_ORDER,
+  'single_listing', 'two_listing', 'lifetime',
+] as const
 type OverridePlanType = typeof VALID_PLAN_TYPES[number] | 'free'
 
 export async function GET(
@@ -128,7 +141,10 @@ export async function PATCH(
 
   // ── GRANT ─────────────────────────────────────────────────────────────────
   if (!VALID_PLAN_TYPES.includes(plan_type as any)) {
-    return Response.json({ error: 'Invalid plan type. Only single_listing, two_listing, or lifetime may be granted.' }, { status: 400 })
+    return Response.json(
+      { error: `Invalid plan type. Grantable: ${VALID_PLAN_TYPES.join(', ')}.` },
+      { status: 400 },
+    )
   }
 
   // Lifetime = effectively never expires; monthly grants = 30 days (admin re-extends intentionally)
