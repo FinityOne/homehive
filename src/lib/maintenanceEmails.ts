@@ -38,6 +38,14 @@ export function buildWorkItemAddedEmail(input: {
     ...(fmtDate(item.target_date) ? [['Target date', fmtDate(item.target_date)!] as [string, string]] : []),
     ...(item.vendor_name ? [['Vendor', item.vendor_name] as [string, string]] : []),
     ...(item.reported_by ? [['Reported by', item.reported_by] as [string, string]] : []),
+    // Stated on every item, both ways round. This email is the durable record
+    // of what was created, and "did that go out to my tenants?" is the one
+    // question about it that has a wrong answer worth an apology — so it is
+    // answered here rather than left to be inferred from its absence.
+    ['Shown to residents', item.tenant_visible ? 'Yes — on their tenant portal' : 'No — private to you'],
+    ...(item.tenant_visible && item.tenant_note
+      ? [['Note they see', item.tenant_note] as [string, string]]
+      : []),
   ]
 
   const text = [

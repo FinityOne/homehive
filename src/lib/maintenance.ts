@@ -36,6 +36,17 @@ export type WorkItem = {
   reported_by: string | null
   notes: string | null
   inspection_item_id: string | null
+  /**
+   * Shared with the tenants of this property's active leases.
+   *
+   * Opt-in, and per item — every row on this list carries the estimate, the
+   * actual spend and the landlord's own working notes, so nothing here is
+   * tenant-facing until the landlord says so. What a shared item actually
+   * reveals is decided in one place: `shapeForTenant` in tenantMaintenance.ts.
+   */
+  tenant_visible: boolean
+  /** The update written *to* the tenant, shown instead of `description`. */
+  tenant_note: string | null
   position: number
   created_at: string
   updated_at: string
@@ -127,12 +138,14 @@ export type WorkTotals = {
   varianceBase: number
   emergencies: number
   overdue: number
+  /** Open items the tenants of this property can currently see. */
+  shared: number
 }
 
 export function computeTotals(items: WorkItem[], today = new Date()): WorkTotals {
   const cents = (n: number | null) => Math.round((n ?? 0) * 100)
   let estimatedOpen = 0, actualSpent = 0, estOnCompleted = 0
-  let open = 0, completed = 0, emergencies = 0, overdue = 0
+  let open = 0, completed = 0, emergencies = 0, overdue = 0, shared = 0
 
   for (const i of items) {
     if (i.status === 'cancelled') continue
@@ -141,6 +154,10 @@ export function computeTotals(items: WorkItem[], today = new Date()): WorkTotals
       estimatedOpen += cents(i.estimated_cost)
       if (i.priority === 'emergency') emergencies++
       if (isOverdue(i, today)) overdue++
+      // Counted on open work only: "3 shared" is a statement about what
+      // residents are watching right now, and a job finished in March is not
+      // something they are waiting on.
+      if (i.tenant_visible) shared++
     } else {
       completed++
       actualSpent += cents(i.actual_cost)
@@ -164,6 +181,7 @@ export function computeTotals(items: WorkItem[], today = new Date()): WorkTotals
     varianceBase: estOnCompleted / 100,
     emergencies,
     overdue,
+    shared,
   }
 }
 
@@ -221,6 +239,8 @@ export type WorkItemInput = {
   reported_by?: string | null
   notes?: string | null
   inspection_item_id?: string | null
+  tenant_visible?: boolean
+  tenant_note?: string | null
 }
 
 /**

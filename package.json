@@ -24,6 +24,7 @@
     "verify:listing-perf": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-listing-performance.mjs",
     "verify:renewals": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-renewals.mjs",
     "verify:amendments": "node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-amendments.mjs",
+    "verify:maintenance": "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder SUPABASE_SERVICE_ROLE_KEY=placeholder node --experimental-strip-types --no-warnings --import ./scripts/ts-resolve.mjs scripts/verify-maintenance-sharing.mjs",
     "amendment:preview": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-aleeya-pet-amendment.mjs",
     "amendment:send": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-aleeya-pet-amendment.mjs --send",
     "remind:preview": "node --experimental-strip-types --no-warnings --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/send-gauge-rent-reminder.mjs",
