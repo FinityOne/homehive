@@ -17,7 +17,7 @@ import { Resend } from 'resend'
 import { NextRequest } from 'next/server'
 import { getSiteUrl } from '@/lib/siteUrl'
 import { buildRentReminderEmail, type ReminderRow } from '@/lib/rentReminderEmails'
-import { fmtMoney } from '@/lib/rentPayments'
+import { fmtMoney, daysPastDue } from '@/lib/rentPayments'
 import { logPaymentEmail, type PaymentEmailItem } from '@/lib/paymentEmailLog'
 
 const supabaseAdmin = createClient(
@@ -27,12 +27,16 @@ const supabaseAdmin = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY!)
 
-const DAY = 86_400_000
-const daysLate = (due: string) => {
-  const d = new Date(due + 'T00:00:00').getTime()
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  return Math.max(0, Math.floor((today.getTime() - d) / DAY))
-}
+// How late a charge is, counted on the calendar where the rent is owed.
+// This used to be a local arithmetic helper comparing the due date's midnight
+// to the server's own midnight, which made both mistakes `isPastDue` exists to
+// rule out: it called a charge late from one second into the due day itself,
+// and it asked the server's timezone instead of the property's — so on a UTC
+// host the email claimed "1 day late" from 5pm Phoenix time on the due date.
+// A reminder that tells a tenant they are late while they are not is the one
+// email that loses a landlord the argument, so the route now shares the app's
+// single definition with every other surface that says the word.
+const daysLate = (due: string) => daysPastDue(due)
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ planId: string }> }) {
   const { planId } = await ctx.params
