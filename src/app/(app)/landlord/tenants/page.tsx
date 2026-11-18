@@ -264,6 +264,8 @@ export default function TenantsPage() {
         .tenant-table tr:hover td { background: #f8fafc; }
 
         .tenant-name { font-size: 14px; font-weight: 600; color: #0f172a; }
+        .tenant-name-link { text-decoration: none; }
+        .tenant-name-link:hover .tenant-name { color: #0f7a43; text-decoration: underline; }
         .tenant-email { font-size: 12px; color: #94a3b8; margin-top: 2px; }
         .tenant-phone { font-size: 13px; color: #475569; }
 
@@ -382,7 +384,13 @@ export default function TenantsPage() {
                 <>
                   <tr key={t.id}>
                     <td>
-                      <div className="tenant-name">{t.first_name} {t.last_name}</div>
+                      {/* The name is the way in. Everything about how this
+                          tenant is actually doing — their payment record, the
+                          notices sent, their co-signers — lives on their own
+                          page; this list is only the index of it. */}
+                      <Link href={`/landlord/tenants/${t.id}`} className="tenant-name-link">
+                        <span className="tenant-name">{t.first_name} {t.last_name}</span>
+                      </Link>
                       <div className="tenant-email">{t.email}</div>
                       {t.lead_id && (
                         <span className="lead-badge" style={{ marginTop: '4px' }}>
@@ -406,6 +414,7 @@ export default function TenantsPage() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <Link className="btn-edit" href={`/landlord/tenants/${t.id}`}>Open</Link>
                         <button className="btn-edit" onClick={() => openEditModal(t)}>Edit</button>
                         <button className="btn-danger" onClick={() => setDeletingId(t.id)}>Delete</button>
                       </div>
