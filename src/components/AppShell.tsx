@@ -9,6 +9,9 @@ import { usePostHog } from 'posthog-js/react'
 import Icon, { type IconName } from '@/components/NavIcons'
 import { useLandlordPlan } from '@/lib/useLandlordPlan'
 import { navItemLocked } from '@/lib/landlordAccess'
+import ActivityBell from '@/components/activity/ActivityBell'
+import { useLandlordActivity, prefetchActivity } from '@/lib/useLandlordActivity'
+import { BADGE_CAP } from '@/lib/landlordActivity'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function getInitials(email: string, fullName?: string): string {
@@ -34,16 +37,6 @@ type NavItem = {
 /** A labelled run of nav items. An unlabelled group renders with no heading. */
 type NavGroup = { label?: string; items: NavItem[] }
 
-type Notification = {
-  id: string
-  type: string
-  title: string
-  body: string | null
-  href: string | null
-  is_read: boolean
-  created_at: string
-}
-
 /**
  * Nav is grouped by where the landlord is in the tenancy lifecycle, in the order
  * the work actually happens: fill the property → run the tenancy → close it out.
@@ -67,6 +60,10 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
     {
       items: [
         { href: '/landlord/dashboard', label: 'Overview', icon: 'grid', exact: true, primary: true },
+        // The inbox sits at the top, where every product that has one puts it.
+        // It is the page a landlord opens to find out whether anything needs
+        // them, so it cannot be the thing they have to go looking for.
+        { href: '/landlord/activity', label: 'Activity', icon: 'bell', primary: true },
       ],
     },
     {
@@ -291,14 +288,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   /** Collapsed nav groups, keyed as `${portal}:${groupLabel}`. Persisted too. */
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const [profileOpen, setProfileOpen] = useState(false)
-  const [notifOpen, setNotifOpen] = useState(false)
   const [pendingUpgradeCount, setPendingUpgradeCount] = useState(0)
   const [overduePaymentsCount, setOverduePaymentsCount] = useState(0)
   const [newUserCounts, setNewUserCounts] = useState<Record<string, number>>({ tenant: 0, landlord: 0, admin: 0 })
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
   const profileRef = useRef<HTMLDivElement>(null)
-  const notifRef = useRef<HTMLDivElement>(null)
 
   // ── Restore sidebar shape (rail + collapsed groups) ──
   useEffect(() => {
@@ -359,20 +352,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           .then((data: { count: number }) => setOverduePaymentsCount(data.count))
           .catch(() => {})
       }
-      // Fetch notifications for landlord
-      if (role === 'landlord') {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.access_token) {
-          fetch('/api/notifications', { headers: { Authorization: `Bearer ${session.access_token}` } })
-            .then(r => r.json())
-            .then((data: { notifications?: Notification[] }) => {
-              const notifs = data.notifications || []
-              setNotifications(notifs)
-              setUnreadCount(notifs.filter(n => !n.is_read).length)
-            })
-            .catch(() => {})
-        }
-      }
+      // The activity feed is shared with the bell and the sidebar badge, and
+      // cached at module scope — so this is one request for all three, started
+      // as soon as we know who is looking.
+      if (role === 'landlord' || role === 'admin') prefetchActivity()
     }
     loadUser()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -392,35 +375,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [profileOpen])
 
-  // Close notif dropdown on outside click
-  useEffect(() => {
-    if (!notifOpen) return
-    const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [notifOpen])
-
-  const handleNotifOpen = async () => {
-    setNotifOpen(o => !o)
-    if (!notifOpen && unreadCount > 0) {
-      // Mark all as read
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        fetch('/api/notifications', {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        }).then(() => {
-          setUnreadCount(0)
-          setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-        }).catch(() => {})
-      }
-    }
-  }
-
-  useEffect(() => { setSidebarOpen(false); setProfileOpen(false); setNotifOpen(false) }, [pathname])
+  useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [pathname])
   useEffect(() => {
     document.body.style.overflow = sidebarOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
@@ -458,6 +413,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // The lock is the honest version: visible, labelled, and one click from the
   // screen that explains it.
   const plan = useLandlordPlan(role === 'landlord' && currentPortal === 'landlord')
+  // The same shared feed the bell reads, so the sidebar badge and the bell can
+  // never show two different numbers — and marking read in one clears both.
+  const { unreadCount: activityUnread } = useLandlordActivity(currentPortal === 'landlord')
   const onFreeTier = plan?.hasAccess === false
   const isLocked = (href: string) => onFreeTier && navItemLocked(href)
 
@@ -466,7 +424,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     (!item.exact && item.href !== '/' && pathname.startsWith(item.href + '/'))
 
   // Count badges, keyed by the nav item they belong to.
-  const badgeFor = (href: string): { count: number; color: string; prefix?: string } | null => {
+  const badgeFor = (href: string): {
+    count: number; color: string; prefix?: string; suffix?: string
+  } | null => {
     if (href === '/admin/upgrade-requests' && pendingUpgradeCount > 0)
       return { count: pendingUpgradeCount, color: '#f59e0b' }
     // One badge colour per audience, all from the portal's own palette — these
@@ -480,6 +440,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return { count: newUserCounts['admin'], color: '#15191c', prefix: '+' }
     if (href === '/landlord/financials' && overduePaymentsCount > 0)
       return { count: overduePaymentsCount, color: '#ef4444' }
+    // Capped by `badgeLabel`'s rule rather than this function's, because the
+    // bell shows the same number and the two must read identically.
+    if (href === '/landlord/activity' && activityUnread > 0)
+      return { count: Math.min(activityUnread, BADGE_CAP), color: '#ef4444',
+               suffix: activityUnread > BADGE_CAP ? '+' : undefined }
     return null
   }
 
@@ -540,67 +505,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         /* Spacer pushes profile to the right */
         .tb-spacer { flex: 1; }
-
-        /* Notification bell */
-        .tb-notif {
-          position: relative; flex-shrink: 0; margin-right: 8px;
-        }
-        .tb-notif-btn {
-          display: flex; align-items: center; justify-content: center;
-          width: 36px; height: 36px; border-radius: 8px;
-          background: none; border: none; cursor: pointer;
-          position: relative; color: var(--nav-color);
-          transition: background 0.15s, color 0.15s;
-        }
-        .tb-notif-btn:hover { background: var(--nav-hover-bg); color: var(--nav-hover-color); }
-        .tb-notif-badge {
-          position: absolute; top: 4px; right: 4px;
-          background: #ef4444; color: #fff;
-          font-size: 9px; font-weight: 700;
-          min-width: 15px; height: 15px; border-radius: 8px;
-          display: flex; align-items: center; justify-content: center;
-          padding: 0 3px; font-family: 'DM Sans', sans-serif;
-          border: 2px solid var(--tb-bg);
-        }
-        .tb-notif-panel {
-          position: absolute; top: calc(100% + 8px); right: 0;
-          width: 320px; max-height: 400px; overflow-y: auto;
-          background: var(--dd-bg); border: 1px solid var(--tb-border);
-          border-radius: 12px; box-shadow: var(--dd-shadow); z-index: 300;
-        }
-        .tb-notif-header {
-          padding: 12px 16px 10px; border-bottom: 1px solid var(--divider);
-          font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
-          color: var(--user-sub); font-family: 'DM Sans', sans-serif;
-        }
-        .tb-notif-item {
-          display: flex; align-items: flex-start; gap: 10px;
-          padding: 12px 16px; border-bottom: 1px solid var(--divider);
-          text-decoration: none; transition: background 0.15s;
-        }
-        .tb-notif-item:hover { background: var(--nav-hover-bg); }
-        .tb-notif-item:last-child { border-bottom: none; }
-        .tb-notif-dot {
-          width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex-shrink: 0;
-        }
-        .tb-notif-content { flex: 1; min-width: 0; }
-        .tb-notif-title {
-          font-size: 13px; font-weight: 600; color: var(--user-text);
-          font-family: 'DM Sans', sans-serif; line-height: 1.4;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .tb-notif-body {
-          font-size: 12px; color: var(--user-sub); font-family: 'DM Sans', sans-serif;
-          margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .tb-notif-time {
-          font-size: 11px; color: var(--user-sub); font-family: 'DM Sans', sans-serif;
-          margin-top: 3px;
-        }
-        .tb-notif-empty {
-          padding: 24px 16px; text-align: center; font-size: 13px;
-          color: var(--user-sub); font-family: 'DM Sans', sans-serif;
-        }
 
         /* Mobile hamburger — hidden on desktop */
         .tb-hamburger {
@@ -978,51 +882,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="tb-spacer" />
 
-          {/* Notification bell — landlord only */}
-          {user && currentPortal === 'landlord' && (
-            <div className="tb-notif" ref={notifRef}>
-              <button className="tb-notif-btn" onClick={handleNotifOpen} aria-label="Notifications">
-                <Icon name="bell" size={18} />
-                {unreadCount > 0 && (
-                  <span className="tb-notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
-                )}
-              </button>
-              {notifOpen && (
-                <div className="tb-notif-panel">
-                  <div className="tb-notif-header">Notifications</div>
-                  {notifications.length === 0 ? (
-                    <div className="tb-notif-empty">No notifications yet</div>
-                  ) : (
-                    notifications.map(n => {
-                      const ICON: Record<string, IconName> = { lead_in: 'target', prescreen_filled: 'clipboardCheck', tour_booked: 'calendar' }
-                      const DOT: Record<string, string> = { lead_in: '#10b981', prescreen_filled: '#3b82f6', tour_booked: '#f59e0b' }
-                      const diff = Date.now() - new Date(n.created_at).getTime()
-                      const mins = Math.floor(diff / 60000)
-                      const timeAgo = mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.floor(mins / 60)}h ago` : `${Math.floor(mins / 1440)}d ago`
-                      const inner = (
-                        <>
-                          <span className="tb-notif-dot" style={{ background: DOT[n.type] || '#6b6b6b' }} />
-                          <div className="tb-notif-content">
-                            <div className="tb-notif-title">
-                              <Icon name={ICON[n.type] ?? 'dot'} size={13} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 5 }} />
-                              {n.title}
-                            </div>
-                            {n.body && <div className="tb-notif-body">{n.body}</div>}
-                            <div className="tb-notif-time">{timeAgo}</div>
-                          </div>
-                        </>
-                      )
-                      return n.href ? (
-                        <Link key={n.id} href={n.href} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }} onClick={() => setNotifOpen(false)}>{inner}</Link>
-                      ) : (
-                        <div key={n.id} className="tb-notif-item" style={{ opacity: n.is_read ? 0.65 : 1 }}>{inner}</div>
-                      )
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {/* One inbox for everything: rent, email, sign-ins, leads. */}
+          {user && currentPortal === 'landlord' && <ActivityBell />}
 
           {/* Profile dropdown */}
           {user && (
@@ -1097,7 +958,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                               <span className="sb-nav-label">{item.label}</span>
                               {badge ? (
                                 <span className="sb-nav-badge" style={{ background: badge.color }}>
-                                  {badge.prefix ?? ''}{badge.count}
+                                  {badge.prefix ?? ''}{badge.count}{badge.suffix ?? ''}
                                 </span>
                               ) : locked ? (
                                 <span className="sb-nav-lock" aria-hidden="true">🔒</span>
@@ -1184,7 +1045,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="mob-tab-label">{item.short ?? item.label}</span>
                 {badge ? (
                   <span style={{ position: 'absolute', top: 6, right: '50%', marginRight: -18, background: badge.color, color: '#fff', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', minWidth: 16, textAlign: 'center' }}>
-                    {badge.prefix ?? ''}{badge.count}
+                    {badge.prefix ?? ''}{badge.count}{badge.suffix ?? ''}
                   </span>
                 ) : isLocked(item.href) ? (
                   <span aria-hidden="true" style={{ position: 'absolute', top: 5, right: '50%', marginRight: -16, fontSize: 9, opacity: 0.8 }}>🔒</span>

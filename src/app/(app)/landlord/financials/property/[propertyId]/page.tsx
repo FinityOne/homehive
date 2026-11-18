@@ -65,6 +65,7 @@ import MoneyHub from '@/components/finance/MoneyHub'
 import ExpenseSheet, { EXPENSE_SHEET_CSS, type ExpenseDraft } from '@/components/finance/ExpenseSheet'
 import { StatusDot, PANEL_CSS } from '@/components/finance/Panels'
 import { FINANCE_THEME } from '@/lib/financeTheme'
+import ActivityInline from '@/components/activity/ActivityInline'
 
 export default function PropertyMoneyPage({
   params,
@@ -666,6 +667,19 @@ export default function PropertyMoneyPage({
                 tab is the cash-dated view for reconciling against a bank statement.
               </p>
             </section>
+
+            {/* ══ WHAT HAS BEEN HAPPENING ══
+                The figures above are a state; this is the sequence that
+                produced it. A landlord who sees arrears on a property wants
+                the next question — was the card declined, did the reminder
+                bounce, has the tenant even logged in — answered here rather
+                than on four other screens. */}
+            <ActivityInline
+              propertyId={propertyId}
+              title="Recent activity at this property"
+              limit={8}
+              emptyHint="Rent, email and resident sign-ins for this property will show up here."
+            />
 
             {/* ══ WHERE ELSE TO GO ══ */}
             <div className="dests">

@@ -54,6 +54,9 @@ import {
   type RentStop, type TenantRecord, type WarningBasis,
 } from '@/lib/tenantRecord'
 import type { Dossier, DossierPayer } from '@/lib/tenantDossierServer'
+import {
+  IdentityRail, PaymentProgress, TenantActivity,
+} from '@/components/tenants/TenantOverviewParts'
 
 // ─── Small formatters ────────────────────────────────────────────────────────
 
@@ -163,6 +166,76 @@ const CSS = `
   .tn-dl dd { color: var(--ink); font-variant-numeric: tabular-nums; }
 
   .tn-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+
+  /* ── Overview: a standing rail, and the record beside it ────────────────
+     The rail holds the facts that do not change while you read — who they
+     are, where they live, what they signed, who stands behind them. The
+     column beside it holds what is moving: money, files and activity.
+     Separating them is what lets a landlord keep their place; a single
+     column puts the phone number six screens above the thing that made
+     them want to ring. */
+  .tn-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); align-items: start; }
+  .tn-rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 16px; }
+  .tn-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .tn-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px 18px; }
+  .tn-card h4 {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 11px;
+  }
+  .tn-card + .tn-card { margin-top: 0; }
+
+  .tn-copy {
+    display: flex; align-items: center; gap: 8px; font-size: 13px;
+    color: var(--ink); padding: 5px 0; min-width: 0;
+  }
+  .tn-copy a { color: var(--ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; }
+  .tn-copy a:hover { text-decoration: underline; }
+  .tn-copy-btn {
+    margin-left: auto; flex-shrink: 0; background: none; border: none; cursor: pointer;
+    color: var(--ink-3); font-size: 11px; font-weight: 600; font-family: inherit;
+    padding: 3px 6px; border-radius: 6px;
+  }
+  .tn-copy-btn:hover { background: var(--surface-2); color: var(--ink); }
+
+  .tn-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tn-tag {
+    font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 20px;
+    background: var(--idle-bg); color: var(--ink-2);
+  }
+  .tn-tag.good { background: var(--in-bg); color: var(--in); }
+  .tn-tag.warn { background: var(--fee-bg); color: var(--fee); }
+  .tn-tag.bad  { background: var(--late-bg); color: var(--late); }
+
+  .tn-thumb {
+    width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; object-fit: cover;
+    background: var(--surface-2); margin-bottom: 11px; display: block;
+  }
+
+  /* ── Payment progress ───────────────────────────────────────────────────
+     Collected against billed-to-date, which is the only honest denominator:
+     a bar against the *whole* lease would read as 30% complete for a tenant
+     who has never missed a day, which is a figure that makes a good tenant
+     look like a problem. */
+  .tn-prog-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .tn-prog-big { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .tn-prog-of { font-size: 19px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .tn-prog-track {
+    height: 10px; border-radius: 6px; background: var(--idle-bg);
+    margin: 13px 0 9px; overflow: hidden;
+  }
+  .tn-prog-fill { height: 100%; border-radius: 6px; transition: width 0.4s ease; }
+  .tn-prog-legend {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    font-size: 12px; color: var(--ink-2);
+  }
+  .tn-prog-legend .right { margin-left: auto; }
+  .tn-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+  @media (max-width: 920px) {
+    .tn-cols { grid-template-columns: 1fr; }
+    .tn-rail { position: static; }
+  }
 
   .tn-lease { border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--surface); }
   .tn-lease h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
@@ -736,6 +809,11 @@ export default function TenantDetailPage() {
           </div>
 
           <div className="hub-actions">
+            {/* Their own mail client, not ours. Everything this product sends
+                is recorded and shown on this page; a landlord's personal note
+                is not ours to log, and pretending to send it from here would
+                put an untracked message in a feed that claims to be complete. */}
+            <a className="btn-ghost" href={`mailto:${d.tenant.email}`}>Message</a>
             {active && (
               <Link className="btn-secondary" href={`/landlord/financials/plan/${active.payer.planId}`}>
                 Open the ledger
@@ -901,15 +979,32 @@ export default function TenantDetailPage() {
 // ─── Overview ────────────────────────────────────────────────────────────────
 
 function OverviewTab({ tenancy, dossier }: { tenancy: Tenancy | null; dossier: Dossier }) {
+  // The lease the rail describes: the one this tenancy sits on, else the most
+  // recent on file. A tenant with no payment plan still has a lease worth
+  // showing — losing the address and the term because nobody set up rent
+  // collection is how the record stops being a record.
+  const lease =
+    dossier.leases.find(l => l.id === tenancy?.payer.leaseId) ?? dossier.leases[0] ?? null
+  const rail = <IdentityRail dossier={dossier} payer={tenancy?.payer ?? null} lease={lease} />
+  const documents = lease?.documents ?? []
+
   if (!tenancy) {
     return (
-      <div className="empty">
-        <div className="empty-title">No rent is being collected for this tenant</div>
-        <div className="empty-sub">
-          They have no payment plan on this account yet, so there is nothing to track. Set one up
-          from Financials and their record will start building here.
+      <div className="tn-cols">
+        {rail}
+        <div className="tn-main">
+          <div className="empty">
+            <div className="empty-title">No rent is being collected for this tenant</div>
+            <div className="empty-sub">
+              They have no payment plan on this account yet, so there is nothing to track. Set one up
+              from Financials and their record will start building here.
+            </div>
+            <Link className="btn-primary" href="/landlord/financials/new">Set up rent collection</Link>
+          </div>
+          {/* Still worth showing: email we have sent them, and whether they
+              have ever signed in. Both exist without a plan. */}
+          <TenantActivity email={dossier.tenant.email} />
         </div>
-        <Link className="btn-primary" href="/landlord/financials/new">Set up rent collection</Link>
       </div>
     )
   }
@@ -918,8 +1013,12 @@ function OverviewTab({ tenancy, dossier }: { tenancy: Tenancy | null; dossier: D
   const rule = payer.rule
 
   return (
-    <>
-      <section className="panel">
+    <div className="tn-cols">
+      {rail}
+      <div className="tn-main">
+        <PaymentProgress record={record} />
+
+        <section className="panel">
         <div className="panel-hd">
           <div>
             <div className="panel-title">Payment record, month by month</div>
@@ -1011,6 +1110,47 @@ function OverviewTab({ tenancy, dossier }: { tenancy: Tenancy | null; dossier: D
         </section>
       </div>
 
+      {/* What has actually been happening on the account, and what is on
+          file. Side by side because they answer the same question from two
+          directions: the log says what moved, the documents say what was
+          agreed. */}
+      <div className="tn-grid">
+        <TenantActivity email={dossier.tenant.email} />
+
+        <section className="panel">
+          <div className="panel-hd">
+            <div className="panel-title">Documents</div>
+            <div className="panel-note">{documents.length || 'none'}</div>
+          </div>
+          <div className="panel-bd">
+            {documents.length === 0 ? (
+              <div className="muted">
+                Nothing is filed against this lease yet. Signed leases, addenda and ID all live
+                in Leases &amp; files.
+              </div>
+            ) : (
+              <div className="tn-docs">
+                {documents.slice(0, 6).map(doc => (
+                  <div className="tn-doc" key={doc.id}>
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {doc.name}
+                    </span>
+                    <span className="muted sm" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDay(doc.createdAt.slice(0, 10))}
+                    </span>
+                  </div>
+                ))}
+                {documents.length > 6 && (
+                  <div className="muted sm">
+                    and {documents.length - 6} more in Leases &amp; files
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
       {record.charges.waived.length > 0 && (
         <section className="panel">
           <div className="panel-hd">
@@ -1039,7 +1179,8 @@ function OverviewTab({ tenancy, dossier }: { tenancy: Tenancy | null; dossier: D
           <div className="panel-bd"><div className="muted">{dossier.tenant.notes}</div></div>
         </section>
       )}
-    </>
+      </div>
+    </div>
   )
 }
 
@@ -1174,6 +1315,15 @@ function ActivityTab({ dossier, tenancies }: { dossier: Dossier; tenancies: Tena
 
   return (
     <>
+      {/* The log first, because it is the only thing on this tab that answers
+          "what happened" in order. The panels under it answer "what is the
+          state of X", which is a different question and a slower read. */}
+      <TenantActivity
+        email={dossier.tenant.email}
+        limit={30}
+        title="Everything on this account"
+      />
+
       <div className="tn-grid">
         <section className="panel">
           <div className="panel-hd">
