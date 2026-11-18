@@ -1,28 +1,22 @@
 @AGENTS.md
 
-# Project: HomeHive
+# HomeHive
 
-A Next.js 16 app for student housing — connecting landlords with student renters.
+Next.js 16 app for student housing — landlords ↔ student renters. Think Zillow/Redfin
+product sense: what makes people engage, pay, and stay.
 
-You are an expert in real estate apps especially with platforms like Zillow and Redfin, and the best human psychology intelligence of how people are likely to engage, pay, and continue deriving value from this platform.
+## Conventions
 
-## Key Conventions
+- Route groups `(marketing)` / `(app)` / `(auth)`, each with its own `layout.tsx`
+- Supabase: `src/lib/supabase-server.ts` (server), `src/lib/supabase.ts` (client)
+- Data helpers in `src/lib/` (`homes.ts`, `leads.ts`, `properties.ts`, …)
+- REST API routes under `src/app/api/`
 
-- Route groups: `(marketing)`, `(app)`, `(auth)` — each has its own `layout.tsx`
-- Server-side Supabase client: `src/lib/supabase-server.ts`
-- Client-side Supabase client: `src/lib/supabase.ts`
-- Data fetching helpers live in `src/lib/` (e.g. `homes.ts`, `leads.ts`, `properties.ts`)
-- API routes follow REST conventions under `src/app/api/`
-- **Every migration that creates a table in `public` grants on it in the same
-  migration** — Supabase stopped auto-granting new tables on 30 Oct 2026, and
-  an ungranted table answers `permission denied` to supabase-js no matter how
-  permissive its RLS is. `grant all on public.<table> to anon, authenticated,
-  service_role;` matches what the rest of the schema holds. `npm run
-  verify:grants` fails if one is missed. A deliberately narrower grant is
-  allowed — `rent_payment_attempts` gives `select` to `authenticated` only,
-  because a logged-out visitor must never read a landlord's payment history,
-  and `lead_followup_sends` is service-role only — and the check reports those
-  rather than failing them. It still fails on a table with *no* grant, which
-  is the one that ships broken.
+## Rules
 
-<!-- Every time you create a new feature, automatically create a new branch and pr. use the /commit-push-pr skill -->
+- **A migration creating a `public` table grants on it in the same migration** —
+  `grant all on public.<table> to anon, authenticated, service_role;`. Supabase
+  stopped auto-granting (30 Oct 2026); an ungranted table answers `permission
+  denied` however permissive its RLS. A deliberately narrower grant is fine —
+  `npm run verify:grants` reports those, and fails only on *no* grant.
+- New feature → new branch + PR via the `/commit-push-pr` skill.
