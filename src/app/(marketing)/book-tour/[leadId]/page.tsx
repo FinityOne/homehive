@@ -177,11 +177,11 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        body { background: #f5f4f0; }
+        body { background: #FBEFE7; }
 
         .bt-page {
           min-height: 100svh;
-          background: #f5f4f0;
+          background: #FBEFE7;
           font-family: 'DM Sans', sans-serif;
           display: flex;
           flex-direction: column;
@@ -191,7 +191,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         /* Minimal header */
         .bt-nav {
           width: 100%;
-          background: #1a1a1a;
+          background: #1F1517;
           padding: 14px 24px;
           display: flex;
           align-items: center;
@@ -218,7 +218,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           width: 100%;
           max-width: 640px;
           background: #fff;
-          border: 1px solid #e8e5de;
+          border: 1px solid #E6DCD7;
           border-top: none;
           border-radius: 0 0 20px 20px;
           padding: 32px 28px 40px;
@@ -228,33 +228,33 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         .bt-heading {
           font-size: 24px;
           font-weight: 800;
-          color: #1a1a1a;
+          color: #1F1517;
           letter-spacing: -0.4px;
           margin-bottom: 6px;
         }
         .bt-subheading {
           font-size: 15px;
-          color: #6b6b6b;
+          color: #6E5B59;
           line-height: 1.6;
           margin-bottom: 28px;
         }
 
         /* Auth section */
         .bt-auth-box {
-          background: #faf9f6;
-          border: 1px solid #e8e5de;
+          background: #FFF7F2;
+          border: 1px solid #E6DCD7;
           border-radius: 14px;
           padding: 28px;
           text-align: center;
         }
         .bt-auth-icon { font-size: 36px; margin-bottom: 12px; }
-        .bt-auth-title { font-size: 17px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px; }
-        .bt-auth-desc { font-size: 14px; color: #6b6b6b; line-height: 1.6; margin-bottom: 24px; }
+        .bt-auth-title { font-size: 17px; font-weight: 700; color: #1F1517; margin-bottom: 8px; }
+        .bt-auth-desc { font-size: 14px; color: #6E5B59; line-height: 1.6; margin-bottom: 24px; }
 
         .bt-btn-primary {
           display: block;
           width: 100%;
-          background: #1a1a1a;
+          background: #1F1517;
           color: #FFC627;
           border: none;
           border-radius: 12px;
@@ -271,8 +271,8 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           display: block;
           width: 100%;
           background: #fff;
-          color: #1a1a1a;
-          border: 1.5px solid #e8e5de;
+          color: #1F1517;
+          border: 1.5px solid #E6DCD7;
           border-radius: 12px;
           padding: 14px;
           font-size: 15px;
@@ -282,9 +282,9 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           text-decoration: none;
           text-align: center;
         }
-        .bt-btn-secondary:hover { border-color: #1a1a1a; }
+        .bt-btn-secondary:hover { border-color: #1F1517; }
 
-        .bt-or { font-size: 12px; color: #9b9b9b; text-align: center; margin: 8px 0; }
+        .bt-or { font-size: 12px; color: #8E7B79; text-align: center; margin: 8px 0; }
 
         /* Day columns */
         .bt-days-label {
@@ -292,7 +292,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           font-weight: 700;
           letter-spacing: 1px;
           text-transform: uppercase;
-          color: #9b9b9b;
+          color: #8E7B79;
           margin-bottom: 16px;
         }
 
@@ -317,13 +317,13 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         .bt-day-name {
           font-size: 12px;
           font-weight: 700;
-          color: #9b9b9b;
+          color: #8E7B79;
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
         .bt-day-date {
           font-size: 11px;
-          color: #b0a898;
+          color: #A8938F;
           margin-top: 2px;
         }
 
@@ -334,23 +334,23 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           text-align: center;
           font-size: 13px;
           font-weight: 600;
-          color: #1a1a1a;
-          background: #faf9f6;
-          border: 1.5px solid #e8e5de;
+          color: #1F1517;
+          background: #FFF7F2;
+          border: 1.5px solid #E6DCD7;
           border-radius: 10px;
           cursor: pointer;
           font-family: 'DM Sans', sans-serif;
           margin-bottom: 8px;
           transition: all 0.15s;
         }
-        .bt-slot:hover { border-color: #1a1a1a; background: #1a1a1a; color: #FFC627; }
-        .bt-slot.selected { background: #1a1a1a; color: #FFC627; border-color: #1a1a1a; }
+        .bt-slot:hover { border-color: #1F1517; background: #1F1517; color: #FFC627; }
+        .bt-slot.selected { background: #1F1517; color: #FFC627; border-color: #1F1517; }
 
         /* Confirm bar */
         .bt-confirm-bar {
           margin-top: 24px;
           padding-top: 20px;
-          border-top: 1px solid #f0ede6;
+          border-top: 1px solid #F6EBE4;
         }
         .bt-selected-info {
           background: #f0fdf4;
@@ -366,7 +366,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         .bt-book-btn {
           display: block;
           width: 100%;
-          background: #1a1a1a;
+          background: #1F1517;
           color: #FFC627;
           border: none;
           border-radius: 12px;
@@ -392,12 +392,12 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           padding: 8px 0;
         }
         .bt-success-icon { font-size: 56px; margin-bottom: 16px; }
-        .bt-success-title { font-size: 24px; font-weight: 800; color: #1a1a1a; letter-spacing: -0.4px; margin-bottom: 10px; }
-        .bt-success-desc { font-size: 15px; color: #6b6b6b; line-height: 1.7; }
+        .bt-success-title { font-size: 24px; font-weight: 800; color: #1F1517; letter-spacing: -0.4px; margin-bottom: 10px; }
+        .bt-success-desc { font-size: 15px; color: #6E5B59; line-height: 1.7; }
 
         .bt-detail-card {
-          background: #faf9f6;
-          border: 1px solid #e8e5de;
+          background: #FFF7F2;
+          border: 1px solid #E6DCD7;
           border-radius: 12px;
           padding: 20px;
           margin: 24px 0;
@@ -408,12 +408,12 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           justify-content: space-between;
           align-items: flex-start;
           padding: 8px 0;
-          border-bottom: 1px solid #f0ede6;
+          border-bottom: 1px solid #F6EBE4;
           font-size: 14px;
         }
         .bt-detail-row:last-child { border-bottom: none; }
-        .bt-detail-label { color: #6b6b6b; }
-        .bt-detail-value { font-weight: 600; color: #1a1a1a; text-align: right; max-width: 65%; }
+        .bt-detail-label { color: #6E5B59; }
+        .bt-detail-value { font-weight: 600; color: #1F1517; text-align: right; max-width: 65%; }
 
         .bt-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #dc2626; margin-bottom: 16px; }
 
@@ -441,7 +441,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         <div className="bt-card">
           {/* ── LOADING ── */}
           {phase === 'loading' && (
-            <div style={{ textAlign: 'center', padding: '48px 0', color: '#9b9b9b', fontSize: '15px' }}>
+            <div style={{ textAlign: 'center', padding: '48px 0', color: '#8E7B79', fontSize: '15px' }}>
               Loading your invitation...
             </div>
           )}
@@ -450,8 +450,8 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
           {phase === 'error' && (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <div style={{ fontSize: '40px', marginBottom: '12px' }}>😔</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a', marginBottom: '8px' }}>Link not available</div>
-              <div style={{ fontSize: '14px', color: '#6b6b6b', lineHeight: 1.6 }}>{errorMsg}</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: '#1F1517', marginBottom: '8px' }}>Link not available</div>
+              <div style={{ fontSize: '14px', color: '#6E5B59', lineHeight: 1.6 }}>{errorMsg}</div>
             </div>
           )}
 
@@ -484,7 +484,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
               </div>
 
               {property?.address && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#4a4a4a', background: '#faf9f6', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 16px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#574645', background: '#FFF7F2', border: '1px solid #E6DCD7', borderRadius: '10px', padding: '12px 16px', marginBottom: '24px' }}>
                   <span>📍</span>
                   <span>{property.address}</span>
                 </div>
@@ -495,8 +495,8 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
               {groupedDays.length === 0 ? (
                 <div className="bt-no-slots">
                   <div style={{ fontSize: '32px', marginBottom: '12px' }}>📅</div>
-                  <div style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', marginBottom: '6px' }}>No slots available right now</div>
-                  <div style={{ fontSize: '14px', color: '#6b6b6b' }}>The landlord hasn't set availability yet. Check back soon!</div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, color: '#1F1517', marginBottom: '6px' }}>No slots available right now</div>
+                  <div style={{ fontSize: '14px', color: '#6E5B59' }}>The landlord hasn't set availability yet. Check back soon!</div>
                 </div>
               ) : (
                 <>
@@ -533,7 +533,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
                       >
                         {booking ? 'Booking...' : 'Confirm Tour →'}
                       </button>
-                      <div style={{ marginTop: '10px', fontSize: '12px', color: '#9b9b9b', textAlign: 'center' }}>
+                      <div style={{ marginTop: '10px', fontSize: '12px', color: '#8E7B79', textAlign: 'center' }}>
                         A calendar invite will be sent to your email
                       </div>
                     </div>
@@ -577,7 +577,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
                 </div>
               )}
 
-              <div style={{ fontSize: '13px', color: '#9b9b9b', marginTop: '8px' }}>
+              <div style={{ fontSize: '13px', color: '#8E7B79', marginTop: '8px' }}>
                 We sent a calendar invite to your email. See you there!
               </div>
             </div>
@@ -585,7 +585,7 @@ export default function BookTourPage({ params }: { params: Promise<{ leadId: str
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '32px 0 48px', fontSize: '12px', color: '#9b9b9b', textAlign: 'center' }}>
+        <div style={{ padding: '32px 0 48px', fontSize: '12px', color: '#8E7B79', textAlign: 'center' }}>
           HomeHive · <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', textDecoration: 'none' }}>hello@homehive.live</a>
         </div>
       </div>

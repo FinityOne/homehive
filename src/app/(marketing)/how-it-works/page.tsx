@@ -139,7 +139,7 @@ export default function HowItWorksPage() {
 
         /* HERO */
         .hiw-hero { text-align: center; padding: 64px 0 48px; border-bottom: 1px solid var(--hh-border-faint); margin-bottom: 48px; }
-        .hiw-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: rgba(217,161,74,0.12); color: var(--hh-accent); font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 20px; }
+        .hiw-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: rgba(255,198,39,0.12); color: var(--hh-accent-strong); font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 20px; }
         .hiw-title { font-family: var(--hh-font-display); font-size: 48px; font-weight: 300; color: var(--hh-text); letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 16px; }
         .hiw-title em { font-style: italic; color: var(--hh-primary); }
         .hiw-sub { font-size: 16px; color: var(--hh-text-muted); line-height: 1.7; max-width: 520px; margin: 0 auto; }
@@ -156,7 +156,7 @@ export default function HowItWorksPage() {
         .tab-btn:not(.active):hover { background: var(--hh-bg-alt); color: var(--hh-text); }
 
         /* SECTION TITLES */
-        .section-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--hh-accent); margin-bottom: 10px; }
+        .section-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--hh-accent-strong); margin-bottom: 10px; }
         .section-title { font-family: var(--hh-font-display); font-size: 34px; font-weight: 300; color: var(--hh-text); letter-spacing: -0.5px; line-height: 1.2; margin-bottom: 8px; }
         .section-title em { font-style: italic; }
         .section-sub { font-size: 15px; color: var(--hh-text-muted); line-height: 1.7; max-width: 540px; margin-bottom: 40px; }
@@ -164,8 +164,8 @@ export default function HowItWorksPage() {
         /* STEPS GRID */
         .steps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 72px; }
         .step-card { background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 14px; padding: 24px; position: relative; transition: border-color 0.2s, box-shadow 0.2s; }
-        .step-card:hover { border-color: #d4c9b0; box-shadow: 0 8px 32px rgba(0,0,0,0.06); }
-        .step-num { font-family: var(--hh-font-display); font-size: 11px; font-weight: 600; color: var(--hh-accent); letter-spacing: 1px; margin-bottom: 12px; }
+        .step-card:hover { border-color: #E3D9D5; box-shadow: 0 8px 32px rgba(0,0,0,0.06); }
+        .step-num { font-family: var(--hh-font-display); font-size: 11px; font-weight: 600; color: var(--hh-accent-strong); letter-spacing: 1px; margin-bottom: 12px; }
         .step-icon { font-size: 28px; margin-bottom: 10px; display: block; }
         .step-title { font-size: 15px; font-weight: 600; color: var(--hh-text); margin-bottom: 8px; }
         .step-body { font-size: 13px; color: var(--hh-text-muted); line-height: 1.65; }
@@ -207,7 +207,7 @@ export default function HowItWorksPage() {
         .vetting-body { font-size: 14px; color: rgba(255,255,255,0.6); line-height: 1.7; }
         .vetting-right { display: flex; flex-direction: column; gap: 12px; }
         .vetting-step { display: flex; align-items: flex-start; gap: 12px; }
-        .vetting-bullet { width: 24px; height: 24px; border-radius: 50%; background: rgba(217,161,74,0.2); border: 1px solid rgba(217,161,74,0.4); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--hh-accent); font-weight: 700; flex-shrink: 0; }
+        .vetting-bullet { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,198,39,0.2); border: 1px solid rgba(255,198,39,0.4); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--hh-accent); font-weight: 700; flex-shrink: 0; }
         .vetting-step-text { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.55; }
         .vetting-step-text strong { color: #fff; font-weight: 500; }
 
@@ -223,7 +223,7 @@ export default function HowItWorksPage() {
         .cta-ghost:hover { border-color: rgba(255,255,255,0.6); color: #fff; }
 
         /* COMING SOON BADGE */
-        .coming-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(217,161,74,0.15); border: 1px solid rgba(217,161,74,0.3); border-radius: 20px; padding: 4px 12px; font-size: 11px; color: var(--hh-accent); font-weight: 600; letter-spacing: 0.3px; margin-bottom: 24px; }
+        .coming-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,198,39,0.15); border: 1px solid rgba(255,198,39,0.3); border-radius: 20px; padding: 4px 12px; font-size: 11px; color: var(--hh-accent-strong); font-weight: 600; letter-spacing: 0.3px; margin-bottom: 24px; }
 
         @media (max-width: 680px) {
           .hiw-title { font-size: 34px; }

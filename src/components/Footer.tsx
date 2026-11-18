@@ -53,7 +53,7 @@ export default function Footer() {
 
         /* ── FOOTER ───────────────────────────────────────────── */
         .footer {
-          background: #141210;
+          background: #2A0812;
           color: rgba(255,255,255,0.5);
           font-family: var(--hh-font-ui);
         }
@@ -139,7 +139,7 @@ export default function Footer() {
           font-weight: 600;
           letter-spacing: 0.1em;
           text-transform: uppercase;
-          color: #D9A14A;
+          color: #FFC627;
           margin-bottom: 20px;
         }
         .f-link {
@@ -208,7 +208,7 @@ export default function Footer() {
             display: flex; align-items: center; justify-content: space-between;
             padding: 16px 0; font-size: 13px; font-weight: 600;
             letter-spacing: 0.08em; text-transform: uppercase;
-            color: #D9A14A; cursor: pointer;
+            color: #FFC627; cursor: pointer;
             font-family: var(--hh-font-ui); text-align: left;
           }
           .f-mob-acc-arrow { font-size: 12px; transition: transform 0.25s; display: inline-block; opacity: 0.6; color: rgba(255,255,255,0.4); }
@@ -241,12 +241,12 @@ export default function Footer() {
               {/* Hex icon */}
               <svg width="28" height="32" viewBox="0 0 28 32" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M14 1L27 8.5V23.5L14 31L1 23.5V8.5L14 1Z" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5"/>
-                <path d="M14 1L27 8.5V23.5L14 31L1 23.5V8.5L14 1Z" fill="rgba(217,161,74,0.08)"/>
-                <circle cx="14" cy="16" r="3.5" fill="#D9A14A" opacity="0.9"/>
-                <circle cx="9" cy="11.5" r="2" fill="rgba(217,161,74,0.45)"/>
-                <circle cx="19" cy="11.5" r="2" fill="rgba(217,161,74,0.45)"/>
-                <circle cx="9" cy="20.5" r="2" fill="rgba(217,161,74,0.45)"/>
-                <circle cx="19" cy="20.5" r="2" fill="rgba(217,161,74,0.45)"/>
+                <path d="M14 1L27 8.5V23.5L14 31L1 23.5V8.5L14 1Z" fill="rgba(255,198,39,0.08)"/>
+                <circle cx="14" cy="16" r="3.5" fill="#FFC627" opacity="0.9"/>
+                <circle cx="9" cy="11.5" r="2" fill="rgba(255,198,39,0.45)"/>
+                <circle cx="19" cy="11.5" r="2" fill="rgba(255,198,39,0.45)"/>
+                <circle cx="9" cy="20.5" r="2" fill="rgba(255,198,39,0.45)"/>
+                <circle cx="19" cy="20.5" r="2" fill="rgba(255,198,39,0.45)"/>
               </svg>
               <span className="f-wordmark-text">Home<em>Hive</em></span>
             </a>

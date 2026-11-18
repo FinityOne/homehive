@@ -165,9 +165,12 @@ const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   .nf {
-    --cream: #FAF8F3; --cream-alt: #F4F1EA;
-    --hive: #2F4A48; --honey: #D9A14A;
-    --ink: #222810; --ink-2: #3d3d30; --ink-muted: #6b6b5a; --hair: #dddad0;
+    /* Logo palette: cream field, maroon hexagon, gold honeycomb cell. */
+    --cream: #FFF7F2; --cream-alt: #FBEFE7;
+    --hive: #8C1D40; --honey: #FFC627;
+    /* Gold is 1.6:1 on cream — text takes the deep gold instead. */
+    --honey-ink: #8A5A00;
+    --ink: #1F1517; --ink-2: #40302F; --ink-muted: #6E5B59; --hair: #E3D9D5;
     min-height: 100vh; background: var(--cream); color: var(--ink);
     font-family: 'Geist', system-ui, sans-serif;
     display: flex; flex-direction: column;
@@ -176,7 +179,7 @@ const CSS = `
   .nf-nav { display: flex; align-items: center; justify-content: space-between; gap: 20px;
     padding: 20px 28px; border-bottom: 1px solid var(--hair); flex-wrap: wrap; }
   .nf-logo { font-size: 20px; font-weight: 600; letter-spacing: -0.4px; color: var(--ink); text-decoration: none; }
-  .nf-logo em { font-family: 'Newsreader', serif; font-style: italic; color: var(--honey); }
+  .nf-logo em { font-family: 'Newsreader', serif; font-style: italic; color: var(--honey-ink); }
   .nf-nav-links { display: flex; gap: 22px; }
   .nf-nav-links a { font-size: 14px; color: var(--ink-2); text-decoration: none; }
   .nf-nav-links a:hover { color: var(--hive); }
@@ -216,7 +219,7 @@ const CSS = `
   .nf-homes-title { font-family: 'Newsreader', serif; font-weight: 400; font-size: 26px;
     letter-spacing: -0.015em; color: var(--ink); }
   .nf-homes-all { font-size: 14px; font-weight: 500; color: var(--hive); text-decoration: none; }
-  .nf-homes-all:hover { color: var(--honey); }
+  .nf-homes-all:hover { color: var(--honey-ink); }
 
   .nf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .nf-card { background: #fff; border: 1px solid var(--hair); border-radius: 16px; overflow: hidden;

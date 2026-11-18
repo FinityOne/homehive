@@ -57,7 +57,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
   // ── Loading ──
   if (property === undefined || user === undefined) {
     return (
-      <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", color: '#9b9b9b', fontSize: '14px' }}>
+      <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", color: '#8E7B79', fontSize: '14px' }}>
         Loading…
       </div>
     )
@@ -71,13 +71,13 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
         <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
           <div style={{ maxWidth: '400px', textAlign: 'center' }}>
             <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#f3f4f6', border: '1.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', margin: '0 auto 20px' }}>🔒</div>
-            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: '26px', color: '#1a1a1a', marginBottom: '10px', lineHeight: 1.2 }}>
+            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: '26px', color: '#1F1517', marginBottom: '10px', lineHeight: 1.2 }}>
               This listing has been claimed
             </h1>
-            <p style={{ fontSize: '14px', color: '#6b6b6b', lineHeight: 1.7, marginBottom: '24px' }}>
+            <p style={{ fontSize: '14px', color: '#6E5B59', lineHeight: 1.7, marginBottom: '24px' }}>
               This link is no longer active.
             </p>
-            <a href="/" style={{ display: 'inline-block', background: '#1a1a1a', color: '#fff', borderRadius: '9px', padding: '12px 24px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
+            <a href="/" style={{ display: 'inline-block', background: '#1F1517', color: '#fff', borderRadius: '9px', padding: '12px 24px', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}>
               Browse all listings →
             </a>
           </div>
@@ -113,15 +113,15 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #f5f4f0; color: #1a1a1a; }
+        body { font-family: 'DM Sans', sans-serif; background: #FBEFE7; color: #1F1517; }
 
         .claim-notice {
-          background: linear-gradient(90deg, #1a1a1a 0%, #2d2410 100%);
+          background: linear-gradient(90deg, #1F1517 0%, #3A0A1A 100%);
           border-bottom: 2px solid #FFC627;
           padding: 11px 20px;
         }
         .claim-notice-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .claim-notice-badge { background: #FFC627; color: #1a1a1a; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; border-radius: 20px; padding: 3px 10px; white-space: nowrap; flex-shrink: 0; }
+        .claim-notice-badge { background: #FFC627; color: #1F1517; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; border-radius: 20px; padding: 3px 10px; white-space: nowrap; flex-shrink: 0; }
         .claim-notice-text { font-size: 13px; color: #fef3c7; flex: 1; min-width: 180px; }
 
         .prop-page  { max-width: 1200px; margin: 0 auto; padding: 28px 24px 120px; }
@@ -130,54 +130,54 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
         .prop-right { position: sticky; top: 88px; }
 
         /* Gallery */
-        .gallery-hero { position: relative; border-radius: 16px; overflow: hidden; height: 440px; cursor: pointer; background: #e8e4db; margin-bottom: 8px; }
+        .gallery-hero { position: relative; border-radius: 16px; overflow: hidden; height: 440px; cursor: pointer; background: #E6DCD7; margin-bottom: 8px; }
         .gallery-hero img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
         .gallery-hero:hover img { transform: scale(1.015); }
         .gallery-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.3)); pointer-events: none; }
         .gallery-count { position: absolute; bottom: 14px; right: 14px; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 20px; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2); }
         .gallery-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
         .gallery-strip::-webkit-scrollbar { height: 3px; }
-        .gallery-strip::-webkit-scrollbar-thumb { background: #d4c9b0; border-radius: 10px; }
+        .gallery-strip::-webkit-scrollbar-thumb { background: #E3D9D5; border-radius: 10px; }
         .gallery-thumb { flex-shrink: 0; width: 90px; height: 66px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s; opacity: 0.7; }
         .gallery-thumb.active { border-color: #8C1D40; opacity: 1; }
         .gallery-thumb:hover { opacity: 1; }
         .gallery-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
         /* Content */
-        .section { background: #fff; border-radius: 14px; padding: 24px; margin-top: 16px; border: 1px solid #e8e5de; }
-        .section-label { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #d4a843; margin-bottom: 14px; }
-        .stats-row { display: flex; border: 1px solid #e8e5de; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
-        .stat-item { flex: 1; padding: 14px 10px; text-align: center; border-right: 1px solid #e8e5de; }
+        .section { background: #fff; border-radius: 14px; padding: 24px; margin-top: 16px; border: 1px solid #E6DCD7; }
+        .section-label { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #8A5A00; margin-bottom: 14px; }
+        .stats-row { display: flex; border: 1px solid #E6DCD7; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+        .stat-item { flex: 1; padding: 14px 10px; text-align: center; border-right: 1px solid #E6DCD7; }
         .stat-item:last-child { border-right: none; }
-        .stat-num { font-family: 'DM Serif Display', serif; font-size: 22px; color: #1a1a1a; }
-        .stat-lbl { font-size: 11px; color: #9b9b9b; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+        .stat-num { font-family: 'DM Serif Display', serif; font-size: 22px; color: #1F1517; }
+        .stat-lbl { font-size: 11px; color: #8E7B79; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
         .tags-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
-        .tag-pill { display: flex; align-items: center; gap: 6px; padding: 7px 13px; background: #faf9f6; border: 1px solid #e8e5de; border-radius: 20px; font-size: 13px; color: #3a3a3a; }
+        .tag-pill { display: flex; align-items: center; gap: 6px; padding: 7px 13px; background: #FFF7F2; border: 1px solid #E6DCD7; border-radius: 20px; font-size: 13px; color: #40302F; }
         .pain-list { display: flex; flex-direction: column; gap: 10px; }
-        .pain-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: #faf9f6; border-radius: 8px; border: 1px solid #e8e5de; }
-        .pain-dot { width: 7px; height: 7px; border-radius: 50%; background: #d4a843; flex-shrink: 0; margin-top: 7px; }
-        .pain-text { font-size: 14px; color: #3a3a3a; line-height: 1.65; }
-        .pricing-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0ede6; font-size: 14px; }
+        .pain-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: #FFF7F2; border-radius: 8px; border: 1px solid #E6DCD7; }
+        .pain-dot { width: 7px; height: 7px; border-radius: 50%; background: #8A5A00; flex-shrink: 0; margin-top: 7px; }
+        .pain-text { font-size: 14px; color: #40302F; line-height: 1.65; }
+        .pricing-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #F6EBE4; font-size: 14px; }
         .pricing-row:last-of-type { border-bottom: none; }
-        .pricing-label { color: #6b6b6b; }
+        .pricing-label { color: #6E5B59; }
         .pricing-val { font-weight: 500; }
         .pricing-val.green { color: #16a34a; }
-        .pricing-total { display: flex; justify-content: space-between; padding-top: 13px; margin-top: 6px; border-top: 2px solid #1a1a1a; font-size: 16px; font-weight: 600; }
+        .pricing-total { display: flex; justify-content: space-between; padding-top: 13px; margin-top: 6px; border-top: 2px solid #1F1517; font-size: 16px; font-weight: 600; }
         .nearby-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .nearby-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #faf9f6; border-radius: 8px; border: 1px solid #e8e5de; }
-        .nearby-place { font-size: 13px; color: #3a3a3a; }
-        .nearby-time { font-size: 12px; color: #d4a843; font-weight: 500; }
+        .nearby-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #FFF7F2; border-radius: 8px; border: 1px solid #E6DCD7; }
+        .nearby-place { font-size: 13px; color: #40302F; }
+        .nearby-time { font-size: 12px; color: #8A5A00; font-weight: 500; }
 
         /* Claim card */
-        .claim-card { background: #fff; border-radius: 16px; padding: 22px; border: 1px solid #e8e5de; box-shadow: 0 4px 24px rgba(0,0,0,0.06); }
+        .claim-card { background: #fff; border-radius: 16px; padding: 22px; border: 1px solid #E6DCD7; box-shadow: 0 4px 24px rgba(0,0,0,0.06); }
         .redacted-field { height: 44px; border-radius: 9px; background: #f8f8f8; border: 1.5px dashed #e2e8f0; margin-bottom: 8px; display: flex; align-items: center; padding: 0 14px; gap: 8px; filter: blur(2px); pointer-events: none; user-select: none; }
         .redacted-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; flex-shrink: 0; }
         .redacted-line { height: 10px; border-radius: 4px; background: #e2e8f0; flex: 1; }
-        .claim-btn { width: 100%; padding: 15px; border: none; border-radius: 9px; background: #FFC627; color: #1a1a1a; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.2s, transform 0.1s; letter-spacing: 0.1px; display: block; text-align: center; text-decoration: none; }
+        .claim-btn { width: 100%; padding: 15px; border: none; border-radius: 9px; background: #FFC627; color: #1F1517; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.2s, transform 0.1s; letter-spacing: 0.1px; display: block; text-align: center; text-decoration: none; }
         .claim-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
         .claim-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .auth-btn { width: 100%; padding: 13px; border: 1.5px solid #e8e5de; border-radius: 9px; background: #fff; color: #1a1a1a; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s; }
-        .auth-btn:hover { border-color: #1a1a1a; }
+        .auth-btn { width: 100%; padding: 13px; border: 1.5px solid #E6DCD7; border-radius: 9px; background: #fff; color: #1F1517; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s; }
+        .auth-btn:hover { border-color: #1F1517; }
         .error-msg { background: #fdf2f5; border: 1px solid #f5c6d0; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #8C1D40; margin-bottom: 12px; line-height: 1.5; }
 
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
@@ -206,15 +206,15 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
       <div className="prop-page">
 
         {/* BREADCRUMB */}
-        <div style={{ fontSize: '12px', color: '#9b9b9b', marginBottom: '16px' }}>
-          <a href="/" style={{ color: '#9b9b9b', textDecoration: 'none' }}>HomeHive</a> › <a href="/homes" style={{ color: '#9b9b9b', textDecoration: 'none' }}>Homes</a> › <strong>{property.name}</strong>
+        <div style={{ fontSize: '12px', color: '#8E7B79', marginBottom: '16px' }}>
+          <a href="/" style={{ color: '#8E7B79', textDecoration: 'none' }}>HomeHive</a> › <a href="/homes" style={{ color: '#8E7B79', textDecoration: 'none' }}>Homes</a> › <strong>{property.name}</strong>
         </div>
 
         {/* TITLE ROW */}
         <div>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 'clamp(26px,4vw,38px)', color: '#1a1a1a', lineHeight: 1.15, marginBottom: '8px' }}>{property.name}</h1>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 'clamp(26px,4vw,38px)', color: '#1F1517', lineHeight: 1.15, marginBottom: '8px' }}>{property.name}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '14px', color: '#6b6b6b' }}>📍 {property.address}</span>
+            <span style={{ fontSize: '14px', color: '#6E5B59' }}>📍 {property.address}</span>
             <span style={{ fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', background: listingTypeCfg.bg, color: listingTypeCfg.color, border: `1px solid ${listingTypeCfg.border}`, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: listingTypeCfg.color, display: 'inline-block', flexShrink: 0 }} />
               {listingTypeCfg.label}
@@ -233,7 +233,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
               <div className="gallery-hero">
                 {mainImage
                   ? <img src={mainImage} alt={property.name} />
-                  : <div style={{ width: '100%', height: '100%', background: '#e8e4db', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9b9b9b', fontSize: '14px' }}>No photos yet</div>
+                  : <div style={{ width: '100%', height: '100%', background: '#E6DCD7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8E7B79', fontSize: '14px' }}>No photos yet</div>
                 }
                 <div className="gallery-hero-overlay" />
                 {allImages.length > 1 && (
@@ -290,7 +290,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
                   {property.sublease_start_date && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <span style={{ fontSize: '10px', fontWeight: 700, color: listingTypeCfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Available From</span>
-                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1F1517', fontFamily: "'DM Serif Display', serif" }}>
                         {new Date(property.sublease_start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
@@ -303,7 +303,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
                       <span style={{ fontSize: '10px', fontWeight: 700, color: listingTypeCfg.color, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         {property.listing_type === 'lease_transfer' ? 'Lease Ends' : 'Sublease Ends'}
                       </span>
-                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', fontFamily: "'DM Serif Display', serif" }}>
+                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#1F1517', fontFamily: "'DM Serif Display', serif" }}>
                         {new Date(property.sublease_end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
@@ -316,7 +316,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
             {property.description && (
               <div className="section">
                 <div className="section-label">About this home</div>
-                <p style={{ fontSize: '14px', color: '#3a3a3a', lineHeight: 1.75 }}>{property.description}</p>
+                <p style={{ fontSize: '14px', color: '#40302F', lineHeight: 1.75 }}>{property.description}</p>
               </div>
             )}
 
@@ -377,7 +377,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
             <div className="claim-card">
               {/* Special Offer Banner */}
               {property.offer_amount && (
-                <div style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2410 100%)', border: '1px solid #d4a843', borderRadius: '12px', padding: '14px 16px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ background: 'linear-gradient(135deg, #1F1517 0%, #3A0A1A 100%)', border: '1px solid #8A5A00', borderRadius: '12px', padding: '14px 16px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
                   <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '90px', height: '90px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,198,39,0.18) 0%,transparent 70%)', pointerEvents: 'none' }} />
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(255,198,39,0.15)', border: '1px solid rgba(255,198,39,0.4)', borderRadius: '20px', padding: '2px 9px', marginBottom: '6px' }}>
                     <span style={{ fontSize: '9px', color: '#FFC627', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase' }}>🎁 Limited offer</span>
@@ -385,7 +385,7 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
                   <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '18px', color: '#FFC627', lineHeight: 1.2, marginBottom: '3px' }}>
                     ${property.offer_amount.toLocaleString()} lease credit
                   </div>
-                  <div style={{ fontSize: '11px', color: '#c5c1b8', lineHeight: 1.4, marginBottom: property.offer_deadline ? '6px' : '0' }}>
+                  <div style={{ fontSize: '11px', color: '#C9BDBA', lineHeight: 1.4, marginBottom: property.offer_deadline ? '6px' : '0' }}>
                     {property.offer_description || 'Cash credit applied when you sign your lease.'}
                   </div>
                   {property.offer_deadline && (
@@ -400,27 +400,27 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
               {/* Price */}
               <div style={{ marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '2px' }}>
-                  <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: '30px', color: '#1a1a1a', letterSpacing: '-0.5px' }}>${property.price.toLocaleString()}</span>
-                  <span style={{ fontSize: '13px', color: '#9b9b9b' }}>/mo</span>
+                  <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: '30px', color: '#1F1517', letterSpacing: '-0.5px' }}>${property.price.toLocaleString()}</span>
+                  <span style={{ fontSize: '13px', color: '#8E7B79' }}>/mo</span>
                 </div>
-                <div style={{ fontSize: '12px', color: '#9b9b9b' }}>
+                <div style={{ fontSize: '12px', color: '#8E7B79' }}>
                   {property.available > 0 ? `${property.available} of ${property.total_rooms} rooms available` : 'Contact for availability'}
                 </div>
               </div>
 
-              <div style={{ height: '1px', background: '#f0ede6', margin: '14px 0' }} />
+              <div style={{ height: '1px', background: '#F6EBE4', margin: '14px 0' }} />
 
               {claimed ? (
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
                   <div style={{ fontSize: '36px', marginBottom: '10px' }}>🎉</div>
                   <div style={{ fontSize: '16px', fontWeight: 700, color: '#16a34a', marginBottom: '6px' }}>Listing claimed!</div>
-                  <div style={{ fontSize: '13px', color: '#6b6b6b' }}>Redirecting to your dashboard…</div>
+                  <div style={{ fontSize: '13px', color: '#6E5B59' }}>Redirecting to your dashboard…</div>
                 </div>
               ) : (
                 <>
                   {/* Blurred form preview */}
                   <div style={{ marginBottom: '14px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Inquiry form</div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#8E7B79', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Inquiry form</div>
                     {[70, 55, 80, 45].map((w, i) => (
                       <div key={i} className="redacted-field">
                         <div className="redacted-dot" />
@@ -429,12 +429,12 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
                     ))}
                   </div>
 
-                  <div style={{ height: '1px', background: '#f0ede6', marginBottom: '14px' }} />
+                  <div style={{ height: '1px', background: '#F6EBE4', marginBottom: '14px' }} />
 
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', marginBottom: '5px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F1517', marginBottom: '5px' }}>
                     {user ? 'This listing is ready for you' : 'Claim this listing'}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.6, marginBottom: '14px' }}>
+                  <div style={{ fontSize: '12px', color: '#6E5B59', lineHeight: 1.6, marginBottom: '14px' }}>
                     {user
                       ? 'Claim it to start receiving student inquiries and manage it from your dashboard.'
                       : 'Create a free account or sign in — this listing will be added automatically.'
@@ -475,17 +475,17 @@ export default function ClaimPage({ params }: { params: Promise<{ token: string 
       </div>
 
       {/* Mobile sticky CTA */}
-      <div style={{ display: 'none', position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: '#fff', borderTop: '1px solid #e8e5de', padding: '12px 20px 20px', boxShadow: '0 -8px 32px rgba(0,0,0,0.1)' }}
+      <div style={{ display: 'none', position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: '#fff', borderTop: '1px solid #E6DCD7', padding: '12px 20px 20px', boxShadow: '0 -8px 32px rgba(0,0,0,0.1)' }}
         className="mobile-claim-bar">
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#1a1a1a' }}>${property.price.toLocaleString()}<span style={{ fontSize: '12px', color: '#9b9b9b', fontFamily: 'DM Sans, sans-serif', fontWeight: 400 }}>/mo</span></div>
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '20px', color: '#1F1517' }}>${property.price.toLocaleString()}<span style={{ fontSize: '12px', color: '#8E7B79', fontFamily: 'DM Sans, sans-serif', fontWeight: 400 }}>/mo</span></div>
           </div>
           {user
-            ? <button onClick={handleClaim} disabled={claiming} style={{ flex: 1, background: '#FFC627', color: '#1a1a1a', border: 'none', borderRadius: '9px', padding: '13px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+            ? <button onClick={handleClaim} disabled={claiming} style={{ flex: 1, background: '#FFC627', color: '#1F1517', border: 'none', borderRadius: '9px', padding: '13px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
                 {claiming ? 'Claiming…' : 'Claim →'}
               </button>
-            : <a href={`/signup?next=/claim/${token}&role=landlord`} style={{ flex: 1, background: '#FFC627', color: '#1a1a1a', borderRadius: '9px', padding: '13px', fontSize: '14px', fontWeight: 800, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif" }}>
+            : <a href={`/signup?next=/claim/${token}&role=landlord`} style={{ flex: 1, background: '#FFC627', color: '#1F1517', borderRadius: '9px', padding: '13px', fontSize: '14px', fontWeight: 800, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif" }}>
                 Claim →
               </a>
           }

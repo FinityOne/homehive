@@ -67,7 +67,7 @@ function SavedInner() {
 
         .sv-shared-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 14px 18px; margin: 22px 0 0; }
         .sv-shared-banner span { font-size: 14px; color: #7c2d12; }
-        .sv-shared-banner button { background: #1a1a1a; color: #fff; border: none; border-radius: 100px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .sv-shared-banner button { background: #1F1517; color: #fff; border: none; border-radius: 100px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .sv-shared-banner button:disabled { opacity: 0.6; cursor: default; }
 
         .sv-split { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; background: var(--hh-bg-alt); border: 1px solid var(--hh-border-faint); border-radius: 16px; padding: 16px 20px; margin: 22px 0 28px; }
@@ -82,12 +82,12 @@ function SavedInner() {
 
         .sv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px 20px; }
         .sv-card { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 16px; overflow: hidden; transition: transform 0.18s, box-shadow 0.18s; }
-        .sv-card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(34,40,16,0.10); }
+        .sv-card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(31,21,23,0.10); }
         .sv-media { position: relative; aspect-ratio: 4 / 3; background: var(--hh-bg-alt); }
         .sv-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .sv-media-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 38px; background: linear-gradient(135deg,#ede9e0,#d9d2c5); }
+        .sv-media-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 38px; background: linear-gradient(135deg,#F6EBE4,#E3D9D5); }
         .sv-remove { position: absolute; top: 10px; right: 10px; z-index: 2; width: 32px; height: 32px; border-radius: 50%; border: none; background: rgba(26,26,26,0.78); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .sv-remove:hover { background: #1a1a1a; }
+        .sv-remove:hover { background: #1F1517; }
         .sv-card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
         .sv-card-name { font-size: 15px; font-weight: 600; color: var(--hh-text); text-decoration: none; line-height: 1.3; }
         .sv-card-name:hover { color: var(--hh-primary); }

@@ -89,7 +89,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
 
   const containerStyle: React.CSSProperties = {
     minHeight: '100vh',
-    background: '#f5f4f0',
+    background: '#FBEFE7',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -100,7 +100,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
   const cardStyle: React.CSSProperties = {
     background: '#fff',
     borderRadius: '20px',
-    border: '1px solid #e8e5de',
+    border: '1px solid #E6DCD7',
     maxWidth: '480px',
     width: '100%',
     overflow: 'hidden',
@@ -112,7 +112,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
       <div style={containerStyle}>
         <div style={{ ...cardStyle, padding: '48px 32px', textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔒</div>
-          <div style={{ fontSize: '16px', color: '#9b9b9b' }}>Loading your reservation…</div>
+          <div style={{ fontSize: '16px', color: '#8E7B79' }}>Loading your reservation…</div>
         </div>
       </div>
     )
@@ -123,8 +123,8 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
       <div style={containerStyle}>
         <div style={{ ...cardStyle, padding: '48px 32px', textAlign: 'center' }}>
           <div style={{ fontSize: '40px', marginBottom: '14px' }}>🔍</div>
-          <div style={{ fontSize: '20px', fontWeight: 700, color: '#1a1a1a', marginBottom: '8px' }}>Reservation Not Found</div>
-          <div style={{ fontSize: '14px', color: '#9b9b9b', lineHeight: 1.6 }}>This reservation link is invalid or has been removed.</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#1F1517', marginBottom: '8px' }}>Reservation Not Found</div>
+          <div style={{ fontSize: '14px', color: '#8E7B79', lineHeight: 1.6 }}>This reservation link is invalid or has been removed.</div>
         </div>
       </div>
     )
@@ -134,17 +134,17 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
     return (
       <div style={containerStyle}>
         <div style={cardStyle}>
-          <div style={{ background: '#1a1a1a', padding: '22px 32px', textAlign: 'center' }}>
+          <div style={{ background: '#1F1517', padding: '22px 32px', textAlign: 'center' }}>
             <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>
               Home<span style={{ color: '#FFC627', fontStyle: 'italic' }}>Hive</span>
             </div>
           </div>
           <div style={{ padding: '48px 32px', textAlign: 'center' }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏰</div>
-            <div style={{ fontSize: '22px', fontWeight: 800, color: '#1a1a1a', marginBottom: '10px', letterSpacing: '-0.3px' }}>
+            <div style={{ fontSize: '22px', fontWeight: 800, color: '#1F1517', marginBottom: '10px', letterSpacing: '-0.3px' }}>
               Reservation Expired
             </div>
-            <div style={{ fontSize: '15px', color: '#6b6b6b', lineHeight: 1.7, marginBottom: '24px' }}>
+            <div style={{ fontSize: '15px', color: '#6E5B59', lineHeight: 1.7, marginBottom: '24px' }}>
               Unfortunately, this reservation window has closed. Contact the landlord directly to see if the spot is still available.
             </div>
             <a href="/" style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', textDecoration: 'none', fontSize: '14px', fontWeight: 700, padding: '13px 32px', borderRadius: '10px' }}>
@@ -160,7 +160,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
     return (
       <div style={containerStyle}>
         <div style={cardStyle}>
-          <div style={{ background: '#1a1a1a', padding: '22px 32px', textAlign: 'center' }}>
+          <div style={{ background: '#1F1517', padding: '22px 32px', textAlign: 'center' }}>
             <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>
               Home<span style={{ color: '#FFC627', fontStyle: 'italic' }}>Hive</span>
             </div>
@@ -169,10 +169,10 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
             <div style={{ display: 'inline-flex', width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(16,185,129,0.1)', border: '2px solid rgba(16,185,129,0.3)', alignItems: 'center', justifyContent: 'center', fontSize: '32px', marginBottom: '20px' }}>
               ✓
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 800, color: '#1a1a1a', marginBottom: '10px', letterSpacing: '-0.4px' }}>
+            <div style={{ fontSize: '24px', fontWeight: 800, color: '#1F1517', marginBottom: '10px', letterSpacing: '-0.4px' }}>
               You&apos;re all set!
             </div>
-            <div style={{ fontSize: '15px', color: '#6b6b6b', lineHeight: 1.75, marginBottom: '28px' }}>
+            <div style={{ fontSize: '15px', color: '#6E5B59', lineHeight: 1.75, marginBottom: '28px' }}>
               Your reservation is confirmed. The landlord has been notified of your intent and will be in touch shortly with next steps.
             </div>
             <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '12px', padding: '16px 20px', marginBottom: '28px', textAlign: 'left' }}>
@@ -180,7 +180,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
               {['The landlord will reach out to discuss next steps', 'You&apos;ll go through the formal application process', 'No payment or commitment is required yet'].map((item, i) => (
                 <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '6px' }}>
                   <div style={{ color: '#10b981', fontWeight: 700, fontSize: '13px', flexShrink: 0 }}>✓</div>
-                  <div style={{ fontSize: '13px', color: '#3a3a3a', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: item }} />
+                  <div style={{ fontSize: '13px', color: '#40302F', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: item }} />
                 </div>
               ))}
             </div>
@@ -208,7 +208,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
     <div style={containerStyle}>
       <div style={cardStyle}>
         {/* Header */}
-        <div style={{ background: '#1a1a1a', padding: '22px 32px', textAlign: 'center' }}>
+        <div style={{ background: '#1F1517', padding: '22px 32px', textAlign: 'center' }}>
           <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>
             Home<span style={{ color: '#FFC627', fontStyle: 'italic' }}>Hive</span>
           </div>
@@ -234,43 +234,43 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
 
         {/* Body */}
         <div style={{ padding: '36px 32px 40px', textAlign: 'center' }}>
-          <div style={{ fontSize: '24px', fontWeight: 800, color: '#1a1a1a', marginBottom: '8px', letterSpacing: '-0.4px', lineHeight: 1.2 }}>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: '#1F1517', marginBottom: '8px', letterSpacing: '-0.4px', lineHeight: 1.2 }}>
             Your spot is being held
           </div>
-          <div style={{ fontSize: '15px', color: '#6b6b6b', lineHeight: 1.75, marginBottom: '28px' }}>
+          <div style={{ fontSize: '15px', color: '#6E5B59', lineHeight: 1.75, marginBottom: '28px' }}>
             The landlord has personally selected you as a top candidate for{' '}
             <strong>{state.property_name}</strong>. Accept below to confirm your intent and keep your spot.
           </div>
 
           {/* Reservation details */}
-          <div style={{ background: '#faf9f6', border: '1.5px solid #e8e5de', borderRadius: '14px', padding: '22px 24px', marginBottom: '28px', textAlign: 'left' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b9b9b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '14px' }}>
+          <div style={{ background: '#FFF7F2', border: '1.5px solid #E6DCD7', borderRadius: '14px', padding: '22px 24px', marginBottom: '28px', textAlign: 'left' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#8E7B79', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '14px' }}>
               Reservation Details
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f0ede6' }}>
-              <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Property</div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{state.property_name}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #F6EBE4' }}>
+              <div style={{ fontSize: '13px', color: '#8E7B79' }}>Property</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F1517' }}>{state.property_name}</div>
             </div>
             {state.room_name && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f0ede6' }}>
-                <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Room</div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{state.room_name}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #F6EBE4' }}>
+                <div style={{ fontSize: '13px', color: '#8E7B79' }}>Room</div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F1517' }}>{state.room_name}</div>
               </div>
             )}
             {state.property_address && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f0ede6' }}>
-                <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Address</div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', textAlign: 'right', maxWidth: '60%' }}>{state.property_address}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #F6EBE4' }}>
+                <div style={{ fontSize: '13px', color: '#8E7B79' }}>Address</div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F1517', textAlign: 'right', maxWidth: '60%' }}>{state.property_address}</div>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-              <div style={{ fontSize: '13px', color: '#9b9b9b' }}>Monthly Rent</div>
+              <div style={{ fontSize: '13px', color: '#8E7B79' }}>Monthly Rent</div>
               <div style={{ textAlign: 'right' }}>
                 {discountedPrice !== null ? (
                   <>
                     <div>
-                      <span style={{ fontSize: '13px', color: '#9b9b9b', textDecoration: 'line-through', marginRight: '6px' }}>${state.original_price.toLocaleString()}/mo</span>
+                      <span style={{ fontSize: '13px', color: '#8E7B79', textDecoration: 'line-through', marginRight: '6px' }}>${state.original_price.toLocaleString()}/mo</span>
                       <span style={{ fontSize: '20px', fontWeight: 800, color: '#8C1D40' }}>${discountedPrice.toLocaleString()}/mo</span>
                     </div>
                     <div style={{ display: 'inline-block', background: '#8C1D40', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '20px', marginTop: '4px' }}>
@@ -278,7 +278,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
                     </div>
                   </>
                 ) : (
-                  <span style={{ fontSize: '20px', fontWeight: 800, color: '#1a1a1a' }}>${state.original_price.toLocaleString()}/mo</span>
+                  <span style={{ fontSize: '20px', fontWeight: 800, color: '#1F1517' }}>${state.original_price.toLocaleString()}/mo</span>
                 )}
               </div>
             </div>
@@ -290,7 +290,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
             disabled={accepting}
             style={{
               display: 'block', width: '100%',
-              background: accepting ? '#9b9b9b' : '#8C1D40',
+              background: accepting ? '#8E7B79' : '#8C1D40',
               color: '#fff', border: 'none',
               fontSize: '17px', fontWeight: 800,
               padding: '20px 32px', borderRadius: '12px',
@@ -304,7 +304,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
             {accepting ? 'Confirming…' : '✓ Accept My Reservation →'}
           </button>
 
-          <div style={{ fontSize: '12px', color: '#b0a898', lineHeight: 1.7, marginBottom: '24px' }}>
+          <div style={{ fontSize: '12px', color: '#A8938F', lineHeight: 1.7, marginBottom: '24px' }}>
             Accepting confirms your <strong>intent to move forward</strong> — no payment or commitment required yet.<br />
             The landlord will follow up with next steps.
           </div>
@@ -312,7 +312,7 @@ export default function ReservationAcceptPage({ params }: { params: Promise<{ to
           {/* Trust signals */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
             {['🔒 Secure', '✓ No payment now', '📞 Landlord will call'].map((item, i) => (
-              <div key={i} style={{ fontSize: '12px', color: '#9b9b9b', fontWeight: 500 }}>{item}</div>
+              <div key={i} style={{ fontSize: '12px', color: '#8E7B79', fontWeight: 500 }}>{item}</div>
             ))}
           </div>
         </div>

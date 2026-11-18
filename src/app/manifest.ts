@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'The off-campus housing platform built for ASU students. Verified homes, transparent pricing, zero broker fees.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#f5f4f0',
+    background_color: '#FFF7F2',
     theme_color: '#8C1D40',
     icons: [
       {

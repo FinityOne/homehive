@@ -1,7 +1,14 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import './globals.css'
 import PostHogProvider from '@/components/PostHogProvider'
+
+// Paints mobile browser chrome in the logo's maroon so the app frame matches
+// the mark. Next already emits the width=device-width viewport tag itself —
+// only themeColor is being added here.
+export const viewport: Viewport = {
+  themeColor: '#8C1D40',
+}
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://homehive.live'
 const DEFAULT_OG_IMAGE = `${SITE_URL}/opengraph-image`
@@ -125,7 +132,7 @@ const websiteJsonLd = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: '#FAF8F3' }}>
+      <body style={{ margin: 0, background: '#FFF7F2' }}>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}

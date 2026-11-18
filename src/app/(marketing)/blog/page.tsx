@@ -85,9 +85,9 @@ export default function BlogPage() {
         .blog-body { max-width: 1060px; margin: 0 auto; padding: 48px 24px 96px; font-family: var(--hh-font-ui); }
 
         /* Featured */
-        .blog-featured { display: grid; grid-template-columns: 1fr 1fr; gap: 0; background: #1c2824; border-radius: 16px; overflow: hidden; margin-bottom: 48px; text-decoration: none; color: inherit; transition: transform 0.2s, box-shadow 0.2s; }
-        .blog-featured:hover { transform: translateY(-2px); box-shadow: 0 16px 48px rgba(34,40,16,0.18); }
-        .blog-featured-graphic { background: linear-gradient(135deg, #141e1c 0%, #1c2824 40%, var(--hh-hive-800) 100%); display: flex; align-items: center; justify-content: center; padding: 40px; min-height: 280px; position: relative; overflow: hidden; }
+        .blog-featured { display: grid; grid-template-columns: 1fr 1fr; gap: 0; background: #3A0A1A; border-radius: 16px; overflow: hidden; margin-bottom: 48px; text-decoration: none; color: inherit; transition: transform 0.2s, box-shadow 0.2s; }
+        .blog-featured:hover { transform: translateY(-2px); box-shadow: 0 16px 48px rgba(31,21,23,0.18); }
+        .blog-featured-graphic { background: linear-gradient(135deg, #2B0712 0%, #3A0A1A 40%, var(--hh-hive-800) 100%); display: flex; align-items: center; justify-content: center; padding: 40px; min-height: 280px; position: relative; overflow: hidden; }
         .blog-feat-bg-num { position: absolute; font-family: var(--hh-font-display); font-size: 160px; font-weight: 600; color: rgba(255,255,255,0.04); bottom: -20px; right: -10px; line-height: 1; user-select: none; }
         .blog-feat-badge { background: var(--hh-accent); color: var(--hh-ink-900); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; display: inline-block; margin-bottom: 16px; font-family: var(--hh-font-ui); }
         .blog-feat-stat { font-family: var(--hh-font-display); font-size: 64px; font-weight: 300; color: #fff; letter-spacing: -2px; line-height: 1; }
@@ -110,8 +110,8 @@ export default function BlogPage() {
         .blog-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
         .blog-card { background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 14px; overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: transform 0.15s, box-shadow 0.15s; }
         .blog-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.07); }
-        .blog-card-top { height: 120px; display: flex; align-items: center; justify-content: center; background: var(--hh-bg); border-bottom: 1px solid var(--hh-border-faint); font-family: var(--hh-font-display); font-size: 40px; font-weight: 300; color: #c5c1b8; letter-spacing: -1px; position: relative; overflow: hidden; }
-        .blog-card-top-num { position: absolute; font-family: var(--hh-font-display); font-size: 100px; color: rgba(34,40,16,0.04); font-weight: 600; bottom: -16px; right: 8px; line-height: 1; user-select: none; }
+        .blog-card-top { height: 120px; display: flex; align-items: center; justify-content: center; background: var(--hh-bg); border-bottom: 1px solid var(--hh-border-faint); font-family: var(--hh-font-display); font-size: 40px; font-weight: 300; color: #C9BDBA; letter-spacing: -1px; position: relative; overflow: hidden; }
+        .blog-card-top-num { position: absolute; font-family: var(--hh-font-display); font-size: 100px; color: rgba(31,21,23,0.04); font-weight: 600; bottom: -16px; right: 8px; line-height: 1; user-select: none; }
         .blog-card-body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
         .blog-card-cat { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 10px; font-family: var(--hh-font-ui); }
         .blog-card-title { font-family: var(--hh-font-display); font-size: 17px; font-weight: 600; color: var(--hh-text); line-height: 1.3; margin-bottom: 10px; letter-spacing: -0.2px; }
@@ -149,7 +149,7 @@ export default function BlogPage() {
               <span className="blog-feat-bg-num">01</span>
             </div>
             <div className="blog-featured-body">
-              <span className="blog-cat-pill" style={{ background: 'rgba(217,161,74,0.12)', color: 'var(--hh-accent)' }}>
+              <span className="blog-cat-pill" style={{ background: 'rgba(255,198,39,0.12)', color: 'var(--hh-accent)' }}>
                 {featured.category}
               </span>
               <div className="blog-feat-title">{featured.title}</div>
@@ -162,7 +162,7 @@ export default function BlogPage() {
               <div className="blog-feat-cta">
                 Read the full report
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 7h10M7 2l5 5-5 5" stroke="#D9A14A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M2 7h10M7 2l5 5-5 5" stroke="#FFC627" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
             </div>

@@ -1,45 +1,61 @@
 /*
- * HomeHive Brand Tokens — v1.0 (2026)
- * Source of truth for the design system.
+ * HomeHive Brand Tokens — v2.0 (2026)
+ * Source of truth for the public-facing design system.
  *
- * Currently imported by the home page only (trial).
- * To roll out platform-wide: move this import to globals.css.
+ * Imported by the (marketing) layout, so every public page + Nav + Footer
+ * gets these. The signed-in portal does NOT read --hh-* (it has its own
+ * theme in src/lib/financeTheme.ts) — nothing here leaks into it.
  *
  * Fonts: Newsreader (editorial display) × Geist (utilitarian UI)
- * Colors: Warm, restrained, accessible — all pairings ≥ 4.5:1 contrast
+ *
+ * COLOURS ARE TAKEN FROM THE LOGO (public/logo/HH - square logo.png).
+ * Four of these are the logo's own pixels, sampled, not approximated:
+ *   #FFF7F2  the logo's cream field      → --hh-cream-50
+ *   #8C1D40  the hexagon                 → --hh-hive-800
+ *   #FFC627  the lit honeycomb cell      → --hh-honey-600
+ *   #FFE48F  the two dim cells           → --hh-honey-200
+ *   #FFF3C4  the palest cell             → --hh-honey-50
+ * Don't "improve" those five — they're a colour match to the mark, and a
+ * page sitting next to the logo is where drift shows.
+ *
+ * Every text pairing below is ≥ 4.5:1. Measured, not eyeballed.
  */
 
 :root {
   /* ── Color Palette ─────────────────────────────── */
 
-  /* Surface */
-  --hh-cream-50:  #FAF8F3;   /* page background — default */
-  --hh-cream-100: #F4F1EA;   /* card alt / section bg */
+  /* Surface — the logo's cream field */
+  --hh-cream-50:  #FFF7F2;   /* page background — default (LOGO) */
+  --hh-cream-100: #FBEFE7;   /* card alt / section bg */
 
-  /* Brand — teal structure, honey action */
-  --hh-hive-900:  #1E2E2C;   /* dark surfaces — trust panel, landlord band */
-  --hh-hive-800:  #2F4A48;   /* PRIMARY — headlines, structure, hover */
-  --hh-hive-100:  #DDE7E4;   /* tinted full-bleed band */
-  --hh-hive-50:   #EDF2F0;   /* faint tint — hover wash */
+  /* Brand — maroon structure, gold action.
+     Same relationship the logo has: the gold only ever appears
+     as a small lit cell inside the maroon. */
+  --hh-hive-900:  #4A0F22;   /* dark surfaces — trust panel, landlord band */
+  --hh-hive-800:  #8C1D40;   /* PRIMARY — headlines, structure, hover (LOGO) */
+  --hh-hive-100:  #F3DDE3;   /* tinted full-bleed band */
+  --hh-hive-50:   #FBEEF2;   /* faint tint — hover wash */
 
-  /* Honey is the ONE action colour. Nothing else wears it. */
-  --hh-honey-700: #B8832F;   /* pressed / large text only (3.2:1 on cream) */
-  --hh-honey-600: #D9A14A;   /* ACCENT  — the primary CTA, verified marks */
-  --hh-honey-200: #F2DFBE;   /* accent hairline */
-  --hh-honey-50:  #FBF4E6;   /* accent wash */
+  /* Gold is the ONE action colour. Nothing else wears it.
+     (Token names stay "honey" — the scale moved, the role didn't.) */
+  --hh-honey-700: #8A5A00;   /* pressed state, and small text (5.6:1 on cream) */
+  --hh-honey-600: #FFC627;   /* ACCENT — the primary CTA, verified marks (LOGO) */
+  --hh-honey-200: #FFE48F;   /* accent hairline (LOGO) */
+  --hh-honey-50:  #FFF3C4;   /* accent wash (LOGO) */
 
-  /* Ink (warm-toned neutral scale) */
-  --hh-ink-900:   #222810;   /* body & display text */
-  --hh-ink-700:   #3d3d30;   /* secondary text */
-  --hh-ink-500:   #6b6b5a;   /* muted text */
-  --hh-ink-400:   #8a8a78;   /* placeholder */
-  --hh-ink-300:   #c5c2b4;   /* dividers / strokes */
-  --hh-ink-200:   #dddad0;   /* faint hairlines */
+  /* Ink (warm-toned neutral scale, pulled toward the maroon) */
+  --hh-ink-900:   #1F1517;   /* body & display text */
+  --hh-ink-700:   #40302F;   /* secondary text */
+  --hh-ink-600:   #574645;   /* secondary text, lighter weight */
+  --hh-ink-500:   #6E5B59;   /* muted text */
+  --hh-ink-400:   #8E7B79;   /* placeholder */
+  --hh-ink-300:   #C9BDBA;   /* dividers / strokes */
+  --hh-ink-200:   #E3D9D5;   /* faint hairlines */
 
   /* Status */
   --hh-status-verified: #2a7d4f;
   --hh-status-live:     #35A05F;   /* the "homes live now" pulse */
-  --hh-status-pending:  #D9A14A;
+  --hh-status-pending:  #8A5A00;
   --hh-status-error:    #c0392b;
 
   /* ── Semantic Aliases ──────────────────────────── */
@@ -60,16 +76,18 @@
   --hh-surface-tint:   var(--hh-hive-100);
 
   /* ── Elevation ─────────────────────────────────── */
-  /* Shadows are tinted with the brand teal, never neutral grey. */
-  --hh-shadow-sm:  0 1px 3px rgba(30,46,44,0.07);
-  --hh-shadow-md:  0 4px 18px rgba(30,46,44,0.09);
-  --hh-shadow-lg:  0 18px 48px -16px rgba(30,46,44,0.28);
-  --hh-shadow-cta: 0 10px 26px -10px rgba(184,131,47,0.65);
-  --hh-ring-accent: 0 0 0 4px rgba(217,161,74,0.28);
+  /* Shadows are tinted with the brand maroon, never neutral grey. */
+  --hh-shadow-sm:  0 1px 3px rgba(74,15,34,0.07);
+  --hh-shadow-md:  0 4px 18px rgba(74,15,34,0.10);
+  --hh-shadow-lg:  0 18px 48px -16px rgba(74,15,34,0.26);
+  /* The CTA glow is gold, not maroon — it belongs to the accent. */
+  --hh-shadow-cta: 0 10px 26px -10px rgba(214,160,20,0.70);
+  --hh-ring-accent: 0 0 0 4px rgba(255,198,39,0.42);
 
   /* ── Typography ────────────────────────────────── */
   --hh-font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
   --hh-font-ui:      'Geist', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --hh-font-body:    var(--hh-font-ui);
   --hh-font-mono:    'Geist Mono', 'Courier New', monospace;
 
   /* ── Type Scale ────────────────────────────────── */
