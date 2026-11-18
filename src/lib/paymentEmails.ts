@@ -66,6 +66,13 @@ export const isProblem = (o: EmailOutcome) => o === 'bounced' || o === 'failed' 
  */
 export function kindLabel(kind: string): string {
   if (kind.startsWith('rent_request')) return 'Rent request'
+  // Before the `late_fee` tests: a notice is an escalation, not a reminder, and
+  // the number in it is the whole point of saying its name.
+  if (kind.startsWith('late_warning')) {
+    const level = kind.match(/^late_warning_(\d+)$/)?.[1]
+    return level === '1' ? 'First notice' : level === '2' ? 'Second notice'
+      : level === '3' ? 'Final notice' : 'Late rent notice'
+  }
   // Before the `late_fee` test below, which this would otherwise match — and
   // calling a write-off a "reminder" would state the opposite of what was sent.
   if (kind.startsWith('late_fee_waived_receipt')) return 'Your copy of a waiver'
@@ -90,6 +97,7 @@ export const KIND_FILTERS: { id: string; label: string }[] = [
   { id: '',                 label: 'Everything' },
   { id: 'upcoming_',        label: 'Automatic notices' },
   { id: 'rent_request',     label: 'Rent requests' },
+  { id: 'late_warning',     label: 'Late rent notices' },
   { id: 'late_fee_request', label: 'Late fee reminders' },
   { id: 'late_fee_waived',  label: 'Fees waived' },
   { id: 'receipt_tenant',   label: 'Receipts' },

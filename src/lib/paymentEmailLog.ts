@@ -24,8 +24,13 @@ export type PaymentEmailItem = {
 
 /** Who the message was written for. A log of "reminders sent to tenants" that
  *  silently includes the landlord's own copy of a receipt is a log that lies,
- *  and `kind` only carried this by convention. */
-export type EmailAudience = 'tenant' | 'landlord' | 'admin'
+ *  and `kind` only carried this by convention.
+ *
+ *  'cosigner' is its own audience and not a kind of tenant: one late-rent
+ *  notice sent to a resident and their guarantor is *one* notice, and counting
+ *  the guarantor's copy as the tenant's would turn it into "we told her
+ *  twice". */
+export type EmailAudience = 'tenant' | 'cosigner' | 'landlord' | 'admin'
 
 export type PaymentEmailRecord = {
   planId: string
@@ -43,6 +48,8 @@ export type PaymentEmailRecord = {
   providerId?: string | null
   customMessage?: string | null
   sentBy?: string | null
+  /** The `rent_late_warnings` row this send delivered, when it is one. */
+  lateWarningId?: string | null
   items: PaymentEmailItem[]
 }
 
@@ -76,6 +83,7 @@ export async function logPaymentEmail(rec: PaymentEmailRecord): Promise<string |
         custom_message:  rec.customMessage ?? null,
         amount_total:    amountTotal,
         sent_by:         rec.sentBy ?? null,
+        late_warning_id: rec.lateWarningId ?? null,
       }])
       .select('id')
       .single()
