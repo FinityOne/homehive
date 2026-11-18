@@ -8,9 +8,12 @@
  *
  * Two rules worth keeping:
  *
- *   • Every bucket is capped at `MAX_LINES`. A digest that prints forty rows is
- *     a worse version of the page it links to; the cap plus "+N more" keeps the
- *     mail skimmable and sends the long tail to the list where it belongs.
+ *   • Every open item is printed. The cap exists only to stop a pathological
+ *     list producing a megabyte of HTML — it is not an editorial choice. An
+ *     earlier version capped each bucket at six and showed the rest as a
+ *     count, which meant the mail could say "12 open" while naming four: the
+ *     landlord still had to open the app to find out what they were, which is
+ *     the one job this email has.
  *   • No fabricated figures. Costs print only where the landlord entered one,
  *     and "—" is honest where an estimate is missing. A made-up total in an
  *     email is how a landlord learns not to trust the dashboard either.
@@ -19,8 +22,14 @@ import { KIND_META, PRIORITY_META, fmtMoney } from './maintenance'
 import { digestSubject, type MaintenanceDigest, type DigestLine } from './maintenanceDigest'
 import type { BuiltEmail } from './maintenanceEmails'
 
-/** Lines printed per bucket before it collapses into a count. */
-const MAX_LINES = 6
+/**
+ * Hard ceiling on lines per section — a mail-size guard, not an edit.
+ *
+ * Gmail clips a message over roughly 102 KB, and a clipped digest hides the
+ * unsubscribe link in the footer, so there has to be *some* ceiling. Set high
+ * enough that a real portfolio never reaches it.
+ */
+const MAX_LINES = 40
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -41,13 +50,21 @@ function timing(l: DigestLine): string | null {
   if (l.daysUntil != null) {
     if (l.daysUntil === 0) return 'due today'
     if (l.daysUntil === 1) return 'due tomorrow'
-    return `in ${l.daysUntil} days`
+    // Inside the week, the countdown is the useful form. Beyond it, "in 21
+    // days" is arithmetic the reader has to undo to get to a calendar.
+    return l.daysUntil <= 7 || !l.targetDate
+      ? `in ${l.daysUntil} days`
+      : `due ${fmtDay(l.targetDate)}`
   }
   if (l.daysInStatus != null) {
     return l.status === 'blocked'
       ? `blocked ${l.daysInStatus} day${l.daysInStatus === 1 ? '' : 's'}`
       : `no movement in ${l.daysInStatus} days`
   }
+  // An open item with no date at all should say so — that is the actionable
+  // fact about it. A *finished* item gets nothing: its old target date is
+  // history, and "due Dec 1" on completed work reads as an outstanding job.
+  if (l.undated) return 'no target date'
   return null
 }
 
@@ -87,6 +104,14 @@ function sectionsOf(d: MaintenanceDigest): Section[] {
       accent: '#6d28d9',
       bg: '#f5f3ff',
       lines: d.stalled,
+    },
+    {
+      key: 'openRest',
+      heading: 'Also open',
+      blurb: 'The rest of your outstanding work, so this email is the whole list.',
+      accent: '#475569',
+      bg: '#f8fafc',
+      lines: d.openRest,
     },
     {
       key: 'completed',
@@ -161,8 +186,9 @@ export function buildMaintenanceDigestEmail(input: {
   if (d.undatedCount > 0) {
     textLines.push(
       ``,
-      `${d.undatedCount} open item${d.undatedCount === 1 ? ' has' : 's have'} no target date, so ` +
-      `${d.undatedCount === 1 ? 'it' : 'they'} will never show up here as due.`
+      `${d.undatedCount} of the open item${d.undatedCount === 1 ? '' : 's'} above ` +
+      `${d.undatedCount === 1 ? 'has' : 'have'} no target date, so ${d.undatedCount === 1 ? 'it' : 'they'} ` +
+      `will never be chased as overdue. A date is what turns one into this week's work.`
     )
   }
 
@@ -253,10 +279,10 @@ export function buildMaintenanceDigestEmail(input: {
 
     ${d.undatedCount > 0 ? `
     <div style="margin-top:12px;border:1px dashed #cbd5e1;border-radius:9px;padding:11px 14px;font-size:12px;color:#475569;line-height:1.6;">
-      <strong style="color:#0f172a;">${d.undatedCount} open item${d.undatedCount === 1 ? '' : 's'}</strong>
+      <strong style="color:#0f172a;">${d.undatedCount} of the open item${d.undatedCount === 1 ? '' : 's'} above</strong>
       ${d.undatedCount === 1 ? 'has' : 'have'} no target date, so
-      ${d.undatedCount === 1 ? 'it' : 'they'} will never appear here as due. Adding one is what puts
-      ${d.undatedCount === 1 ? 'it' : 'them'} on this list.
+      ${d.undatedCount === 1 ? 'it' : 'they'} will never be chased as overdue.
+      A date is what turns ${d.undatedCount === 1 ? 'it' : 'one'} into this week's work.
     </div>` : ''}
 
     <div style="margin-top:24px;text-align:center;">

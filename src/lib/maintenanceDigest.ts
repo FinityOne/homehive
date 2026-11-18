@@ -23,11 +23,17 @@
  *   • `completed`   — finished since the last digest, with what it cost. The
  *                     only bucket that is good news, and the reason to open
  *                     next week's.
- *   • `undated`     — open with no target date. Not shown as a list, just a
- *                     count, because the fix is one click on the item.
+ *   • `openRest`    — every other open item: no target date, or a date further
+ *                     out than the horizon. The point of this one is
+ *                     completeness, so the mail *is* the list and nobody has
+ *                     to open the app to see what is outstanding.
  *
- * Deliberately *not* here: cancelled work, and anything the landlord cannot
- * act on. A digest earns its place by being shorter than the page it links to.
+ * `undatedCount` survives as a nudge — those items are listed in `openRest`
+ * now, but "8 of these will never show up as due" is a prompt to go and set
+ * dates, which the list alone does not say.
+ *
+ * Deliberately *not* here: cancelled work. It was decided against, and listing
+ * it invites the landlord to re-litigate a closed call every Friday.
  */
 import {
   isOpen,
@@ -69,6 +75,8 @@ export type DigestLine = {
   daysUntil: number | null
   /** How long it has sat in its current status. Only for `stalled`. */
   daysInStatus: number | null
+  /** Open, with no target date at all — so it can never read as due. */
+  undated?: boolean
   estimatedCost: number | null
   actualCost: number | null
   tenantVisible: boolean
@@ -83,7 +91,13 @@ export type MaintenanceDigest = {
   dueSoon: DigestLine[]
   stalled: DigestLine[]
   completed: DigestLine[]
-  /** Open items carrying no target date — a count, not a list. */
+  /**
+   * Every open item not already named above — undated, or dated past the
+   * horizon. Together with the three buckets before it this covers the whole
+   * open list, so the email never hides outstanding work behind a count.
+   */
+  openRest: DigestLine[]
+  /** Open items carrying no target date. Listed in `openRest`, counted here. */
   undatedCount: number
   /** Items added during the look-back window. */
   addedCount: number
@@ -157,7 +171,13 @@ export function buildMaintenanceDigest(
   const dueSoon: DigestLine[] = []
   const stalled: DigestLine[] = []
   const completed: DigestLine[] = []
+  const openRest: DigestLine[] = []
   const openProperties = new Set<string>()
+  // Which open items a named bucket has already claimed. The catch-all is the
+  // remainder, computed rather than re-derived from the same conditions — two
+  // copies of "is this due soon?" is how an item ends up printed twice or not
+  // at all.
+  const named = new Set<string>()
   let undatedCount = 0
   let addedCount = 0
   let spentInWindow = 0
@@ -175,17 +195,27 @@ export function buildMaintenanceDigest(
 
       if (isOverdue(i, now)) {
         overdue.push(lineOf(i, { daysLate: daysBetween(i.target_date!, asOf) }))
+        named.add(i.id)
       } else if (i.target_date && i.target_date <= horizon) {
         dueSoon.push(lineOf(i, { daysUntil: daysBetween(asOf, i.target_date) }))
-      } else if (!i.target_date) {
-        undatedCount++
+        named.add(i.id)
       }
+
+      if (!i.target_date) undatedCount++
 
       // Stalled is orthogonal to the dates above — a blocked item with next
       // week's target date belongs in both, and saying so twice is the point.
       const sinceUpdate = daysBetween(billingToday(new Date(i.updated_at)), asOf)
       if (i.status === 'blocked' || (i.status === 'in_progress' && sinceUpdate >= STALLED_AFTER_DAYS)) {
         stalled.push(lineOf(i, { daysInStatus: sinceUpdate }))
+        named.add(i.id)
+      }
+
+      // Anything still unnamed is open work the landlord has not been shown.
+      if (!named.has(i.id)) {
+        openRest.push(lineOf(i, i.target_date
+          ? { daysUntil: daysBetween(asOf, i.target_date) }
+          : { undated: true }))
       }
       continue
     }
@@ -206,6 +236,15 @@ export function buildMaintenanceDigest(
   dueSoon.sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0) || byPriority(a, b))
   stalled.sort((a, b) => (b.daysInStatus ?? 0) - (a.daysInStatus ?? 0) || byPriority(a, b))
   completed.sort((a, b) => byPriority(a, b) || a.propertyName.localeCompare(b.propertyName))
+  // Dated work first, soonest to furthest, then the undated tail. An item with
+  // a date is a commitment; one without is a wish, and it reads as the backlog
+  // it is when it sits at the bottom.
+  openRest.sort((a, b) =>
+    (a.daysUntil == null ? 1 : 0) - (b.daysUntil == null ? 1 : 0) ||
+    (a.daysUntil ?? 0) - (b.daysUntil ?? 0) ||
+    byPriority(a, b) ||
+    a.propertyName.localeCompare(b.propertyName)
+  )
 
   const totals = computeTotals(items, now)
 
@@ -216,6 +255,7 @@ export function buildMaintenanceDigest(
     dueSoon,
     stalled,
     completed,
+    openRest,
     undatedCount,
     addedCount,
     propertyCount: openProperties.size,

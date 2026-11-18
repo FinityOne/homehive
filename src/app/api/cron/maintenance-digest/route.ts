@@ -246,6 +246,7 @@ export async function GET(req: NextRequest) {
           overdue: c.digest.overdue.length,
           dueSoon: c.digest.dueSoon.length,
           stalled: c.digest.stalled.length,
+          alsoOpen: c.digest.openRest.length,
           completedThisWeek: c.digest.completed.length,
           undated: c.digest.undatedCount,
           properties: c.digest.propertyCount,
