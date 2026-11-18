@@ -81,6 +81,18 @@ const PAID_SECTIONS: Array<{ base: string; feature: LockedFeature }> = [
     },
   },
   {
+    base: '/landlord/activity',
+    feature: {
+      title: 'Activity',
+      promise: 'One feed of everything your residents and applicants do.',
+      points: [
+        'Rent and charges as they settle — including the ones that failed',
+        'Every email we sent, and whether it was delivered, opened or bounced',
+        'Portal sign-ins, new leads and booked tours, newest first',
+      ],
+    },
+  },
+  {
     base: '/landlord/leads',
     feature: {
       title: 'Leads',

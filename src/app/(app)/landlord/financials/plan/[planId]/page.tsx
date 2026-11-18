@@ -37,6 +37,7 @@ import { GLYPH_CSS } from '@/components/finance/Glyph'
 import { ProgressBar, VIZ_CSS } from '@/components/finance/Charts'
 import { dayOrdinal } from '@/components/finance/ChargeSheet'
 import { FINANCE_THEME } from '@/lib/financeTheme'
+import ActivityInline from '@/components/activity/ActivityInline'
 
 const PlanWorkspace = dynamic(() => import('@/components/payments/PlanWorkspace'), { ssr: false })
 
@@ -181,6 +182,18 @@ export default function PlanLedgerPage({
         )}
 
         <PlanWorkspace planId={planId} embedded />
+
+        {/* The ledger says what each charge *is*. This says what happened to
+            it — paid, submitted and still clearing, declined, chased, opened.
+            Together they are the answer to "why does this row still say
+            unpaid", which the ledger alone has never been able to give. */}
+        <ActivityInline
+          planId={planId}
+          title="Recent activity on this tenancy"
+          limit={8}
+          lane="money"
+          emptyHint="Payments, reminders and receipts on this plan will show up here."
+        />
       </div>
 
       <CommandPalette tree={tree} open={find} onClose={() => setFind(false)} />
