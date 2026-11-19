@@ -85,7 +85,17 @@ export type ListingFacts = {
   /** Distance to ASU in miles — the single strongest comp axis in this market. */
   asu_distance: number | null
   total_rooms: number
+  /**
+   * Rooms the landlord is *advertising* — the number they typed into the
+   * listing editor. It is marketing copy, not occupancy: nothing writes it when
+   * a lease is signed. Shown as a cross-check against `openRooms`, never used
+   * to decide whether the place is full.
+   */
   available: number
+  /** Rooms lived in today, derived from leases by `occupancy.ts`. */
+  filledRooms: number
+  /** Rooms with nobody signed for them — what is genuinely left to let. */
+  openRooms: number
   photoCount: number
   hasDescription: boolean
 }
@@ -439,10 +449,12 @@ export function diagnose(
   }
 
   // 3. Nothing left to sell.
-  if (l.total_rooms > 0 && l.available === 0) {
+  if (l.total_rooms > 0 && l.openRooms === 0) {
     return {
       code: 'full', severity: 'info',
-      headline: 'Every room is filled',
+      headline: l.filledRooms >= l.total_rooms
+        ? 'Every room is filled'
+        : 'Every room is signed for',
       detail: `Still drawing ${a.views} views a month. Worth keeping live as a waitlist for your next opening rather than hiding it.`,
       actions: [{ label: 'Set up next year’s availability', href: edit }],
     }
@@ -526,10 +538,10 @@ export function diagnose(
   }
 
   // 8. Tours happening, nothing signed.
-  if (a.tours > 0 && l.available > 0) {
+  if (a.tours > 0 && l.openRooms > 0) {
     return {
       code: 'tours_no_lease', severity: 'warn',
-      headline: `${a.tours} tour${a.tours === 1 ? '' : 's'} and still ${l.available} room${l.available === 1 ? '' : 's'} open`,
+      headline: `${a.tours} tour${a.tours === 1 ? '' : 's'} and still ${l.openRooms} room${l.openRooms === 1 ? '' : 's'} open`,
       detail: 'People are coming to see it, so the listing and the price are both working. What is left is the close: screening turned around quickly, and an offer that does not wait on email.',
       actions: [
         { label: 'See who toured', href: '/landlord/leads/pipeline' },
@@ -591,7 +603,7 @@ export function priceAdvice(
   d: Diagnosis
 ): PriceAdvice | null {
   if (comps.thin || comps.median == null || comps.yourPerBed == null) return null
-  const openRooms = Math.max(1, l.rental_mode === 'by_room' ? l.available || 1 : 1)
+  const openRooms = Math.max(1, l.rental_mode === 'by_room' ? l.openRooms || 1 : 1)
   const mid = (lo: number, hi: number) => Math.round((lo + hi) / 2)
 
   // Priced high and visibly being skipped: come back to the middle of the band.
@@ -613,7 +625,7 @@ export function priceAdvice(
   // Cheap and in demand: the market is telling you there is room.
   const cheap = comps.percentile != null && comps.percentile <= 25
   const hot = a.inquiries >= 3 && (a.viewers || a.views) >= MIN_VIEWS_TO_JUDGE
-  if (cheap && hot && l.available > 0) {
+  if (cheap && hot && l.openRooms > 0) {
     const lowPerBed = Math.round((comps.yourPerBed + (comps.median ?? comps.yourPerBed)) / 2)
     const highPerBed = comps.median
     const delta = (mid(lowPerBed, highPerBed) - comps.yourPerBed) * openRooms
@@ -715,11 +727,11 @@ export function summarise(rs: ListingReport[]): PortfolioSummary {
     tours: rs.reduce((s, r) => s + r.activity.tours, 0),
     inquiryRate: base >= MIN_VIEWS_TO_JUDGE ? Math.round((inquiries / base) * 1000) / 10 : null,
     needsAttention: rs.filter(r => r.diagnosis.severity === 'critical' || r.diagnosis.severity === 'warn').length,
-    openRooms: rs.reduce((s, r) => s + Math.max(0, r.listing.available || 0), 0),
+    openRooms: rs.reduce((s, r) => s + Math.max(0, r.listing.openRooms || 0), 0),
     vacantRent: rs.reduce((s, r) => {
       const perBed = perBedPrice(r.listing)
       if (!perBed) return s
-      return s + perBed * Math.max(0, r.listing.available || 0)
+      return s + perBed * Math.max(0, r.listing.openRooms || 0)
     }, 0),
   }
 }

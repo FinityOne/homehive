@@ -39,6 +39,7 @@ import {
   type Expense, type ExpenseTotals, type Noi,
 } from './propertyExpenses'
 import type { TreeProperty } from './financialsTree'
+import type { PropertyOccupancy } from './occupancy'
 
 // ── The property row, as this module needs it ────────────────────────────────
 
@@ -65,6 +66,8 @@ export type PropertyFacts = {
   security_deposit: number | null
   listing_status: string | null
   available_from: string | null
+  /** Whole-home or by-the-room. Decides how many rooms one lease takes. */
+  rental_mode?: 'whole_home' | 'by_room' | string | null
 }
 
 // ── Occupancy, and what the empty part costs ─────────────────────────────────
@@ -72,10 +75,14 @@ export type PropertyFacts = {
 export type Occupancy = {
   /** Lettable rooms, when the listing says. Null when it does not. */
   rooms: number | null
-  /** Payers currently on a live lease. */
+  /** Rooms lived in today. */
   filled: number
   /** rooms − filled, floored at zero. Null without a room count. */
   empty: number | null
+  /** Of the empty rooms, how many are already let from a later date. */
+  startingLater: number
+  /** Empty rooms with nobody signed at all — what is left to market. */
+  open: number
   /** filled ÷ rooms, 0–100. Null without a room count. */
   pct: number | null
   /**
@@ -95,32 +102,59 @@ export type Occupancy = {
   lossBasis: string | null
 }
 
-export function occupancy(facts: PropertyFacts | null, prop: TreeProperty | null): Occupancy {
-  const filled = prop
+/**
+ * How full the property is.
+ *
+ * `leaseOcc` is the answer from `occupancy.ts` — the one engine, fed by the
+ * `leases` table — and it is used whenever the caller has it. It is optional
+ * only because the money tree is built from payment *plans*: a lease that has
+ * been signed but has no rent schedule on it yet does not appear there at all,
+ * which is exactly the case the fallback below gets wrong. Pass it.
+ *
+ * The fallback counts active payers, which is right for a by-the-room letting
+ * and wrong for a whole home, where four students on one lease fill the whole
+ * building rather than four of its rooms.
+ */
+export function occupancy(
+  facts: PropertyFacts | null,
+  prop: TreeProperty | null,
+  leaseOcc?: PropertyOccupancy | null,
+): Occupancy {
+  const payers = prop
     ? prop.leases
         .filter(l => l.stage === 'active' || l.stage === 'ending')
         .reduce((n, l) => n + l.activePayers, 0)
     : 0
+  const filled = leaseOcc ? leaseOcc.occupied : payers
   const rooms = facts?.total_rooms && facts.total_rooms > 0 ? facts.total_rooms : null
 
   if (rooms === null) {
-    return { rooms: null, filled, empty: null, pct: null, monthlyLoss: null, lossBasis: null }
+    return {
+      rooms: null, filled, empty: null, startingLater: 0, open: 0,
+      pct: null, monthlyLoss: null, lossBasis: null,
+    }
   }
 
   // Floored at zero: more payers than rooms is a data quirk (a couple sharing,
   // a room let twice over a changeover) and must never read as negative loss.
   const empty = Math.max(0, rooms - filled)
+  const startingLater = Math.min(empty, leaseOcc?.upcoming ?? 0)
+  const open = empty - startingLater
   const ask = facts?.price && facts.price > 0 ? facts.price : null
 
   return {
     rooms,
     filled,
     empty,
+    startingLater,
+    open,
     pct: Math.min(100, Math.round((filled / rooms) * 100)),
-    monthlyLoss: ask === null ? null : empty * ask,
+    // Priced on `open`, not `empty`: a room let from August is not costing
+    // the landlord its asking rent every month until then — it is already sold.
+    monthlyLoss: ask === null ? null : open * ask,
     lossBasis: ask === null
       ? null
-      : `${empty} empty × $${ask.toLocaleString()} asking rent`,
+      : `${open} unlet × $${ask.toLocaleString()} asking rent`,
   }
 }
 

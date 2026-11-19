@@ -48,6 +48,8 @@ import { arrears } from '@/lib/financialsMonth'
 import { buildTree, leaseHref, propertyHref } from '@/lib/financialsTree'
 import { downloadCsv } from '@/lib/propertyExpenses'
 import { rentRoll, rentRollCsv, ROLL_STATE_META, type RollRow } from '@/lib/rentRoll'
+import { occupancyOf, type OccupancyLease, type PropertyOccupancy } from '@/lib/occupancy'
+import { getOccupancyLeasesByProperty } from '@/lib/leases'
 import type { PropertyFacts } from '@/lib/propertyMoney'
 import MoneyHub from '@/components/finance/MoneyHub'
 import { StatusDot } from '@/components/finance/Panels'
@@ -56,6 +58,8 @@ import { FINANCE_THEME } from '@/lib/financeTheme'
 export default function RentRollPage() {
   const { plans, bounced, loading } = useMoney()
   const [facts, setFacts] = useState<PropertyFacts[]>([])
+  /** Leases per property id — the only record of who is actually living where. */
+  const [occLeases, setOccLeases] = useState<Map<string, OccupancyLease[]>>(new Map())
   const [includeEnded, setIncludeEnded] = useState(false)
   const [propertyId, setPropertyId] = useState('')
 
@@ -76,9 +80,10 @@ export default function RentRollPage() {
       if (!user) return
       const { data } = await supabase
         .from('properties')
-        .select('id, name, slug, address, price, total_rooms, beds, baths, security_deposit, listing_status, available_from')
+        .select('id, name, slug, address, price, total_rooms, rental_mode, beds, baths, security_deposit, listing_status, available_from')
         .eq('owner_id', user.id)
       setFacts((data as PropertyFacts[]) ?? [])
+      setOccLeases(await getOccupancyLeasesByProperty(user.id))
     })()
   }, [])
 
@@ -89,9 +94,15 @@ export default function RentRollPage() {
       : tree),
     [tree, propertyId],
   )
+  const occupancyByProperty = useMemo(() => {
+    const out = new Map<string, PropertyOccupancy>()
+    for (const f of facts) out.set(f.id, occupancyOf(f, occLeases.get(f.id) ?? []))
+    return out
+  }, [facts, occLeases])
+
   const roll = useMemo(
-    () => rentRoll(scopedTree, facts, { includeEnded }),
-    [scopedTree, facts, includeEnded],
+    () => rentRoll(scopedTree, facts, { includeEnded, occupancyByProperty }),
+    [scopedTree, facts, includeEnded, occupancyByProperty],
   )
   const behind = useMemo(() => arrears(plans).payerCount, [plans])
 

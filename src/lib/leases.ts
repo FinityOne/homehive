@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { tenantCountOf, type OccupancyLease } from '@/lib/occupancy'
 
 export type LeaseStatus = 'upcoming' | 'current' | 'past'
 
@@ -230,6 +231,48 @@ export async function uploadLeaseDocument(
 
   if (error) return { path: null, error }
   return { path, error: null }
+}
+
+/**
+ * Just enough of every lease to work out who is living where.
+ *
+ * `getLeasesForOwner` pulls documents, tenant rows and the joined property for
+ * each lease, which is far more than a screen that only wants to say "4 of 6
+ * rooms filled" needs. This selects the columns `occupancyOf` reads, plus a
+ * tenant roster trimmed to its length, and buckets the result by property so a
+ * caller can look occupancy up by id.
+ *
+ * Ended leases are included rather than filtered in the query: the engine
+ * decides what is live, on the billing calendar, and deciding it here as well
+ * would be a second place to get it wrong.
+ */
+export async function getOccupancyLeasesByProperty(
+  ownerId: string,
+): Promise<Map<string, OccupancyLease[]>> {
+  const { data, error } = await supabase
+    .from('leases')
+    .select('property_id, start_date, end_date, is_demo, unit_number, lease_tenants ( id )')
+    .eq('owner_id', ownerId)
+
+  const out = new Map<string, OccupancyLease[]>()
+  if (error || !data) {
+    if (error) console.error('Error fetching occupancy leases:', error)
+    return out
+  }
+
+  for (const row of data as any[]) {
+    const lease: OccupancyLease = {
+      start_date: row.start_date,
+      end_date: row.end_date,
+      is_demo: row.is_demo,
+      unit_number: row.unit_number,
+      tenantCount: tenantCountOf(row.lease_tenants),
+    }
+    const bucket = out.get(row.property_id)
+    if (bucket) bucket.push(lease)
+    else out.set(row.property_id, [lease])
+  }
+  return out
 }
 
 // Generates a signed URL valid for 1 hour for a private lease document.

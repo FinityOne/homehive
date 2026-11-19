@@ -592,8 +592,11 @@ export default function ManagePropertyPage({ params }: { params: Promise<{ slug:
                     </div>
                   </div>
                   <div className="detail-item">
-                    <div className="detail-label">Rooms</div>
-                    <div className="detail-value">{property.available} of {property.total_rooms} available</div>
+                    <div className="detail-label">Advertised</div>
+                    {/* The number the landlord is advertising, which is not the
+                        same question as how full the place is. Occupancy comes
+                        from leases and lives on the Overview and Financials. */}
+                    <div className="detail-value">{property.available} of {property.total_rooms} rooms</div>
                   </div>
                   <div className="detail-item">
                     <div className="detail-label">Beds / Baths</div>

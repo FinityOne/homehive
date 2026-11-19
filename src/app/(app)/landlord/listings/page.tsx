@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { getPropertiesByOwner, setPropertyArchived, updateListingStatus, Property } from '@/lib/properties'
 import { LISTING_STATUS_META, LISTING_STATUS_ORDER, type ListingStatus } from '@/lib/listingStatus'
 import { useLandlordPlan } from '@/lib/useLandlordPlan'
+import { getOccupancyLeasesByProperty } from '@/lib/leases'
+import { occupancyOf, type OccupancyLease } from '@/lib/occupancy'
 import Link from 'next/link'
 
 export default function ListingsPage() {
@@ -14,6 +16,8 @@ export default function ListingsPage() {
   /** null while unknown — the header says nothing rather than guessing. */
   const atCeiling = plan ? !plan.canAddProperty : null
   const [properties, setProperties] = useState<Property[]>([])
+  /** Leases per property id. Occupancy is a lease fact, never a listing field. */
+  const [leasesByProperty, setLeasesByProperty] = useState<Map<string, OccupancyLease[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -23,8 +27,12 @@ export default function ListingsPage() {
     async function load() {
       const user = await getCurrentUser()
       if (!user) { router.push('/login'); return }
-      const props = await getPropertiesByOwner(user.id)
+      const [props, occLeases] = await Promise.all([
+        getPropertiesByOwner(user.id),
+        getOccupancyLeasesByProperty(user.id),
+      ])
       setProperties(props)
+      setLeasesByProperty(occLeases)
       setLoading(false)
     }
     load()
@@ -118,6 +126,7 @@ export default function ListingsPage() {
         .prop-card-avail { font-size: 12px; color: #64748b; }
         .avail-bar-track { height: 4px; background: #e2e8f0; border-radius: 10px; overflow: hidden; margin-top: 2px; }
         .avail-bar-fill { height: 100%; background: #10b981; border-radius: 10px; }
+        .avail-open { margin-top: 4px; font-size: 11px; color: #94a3b8; }
         .status-picker { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
         .status-picker label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
         .status-select { flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; font-size: 12.5px; font-weight: 600; font-family: 'DM Sans', sans-serif; color: #0f172a; background: #fff; cursor: pointer; outline: none; }
@@ -218,7 +227,12 @@ export default function ListingsPage() {
             </div>
           ) : (
             properties.map(p => {
-              const availPct = p.total_rooms > 0 ? (p.available / p.total_rooms) * 100 : 0
+              // How full the building is, from its leases. The bar used to
+              // plot `p.available` — the number of rooms the landlord is
+              // *advertising* — which meant a fully let property drew an empty
+              // bar until somebody remembered to edit the listing.
+              const occ = occupancyOf(p, leasesByProperty.get(p.id) ?? [])
+              const availPct = occ.pct ?? 0
               const isArchived = !!p.archived_at
               const warnedSoon = !!p.archive_warned_at && !isArchived
               const listingStatus = (p.listing_status ?? 'active') as ListingStatus
@@ -258,10 +272,23 @@ export default function ListingsPage() {
                       {p.sqft && <span>{p.sqft} sqft</span>}
                     </div>
                     <div className="prop-card-avail">
-                      {p.available} of {p.total_rooms} rooms available
+                      {occ.known
+                        ? <>{occ.occupied} of {occ.totalRooms} rooms filled{occ.upcoming > 0 && <> · {occ.upcoming} starting later</>}</>
+                        : occ.occupied > 0 ? 'Leased — no room count on this listing'
+                        : 'No room count on this listing'}
                       <div className="avail-bar-track">
                         <div className="avail-bar-fill" style={{ width: `${availPct}%` }} />
                       </div>
+                      {occ.known && (occ.open > 0 || occ.open !== p.available) && (
+                        <div className="avail-open">
+                          {occ.open === 0
+                            ? 'Nothing left to let'
+                            : `${occ.open} still to let`}
+                          {occ.open !== p.available && (
+                            <> · listing advertises {p.available}</>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {!isArchived && (

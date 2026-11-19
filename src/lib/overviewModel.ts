@@ -36,7 +36,11 @@
 
 import type { Property } from '@/lib/properties'
 import type { Lead } from '@/lib/leads'
-import { getLeaseStatus, type Lease } from '@/lib/leases'
+import { type Lease } from '@/lib/leases'
+import {
+  leasePhase, occupancyOf, portfolioOccupancy, tenantCountOf,
+  type OccupancyLease, type PropertyOccupancy,
+} from '@/lib/occupancy'
 import type { PaymentPlan, ScheduledPayment } from '@/lib/payments'
 import { billingToday, daysPastDue } from '@/lib/rentPayments'
 import type { Signal } from '@/lib/financialsSignals'
@@ -67,7 +71,16 @@ export type PropertyRow = {
   image: string | null
   price: number
   totalRooms: number
+  /** Rooms lived in today, derived from leases. Never from the listing's ad copy. */
+  occupiedRooms: number
+  /** `totalRooms − occupiedRooms`. */
   vacantRooms: number
+  /** Vacant rooms with nobody signed for them — what is actually left to let. */
+  openRooms: number
+  /** Rooms held by a lease that starts later. */
+  upcomingRooms: number
+  /** Does the listing declare a room count? Without one, the figures above say nothing. */
+  roomsKnown: boolean
   occupancyPct: number | null
   /** Contracted rent from the leases running on it right now. */
   monthly: number
@@ -99,6 +112,10 @@ export type Overview = {
   totalRooms: number
   occupiedRooms: number
   vacantRooms: number
+  /** Rooms nobody has signed for. The only figure that should prompt marketing. */
+  openRooms: number
+  /** Properties with no declared room count, excluded from the ratio. */
+  roomsUnknownCount: number
   occupancyPct: number | null
 
   // Leases
@@ -224,9 +241,15 @@ export function buildOverview(
   // ── Leases ────────────────────────────────────────────────────────────────
   // A demo lease is a rehearsal. It has no plan, charges nothing, and counting
   // its rent as revenue is the fastest way to make this screen untrustworthy.
+  //
+  // Phase comes from `leasePhase`, not `getLeaseStatus`: the latter compares a
+  // UTC-parsed date against the reader's local midnight, so a lease starting
+  // today reads as `upcoming` in London and `current` in Tempe. Occupancy is
+  // asked on the billing calendar, in Phoenix, for everyone.
+  const todayStr = billingToday()
   const real = leases.filter(l => !l.is_demo)
-  const currentLeases  = real.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'current')
-  const upcomingLeases = real.filter(l => getLeaseStatus(l.start_date, l.end_date) === 'upcoming')
+  const currentLeases  = real.filter(l => leasePhase(l, todayStr) === 'current')
+  const upcomingLeases = real.filter(l => leasePhase(l, todayStr) === 'upcoming')
   const monthlyRevenue = currentLeases.reduce((s, l) => s + (l.rent_amount || 0), 0)
 
   const expiring = currentLeases
@@ -235,10 +258,38 @@ export function buildOverview(
     .sort((a, b) => a.days - b.days)
 
   // ── Rooms ─────────────────────────────────────────────────────────────────
-  const totalRooms  = properties.reduce((s, p) => s + (p.total_rooms || 0), 0)
-  const vacantRooms = properties.reduce((s, p) => s + (p.available || 0), 0)
-  const occupiedRooms = Math.max(0, totalRooms - vacantRooms)
-  const occupancyPct = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : null
+  //
+  // Derived from leases, by the one engine in `occupancy.ts`. This used to read
+  // `properties.available` — the number the landlord types into the listing
+  // editor to say how many rooms they are *advertising*. Nothing writes it when
+  // a lease is signed, so a landlord with every room let through HomeHive was
+  // told `0 of 6 rooms filled` on the screen they open first.
+  const leasesByProperty = new Map<string, OccupancyLease[]>()
+  for (const l of real) {
+    const key = l.property_id
+    const row: OccupancyLease = {
+      start_date: l.start_date,
+      end_date: l.end_date,
+      is_demo: l.is_demo,
+      unit_number: l.unit_number,
+      tenantCount: tenantCountOf(l.tenants),
+    }
+    const bucket = leasesByProperty.get(key)
+    if (bucket) bucket.push(row)
+    else leasesByProperty.set(key, [row])
+  }
+
+  const occByProperty = new Map<string, PropertyOccupancy>()
+  for (const p of properties) {
+    occByProperty.set(p.id, occupancyOf(p, leasesByProperty.get(p.id) ?? [], todayStr))
+  }
+
+  const portfolio = portfolioOccupancy(Array.from(occByProperty.values()))
+  const totalRooms    = portfolio.totalRooms
+  const occupiedRooms = portfolio.occupied
+  const vacantRooms   = portfolio.vacant
+  const openRooms     = portfolio.open
+  const occupancyPct  = portfolio.pct
 
   // ── Money ─────────────────────────────────────────────────────────────────
   // A charge is money only if it was not voided, so every sum below walks the
@@ -323,18 +374,24 @@ export function buildOverview(
   }
 
   const rows: PropertyRow[] = properties.map(p => {
-    const vacant = p.available || 0
-    const total  = p.total_rooms || 0
-    const active = currentLeases.filter(l => l.property?.slug === p.slug)
+    const occ = occByProperty.get(p.id)!
+    // Matched on id, not slug: a lease's joined `property` is absent whenever
+    // the lease was loaded without the join, and matching on a missing slug
+    // silently drops every lease on the property.
+    const active = currentLeases.filter(l => l.property_id === p.id)
     return {
       id: p.id,
       slug: p.slug,
       name: p.name,
       image: p.images?.[0] ?? null,
       price: p.price ?? 0,
-      totalRooms: total,
-      vacantRooms: vacant,
-      occupancyPct: total > 0 ? Math.round(((total - vacant) / total) * 100) : null,
+      totalRooms: occ.totalRooms ?? 0,
+      occupiedRooms: occ.occupied,
+      vacantRooms: occ.vacant,
+      openRooms: occ.open,
+      upcomingRooms: occ.upcoming,
+      roomsKnown: occ.known,
+      occupancyPct: occ.pct,
       monthly: active.reduce((s, l) => s + (l.rent_amount || 0), 0),
       activeLeases: active.length,
       leads: leads.filter(l => l.property === p.slug && l.status !== 'closed').length,
@@ -374,6 +431,8 @@ export function buildOverview(
     totalRooms,
     occupiedRooms,
     vacantRooms,
+    openRooms,
+    roomsUnknownCount: portfolio.unknown,
     occupancyPct,
     currentLeases,
     upcomingLeases,
@@ -555,18 +614,25 @@ export function overviewSignals(o: Overview): Signal[] {
     })
   }
 
-  if (o.vacantRooms > 0 && o.liveCount > 0) {
+  // `openRooms`, not `vacantRooms`: a room let from next month is empty today
+  // and is not something to go and market. Telling a landlord to fill a room
+  // they filled last week is how this card gets ignored.
+  if (o.openRooms > 0 && o.liveCount > 0) {
+    const pending = o.vacantRooms - o.openRooms
     out.push({
       id: 'vacancy',
       severity: 'watch',
-      title: `${o.vacantRooms} room${o.vacantRooms !== 1 ? 's are' : ' is'} empty`,
-      detail: o.occupancyPct !== null
+      title: `${o.openRooms} room${o.openRooms !== 1 ? 's have' : ' has'} nobody signed`,
+      detail: (o.occupancyPct !== null
         ? `You are ${o.occupancyPct}% occupied across ${o.totalRooms} rooms. Every empty week is rent that cannot be earned back.`
-        : 'Every empty week is rent that cannot be earned back.',
+        : 'Every empty week is rent that cannot be earned back.')
+        + (pending > 0
+          ? ` ${pending} further room${pending !== 1 ? 's are' : ' is'} already let from a later date and ${pending !== 1 ? 'are' : 'is'} not counted here.`
+          : ''),
       evidence: o.properties
-        .filter(p => p.vacantRooms > 0)
+        .filter(p => p.openRooms > 0)
         .slice(0, 4)
-        .map(p => `${p.name} · ${p.vacantRooms} of ${p.totalRooms} empty`),
+        .map(p => `${p.name} · ${p.openRooms} of ${p.totalRooms} unlet`),
       action: { label: 'See listing performance', href: '/landlord/performance' },
       icon: 'trend-down',
     })

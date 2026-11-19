@@ -48,7 +48,7 @@
 import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtCurrency, fmtDate } from '@/lib/payments'
-import { supabase } from '@/lib/supabase'
+import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useMoney } from '@/lib/useMoney'
 import { useExpenses } from '@/lib/useExpenses'
 import { allCharges, arrears, monthLabel } from '@/lib/financialsMonth'
@@ -61,6 +61,8 @@ import {
   askGap, monthlyPnl, occupancy, periodPnl, windowLabel, windowMonths,
   PNL_WINDOWS, type PnlWindow, type PropertyFacts,
 } from '@/lib/propertyMoney'
+import { occupancyOf, type OccupancyLease } from '@/lib/occupancy'
+import { getOccupancyLeasesByProperty } from '@/lib/leases'
 import MoneyHub from '@/components/finance/MoneyHub'
 import ExpenseSheet, { EXPENSE_SHEET_CSS, type ExpenseDraft } from '@/components/finance/ExpenseSheet'
 import { StatusDot, PANEL_CSS } from '@/components/finance/Panels'
@@ -81,6 +83,8 @@ export default function PropertyMoneyPage({
   /** Null until the lookup finishes; false once we know there is no such row. */
   const [factsLoaded, setFactsLoaded] = useState(false)
   const [draft, setDraft] = useState<ExpenseDraft | null>(null)
+  /** This property's leases, trimmed to what occupancy needs. */
+  const [occLeases, setOccLeases] = useState<OccupancyLease[]>([])
 
   /**
    * The listing row, which the money data does not carry.
@@ -98,11 +102,20 @@ export default function PropertyMoneyPage({
     ;(async () => {
       const { data } = await supabase
         .from('properties')
-        .select('id, name, slug, address, price, total_rooms, beds, baths, security_deposit, listing_status, available_from')
+        .select('id, name, slug, address, price, total_rooms, rental_mode, beds, baths, security_deposit, listing_status, available_from')
         .eq('id', propertyId)
         .maybeSingle()
       setFacts((data as PropertyFacts) ?? null)
       setFactsLoaded(true)
+    })()
+  }, [propertyId])
+
+  useEffect(() => {
+    ;(async () => {
+      const user = await getCurrentUser()
+      if (!user) return
+      const byProperty = await getOccupancyLeasesByProperty(user.id)
+      setOccLeases(byProperty.get(propertyId) ?? [])
     })()
   }, [propertyId])
 
@@ -126,7 +139,14 @@ export default function PropertyMoneyPage({
   const series = useMemo(() => monthlyPnl(charges, expenses, months), [charges, expenses, months])
   const period = useMemo(() => periodPnl(series, windowLabel(win)), [series, win])
   const spend = useMemo(() => totalExpenses(expenses), [expenses])
-  const occ = useMemo(() => occupancy(facts, prop), [facts, prop])
+  // Occupancy comes from the `leases` table, through the one engine, not from
+  // the payment plans the money tree is built out of: a signed lease with no
+  // rent schedule on it yet is invisible to the tree and would read as a
+  // vacancy on a building that is full.
+  const occ = useMemo(
+    () => occupancy(facts, prop, occupancyOf(facts ?? {}, occLeases)),
+    [facts, prop, occLeases],
+  )
   const ask = useMemo(() => askGap(facts, prop), [facts, prop])
   const ar = useMemo(() => arrears(scopedPlans), [scopedPlans])
   const behindAll = useMemo(() => arrears(plans).payerCount, [plans])
@@ -302,7 +322,7 @@ export default function PropertyMoneyPage({
                     <h2 className="card-title">Occupancy</h2>
                     <p className="card-sub">
                       {occ.rooms !== null
-                        ? <>{occ.filled} of {occ.rooms} room{occ.rooms !== 1 ? 's' : ''} let</>
+                        ? <>{occ.filled} of {occ.rooms} room{occ.rooms !== 1 ? 's' : ''} let{occ.startingLater > 0 && <> · {occ.startingLater} starting later</>}</>
                         : <>Who is paying right now</>}
                     </p>
                   </div>
@@ -335,10 +355,16 @@ export default function PropertyMoneyPage({
                       </div>
                       <div className="occ-line">
                         <span>Empty</span>
-                        <strong className={occ.empty! > 0 ? 'fig-late' : ''}>
+                        <strong className={occ.open > 0 ? 'fig-late' : ''}>
                           {occ.empty} room{occ.empty !== 1 ? 's' : ''}
                         </strong>
                       </div>
+                      {occ.startingLater > 0 && (
+                        <div className="occ-line">
+                          <span>Of those, let from a later date</span>
+                          <strong>{occ.startingLater} room{occ.startingLater !== 1 ? 's' : ''}</strong>
+                        </div>
+                      )}
                       {occ.monthlyLoss !== null && occ.monthlyLoss > 0 && (
                         <div className="occ-line big">
                           <span>Costing you each month</span>
@@ -346,25 +372,31 @@ export default function PropertyMoneyPage({
                         </div>
                       )}
                     </div>
-                    {occ.empty! > 0 && occ.monthlyLoss === null && (
+                    {occ.open > 0 && occ.monthlyLoss === null && (
                       <p className="card-note">
-                        {occ.empty} room{occ.empty !== 1 ? 's are' : ' is'} empty. The listing
-                        carries no asking price, so what that is costing cannot be stated —
-                        and a figure derived from what sitting tenants pay would be a
+                        {occ.open} room{occ.open !== 1 ? 's have' : ' has'} nobody signed. The
+                        listing carries no asking price, so what that is costing cannot be
+                        stated — and a figure derived from what sitting tenants pay would be a
                         different number pretending to be this one.
                       </p>
                     )}
-                    {occ.empty! > 0 && occ.monthlyLoss !== null && (
+                    {occ.open > 0 && occ.monthlyLoss !== null && occ.monthlyLoss > 0 && (
                       <p className="card-note">
                         At {occ.lossBasis}. Over a year that is{' '}
                         {fmtCurrency(occ.monthlyLoss * 12)} — usually far more than the
-                        concession it would take to fill {occ.empty !== 1 ? 'them' : 'it'}.
+                        concession it would take to fill {occ.open !== 1 ? 'them' : 'it'}.
+                      </p>
+                    )}
+                    {occ.open === 0 && occ.empty! > 0 && (
+                      <p className="card-note">
+                        Nothing here needs letting: every empty room already has a signed
+                        lease waiting to start, so none of them is costing you a month's rent.
                       </p>
                     )}
                   </>
                 )}
 
-                {occ.empty !== null && occ.empty > 0 && (
+                {occ.open > 0 && (
                   <div className="card-ft">
                     <Link className="btn-secondary sm" href="/landlord/leads">Who is enquiring →</Link>
                     <Link className="btn-quiet sm" href="/landlord/performance">Listing performance →</Link>

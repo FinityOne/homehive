@@ -27,6 +27,7 @@ import {
 import type {
   ListingFacts, ListingActivity, CompCandidate, ListingReport,
 } from '@/lib/listingPerformance'
+import { occupancyOf, tenantCountOf, type OccupancyLease } from '@/lib/occupancy'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -116,6 +117,33 @@ export async function GET(req: NextRequest) {
   }
 
   const slugs = listings.map(l => l.slug).filter(Boolean) as string[]
+
+  // ── How full each one actually is ────────────────────────────────────────
+  //
+  // From leases, never from `properties.available`. The advice engine's whole
+  // job is to say "you have rooms to let and here is why nobody is taking
+  // them"; running it off a field the landlord last edited months ago told a
+  // fully let building it had six rooms open, and an empty one that it was
+  // full.
+  const { data: leaseRows, error: leaseErr } = await supabaseAdmin
+    .from('leases')
+    .select('property_id, start_date, end_date, is_demo, unit_number, lease_tenants ( id )')
+    .eq('owner_id', user.id)
+  if (leaseErr) console.error('listing performance: leases read failed', leaseErr)
+
+  const leasesByProperty = new Map<string, OccupancyLease[]>()
+  for (const row of (leaseRows ?? []) as any[]) {
+    const lease: OccupancyLease = {
+      start_date: row.start_date,
+      end_date: row.end_date,
+      is_demo: row.is_demo,
+      unit_number: row.unit_number,
+      tenantCount: tenantCountOf(row.lease_tenants),
+    }
+    const bucket = leasesByProperty.get(row.property_id)
+    if (bucket) bucket.push(lease)
+    else leasesByProperty.set(row.property_id, [lease])
+  }
 
   // ── Activity, counted over twice the window so the trend has a baseline ──
   const [viewRes, leadRes, tourRes, commentRes] = await Promise.all([
@@ -278,6 +306,10 @@ export async function GET(req: NextRequest) {
 
   // ── Assemble ─────────────────────────────────────────────────────────────
   const reports: ListingReport[] = listings.map(l => {
+    // With no declared room count there is nothing to subtract leases from, so
+    // the advertised figure is the only thing left to go on. Said plainly here
+    // rather than hidden inside the engine.
+    const occ = occupancyOf(l as any, leasesByProperty.get(l.id as string) ?? [])
     const facts: ListingFacts = {
       slug: l.slug as string,
       name: (l.name as string) || 'Untitled listing',
@@ -296,6 +328,8 @@ export async function GET(req: NextRequest) {
       asu_distance: l.asu_distance == null ? null : Number(l.asu_distance),
       total_rooms: Number(l.total_rooms) || 0,
       available: Number(l.available) || 0,
+      filledRooms: occ.occupied,
+      openRooms: occ.known ? occ.open : Math.max(0, Number(l.available) || 0),
       photoCount: Array.isArray(l.images) ? l.images.length : 0,
       hasDescription: !!(l.description as string | null)?.trim(),
     }

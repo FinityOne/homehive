@@ -90,17 +90,20 @@ const plan = (payments, over = {}) => ({
 
 const property = (over = {}) => ({
   id: 'p1', slug: 'maple', name: 'Maple Street', price: 900,
-  total_rooms: 4, available: 1, images: [],
+  total_rooms: 4, available: 1, rental_mode: 'by_room', images: [],
   admin_status: 'active', listing_status: 'active', owner_plan_active: true,
   ...over,
 })
 
 const lease = (over = {}) => ({
-  id: 'l1', start_date: LONG_AGO, end_date: shiftDays(TODAY, 300),
+  id: 'l1', property_id: 'p1', unit_number: null,
+  start_date: LONG_AGO, end_date: shiftDays(TODAY, 300),
   rent_amount: 1200, is_demo: false, tenants: [{ name: 'Ada Pell' }], documents: [],
   property: { id: 'p1', name: 'Maple Street', slug: 'maple' },
   ...over,
 })
+
+const tenants = n => Array.from({ length: n }, (_, i) => ({ name: `Tenant ${i + 1}` }))
 
 // ── Voided charges are not money ─────────────────────────────────────────────
 
@@ -226,9 +229,111 @@ const lease = (over = {}) => ({
 }
 
 {
-  const o = buildOverview([property({ available: 0 })], [], [lease()], [])
+  const o = buildOverview(
+    [property({ total_rooms: 4, available: 0 })],
+    [], [lease({ tenants: tenants(4) })], [],
+  )
   const sigs = overviewSignals(o)
   check('a full, paid, current portfolio raises nothing', sigs.length, 0)
+}
+
+// ── Occupancy is a lease fact, never the listing's advertised figure ─────────
+//
+// The bug this section exists for: a landlord with every room let through
+// HomeHive — lease signed here, payment plan built here — was told "0 of 6
+// rooms filled" on the Overview, because the figure came from
+// `properties.available`, which nothing writes when a lease is signed.
+
+{
+  // Advertising six rooms, all six let.
+  const o = buildOverview(
+    [property({ total_rooms: 6, available: 6 })],
+    [], [lease({ tenants: tenants(6) })], [],
+  )
+  check('a fully let house reads as full however it is advertised', o.occupancyPct, 100)
+  check('and counts every room as filled', o.occupiedRooms, 6)
+  check('and leaves nothing vacant', o.vacantRooms, 0)
+  check('and raises no vacancy signal',
+    overviewSignals(o).some(s => s.id === 'vacancy'), false)
+  check('and the property row agrees', o.properties[0].occupiedRooms, 6)
+}
+
+{
+  // Advertising nothing, letting nothing. The old rule called this full.
+  const o = buildOverview([property({ total_rooms: 5, available: 0 })], [], [], [])
+  check('an empty house is empty however it is advertised', o.occupancyPct, 0)
+  check('and every room is open to let', o.openRooms, 5)
+  check('and that is worth a signal',
+    overviewSignals(o).some(s => s.id === 'vacancy'), true)
+}
+
+{
+  // A by-the-room lease that names its room holds that room, not one per head.
+  const o = buildOverview(
+    [property({ total_rooms: 4 })],
+    [], [lease({ unit_number: 'Master Bedroom', tenants: tenants(2) })], [],
+  )
+  check('a couple sharing one named room is one room let', o.occupiedRooms, 1)
+}
+
+{
+  // A whole-home letting is indivisible.
+  const o = buildOverview(
+    [property({ total_rooms: 4, rental_mode: 'whole_home' })],
+    [], [lease({ tenants: tenants(2) })], [],
+  )
+  check('a whole-home lease takes the whole building', o.occupiedRooms, 4)
+  check('so a whole-home letting is never part-empty', o.vacantRooms, 0)
+}
+
+{
+  // A signed lease with no tenant rows entered yet is still a let room.
+  const o = buildOverview(
+    [property({ total_rooms: 3 })], [], [lease({ tenants: [] })], [],
+  )
+  check('a lease with no tenants recorded still fills a room', o.occupiedRooms, 1)
+}
+
+{
+  const o = buildOverview([property({ total_rooms: 3 })], [], [lease({ is_demo: true })], [])
+  check('a demo lease houses nobody', o.occupiedRooms, 0)
+}
+
+{
+  const ended = lease({ start_date: shiftDays(TODAY, -400), end_date: shiftDays(TODAY, -1) })
+  const o = buildOverview([property({ total_rooms: 3 })], [], [ended], [])
+  check('a lease that ended yesterday no longer fills a room', o.occupiedRooms, 0)
+}
+
+{
+  // Empty tonight, let from next month: a vacancy to a rent roll, and nothing
+  // to go and market.
+  const soon = lease({ start_date: shiftDays(TODAY, 20), end_date: shiftDays(TODAY, 300) })
+  const o = buildOverview([property({ total_rooms: 1 })], [], [soon], [])
+  check('a lease starting later does not fill a room today', o.occupiedRooms, 0)
+  check('but the room is not open to let', o.openRooms, 0)
+  check('so no vacancy signal nags about it',
+    overviewSignals(o).some(s => s.id === 'vacancy'), false)
+}
+
+{
+  // The cap: never 120% full, never negative vacancy.
+  const o = buildOverview(
+    [property({ total_rooms: 2 })], [], [lease({ tenants: tenants(5) })], [],
+  )
+  check('more payers than rooms still reads as full, not over', o.occupancyPct, 100)
+  check('and vacancy never goes negative', o.vacantRooms, 0)
+}
+
+{
+  // A listing with no room count cannot be scored, and must not drag the
+  // portfolio figure down as though it were empty.
+  const o = buildOverview(
+    [property({ id: 'p1', total_rooms: 4 }), property({ id: 'p2', slug: 'oak', total_rooms: 0 })],
+    [], [lease({ tenants: tenants(4) })], [],
+  )
+  check('a listing without a room count is excluded from the ratio', o.occupancyPct, 100)
+  check('and is counted as unknown instead', o.roomsUnknownCount, 1)
 }
 
 // ── An empty portfolio is empty, not a wall of zeroes ────────────────────────
