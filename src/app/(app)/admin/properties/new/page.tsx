@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { useEffect, useRef, useState } from 'react'
@@ -462,9 +463,9 @@ export default function AdminNewPropertyPage() {
           )}
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <a href="/admin/properties" style={{ background: '#18181b', color: '#fff', borderRadius: '9px', padding: '11px 20px', fontSize: '14px', fontWeight: 600, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
+            <Link href="/admin/properties" style={{ background: '#18181b', color: '#fff', borderRadius: '9px', padding: '11px 20px', fontSize: '14px', fontWeight: 600, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
               ← All properties
-            </a>
+            </Link>
             <a href={listingUrl} target="_blank" rel="noopener noreferrer" style={{ background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '9px', padding: '11px 20px', fontSize: '14px', fontWeight: 500, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
               View listing ↗
             </a>
@@ -559,9 +560,9 @@ export default function AdminNewPropertyPage() {
       `}</style>
 
       <div className="anp-wrap">
-        <a href="/admin/properties" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#9b9b9b', textDecoration: 'none', marginBottom: '20px' }}>
+        <Link href="/admin/properties" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#9b9b9b', textDecoration: 'none', marginBottom: '20px' }}>
           ← Back to properties
-        </a>
+        </Link>
 
         <div style={{ marginBottom: '20px' }}>
           <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: '26px', fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.4px', marginBottom: '4px' }}>

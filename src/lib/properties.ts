@@ -247,6 +247,61 @@ export async function createProperty(
 
 export type AdminStatus = 'pending' | 'active' | 'inactive' | 'test' | 'flagged' | 'rejected'
 
+/**
+ * The columns the admin listing table actually draws.
+ *
+ * `getAllPropertiesForAdmin()` below returns the full `Property`, which means
+ * `select *` plus five joined child tables — images, tags, nearby places, ASU
+ * reasons and rooms. That is right for the pages that render a whole listing,
+ * and badly wrong for a table of names, slugs and status pills: on this
+ * database it is 160KB of which the table reads about four percent, and the
+ * child joins grow with photo count rather than with listing count.
+ */
+export type AdminPropertyRow = {
+  id: string
+  name: string
+  slug: string
+  address: string | null
+  price: number | null
+  owner_id: string | null
+  admin_status: AdminStatus
+  listing_status: ListingStatus
+  listing_type: 'standard_rental' | 'sublease' | 'lease_transfer'
+  is_test: boolean
+  is_featured: boolean
+  is_active: boolean
+  created_at: string
+}
+
+const ADMIN_INDEX_SELECT =
+  'id, name, slug, address, price, owner_id, admin_status, listing_status,' +
+  'listing_type, is_test, is_featured, is_active, created_at'
+
+/** One row per listing, no child tables — for the admin listing table. */
+export async function getAdminPropertyIndex(): Promise<AdminPropertyRow[]> {
+  const { data, error } = await supabase
+    .from('properties')
+    .select(ADMIN_INDEX_SELECT)
+    .order('created_at', { ascending: false })
+
+  if (error || !data) {
+    console.error('Error fetching admin property index:', error)
+    return []
+  }
+
+  // Same defaults the full mapper applies, so a row written before the status
+  // columns existed does not read as accidentally hidden here either.
+  return (data as unknown as Record<string, unknown>[]).map(p => ({
+    ...p,
+    admin_status: (p.admin_status ?? 'pending') as AdminStatus,
+    listing_status: (p.listing_status ?? 'active') as ListingStatus,
+    listing_type: (p.listing_type ?? 'standard_rental') as AdminPropertyRow['listing_type'],
+    is_test: p.is_test ?? false,
+    is_featured: p.is_featured ?? false,
+    is_active: p.is_active ?? false,
+  })) as AdminPropertyRow[]
+}
+
 export async function getAllPropertiesForAdmin(): Promise<Property[]> {
   const { data, error } = await supabase
     .from('properties')

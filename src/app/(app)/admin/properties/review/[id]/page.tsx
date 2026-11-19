@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { use, useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -85,7 +86,7 @@ export default function ReviewListingPage({ params }: { params: Promise<{ id: st
     return (
       <div style={{ padding: '40px 24px', textAlign: 'center', fontFamily: "'Inter', sans-serif" }}>
         <div style={{ fontSize: '18px', fontWeight: 600, color: '#1a1a1a', marginBottom: '8px' }}>Listing not found</div>
-        <a href="/admin/properties" style={{ color: '#8C1D40', fontSize: '14px' }}>← Back to properties</a>
+        <Link href="/admin/properties" style={{ color: '#8C1D40', fontSize: '14px' }}>← Back to properties</Link>
       </div>
     )
   }
@@ -161,7 +162,7 @@ export default function ReviewListingPage({ params }: { params: Promise<{ id: st
 
       <div className="rv-wrap">
         <div className="rv-breadcrumb">
-          <a href="/admin/properties">Properties</a> › Review Listing
+          <Link href="/admin/properties">Properties</Link> › Review Listing
         </div>
         <div className="rv-title">{property.name}</div>
         <p className="rv-sub">{property.address}</p>
@@ -280,7 +281,7 @@ export default function ReviewListingPage({ params }: { params: Promise<{ id: st
                 </button>
               </div>
 
-              <a href="/admin/properties" className="rv-cancel">← Back to properties</a>
+              <Link href="/admin/properties" className="rv-cancel">← Back to properties</Link>
             </div>
           </div>
         </div>

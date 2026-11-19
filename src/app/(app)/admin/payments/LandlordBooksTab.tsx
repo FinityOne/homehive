@@ -19,6 +19,7 @@
 //     hiding that just moves the surprise later.
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { loadAdminFinancials } from '@/lib/adminFinancialsClient'
 import type { Books, LandlordBooks, LeaseBooks, PropertyBooks } from '@/lib/landlordBooks'
 
 export type LandlordBooksPayload = {
@@ -238,13 +239,11 @@ export default function LandlordBooksTab() {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [limit, setLimit] = useState(25)
 
+  // Shared with the other tab that reads this route, so switching between
+  // them does not re-run its seven table scans. See adminFinancialsClient.ts.
   useEffect(() => {
     let live = true
-    fetch('/api/admin/financials')
-      .then(async r => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
-        return r.json()
-      })
+    loadAdminFinancials<LandlordBooksPayload>()
       .then(d => { if (live) setData(d) })
       .catch(e => { if (live) setError(String(e.message ?? e)) })
     return () => { live = false }

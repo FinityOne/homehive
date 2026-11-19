@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { getSiteUrl } from '@/lib/siteUrl'
 
 import { use, useEffect, useState } from 'react'
@@ -149,9 +150,9 @@ export default function AdminPropertyDetailPage({ params }: { params: Promise<{ 
 
         {/* Breadcrumb + header */}
         <div style={{ marginBottom: '20px' }}>
-          <a href="/admin/properties" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '10px' }}>
+          <Link href="/admin/properties" style={{ fontSize: '12px', color: '#9b9b9b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '10px' }}>
             ← All Properties
-          </a>
+          </Link>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -362,7 +363,7 @@ export default function AdminPropertyDetailPage({ params }: { params: Promise<{ 
                   </table>
                   {leads.length > 20 && (
                     <div style={{ textAlign: 'center', paddingTop: '12px', fontSize: '12px', color: '#9b9b9b' }}>
-                      + {leads.length - 20} more — <a href="/admin/leads" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>view all leads</a>
+                      + {leads.length - 20} more — <Link href="/admin/leads" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>view all leads</Link>
                     </div>
                   )}
                 </div>

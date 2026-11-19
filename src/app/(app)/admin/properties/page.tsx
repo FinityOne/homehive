@@ -1,10 +1,11 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState, useCallback } from 'react'
-import { supabase, getCurrentUser } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { getAllPropertiesForAdmin, updatePropertyAdminStatus } from '@/lib/properties'
-import type { Property, AdminStatus } from '@/lib/properties'
+import { getAdminPropertyIndex, updatePropertyAdminStatus } from '@/lib/properties'
+import type { AdminPropertyRow, AdminStatus } from '@/lib/properties'
 import { LISTING_STATUS_META } from '@/lib/listingStatus'
 
 const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string; bg: string; border: string }> = {
@@ -26,24 +27,30 @@ const LISTING_TYPE_LABEL: Record<string, string> = {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function AdminPropertiesPage() {
   const router = useRouter()
-  const [listings, setListings] = useState<Property[]>([])
+  const [listings, setListings] = useState<AdminPropertyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<AdminStatus | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 25
 
+  // The lean index, not the full listing: this table draws twelve scalar
+  // columns, and the full admin select brings `select *` plus five child
+  // tables (one row per photo, tag, nearby place, ASU reason and room) to
+  // deliver them.
   const load = useCallback(async () => {
-    const data = await getAllPropertiesForAdmin()
+    const data = await getAdminPropertyIndex()
     setListings(data)
     setLoading(false)
   }, [])
 
   useEffect(() => { document.title = 'Properties — Admin | HomeHive' }, [])
 
-  useEffect(() => {
-    getCurrentUser().then(user => { if (!user) router.push('/login') })
-    load()
-  }, [load, router])
+  // The shell has already resolved the session before this page mounts, so the
+  // `getCurrentUser()` that used to run here was a round trip whose answer
+  // nothing waited for.
+  useEffect(() => { load() }, [load])
 
   const updateListing = (id: string, adminStatus: AdminStatus, isTest: boolean) => {
     setListings(prev => prev.map(l => l.id === id ? { ...l, admin_status: adminStatus, is_test: isTest, is_active: adminStatus === 'active' } : l))
@@ -74,6 +81,15 @@ export default function AdminPropertiesPage() {
     }
     return true
   }).sort((a, b) => (b.is_featured ? 1 : 0) - (a.is_featured ? 1 : 0))
+
+  // Paged so the table is twenty-five rows of DOM rather than every listing on
+  // the platform. The query behind it is one lean row per listing (see
+  // `getAdminPropertyIndex`), and the status pills above need counts over the
+  // whole set, so the slice happens here rather than in the database — unlike
+  // /admin/users, whose per-row cost was unbounded and had to move server side.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageSafe = Math.min(page, totalPages)
+  const paged = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE)
 
   return (
     <>
@@ -144,7 +160,7 @@ export default function AdminPropertiesPage() {
 
         <div className="p-filters">
           {(['all', 'active', 'pending', 'rejected', 'test', 'flagged', 'inactive'] as const).map(f => (
-            <button key={f} className={`p-filter${statusFilter === f ? ' active' : ''}`} onClick={() => setStatusFilter(f)}>
+            <button key={f} className={`p-filter${statusFilter === f ? ' active' : ''}`} onClick={() => { setPage(1); setStatusFilter(f) }}>
               {f === 'all' ? 'All' : ADMIN_STATUS_CFG[f as AdminStatus].label} ({f === 'all' ? counts.all : counts[f as keyof typeof counts] ?? 0})
             </button>
           ))}
@@ -153,19 +169,19 @@ export default function AdminPropertiesPage() {
         <div className="p-toolbar">
           <div className="p-search">
             <span style={{ color: '#9b9b9b', fontSize: '14px', flexShrink: 0 }}>⌕</span>
-            <input placeholder="Search name, address, slug, owner ID..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder="Search name, address, slug, owner ID..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
           </div>
-          <select className="p-type-sel" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+          <select className="p-type-sel" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
             <option value="all">All types</option>
             <option value="standard_rental">Rental</option>
             <option value="sublease">Sublease</option>
             <option value="lease_transfer">Lease Transfer</option>
           </select>
           <span className="p-count">{filtered.length} listing{filtered.length !== 1 ? 's' : ''}</span>
-          <a href="/admin/properties/new"
+          <Link href="/admin/properties/new"
             style={{ height: '36px', background: 'linear-gradient(135deg, #6c002a, #8c1d40)', color: '#fff', borderRadius: '8px', padding: '0 16px', fontSize: '13px', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif" }}>
             + New listing
-          </a>
+          </Link>
         </div>
 
         <div className="p-table-wrap">
@@ -185,7 +201,7 @@ export default function AdminPropertiesPage() {
                 <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#9b9b9b', fontSize: '14px' }}>Loading listings...</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center', color: '#9b9b9b', fontSize: '14px' }}>No listings match your filters</td></tr>
-              ) : filtered.map(l => {
+              ) : paged.map(l => {
                 const adminStatus = (l.admin_status ?? 'active') as AdminStatus
                 const cfg = ADMIN_STATUS_CFG[adminStatus] ?? ADMIN_STATUS_CFG.active
                 return (
@@ -246,6 +262,27 @@ export default function AdminPropertiesPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#fff', border: '1px solid #e8e4db', borderTop: 'none', borderRadius: '0 0 12px 12px', fontFamily: 'DM Sans, sans-serif' }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} of {filtered.length} listings
+            </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                disabled={pageSafe === 1}
+                onClick={() => setPage(p => p - 1)}
+                style={{ padding: '5px 12px', border: '1.5px solid #e8e4db', borderRadius: 6, background: '#fff', fontSize: 12, fontWeight: 600, cursor: pageSafe === 1 ? 'not-allowed' : 'pointer', opacity: pageSafe === 1 ? 0.4 : 1, color: '#4a4a4a' }}
+              >← Prev</button>
+              <span style={{ fontSize: 12, color: '#6b6b6b', fontWeight: 600 }}>Page {pageSafe} of {totalPages}</span>
+              <button
+                disabled={pageSafe >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                style={{ padding: '5px 12px', border: '1.5px solid #e8e4db', borderRadius: 6, background: '#fff', fontSize: 12, fontWeight: 600, cursor: pageSafe >= totalPages ? 'not-allowed' : 'pointer', opacity: pageSafe >= totalPages ? 0.4 : 1, color: '#4a4a4a' }}
+              >Next →</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
