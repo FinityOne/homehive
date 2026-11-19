@@ -374,9 +374,13 @@ export default function PerformancePage() {
               <div className="kpi-sub">{attention === 0 ? 'nothing flagged' : `of ${s.listings} listing${s.listings === 1 ? '' : 's'}`}</div>
             </div>
             <div className="kpi">
-              <div className="kpi-label">Empty rooms</div>
+              <div className="kpi-label">Rooms to let</div>
               <div className={`kpi-val ${s.openRooms > 0 ? 'warn' : ''}`}>{s.openRooms}</div>
-              <div className="kpi-sub">{s.vacantRent > 0 ? `${money(s.vacantRent)}/mo unearned` : 'all filled'}</div>
+              <div className="kpi-sub">
+                {s.openRooms === 0 ? 'every room is signed for'
+                  : s.vacantRent > 0 ? `${money(s.vacantRent)}/mo unearned`
+                  : 'no asking rent to price them'}
+              </div>
             </div>
           </div>
 

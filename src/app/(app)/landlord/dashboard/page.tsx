@@ -381,6 +381,9 @@ export default function LandlordOverview() {
             value={o.occupancyPct !== null ? `${o.occupancyPct}%` : '—'}
             sub={o.totalRooms > 0
               ? `${o.occupiedRooms} of ${o.totalRooms} rooms filled`
+              + (o.roomsUnknownCount > 0
+                  ? ` · ${o.roomsUnknownCount} listing${o.roomsUnknownCount !== 1 ? 's' : ''} without a room count`
+                  : '')
               : 'No rooms configured'}
             tone={o.occupancyPct !== null && o.occupancyPct < 60 ? 'warn' : undefined}
           />
@@ -745,7 +748,6 @@ function PropertiesPane({ o }: { o: Overview }) {
 }
 
 function Peer({ p }: { p: PropertyRow }) {
-  const filled = p.totalRooms - p.vacantRooms
   const pct = p.occupancyPct
   return (
     <Link className="peer" href={`/landlord/listings/${p.slug}`}>
@@ -755,7 +757,10 @@ function Peer({ p }: { p: PropertyRow }) {
       </div>
       <div className="peer-fig">{p.monthly > 0 ? `${fmtCurrency(p.monthly)}/mo` : fmtCurrency(p.price)}</div>
       <div className="peer-cap">
-        {p.totalRooms > 0 ? `${filled} of ${p.totalRooms} rooms filled` : 'No rooms configured'}
+        {p.roomsKnown
+          ? `${p.occupiedRooms} of ${p.totalRooms} rooms filled`
+          + (p.upcomingRooms > 0 ? ` · ${p.upcomingRooms} starting later` : '')
+          : 'No rooms configured'}
       </div>
       {pct !== null && (
         <span className="peer-bar">
@@ -933,7 +938,9 @@ function RailGo({
 /** A peer card's one-line state. Money owed outranks everything else. */
 const PEER_STATUS: Record<string, (p: PropertyRow) => string> = {
   live:     p => p.owed > 0 ? `${fmtCurrency(p.owed)} overdue`
-              : p.vacantRooms > 0 ? `${p.vacantRooms} room${p.vacantRooms !== 1 ? 's' : ''} empty`
+              : p.openRooms > 0 ? `${p.openRooms} room${p.openRooms !== 1 ? 's' : ''} to let`
+              : p.vacantRooms > 0 ? `${p.vacantRooms} room${p.vacantRooms !== 1 ? 's' : ''} let from a later date`
+              : !p.roomsKnown ? (p.activeLeases > 0 ? 'Leased and current' : 'No rooms configured')
               : 'Full and current',
   unpaid:   () => 'Not published',
   rented:   p => p.owed > 0 ? `${fmtCurrency(p.owed)} overdue` : 'Rented out',
@@ -957,7 +964,7 @@ const PEER_STATE_TONE: Record<string, 'good' | 'bad' | 'warn' | 'idle'> = {
  */
 function peerTone(p: PropertyRow): 'good' | 'bad' | 'warn' | 'idle' {
   if (p.owed > 0) return 'bad'
-  if (p.state === 'live' && p.vacantRooms > 0) return 'warn'
+  if (p.state === 'live' && p.openRooms > 0) return 'warn'
   return PEER_STATE_TONE[p.state]
 }
 

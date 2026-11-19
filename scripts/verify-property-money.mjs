@@ -274,7 +274,28 @@ const exp = over => ({
   check('four of six rooms let', [o.filled, o.rooms, o.empty], [4, 6, 2])
   check('occupancy is two thirds', o.pct, 67)
   check('the empty rooms are priced at the ASKING rent', o.monthlyLoss, 1400)
-  check('and the basis is stated', o.lossBasis, '2 empty × $700 asking rent')
+  check('and the basis is stated', o.lossBasis, '2 unlet × $700 asking rent')
+
+  // The engine's answer wins over the payer count when it is passed, which is
+  // the whole point: the money tree is built from payment plans, so a lease
+  // signed without a rent schedule on it is invisible to `prop`.
+  const sixOfSix = occupancy(sixBed, prop, {
+    totalRooms: 6, known: true, occupied: 6, upcoming: 0, committed: 6,
+    vacant: 0, open: 0, pct: 100, full: true, activeLeases: 1,
+  })
+  check('a lease-derived occupancy overrides the payer count',
+    [sixOfSix.filled, sixOfSix.empty, sixOfSix.pct], [6, 0, 100])
+  check('and a full house is losing nothing', sixOfSix.monthlyLoss, 0)
+
+  // Empty tonight, let from a later date: a vacancy on the rent roll, but not
+  // rent the landlord is losing every month until then.
+  const letLater = occupancy(sixBed, prop, {
+    totalRooms: 6, known: true, occupied: 4, upcoming: 2, committed: 6,
+    vacant: 2, open: 0, pct: 67, full: false, activeLeases: 1,
+  })
+  check('rooms let from a later date are empty but not open',
+    [letLater.empty, letLater.startingLater, letLater.open], [2, 2, 0])
+  check('and are not priced as lost rent', letLater.monthlyLoss, 0)
 
   const unpriced = occupancy({ ...sixBed, price: null }, prop)
   check('no asking price: the loss is not invented', unpriced.monthlyLoss, null)

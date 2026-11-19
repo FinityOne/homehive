@@ -31,6 +31,7 @@ import type {
 import { buildFunnel, buildBrowseClock, benchmark, MIN_PEER_LISTINGS } from '@/lib/listingFunnel'
 import type { Benchmark, FunnelEventRow, FunnelViewRow } from '@/lib/listingFunnel'
 import { buildPace } from '@/lib/leasingPace'
+import { occupancyOf, tenantCountOf, type OccupancyLease } from '@/lib/occupancy'
 import type { PulsePayload } from '@/lib/pulsePayload'
 import { isMarketable, hasActivePlan } from '@/lib/listingStatus'
 import type { ListingStatus } from '@/lib/listingStatus'
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest) {
     .from('properties')
     .select(`
       id, slug, name, listing_status, marketing_enabled, show_when_rented,
-      admin_status, owner_plan_active, available, total_rooms, available_from
+      admin_status, owner_plan_active, available, total_rooms, rental_mode, available_from
     `)
     .eq('owner_id', user.id)
 
@@ -150,13 +151,19 @@ export async function GET(req: NextRequest) {
       .select('id, property_slug, event_type, anonymous_id, session_id, created_at, surface, position')
       .in('property_slug', slugs)
       .gte('created_at', curFrom),
-    // History for the inquiries-per-signed-room ratio: the landlord's own
-    // conversion beats the platform's assumption whenever it exists.
+    // Two jobs at once: the inquiries-per-signed-room ratio (the landlord's own
+    // conversion beats the platform's assumption whenever it exists), and how
+    // full each building actually is. The term columns come along because pace
+    // must be measured against rooms genuinely left to let — `available` is the
+    // number the landlord is advertising, and nothing writes it when a lease is
+    // signed, so a full house used to read as wide open and get told to hurry.
+    //
+    // No date filter: a lease signed two years ago and still running is the
+    // whole reason a room is not free today.
     supabaseAdmin
       .from('leases')
-      .select('id, property_id, created_at')
-      .in('property_id', rows.map(r => r.id))
-      .gte('created_at', new Date(now.getTime() - 365 * 86_400_000).toISOString()),
+      .select('id, property_id, created_at, start_date, end_date, is_demo, unit_number, lease_tenants ( id )')
+      .in('property_id', rows.map(r => r.id)),
     // The peer pool: every live listing on the platform, so the medians move
     // with the season instead of against a number baked in last spring.
     supabaseAdmin
@@ -256,7 +263,28 @@ export async function GET(req: NextRequest) {
   const clock = buildBrowseClock(curViews)
 
   // ── Leasing pace ─────────────────────────────────────────────────────────
-  const roomsOpen = rows.reduce((s, r) => s + (Number(r.available) || 0), 0)
+  const leasesByProperty = new Map<string, OccupancyLease[]>()
+  for (const row of (leaseRes.data ?? []) as any[]) {
+    const lease: OccupancyLease = {
+      start_date: row.start_date,
+      end_date: row.end_date,
+      is_demo: row.is_demo,
+      unit_number: row.unit_number,
+      tenantCount: tenantCountOf(row.lease_tenants),
+    }
+    const bucket = leasesByProperty.get(row.property_id)
+    if (bucket) bucket.push(lease)
+    else leasesByProperty.set(row.property_id, [lease])
+  }
+
+  // Rooms with nobody signed for them. A room let from August is not open in
+  // June, however empty it is tonight.
+  const openBySlug = new Map<string, number>()
+  for (const r of rows) {
+    const occ = occupancyOf(r as any, leasesByProperty.get(r.id as string) ?? [])
+    openBySlug.set(r.slug as string, occ.known ? occ.open : Math.max(0, Number(r.available) || 0))
+  }
+  const roomsOpen = Array.from(openBySlug.values()).reduce((s, n) => s + n, 0)
   // The soonest real move-in date across the open listings: the first deadline
   // that bites is the one worth counting down to.
   const today = phoenixDay(now)
@@ -266,7 +294,9 @@ export async function GET(req: NextRequest) {
     .sort()
 
   const historyInquiries = leads.length
-  const roomsSigned = (leaseRes.data ?? []).length
+  const yearAgo = new Date(now.getTime() - 365 * 86_400_000).toISOString()
+  const roomsSigned = ((leaseRes.data ?? []) as any[])
+    .filter(l => !l.is_demo && (l.created_at as string) >= yearAgo).length
   const pace = buildPace({
     now,
     roomsOpen,
@@ -301,7 +331,7 @@ export async function GET(req: NextRequest) {
       }),
       pace: buildPace({
         now,
-        roomsOpen: Number(row?.available) || 0,
+        roomsOpen: openBySlug.get(l.slug) ?? 0,
         availableFrom: (row?.available_from as string | null) ?? null,
         inquiries: lLeads.length,
         windowDays,

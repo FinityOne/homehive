@@ -38,7 +38,11 @@ const listing = (over = {}) => ({
   marketing_enabled: true, accepting_inquiries: true, show_when_rented: false,
   admin_status: 'active', archived_at: null, owner_plan_active: true,
   price: 3600, beds: 6, rental_mode: 'whole_home', asu_distance: 0.5,
-  total_rooms: 6, available: 2, photoCount: 10, hasDescription: true,
+  // `available` is what the landlord advertises; `filledRooms`/`openRooms` are
+  // derived from leases and are what the engine judges on. They are allowed to
+  // disagree — that disagreement is the bug this split fixed.
+  total_rooms: 6, available: 2, filledRooms: 4, openRooms: 2,
+  photoCount: 10, hasDescription: true,
   ...over,
 })
 
@@ -134,7 +138,7 @@ check('visible but unpromoted is its own finding',
 check('a closed inquiry form is its own finding',
   diag(listing({ accepting_inquiries: false }), activity()), 'inquiries_closed')
 check('a full house is told it is full, not that it failed',
-  diag(listing({ available: 0 }), activity()), 'full')
+  diag(listing({ openRooms: 0, filledRooms: 6 }), activity()), 'full')
 check('a listing younger than the grace period is not judged',
   diag(listing({ created_at: NOW.toISOString(), status_changed_at: null }), activity()), 'too_new')
 check('a relist restarts that clock',
@@ -152,8 +156,17 @@ check('inquiries with no tours is a response problem',
   diag(listing(), activity({ tours: 0 })), 'inquiries_no_tours')
 check('tours with rooms still open is a closing problem',
   diag(listing(), activity()), 'tours_no_lease')
+// The advertised figure must not decide any of this. A landlord who let every
+// room through HomeHive and never edited the listing was being told to go and
+// fill six rooms; one who marked the listing full while a room sat empty was
+// told everything was fine.
+check('advertising rooms does not make a full house open',
+  diag(listing({ available: 6, openRooms: 0, filledRooms: 6 }), activity()), 'full')
+check('advertising nothing does not make an empty house full',
+  diag(listing({ available: 0, openRooms: 6, filledRooms: 0 }), activity()), 'tours_no_lease')
+
 check('tours and nothing left to fill is healthy',
-  diag(listing({ available: 0, total_rooms: 0 }), activity()), 'healthy')
+  diag(listing({ openRooms: 0, filledRooms: 0, total_rooms: 0 }), activity()), 'healthy')
 
 // The expensive mistake, stated as its own assertion.
 {
@@ -215,7 +228,7 @@ check('below the floor there is no rate at all',
     listing({ slug, name: slug, ...over }), activity(act), comps, { now: NOW }
   )
   const rs = sortReports([
-    mk('ok', { available: 0, total_rooms: 0 }, {}),
+    mk('ok', { openRooms: 0, filledRooms: 0, total_rooms: 0 }, {}),
     mk('dead', { owner_plan_active: false }, { views: 0, viewers: 0, inquiries: 0 }),
     mk('warn', { marketing_enabled: false }, {}),
   ])

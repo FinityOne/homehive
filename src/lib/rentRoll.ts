@@ -36,8 +36,9 @@
 
 import type { MoneyTree, TreeLease } from './financialsTree'
 import type { PropertyFacts } from './propertyMoney'
+import type { PropertyOccupancy } from './occupancy'
 
-export type RollState = 'occupied' | 'ending' | 'upcoming' | 'ended' | 'vacant'
+export type RollState = 'occupied' | 'ending' | 'upcoming' | 'ended' | 'vacant' | 'reserved'
 
 /** `tone` matches `StatusDot`'s four, deliberately: an upcoming tenancy is not
  *  a problem, so it reads quiet rather than borrowing the warning colour. */
@@ -47,6 +48,10 @@ export const ROLL_STATE_META: Record<RollState, { label: string; tone: 'good' | 
   upcoming: { label: 'Upcoming',  tone: 'idle' },
   ended:    { label: 'Ended',     tone: 'idle' },
   vacant:   { label: 'Vacant',    tone: 'bad' },
+  // Empty tonight, already let from a later date. Not a vacancy: nothing about
+  // it needs marketing and nothing about it is lost rent, so it must not wear
+  // the colour or the arithmetic of one.
+  reserved: { label: 'Let later',  tone: 'idle' },
 }
 
 export type RollRow = {
@@ -136,7 +141,22 @@ const isLive = (s: RollState) => s === 'occupied' || s === 'ending' || s === 'up
 export function rentRoll(
   tree: MoneyTree,
   facts: PropertyFacts[],
-  { includeEnded = false }: { includeEnded?: boolean } = {},
+  {
+    includeEnded = false,
+    occupancyByProperty,
+  }: {
+    includeEnded?: boolean
+    /**
+     * Lease-derived occupancy per property id, from `occupancy.ts`.
+     *
+     * Pass it. Without it the vacant rows are counted from active *payers* on
+     * the money tree, which is built from payment plans — so a signed lease
+     * with no rent schedule on it yet emits a vacant row for a room somebody
+     * is living in, and a whole-home letting reads as part-empty whenever it
+     * has fewer payers than bedrooms.
+     */
+    occupancyByProperty?: Map<string, PropertyOccupancy>
+  } = {},
 ): RentRoll {
   const byId = new Map(facts.map(f => [f.id, f]))
   const rows: RollRow[] = []
@@ -183,10 +203,17 @@ export function rentRoll(
       continue
     }
 
-    const filled = prop.leases
-      .filter(l => l.stage === 'active' || l.stage === 'ending')
-      .reduce((n, l) => n + l.activePayers, 0)
+    const occ = occupancyByProperty?.get(prop.propertyId) ?? null
+    const filled = occ
+      ? occ.occupied
+      : prop.leases
+          .filter(l => l.stage === 'active' || l.stage === 'ending')
+          .reduce((n, l) => n + l.activePayers, 0)
     const empty = Math.max(0, rooms - filled)
+    // An empty room with a signed lease waiting on it is not a vacancy to
+    // price. It is counted as a row so the roll still adds up to the building,
+    // but its asking rent is not money the landlord is losing.
+    const letLater = Math.min(empty, occ?.upcoming ?? 0)
     const ask = f?.price && f.price > 0 ? f.price : null
 
     countedUnits += rooms
@@ -198,15 +225,17 @@ export function rentRoll(
         propertyId: prop.propertyId,
         propertyName: prop.propertyName,
         address: f?.address ?? null,
-        unit: `Vacant room ${filled + i + 1} of ${rooms}`,
+        unit: i < letLater
+          ? `Room ${filled + i + 1} of ${rooms} — let from a later date`
+          : `Vacant room ${filled + i + 1} of ${rooms}`,
         tenants: [],
         termStart: null,
         termEnd: null,
-        rent: ask,
+        rent: i < letLater ? null : ask,
         rentIsAsking: true,
         deposit: 0,
         balance: 0,
-        state: 'vacant',
+        state: i < letLater ? 'reserved' : 'vacant',
         leaseKey: null,
         daysLeft: null,
       })
@@ -226,7 +255,7 @@ export function rentRoll(
     vacancyLossPartial: vacancies.some(r => r.rent === null),
     deposits: round2(rows.reduce((n, r) => n + r.deposit, 0)),
     balance: round2(rows.reduce((n, r) => n + r.balance, 0)),
-    units: live.length + vacancies.length,
+    units: live.length + vacancies.length + rows.filter(r => r.state === 'reserved').length,
     occupied: live.length,
     vacant: vacancies.length,
     occupancyPct: countedUnits > 0
