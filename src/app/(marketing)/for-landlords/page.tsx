@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { PUBLIC_STATUS_FILTER } from '@/lib/properties'
 import { PLANS, PLAN_ORDER, formatUsd, formatPropertyLimit } from '@/lib/landlordPlans'
 import { FREE_PROPERTY_LIMIT } from '@/lib/landlordAccess'
 import '@/styles/brand-tokens.css'
@@ -49,11 +50,20 @@ const breadcrumbSchema = {
   ],
 }
 
+// Public social proof, so it counts what a student would actually find: test
+// listings, unapproved and archived rows are all excluded. An unfiltered count
+// here quoted our own test data back to prospective landlords.
 async function getListingCount(): Promise<number> {
   const supabase = await createSupabaseServerClient()
   const { count } = await supabase
     .from('properties')
     .select('*', { count: 'exact', head: true })
+    .eq('is_active', true)
+    .eq('admin_status', 'active')
+    .eq('is_test', false)
+    .eq('owner_plan_active', true)
+    .is('archived_at', null)
+    .or(PUBLIC_STATUS_FILTER)
   return count ?? 0
 }
 

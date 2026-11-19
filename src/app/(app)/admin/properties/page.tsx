@@ -18,6 +18,14 @@ const ADMIN_STATUS_CFG: Record<AdminStatus, { label: string; color: string; bg: 
 }
 const ALL_STATUSES = Object.keys(ADMIN_STATUS_CFG) as AdminStatus[]
 
+// `is_test` is the flag every public query filters on; `admin_status === 'test'`
+// is the status the dropdown writes alongside it. They can disagree — flipping
+// the detail page's "Test listing" toggle on a Pending row sets the flag only —
+// and the flag is the one that decides what students see, so the Test tab and
+// its count key off either axis. Keying off the status alone hid exactly the
+// listings an admin goes to that tab to find.
+const isTestListing = (l: AdminPropertyRow) => l.is_test === true || l.admin_status === 'test'
+
 const LISTING_TYPE_LABEL: Record<string, string> = {
   standard_rental: 'Rental',
   sublease:        'Sublease',
@@ -61,7 +69,7 @@ export default function AdminPropertiesPage() {
     active:   listings.filter(l => l.admin_status === 'active').length,
     pending:  listings.filter(l => l.admin_status === 'pending').length,
     inactive: listings.filter(l => l.admin_status === 'inactive').length,
-    test:     listings.filter(l => l.admin_status === 'test').length,
+    test:     listings.filter(isTestListing).length,
     flagged:  listings.filter(l => l.admin_status === 'flagged').length,
     rejected: listings.filter(l => l.admin_status === 'rejected').length,
     featured: listings.filter(l => l.is_featured).length,
@@ -73,7 +81,9 @@ export default function AdminPropertiesPage() {
   }
 
   const filtered = listings.filter(l => {
-    if (statusFilter !== 'all' && l.admin_status !== statusFilter) return false
+    if (statusFilter === 'test') {
+      if (!isTestListing(l)) return false
+    } else if (statusFilter !== 'all' && l.admin_status !== statusFilter) return false
     if (typeFilter !== 'all' && l.listing_type !== typeFilter) return false
     if (search) {
       const q = search.toLowerCase()
