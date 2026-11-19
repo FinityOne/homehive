@@ -1,8 +1,6 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { getCurrentUser } from '@/lib/supabase'
 import * as d3 from 'd3'
 import FinancialsTab from './FinancialsTab'
 import LandlordBooksTab from './LandlordBooksTab'
@@ -261,69 +259,10 @@ type Tab = 'overview' | 'landlords' | 'financials' | 'subscriptions' | 'products
 
 const TAB_IDS: Tab[] = ['overview', 'landlords', 'financials', 'subscriptions', 'products']
 
-export default function AdminPaymentsPage() {
-  const router = useRouter()
-  const [tab, setTab] = useState<Tab>('overview')
-  const [data, setData] = useState<PaymentsData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'admin_grant' | 'cancelled'>('all')
+/** The tabs that actually read `/api/admin/payments`. */
+const NEEDS_PLAN_DATA = new Set<Tab>(['overview', 'subscriptions', 'products'])
 
-  const load = useCallback(async () => {
-    const user = await getCurrentUser()
-    if (!user) { router.push('/login'); return }
-    setLoading(true)
-    const res = await fetch('/api/admin/payments')
-    if (res.ok) setData(await res.json())
-    setLoading(false)
-  }, [router])
-
-  useEffect(() => { document.title = 'Payments — Admin | HomeHive' }, [])
-
-  // Tabs live in the URL so ?tab=financials can be linked and bookmarked — the
-  // money view is the one an admin returns to daily. Read on mount rather than
-  // through useSearchParams, which would force this whole page into Suspense.
-  useEffect(() => {
-    const wanted = new URLSearchParams(window.location.search).get('tab')
-    if (wanted && (TAB_IDS as string[]).includes(wanted))
-      setTab(wanted as Tab)
-  }, [])
-
-  const openTab = (next: Tab) => {
-    setTab(next)
-    const url = next === 'overview' ? '/admin/payments' : `/admin/payments?tab=${next}`
-    window.history.replaceState(null, '', url)
-  }
-
-  useEffect(() => { load() }, [load])
-
-  if (loading) return (
-    <div style={{ padding: 40, fontFamily: 'DM Sans, sans-serif', color: '#8e8e93', textAlign: 'center' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      <div style={{ width: 24, height: 24, border: '2px solid #e5e5ea', borderTopColor: '#146b7d', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-      Loading payment data…
-    </div>
-  )
-
-  if (!data) return <div style={{ padding: 40, color: '#8e8e93', fontFamily: 'DM Sans, sans-serif' }}>Failed to load payment data.</div>
-
-  const { stats, plans, monthlyRevenue, planTypeBreakdown, unlockTypeBreakdown, auditLog } = data
-
-  // ── Filter subscriptions ──────────────────────────────────────────────────
-  const filteredPlans = plans.filter(p => {
-    if (statusFilter === 'active' && !(p.status === 'active' && !isAdminGrant(p))) return false
-    if (statusFilter === 'admin_grant' && !isAdminGrant(p)) return false
-    if (statusFilter === 'cancelled' && p.status !== 'cancelled') return false
-    if (search) {
-      const q = search.toLowerCase()
-      const name = (p.profile?.full_name ?? '').toLowerCase()
-      const email = (p.profile?.email ?? '').toLowerCase()
-      if (!name.includes(q) && !email.includes(q)) return false
-    }
-    return true
-  })
-
-  const CSS = `
+const CSS = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -399,22 +338,14 @@ export default function AdminPaymentsPage() {
     }
   `
 
-  const UNLOCK_COLORS: Record<string, string> = {
-    per_lead: '#0d7f82', subscription: '#0f7a43', free: '#8e8e93', plan: '#146b7d',
-  }
-  const UNLOCK_LABELS: Record<string, string> = {
-    per_lead: `Per Lead (${planPriceLabel('per_lead')})`,
-    subscription: 'Subscription unlock', free: 'Free (first lead)', plan: 'Plan',
-  }
-
-  const maxUnlocks = Math.max(...unlockTypeBreakdown.map(u => u.count), 1)
-
+/**
+ * The title and tab bar, lifted out of the page so the two tabs that do not
+ * read `/api/admin/payments` can render it without first waiting for that
+ * call to come back. They are their own screens; the chrome around them is
+ * shared, not a reason to block.
+ */
+function PaymentsHeader({ tab, openTab }: { tab: Tab; openTab: (next: Tab) => void }) {
   return (
-    <>
-      <style>{CSS}</style>
-      <div className="pa-wrap">
-
-        {/* Header */}
         <div className="pa-header">
           <div className="pa-title">Payments & Revenue</div>
           <div className="pa-sub">Financial gateway — subscriptions, transactions, and product pricing</div>
@@ -441,23 +372,123 @@ export default function AdminPaymentsPage() {
             ))}
           </div>
         </div>
+  )
+}
+
+export default function AdminPaymentsPage() {
+  const [tab, setTab] = useState<Tab>('overview')
+  const [data, setData] = useState<PaymentsData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'admin_grant' | 'cancelled'>('all')
+
+  // `/api/admin/payments` answers "who is on which plan", which only three of
+  // the five tabs ask. The Landlords and Revenue tabs read
+  // `/api/admin/financials` instead and used to sit behind this call anyway —
+  // opening ?tab=landlords meant waiting out a subscriptions query, then a
+  // seven-table financials scan, in series, before anything appeared.
+  const load = useCallback(async () => {
+    setLoading(true)
+    // No `getCurrentUser()` first: the shell has already resolved the session,
+    // and the route checks the admin role server side. All this bought was a
+    // round trip in front of the data.
+    const res = await fetch('/api/admin/payments')
+    if (res.ok) setData(await res.json())
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { document.title = 'Payments — Admin | HomeHive' }, [])
+
+  // Tabs live in the URL so ?tab=financials can be linked and bookmarked — the
+  // money view is the one an admin returns to daily. Read on mount rather than
+  // through useSearchParams, which would force this whole page into Suspense.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab')
+    if (wanted && (TAB_IDS as string[]).includes(wanted))
+      setTab(wanted as Tab)
+  }, [])
+
+  const openTab = (next: Tab) => {
+    setTab(next)
+    const url = next === 'overview' ? '/admin/payments' : `/admin/payments?tab=${next}`
+    window.history.replaceState(null, '', url)
+  }
+
+  // Fetched for the tabs that read it, and only once — `loaded` guards against
+  // a second trip when the admin comes back to one of those tabs.
+  const loaded = useRef(false)
+  useEffect(() => {
+    if (!NEEDS_PLAN_DATA.has(tab) || loaded.current) return
+    loaded.current = true
+    load()
+  }, [tab, load])
+
+  // The two self-sufficient tabs render immediately, without waiting on — or
+  // failing on — plan data they do not read.
+  if (tab === 'landlords' || tab === 'financials') return (
+    <>
+      <style>{CSS}</style>
+      <div className="pa-wrap">
+        <PaymentsHeader tab={tab} openTab={openTab} />
+        <div className="pa-content">
+          {tab === 'landlords' ? <LandlordBooksTab /> : <FinancialsTab />}
+        </div>
+      </div>
+    </>
+  )
+
+  if (loading) return (
+    <div style={{ padding: 40, fontFamily: 'DM Sans, sans-serif', color: '#8e8e93', textAlign: 'center' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <div style={{ width: 24, height: 24, border: '2px solid #e5e5ea', borderTopColor: '#146b7d', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+      Loading payment data…
+    </div>
+  )
+
+  if (!data) return <div style={{ padding: 40, color: '#8e8e93', fontFamily: 'DM Sans, sans-serif' }}>Failed to load payment data.</div>
+
+  const { stats, plans, monthlyRevenue, planTypeBreakdown, unlockTypeBreakdown, auditLog } = data
+
+  // ── Filter subscriptions ──────────────────────────────────────────────────
+  const filteredPlans = plans.filter(p => {
+    if (statusFilter === 'active' && !(p.status === 'active' && !isAdminGrant(p))) return false
+    if (statusFilter === 'admin_grant' && !isAdminGrant(p)) return false
+    if (statusFilter === 'cancelled' && p.status !== 'cancelled') return false
+    if (search) {
+      const q = search.toLowerCase()
+      const name = (p.profile?.full_name ?? '').toLowerCase()
+      const email = (p.profile?.email ?? '').toLowerCase()
+      if (!name.includes(q) && !email.includes(q)) return false
+    }
+    return true
+  })
+
+
+  const UNLOCK_COLORS: Record<string, string> = {
+    per_lead: '#0d7f82', subscription: '#0f7a43', free: '#8e8e93', plan: '#146b7d',
+  }
+  const UNLOCK_LABELS: Record<string, string> = {
+    per_lead: `Per Lead (${planPriceLabel('per_lead')})`,
+    subscription: 'Subscription unlock', free: 'Free (first lead)', plan: 'Plan',
+  }
+
+  const maxUnlocks = Math.max(...unlockTypeBreakdown.map(u => u.count), 1)
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div className="pa-wrap">
+
+        <PaymentsHeader tab={tab} openTab={openTab} />
 
         <div className="pa-content">
 
-          {/* ═══════════════════════════════════════════════════════════
-              THE MONEY TABS — both read /api/admin/financials, which
-              returns the platform P&L and the same payments re-grouped by
-              landlord. Each mounts its own fetch only when opened, so the
-              plan tables above stay fast.
-
-              FINANCIALS — payments processed per landlord, drilled down to
-              property and lease: rent collected, what is still owed, how
-              late it is, the late fees it accrued, and our cut.
-              REVENUE — the same money as one P&L: gross fees less Stripe.
-          ═══════════════════════════════════════════════════════════ */}
-          {tab === 'landlords' && <LandlordBooksTab />}
-
-          {tab === 'financials' && <FinancialsTab />}
+          {/* The two money tabs — Financials (per landlord) and Revenue (the
+              platform P&L) — are returned above this point, because they read
+              /api/admin/financials rather than the plan data these tabs need
+              and must not queue behind it. Both go through
+              adminFinancialsClient, so moving between them is one scan, not
+              one per switch. */}
 
           {/* ═══════════════════════════════════════════════════════════
               OVERVIEW TAB

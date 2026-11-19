@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { use, useEffect, useRef, useState } from 'react'
 import { getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -298,10 +299,10 @@ export default function AdminEditPropertyPage({ params }: { params: Promise<{ id
             <div style={{ fontSize: '14px', color: '#166534', fontWeight: 500 }}>Changes saved successfully.</div>
           </div>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <a href="/admin/properties"
+            <Link href="/admin/properties"
               style={{ background: '#18181b', color: '#fff', borderRadius: '9px', padding: '11px 20px', fontSize: '14px', fontWeight: 600, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
               ← All properties
-            </a>
+            </Link>
             <a href={`/homes/${property?.slug}`} target="_blank" rel="noopener noreferrer"
               style={{ background: '#fff', color: '#1a1a1a', border: '1.5px solid #e8e4db', borderRadius: '9px', padding: '11px 20px', fontSize: '14px', fontWeight: 500, textDecoration: 'none', fontFamily: "'DM Sans', sans-serif" }}>
               View listing ↗

@@ -13,6 +13,7 @@
 // dashboard that reports the gross alone would flatter the business by a third.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { loadAdminFinancials } from '@/lib/adminFinancialsClient'
 import * as d3 from 'd3'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -342,13 +343,11 @@ export default function FinancialsTab() {
   const [kindFilter, setKindFilter] = useState<'all' | 'rent' | 'saas'>('all')
   const [limit, setLimit] = useState(25)
 
+  // Shared with the other tab that reads this route, so switching between
+  // them does not re-run its seven table scans. See adminFinancialsClient.ts.
   useEffect(() => {
     let live = true
-    fetch('/api/admin/financials')
-      .then(async r => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
-        return r.json()
-      })
+    loadAdminFinancials<FinancialsData>()
       .then(d => { if (live) setData(d) })
       .catch(e => { if (live) setError(String(e.message ?? e)) })
     return () => { live = false }

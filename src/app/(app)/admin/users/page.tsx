@@ -1,11 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { supabase, getCurrentUser } from '@/lib/supabase'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getAllPropertiesForAdmin } from '@/lib/properties'
-import type { Property, AdminStatus } from '@/lib/properties'
-import type { Lead } from '@/lib/leads'
+import type { AdminStatus } from '@/lib/properties'
 import { planShortName, isPlanTier } from '@/lib/landlordPlans'
 
 type Profile = {
@@ -32,15 +30,51 @@ type UserRow = Profile & {
   score: number
 }
 
-// ─── Engagement score ──────────────────────────────────────────────────────────
-// Max 100: recency (40) + active listings (35) + leads (25)
-function computeScore(u: Omit<UserRow, 'score'>): number {
-  const days = (Date.now() - new Date(u.latestActivityAt).getTime()) / 86400000
-  const recency = days < 1 ? 40 : days < 7 ? 32 : days < 14 ? 22 : days < 30 ? 12 : days < 90 ? 4 : 0
-  const listings = u.activePropertyCount >= 3 ? 35 : u.activePropertyCount === 2 ? 25 : u.activePropertyCount === 1 ? 14 : 0
-  const leads = u.totalLeads >= 15 ? 25 : u.totalLeads >= 8 ? 19 : u.totalLeads >= 3 ? 12 : u.totalLeads >= 1 ? 6 : 0
-  return recency + listings + leads
+/** One row of `admin_user_directory`, as `/api/admin/users` returns it. */
+type ApiRow = Profile & {
+  plan_type: string | null
+  plan_status: string | null
+  plan_period_end: string | null
+  property_count: number
+  active_property_count: number
+  total_leads: number
+  latest_activity_at: string
+  score: number
+  properties: Array<{ name: string; slug: string; admin_status: string }>
 }
+
+type ApiResponse = {
+  users: ApiRow[]
+  total: number
+  stats: { total: number; paidPlans: number; withListings: number; activeUsers: number; avgScore: number }
+  roleCounts: Record<string, number>
+}
+
+/**
+ * The engagement score used to be computed here, from every profile, lead and
+ * property on the platform — which is precisely why the table could not be
+ * paginated: you cannot ask a server for the top page of a ranking it has
+ * never heard of. It now lives in the `admin_user_directory` view, digit for
+ * digit, so Postgres can both compute and order by it.
+ */
+const toRow = (r: ApiRow): UserRow => ({
+  ...r,
+  propertyCount: r.property_count,
+  activePropertyCount: r.active_property_count,
+  totalLeads: r.total_leads,
+  latestActivityAt: r.latest_activity_at,
+  plan: r.plan_status
+    ? { plan_type: r.plan_type ?? '', status: r.plan_status, current_period_end: r.plan_period_end }
+    : null,
+})
+
+const SORT_OPTIONS = [
+  { id: 'score',      label: 'Engagement' },
+  { id: 'newest',     label: 'Newest' },
+  { id: 'properties', label: 'Properties' },
+  { id: 'leads',      label: 'Leads' },
+  { id: 'name',       label: 'Name A–Z' },
+] as const
 
 function scoreMeta(s: number) {
   if (s >= 70) return { label: 'Hot', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' }
@@ -149,60 +183,68 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState(initialRole)
+  const [sort, setSort] = useState<string>('score')
   const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState<ApiResponse['stats'] | null>(null)
+  const [roleCounts, setRoleCounts] = useState<Record<string, number>>({})
   const PAGE_SIZE = 25
 
+  // The role is fixed per route (/admin/users/landlords and friends), so it is
+  // not state — treating it as state is what let the old page render the wrong
+  // tab's heading for a tick after a navigation.
+  const roleFilter = initialRole
+
+  // Typing is not a page view. Without this, every keystroke in the search box
+  // would be a round trip; the search is now the server's job, so it has to be
+  // asked at human speed rather than at keyboard speed.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Drops the answer to a request that has been superseded — a slow page 1 must
+  // not overwrite a fast page 2.
+  const reqId = useRef(0)
+
   const fetchData = useCallback(async () => {
-    const [apiRes, leadsRes, propsData] = await Promise.all([
-      fetch('/api/admin/users').then(r => r.json()) as Promise<{ profiles: Profile[]; plans: Record<string, Plan> }>,
-      supabase.from('leads').select('property, status').order('created_at', { ascending: false }),
-      getAllPropertiesForAdmin(),
-    ])
-
-    const leads = (leadsRes.data ?? []) as Lead[]
-    const leadsBySlug = new Map<string, number>()
-    for (const l of leads) {
-      if (l.property) leadsBySlug.set(l.property, (leadsBySlug.get(l.property) ?? 0) + 1)
-    }
-
-    const propsByOwner = new Map<string, Property[]>()
-    for (const p of propsData) {
-      if (!p.owner_id) continue
-      const arr = propsByOwner.get(p.owner_id) ?? []
-      arr.push(p)
-      propsByOwner.set(p.owner_id, arr)
-    }
-
-    const rows: UserRow[] = (apiRes.profiles ?? []).map(profile => {
-      const ownedProps = propsByOwner.get(profile.id) ?? []
-      const totalLeads = ownedProps.reduce((sum, p) => sum + (leadsBySlug.get(p.slug) ?? 0), 0)
-      const latestActivityAt = ownedProps.reduce((latest, p) => p.created_at > latest ? p.created_at : latest, profile.created_at)
-      const plan = apiRes.plans?.[profile.id] ?? null
-      const base = {
-        ...profile,
-        propertyCount: ownedProps.length,
-        activePropertyCount: ownedProps.filter(p => p.admin_status === 'active').length,
-        totalLeads,
-        latestActivityAt,
-        properties: ownedProps.map(p => ({ name: p.name, slug: p.slug, admin_status: p.admin_status ?? 'pending' })),
-        plan,
-      }
-      return { ...base, score: computeScore(base) }
+    const mine = ++reqId.current
+    setLoading(true)
+    const params = new URLSearchParams({
+      role: roleFilter,
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+      sort,
     })
+    if (debouncedSearch) params.set('q', debouncedSearch)
 
-    // Sort by engagement score descending
-    rows.sort((a, b) => b.score - a.score)
-    setUsers(rows)
-    setLoading(false)
-  }, [])
+    try {
+      const res = await fetch(`/api/admin/users?${params}`)
+      const data = (await res.json()) as ApiResponse
+      if (mine !== reqId.current) return
+      setUsers((data.users ?? []).map(toRow))
+      setTotal(data.total ?? 0)
+      setStats(data.stats ?? null)
+      setRoleCounts(data.roleCounts ?? {})
+    } catch {
+      if (mine === reqId.current) setUsers([])
+    } finally {
+      if (mine === reqId.current) setLoading(false)
+    }
+  }, [roleFilter, page, sort, debouncedSearch])
 
   useEffect(() => { document.title = 'Users — Admin | HomeHive' }, [])
 
-  useEffect(() => {
-    getCurrentUser().then(user => { if (!user) router.push('/login') })
-    fetchData()
-  }, [fetchData, router])
+  // A new search or sort starts at the top of the list, not on whatever page
+  // number happened to be showing.
+  useEffect(() => { setPage(1) }, [debouncedSearch, sort])
+
+  // No `getCurrentUser()` here any more. The shell already resolved who this
+  // is before the page mounted, and the API re-checks the admin role server
+  // side on every call — so a second client round trip bought nothing but a
+  // place in the queue ahead of the data.
+  useEffect(() => { fetchData() }, [fetchData])
 
   const handleSave = async (userId: string, fields: Partial<Profile>) => {
     await fetch('/api/admin/users', {
@@ -214,23 +256,10 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
     setEditing(null)
   }
 
-  const filtered = users.filter(u => {
-    if (roleFilter !== 'all' && u.role !== roleFilter) return false
-    if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      u.full_name?.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      u.phone?.includes(q) ||
-      u.company_name?.toLowerCase().includes(q) ||
-      u.properties.some(p => p.name.toLowerCase().includes(q))
-    )
-  })
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-  const avgScore = filtered.length ? Math.round(filtered.reduce((s, u) => s + u.score, 0) / filtered.length) : 0
+  // Filtering, sorting and slicing all happened here before, over every row on
+  // the platform. The server does all three now, so this page renders exactly
+  // what it was handed.
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <>
@@ -267,9 +296,10 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
             { href: '/admin/users/landlords', label: 'Landlords',  role: 'landlord' },
             { href: '/admin/users/admins',    label: 'Admin Team', role: 'admin'    },
           ] as { href: string; label: string; role: string }[]).map(t => (
-            <a
+            <Link
               key={t.role}
               href={t.href}
+              prefetch
               style={{
                 padding: '12px 20px',
                 fontSize: '13px',
@@ -284,26 +314,30 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
               }}
             >
               {t.label}
-              {!loading && (
+              {/* Counted over the whole table by the database, so the two tabs
+                  this page is not showing still carry an honest number — they
+                  used to count only the rows this tab happened to hold. */}
+              {roleCounts[t.role] !== undefined && (
                 <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: roleFilter === t.role ? '#8C1D40' : '#94a3b8' }}>
-                  {users.filter(u => u.role === t.role).length}
+                  {roleCounts[t.role]}
                 </span>
               )}
-            </a>
+            </Link>
           ))}
         </div>
 
-        {/* Summary stats */}
-        {!loading && (
+        {/* Summary stats — computed by `admin_user_directory_stats` over the whole
+            filtered set, which is what used to force the page to download it. */}
+        {stats && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '18px' }}>
             {[
-              { val: filtered.length, lbl: `Total ${roleFilter === 'admin' ? 'admins' : roleFilter === 'landlord' ? 'landlords' : 'tenants'}` },
+              { val: stats.total, lbl: `Total ${roleFilter === 'admin' ? 'admins' : roleFilter === 'landlord' ? 'landlords' : 'tenants'}` },
               ...(roleFilter === 'landlord' ? [
-                { val: users.filter(u => u.role === 'landlord' && (u.plan?.status === 'active')).length, lbl: 'Paid plans' },
-                { val: users.filter(u => u.role === 'landlord' && u.activePropertyCount > 0).length, lbl: 'Active listings' },
+                { val: stats.paidPlans, lbl: 'Paid plans' },
+                { val: stats.withListings, lbl: 'Active listings' },
               ] : []),
-              { val: users.filter(u => u.role === roleFilter && u.score >= 45).length, lbl: 'Active users' },
-              { val: avgScore, lbl: 'Avg. score' },
+              { val: stats.activeUsers, lbl: 'Active users' },
+              { val: stats.avgScore, lbl: 'Avg. score' },
             ].map(({ val, lbl }) => (
               <div key={lbl} className="u-stat">
                 <div className="u-stat-val">{val}</div>
@@ -316,9 +350,22 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
         <div className="u-toolbar">
           <div className="u-search">
             <span style={{ color: '#9b9b9b', fontSize: '14px', flexShrink: 0 }}>⌕</span>
-            <input placeholder="Search name, email, company…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
+            <input placeholder="Search name, email, company…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <span style={{ fontSize: '13px', color: '#9b9b9b', marginLeft: 'auto' }}>{filtered.length} user{filtered.length !== 1 ? 's' : ''}</span>
+          {/* Sorting is a database order, not a client sort of a full download —
+              so every option here has to be a column the view can order by. */}
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            className="u-filter-btn"
+            aria-label="Sort users"
+            style={{ cursor: 'pointer' }}
+          >
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+          <span style={{ fontSize: '13px', color: '#9b9b9b', marginLeft: 'auto' }}>
+            {total} user{total !== 1 ? 's' : ''}
+          </span>
         </div>
 
         <div className="u-table-wrap">
@@ -339,11 +386,11 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
             <tbody>
               {loading ? (
                 <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: '#9b9b9b', fontSize: '14px' }}>Loading…</td></tr>
-              ) : filtered.length === 0 ? (
+              ) : users.length === 0 ? (
                 <tr><td colSpan={9} style={{ padding: '60px 20px', textAlign: 'center', color: '#9b9b9b', fontSize: '14px' }}>
                   {search ? 'No users match your search' : 'No users found'}
                 </td></tr>
-              ) : paged.map(u => {
+              ) : users.map(u => {
                 const pm = planMeta(u.plan)
                 const rm = ROLE_CFG[u.role] ?? { color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' }
                 return (
@@ -420,7 +467,7 @@ export function AdminUsersPage({ initialRole = 'all' }: { initialRole?: string }
         {totalPages > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#fff', border: '1px solid #e8e4db', borderTop: 'none', borderRadius: '0 0 12px 12px', fontFamily: 'DM Sans, sans-serif' }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} users
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} users
             </span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <button
