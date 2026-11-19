@@ -440,17 +440,15 @@ function ListingCard({ h }: { h: Property }) {
 }
 
 // ─── HERO CONTENT ────────────────────────────────────────────────────────────
-// The three promises that answer "why not Facebook Marketplace?" — kept short
-// enough to sit on one line under the CTA.
-const LEAD_PROOF = [
-  'Every home near ASU Tempe',
-  'ID-verified hosts',
-  'Photos refreshed every 60 days',
-  'Hosts who ghost get delisted',
-]
+// The hero holds exactly three things the eye can land on: the headline, the
+// one honey CTA, and the photo. The promises that used to be a four-item tick
+// list are compressed into the CTA's note — a single quiet line, not a block
+// of text competing with the home. If a claim needs a row of its own it goes
+// in TrustSection, not here.
 
-// Shortcuts, not calls to action. If one of these ever earns a fill, the hero
-// no longer has a single CTA.
+// Shortcuts, not calls to action — and they sit *under* the photo, so the
+// first screen stays at three things. If one of these ever earns a fill, the
+// hero no longer has a single CTA.
 const LEAD_SHORTCUTS = [
   { href: '/homes?price_max=700', label: 'Under $700' },
   { href: '/homes?q=furnished',   label: 'Furnished'  },
@@ -758,44 +756,6 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
         .pbar-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hh-status-live); animation: pulse 2s infinite; flex-shrink: 0; }
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
-        /* ── HERO ── */
-        .hero { padding: 52px 0 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
-
-        /* Left column */
-        .hero-eyebrow { font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-text-muted); margin-bottom: 18px; }
-        .hero-eyebrow-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--hh-accent); margin: 0 6px 1px; vertical-align: middle; }
-        .hero-h1 { font-family: var(--hh-font-display); font-size: clamp(44px, 5.5vw, 72px); font-weight: 350; line-height: 1.02; letter-spacing: -0.03em; color: var(--hh-text); margin-bottom: 0; }
-        .hero-h1-italic { font-style: italic; color: var(--hh-primary); display: block; }
-        .hero-desc { font-size: 15px; line-height: 1.65; color: var(--hh-text-muted); max-width: 420px; margin-top: 22px; }
-
-        /* Stats row */
-        .hero-stats { display: flex; align-items: flex-start; gap: 32px; margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--hh-border-faint); }
-        .hero-stat-num { font-family: var(--hh-font-display); font-size: 28px; font-weight: 400; line-height: 1; letter-spacing: -0.03em; color: var(--hh-text); }
-        .hero-stat-label { font-size: 11px; color: var(--hh-text-muted); margin-top: 4px; line-height: 1.3; }
-
-        /* Right column — featured property card */
-        .hero-right { position: relative; }
-        .hero-img-card { position: relative; border-radius: 20px; overflow: hidden; aspect-ratio: 4/3; background: var(--hh-bg-alt); box-shadow: 0 4px 32px rgba(31,21,23,0.12), 0 1px 4px rgba(0,0,0,0.06); }
-        .hero-img-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .hero-img-placeholder { width: 100%; height: 100%; background: linear-gradient(135deg, #F6EBE4 0%, #e5dfd2 40%, #E3D9D5 100%); display: flex; align-items: center; justify-content: center; }
-        .hero-img-placeholder-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hh-ink-400); font-weight: 500; }
-
-        /* Dark badge top-right */
-        .hero-badge-card { position: absolute; top: 16px; right: 16px; background: rgba(36,10,19,0.92); backdrop-filter: blur(12px); border-radius: 12px; padding: 14px 18px; max-width: 220px; }
-        .hero-badge-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hh-accent); margin-bottom: 6px; }
-        .hero-badge-text { font-family: var(--hh-font-display); font-size: 17px; font-weight: 400; line-height: 1.25; color: #fff; letter-spacing: -0.02em; }
-
-        /* Review card bottom */
-        .hero-review-card { position: absolute; bottom: -16px; left: 16px; right: 16px; background: #fff; border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 32px rgba(31,21,23,0.14), 0 1px 4px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 12px; }
-        .hero-review-photo { width: 38px; height: 38px; border-radius: 50%; background: var(--hh-bg-alt); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 1.5px solid var(--hh-border); }
-        .hero-review-body { flex: 1; min-width: 0; }
-        .hero-review-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-        .hero-verified-pill { display: inline-flex; align-items: center; gap: 4px; background: rgba(42,125,79,0.08); border: 1px solid rgba(42,125,79,0.2); border-radius: 100px; padding: 2px 8px; font-size: 10px; font-weight: 700; color: #2a7d4f; }
-        .hero-verified-dot { width: 5px; height: 5px; border-radius: 50%; background: #2a7d4f; }
-        .hero-review-updated { font-size: 10px; color: var(--hh-text-muted); }
-        .hero-review-quote { font-size: 12px; line-height: 1.5; color: var(--hh-text); font-style: italic; }
-        .hero-review-attr { font-size: 11px; color: var(--hh-text-muted); margin-top: 2px; }
-
         /* ── SEARCH BAR ── */
         .search-section { padding: 32px 0 0; }
         .sf-bar { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr 1fr auto; align-items: stretch; background: #fff; border: 1.5px solid var(--hh-border); border-radius: 14px; overflow: visible; box-shadow: 0 2px 16px rgba(31,21,23,0.07); }
@@ -874,8 +834,6 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
 
         .lead-h1 { font-family: var(--hh-font-display); font-size: clamp(34px, 5vw, 60px); font-weight: 350; line-height: 1.03; letter-spacing: -0.03em; color: var(--hh-text); margin: 0 0 16px; }
         .lead-h1 em { font-style: italic; color: var(--hh-primary); }
-        .lead-sub { font-size: 16px; line-height: 1.6; color: var(--hh-text-2); max-width: 540px; margin: 0 0 28px; }
-        .lead-sub strong { font-weight: 600; color: var(--hh-text); }
 
         /* ── THE one call to action ── */
         .lead-cta-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -895,15 +853,8 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
           font-size: 15px; padding: 13px 26px; box-shadow: none; }
         .lead-cta--ghost:hover { background: var(--hh-hive-50); color: var(--hh-primary); border-color: var(--hh-primary); box-shadow: none; }
 
-        /* Proof row — honey ticks, muted copy. */
-        .lead-proof { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--hh-border-faint); }
-        .lead-proof-item { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--hh-text-2); }
-        .lead-proof-tick { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%;
-          background: var(--hh-accent-wash); border: 1px solid var(--hh-accent-soft); color: var(--hh-accent-strong);
-          font-size: 10px; font-weight: 800; flex-shrink: 0; }
-
         /* Popular searches — shortcuts, intentionally lighter than the CTA. */
-        .lead-jump { margin-top: 22px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .lead-jump { margin-top: 26px; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
         .lead-jump-label { font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-text-placeholder); white-space: nowrap; }
         .lead-chips { display: flex; flex-wrap: wrap; gap: 8px; }
         .lead-chip { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--hh-text-2); background: transparent; border: 1px solid var(--hh-border-faint); border-radius: 100px; padding: 7px 14px; text-decoration: none; transition: color 0.15s, border-color 0.15s, background 0.15s; white-space: nowrap; }
@@ -914,16 +865,18 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
            from. Everything drawn over the photo is dark glass or white — the
            band's single honey element is still .lead-cta, so the photo can be
            loud without competing for "what do I click". */
-        .hh-hero-grid { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr); gap: 46px; align-items: center; }
-        .hh-hero-copy { min-width: 0; }
-        /* The headline now lives in a half-width column, so it is stepped down
-           from the full-bleed scale — at the old size it ran to four lines and
-           towered over the photo it is supposed to introduce. */
-        .hh-hero-copy .lead-h1 { font-size: clamp(30px, 3.2vw, 43px); }
-        .hh-hero-copy .lead-sub { max-width: 440px; margin-bottom: 24px; }
+        /* Stacked, not two columns: a 50%-wide photo is a card, and the photo
+           is meant to be the loudest thing on the page. The copy above it is
+           deliberately short enough to leave the photo mostly above the fold
+           on a laptop. */
+        .hh-lead { display: flex; flex-direction: column; gap: 30px; }
+        .hh-lead-head { max-width: 680px; margin: 0 auto; text-align: center; }
+        .hh-lead-head .lead-h1 { font-size: clamp(34px, 4.6vw, 58px); text-wrap: balance; margin-bottom: 26px; }
+        .hh-lead-head .lead-cta-row { justify-content: center; }
+        .hh-lead-head .lead-cta-note { width: 100%; }
 
-        .hh-feat { position: relative; display: block; border-radius: 22px; overflow: hidden; background: var(--hh-bg-alt);
-          aspect-ratio: 4 / 3; box-shadow: var(--hh-shadow-lg); text-decoration: none; color: #fff;
+        .hh-feat { position: relative; display: block; border-radius: 24px; overflow: hidden; background: var(--hh-bg-alt);
+          aspect-ratio: 21 / 9; box-shadow: var(--hh-shadow-lg); text-decoration: none; color: #fff;
           transition: transform 0.22s ease, box-shadow 0.22s ease; }
         .hh-feat:hover { transform: translateY(-3px); box-shadow: 0 26px 60px -18px rgba(74,15,34,0.38); }
         .hh-feat:focus-visible { outline: none; box-shadow: var(--hh-ring-accent), var(--hh-shadow-lg); }
@@ -946,11 +899,11 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
         @media (prefers-reduced-motion: reduce) { .hh-now-dot::after { animation: none; opacity: 0.35 } }
 
         /* Bottom overlay — the listing's facts, legible over any photo */
-        .hh-feat-overlay { position: absolute; inset: auto 0 0 0; padding: 60px 22px 20px; z-index: 2;
+        .hh-feat-overlay { position: absolute; inset: auto 0 0 0; padding: 72px 28px 24px; z-index: 2;
           background: linear-gradient(to top, rgba(14,22,21,0.90) 0%, rgba(14,22,21,0.62) 48%, rgba(14,22,21,0) 100%); }
         .hh-feat-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
           color: rgba(255,255,255,0.78); margin-bottom: 7px; }
-        .hh-feat-name { font-family: var(--hh-font-display); font-size: clamp(22px, 2.4vw, 30px); font-weight: 400;
+        .hh-feat-name { font-family: var(--hh-font-display); font-size: clamp(24px, 2.9vw, 36px); font-weight: 400;
           line-height: 1.12; letter-spacing: -0.02em; color: #fff; }
         .hh-feat-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
         .hh-feat-price { font-size: 14px; color: rgba(255,255,255,0.82); }
@@ -1189,21 +1142,14 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
 
         /* ── RESPONSIVE ── */
         @media (max-width: 1000px) {
-          /* Photo under the pitch, and wider — a half-width photo at tablet
-             size is neither a hero nor a card. */
-          .hh-hero-grid { grid-template-columns: 1fr; gap: 30px; }
-          /* Photo first once the columns stack. On a phone the pitch would
-             otherwise push the home itself a full screen down, and the home is
-             what the visitor came for. */
-          .hh-feat { order: -1; }
-          .hh-hero-copy .lead-h1 { font-size: clamp(32px, 4.6vw, 52px); text-wrap: balance; }
+          /* 21:9 is a letterbox on a narrow screen — the photo keeps its
+             height by getting taller as it gets narrower. */
           .hh-feat { aspect-ratio: 16 / 10; }
+          .hh-lead { gap: 24px; }
           .hh-live-figures { gap: 26px; }
         }
 
         @media (max-width: 900px) {
-          .hero { grid-template-columns: 1fr; gap: 32px; padding: 36px 0 32px; }
-          .hero-right { display: none; }
           .sf-bar { grid-template-columns: 1fr 1fr; }
           .sf-field--roommates { border-right: none; }
           .sf-search-btn { grid-column: span 2; border-radius: 0 0 12px 12px; padding: 14px; }
@@ -1224,19 +1170,16 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
           .lead-cta-row { gap: 12px; }
           .lead-cta { width: 100%; justify-content: center; font-size: 15px; padding: 15px 22px; }
           .lead-cta-note { width: 100%; text-align: center; }
-          .hh-hero-copy .lead-h1 { font-size: 30px; }
+          .hh-lead-head .lead-h1 { font-size: 32px; margin-bottom: 20px; }
           .hh-feat { aspect-ratio: 4 / 3; border-radius: 16px; }
-          .hh-feat-overlay { padding: 52px 15px 15px; }
+          .hh-feat-overlay { padding: 56px 16px 16px; }
           .hh-feat-btn { margin-left: 0; }
           .hh-feat-row { gap: 10px; }
           .hh-live { margin-top: 28px; gap: 16px 22px; }
           .hh-live-figures { gap: 18px; width: 100%; }
           .hh-live-num { font-size: 22px; }
           .hh-live-label { font-size: 11.5px; }
-          .lead-proof { gap: 10px 16px; margin-top: 22px; padding-top: 18px; }
           .lead-jump { flex-direction: column; align-items: flex-start; gap: 10px; }
-          .hero-h1 { font-size: 42px; }
-          .hero-stats { gap: 20px; }
           .sf-bar { grid-template-columns: 1fr; }
           .sf-field { border-right: none; border-bottom: 1px solid var(--hh-border-faint); }
           .sf-field:last-of-type { border-bottom: none; }
@@ -1288,15 +1231,19 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
 
       <div className="wrap">
 
-        {/* ── HERO — one call to action, one big home, then the listings ──
-             The CTA is the only honey element in this band on purpose. The
-             filter shortcuts below it are outlined, not filled, and everything
-             over the photo is glass or white, so a first-time visitor has
-             exactly one obvious next move. */}
+        {/* ── HERO — three things, and the biggest of them is a photo ──
+             Rule of three, in reading order: (1) one short headline, (2) the
+             one honey CTA, (3) a home shot full-width. Nothing else in the
+             band is allowed to become a fourth stop — the shortcuts and the
+             activity strip sit below the photo, quiet and small, and
+             everything over the photo is glass or white. */}
         <div className="lead-band">
           <div className="lead-glow" aria-hidden="true" />
-          <div className="lead-inner hh-hero-grid">
-            <div className="hh-hero-copy">
+          <div className="lead-inner hh-lead">
+            {/* 1 + 2 — headline and the single action, centred over the photo
+                 so the two of them read as one short block, not a column of
+                 copy beside it. */}
+            <div className="hh-lead-head">
               <div className="lead-live">
                 <span className="lead-live-dot" aria-hidden="true" />
                 {loading
@@ -1304,44 +1251,34 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
                   : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live for ASU students`}
               </div>
               <h1 className="lead-h1">
-                Housing for ASU students —<br />
-                <em>found in minutes, not weeks.</em>
+                Housing near ASU,<br />
+                <em>found in minutes.</em>
               </h1>
-              <p className="lead-sub">
-                Built for ASU, and only ASU — every home here is a walk, bike, or light-rail ride from campus. Every host is ID-verified and every listing is kept current. <strong>No broker fees, ever.</strong>
-              </p>
 
               <div className="lead-cta-row">
                 <Link href="/homes" className="lead-cta">
                   <span>{loading || properties.length === 0 ? 'Browse verified homes' : `Browse ${properties.length} verified homes`}</span>
                   <span className="lead-cta-arrow" aria-hidden="true">→</span>
                 </Link>
-                <span className="lead-cta-note">Free for ASU students · apply in 2 minutes</span>
-              </div>
-
-              <div className="lead-proof">
-                {LEAD_PROOF.map(item => (
-                  <span key={item} className="lead-proof-item">
-                    <span className="lead-proof-tick" aria-hidden="true">✓</span>
-                    {item}
-                  </span>
-                ))}
-              </div>
-
-              <div className="lead-jump">
-                <span className="lead-jump-label">Popular right now</span>
-                <div className="lead-chips">
-                  {LEAD_SHORTCUTS.map(c => (
-                    <Link key={c.href} href={c.href} className="lead-chip">{c.label}</Link>
-                  ))}
-                </div>
+                <span className="lead-cta-note">ID-verified hosts · no broker fees · free for students</span>
               </div>
             </div>
 
+            {/* 3 — the home itself */}
             {heroHome && <HeroFeature home={heroHome} />}
           </div>
 
+          {/* Below the fold of the three: navigation, then the busy bar. */}
           <div className="lead-inner">
+            <div className="lead-jump">
+              <span className="lead-jump-label">Popular right now</span>
+              <div className="lead-chips">
+                {LEAD_SHORTCUTS.map(c => (
+                  <Link key={c.href} href={c.href} className="lead-chip">{c.label}</Link>
+                ))}
+              </div>
+            </div>
+
             <LiveActivityStrip
               visitCount={visitCount}
               inquiryCount={inquiryCount}
