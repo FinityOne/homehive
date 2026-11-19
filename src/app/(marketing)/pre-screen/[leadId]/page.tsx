@@ -176,21 +176,21 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', background: '#FBEFE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ width: '36px', height: '36px', border: '3px solid #e8e4db', borderTopColor: '#8C1D40', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ width: '36px', height: '36px', border: '3px solid #E6DCD7', borderTopColor: '#8C1D40', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       </div>
     )
   }
 
   if (notFound) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ minHeight: '100vh', background: '#FBEFE7', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap');`}</style>
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px 36px', maxWidth: '420px', width: '100%', textAlign: 'center', border: '1px solid #e8e5de' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '48px 36px', maxWidth: '420px', width: '100%', textAlign: 'center', border: '1px solid #E6DCD7' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fdf2f5', color: '#8C1D40', fontSize: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>✕</div>
-          <h2 style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: 700, color: '#1a1a1a' }}>Link not found</h2>
-          <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#6b6b6b', lineHeight: 1.65 }}>This pre-screen link is no longer valid or may have expired.</p>
+          <h2 style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: 700, color: '#1F1517' }}>Link not found</h2>
+          <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#6E5B59', lineHeight: 1.65 }}>This pre-screen link is no longer valid or may have expired.</p>
           <a href="mailto:hello@homehive.live" style={{ fontSize: '13px', color: '#8C1D40', textDecoration: 'none' }}>Contact us → hello@homehive.live</a>
         </div>
       </div>
@@ -200,26 +200,26 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
   // ── Already completed ─────────────────────────────────────────────────────
   if (!submitted && leadInfo?.prescreen_completed) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ minHeight: '100vh', background: '#FBEFE7', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
-        <div style={{ background: '#fff', borderRadius: '20px', padding: '48px 32px', maxWidth: '460px', width: '100%', textAlign: 'center', border: '1px solid #e8e5de', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
+        <div style={{ background: '#fff', borderRadius: '20px', padding: '48px 32px', maxWidth: '460px', width: '100%', textAlign: 'center', border: '1px solid #E6DCD7', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(16,185,129,0.1)', border: '2px solid rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 24px' }}>✅</div>
-          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '26px', fontWeight: 400, color: '#1a1a1a' }}>
+          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '26px', fontWeight: 400, color: '#1F1517' }}>
             You&apos;re all set{leadInfo?.first_name ? `, ${leadInfo.first_name}` : ''}!
           </h2>
-          <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
+          <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#574645', lineHeight: 1.7 }}>
             We already have your free pre-screen on file. The team is reviewing your profile and will be in touch soon.
           </p>
           <div style={{ background: '#f0fdf8', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '16px 20px', textAlign: 'left' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
             {['The landlord reviews your profile', 'They\'ll be in touch within 24 hours', 'Get ready to schedule a tour!'].map((s, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a', marginBottom: i < 2 ? '8px' : 0 }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#40302F', marginBottom: i < 2 ? '8px' : 0 }}>
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#10b981', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
                 {s}
               </div>
             ))}
           </div>
-          <p style={{ margin: '24px 0 0', fontSize: '13px', color: '#9b9b9b' }}>
+          <p style={{ margin: '24px 0 0', fontSize: '13px', color: '#8E7B79' }}>
             Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', textDecoration: 'none' }}>hello@homehive.live</a>
           </p>
         </div>
@@ -230,29 +230,29 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
   // ── Submitted ─────────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ minHeight: '100vh', background: '#FBEFE7', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans', sans-serif" }}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
-        <div style={{ background: '#fff', borderRadius: '20px', padding: '48px 32px', maxWidth: '460px', width: '100%', textAlign: 'center', border: '1px solid #e8e5de', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
+        <div style={{ background: '#fff', borderRadius: '20px', padding: '48px 32px', maxWidth: '460px', width: '100%', textAlign: 'center', border: '1px solid #E6DCD7', boxShadow: '0 8px 40px rgba(0,0,0,0.08)' }}>
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: '#FFC627', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', margin: '0 auto 24px', boxShadow: '0 4px 20px rgba(255,198,39,0.4)' }}>🎉</div>
-          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '28px', fontWeight: 400, color: '#1a1a1a' }}>You&apos;re in the running!</h2>
-          <p style={{ margin: '0 0 20px', fontSize: '15px', color: '#4a4a4a', lineHeight: 1.7 }}>
+          <h2 style={{ margin: '0 0 10px', fontFamily: "'DM Serif Display', serif", fontSize: '28px', fontWeight: 400, color: '#1F1517' }}>You&apos;re in the running!</h2>
+          <p style={{ margin: '0 0 20px', fontSize: '15px', color: '#574645', lineHeight: 1.7 }}>
             {leadInfo?.first_name ? `Nice work, ${leadInfo.first_name}!` : 'Nice work!'} Your free pre-screen is done — you&apos;ve moved to the top of the list.
           </p>
           <div style={{ background: '#fdf2f5', border: '1px solid #f4c9d5', borderRadius: '10px', padding: '16px 20px', marginBottom: '24px', textAlign: 'left' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#8C1D40', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>What happens next</div>
             {['The landlord reviews your profile', 'They\'ll be in touch within 24 hours', 'Get ready to schedule a tour!'].map((s, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#3a3a3a', marginBottom: i < 2 ? '8px' : 0 }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#40302F', marginBottom: i < 2 ? '8px' : 0 }}>
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#8C1D40', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
                 {s}
               </div>
             ))}
           </div>
           {leadInfo?.property_name && (
-            <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#9b9b9b' }}>
-              Applied for: <strong style={{ color: '#1a1a1a' }}>{leadInfo.property_name}</strong>
+            <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#8E7B79' }}>
+              Applied for: <strong style={{ color: '#1F1517' }}>{leadInfo.property_name}</strong>
             </p>
           )}
-          <p style={{ margin: 0, fontSize: '13px', color: '#9b9b9b' }}>
+          <p style={{ margin: 0, fontSize: '13px', color: '#8E7B79' }}>
             Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40', textDecoration: 'none' }}>hello@homehive.live</a>
           </p>
         </div>
@@ -271,7 +271,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #f5f4f0; font-family: 'DM Sans', sans-serif; }
+        body { background: #FBEFE7; font-family: 'DM Sans', sans-serif; }
 
         .ps-wrap { max-width: 520px; margin: 0 auto; padding: 0 0 60px; }
 
@@ -282,65 +282,65 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         .ps-prop-logo { position: absolute; top: 14px; left: 20px; display: inline-flex; align-items: center; }
         .ps-prop-logo img { height: 22px; width: auto; display: block; }
 
-        .ps-progress { background: #fff; padding: 14px 20px; border-bottom: 1px solid #f0ede6; display: flex; align-items: center; gap: 14px; }
+        .ps-progress { background: #fff; padding: 14px 20px; border-bottom: 1px solid #F6EBE4; display: flex; align-items: center; gap: 14px; }
         .ps-steps { display: flex; align-items: center; gap: 6px; }
         .ps-step-dot { width: 28px; height: 28px; border-radius: 50%; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
         .ps-step-line { width: 28px; height: 2px; border-radius: 1px; }
-        .ps-step-label { font-size: 13px; font-weight: 600; color: #1a1a1a; }
-        .ps-step-sub { font-size: 11px; color: #9b9b9b; margin-top: 1px; }
+        .ps-step-label { font-size: 13px; font-weight: 600; color: #1F1517; }
+        .ps-step-sub { font-size: 11px; color: #8E7B79; margin-top: 1px; }
 
-        .ps-card { background: #fff; margin: 0 16px; border-radius: 16px; padding: 28px 24px; border: 1px solid #e8e5de; margin-top: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.05); }
+        .ps-card { background: #fff; margin: 0 16px; border-radius: 16px; padding: 28px 24px; border: 1px solid #E6DCD7; margin-top: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.05); }
 
-        .ps-label { display: block; font-size: 12px; font-weight: 700; color: #1a1a1a; margin-bottom: 7px; letter-spacing: 0.2px; }
-        .ps-hint { font-size: 11px; color: #9b9b9b; margin-top: 4px; }
+        .ps-label { display: block; font-size: 12px; font-weight: 700; color: #1F1517; margin-bottom: 7px; letter-spacing: 0.2px; }
+        .ps-hint { font-size: 11px; color: #8E7B79; margin-top: 4px; }
         .ps-input {
           width: 100%; padding: 11px 14px;
-          border: 1.5px solid #e8e5de; border-radius: 9px;
+          border: 1.5px solid #E6DCD7; border-radius: 9px;
           font-size: 14px; font-family: 'DM Sans', sans-serif;
-          color: #1a1a1a; background: #fff; outline: none;
+          color: #1F1517; background: #fff; outline: none;
           transition: border-color 0.15s;
         }
         .ps-input:focus { border-color: #8C1D40; }
-        .ps-input::placeholder { color: #c5c1b8; }
+        .ps-input::placeholder { color: #C9BDBA; }
         .ps-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239b9b9b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; cursor: pointer; }
         .ps-textarea { resize: none; height: 90px; line-height: 1.6; }
 
         /* Occupation cards — 2×2 grid */
         .occ-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .occ-card { padding: 14px 12px; border: 1.5px solid #e8e5de; border-radius: 12px; cursor: pointer; transition: all 0.15s; background: #fff; }
+        .occ-card { padding: 14px 12px; border: 1.5px solid #E6DCD7; border-radius: 12px; cursor: pointer; transition: all 0.15s; background: #fff; }
         .occ-card:hover { border-color: #8C1D40; background: #fdf2f5; }
         .occ-card.active { border-color: #8C1D40; background: #fdf2f5; }
-        .occ-card-label { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
-        .occ-card-sub { font-size: 11px; color: #9b9b9b; line-height: 1.3; }
+        .occ-card-label { font-size: 13px; font-weight: 600; color: #1F1517; margin-bottom: 3px; }
+        .occ-card-sub { font-size: 11px; color: #8E7B79; line-height: 1.3; }
 
         .pill-group { display: flex; gap: 8px; flex-wrap: wrap; }
-        .pill { padding: 9px 16px; border: 1.5px solid #e8e5de; border-radius: 22px; font-size: 13px; font-weight: 500; color: #3a3a3a; cursor: pointer; transition: all 0.15s; background: #fff; white-space: nowrap; }
+        .pill { padding: 9px 16px; border: 1.5px solid #E6DCD7; border-radius: 22px; font-size: 13px; font-weight: 500; color: #40302F; cursor: pointer; transition: all 0.15s; background: #fff; white-space: nowrap; }
         .pill:hover { border-color: #8C1D40; color: #8C1D40; }
         .pill.active { border-color: #8C1D40; background: #fdf2f5; color: #8C1D40; font-weight: 600; }
 
         .card-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .sel-card { padding: 16px 12px; border: 1.5px solid #e8e5de; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.15s; background: #fff; }
+        .sel-card { padding: 16px 12px; border: 1.5px solid #E6DCD7; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.15s; background: #fff; }
         .sel-card:hover { border-color: #8C1D40; background: #fdf2f5; }
         .sel-card.active { border-color: #8C1D40; background: #fdf2f5; }
         .sel-card-icon { font-size: 22px; margin-bottom: 6px; }
-        .sel-card-title { font-size: 13px; font-weight: 600; color: #1a1a1a; }
-        .sel-card-sub { font-size: 11px; color: #9b9b9b; margin-top: 3px; line-height: 1.4; }
+        .sel-card-title { font-size: 13px; font-weight: 600; color: #1F1517; }
+        .sel-card-sub { font-size: 11px; color: #8E7B79; margin-top: 3px; line-height: 1.4; }
 
-        .ps-divider { height: 1px; background: #f0ede6; margin: 20px 0; }
+        .ps-divider { height: 1px; background: #F6EBE4; margin: 20px 0; }
 
         .ps-btn-next { width: 100%; padding: 14px; background: #8C1D40; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
         .ps-btn-next:disabled { opacity: 0.45; cursor: not-allowed; }
         .ps-btn-next:not(:disabled):hover { opacity: 0.9; }
-        .ps-btn-submit { width: 100%; padding: 15px; background: #FFC627; color: #1a1a1a; border: none; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s, transform 0.1s; box-shadow: 0 4px 20px rgba(255,198,39,0.4); letter-spacing: -0.2px; }
+        .ps-btn-submit { width: 100%; padding: 15px; background: #FFC627; color: #1F1517; border: none; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s, transform 0.1s; box-shadow: 0 4px 20px rgba(255,198,39,0.4); letter-spacing: -0.2px; }
         .ps-btn-submit:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
         .ps-btn-submit:not(:disabled):hover { opacity: 0.92; transform: translateY(-1px); }
-        .ps-btn-back { background: none; border: none; font-size: 13px; color: #9b9b9b; cursor: pointer; font-family: 'DM Sans', sans-serif; padding: 0; text-decoration: underline; margin-top: 12px; display: block; text-align: center; width: 100%; }
-        .ps-btn-back:hover { color: #3a3a3a; }
+        .ps-btn-back { background: none; border: none; font-size: 13px; color: #8E7B79; cursor: pointer; font-family: 'DM Sans', sans-serif; padding: 0; text-decoration: underline; margin-top: 12px; display: block; text-align: center; width: 100%; }
+        .ps-btn-back:hover { color: #40302F; }
 
-        .stepper { display: flex; align-items: center; gap: 0; border: 1.5px solid #e8e5de; border-radius: 9px; overflow: hidden; width: fit-content; }
-        .stepper-btn { width: 40px; height: 40px; background: #faf9f6; border: none; font-size: 18px; cursor: pointer; color: #3a3a3a; display: flex; align-items: center; justify-content: center; transition: background 0.1s; flex-shrink: 0; }
-        .stepper-btn:hover { background: #f0ede6; }
-        .stepper-val { width: 48px; text-align: center; font-size: 15px; font-weight: 600; color: #1a1a1a; border-left: 1px solid #e8e5de; border-right: 1px solid #e8e5de; padding: 9px 0; }
+        .stepper { display: flex; align-items: center; gap: 0; border: 1.5px solid #E6DCD7; border-radius: 9px; overflow: hidden; width: fit-content; }
+        .stepper-btn { width: 40px; height: 40px; background: #FFF7F2; border: none; font-size: 18px; cursor: pointer; color: #40302F; display: flex; align-items: center; justify-content: center; transition: background 0.1s; flex-shrink: 0; }
+        .stepper-btn:hover { background: #F6EBE4; }
+        .stepper-val { width: 48px; text-align: center; font-size: 15px; font-weight: 600; color: #1F1517; border-left: 1px solid #E6DCD7; border-right: 1px solid #E6DCD7; padding: 9px 0; }
 
         @media (max-width: 500px) {
           .ps-card { margin: 0 12px; padding: 22px 18px; }
@@ -373,14 +373,14 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
                 <div
                   className="ps-step-dot"
                   style={{
-                    background: step >= n ? '#8C1D40' : '#f0ede6',
-                    color: step >= n ? '#fff' : '#9b9b9b',
+                    background: step >= n ? '#8C1D40' : '#F6EBE4',
+                    color: step >= n ? '#fff' : '#8E7B79',
                     boxShadow: step === n ? '0 0 0 3px rgba(140,29,64,0.15)' : 'none',
                   }}
                 >
                   {step > n ? '✓' : n}
                 </div>
-                {i < 2 && <div className="ps-step-line" style={{ background: step > n ? '#8C1D40' : '#e8e5de' }} />}
+                {i < 2 && <div className="ps-step-line" style={{ background: step > n ? '#8C1D40' : '#E6DCD7' }} />}
               </div>
             ))}
           </div>
@@ -396,10 +396,10 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         {step === 1 && (
           <div className="ps-card">
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#8C1D40', marginBottom: '6px' }}>Step 1 of 3</div>
-            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1a1a1a', marginBottom: '4px' }}>
+            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1F1517', marginBottom: '4px' }}>
               {firstName ? `Hey ${firstName}! 👋` : 'Tell us about yourself'}
             </h1>
-            <p style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '24px', lineHeight: 1.5 }}>
+            <p style={{ fontSize: '13px', color: '#8E7B79', marginBottom: '24px', lineHeight: 1.5 }}>
               This free pre-screen helps us learn a little about you and match you with the right home — and roommates if it&apos;s that kind of place. Takes about a minute.
             </p>
 
@@ -473,7 +473,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
               Next: Your Move →
             </button>
 
-            <p style={{ textAlign: 'center', fontSize: '11px', color: '#b0a898', marginTop: '12px' }}>
+            <p style={{ textAlign: 'center', fontSize: '11px', color: '#A8938F', marginTop: '12px' }}>
               Your info is private and only shared with the landlord
             </p>
           </div>
@@ -483,8 +483,8 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         {step === 2 && (
           <div className="ps-card">
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#8C1D40', marginBottom: '6px' }}>Step 2 of 3</div>
-            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1a1a1a', marginBottom: '4px' }}>Tell us about your move</h1>
-            <p style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '24px', lineHeight: 1.5 }}>
+            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1F1517', marginBottom: '4px' }}>Tell us about your move</h1>
+            <p style={{ fontSize: '13px', color: '#8E7B79', marginBottom: '24px', lineHeight: 1.5 }}>
               Help the landlord understand your timeline and living situation.
             </p>
 
@@ -495,7 +495,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
                 className="ps-input ps-select"
                 value={form.move_in_date}
                 onChange={e => set('move_in_date', e.target.value)}
-                style={{ color: form.move_in_date ? '#1a1a1a' : '#b0a898' }}
+                style={{ color: form.move_in_date ? '#1F1517' : '#A8938F' }}
               >
                 <option value="">Select a timeframe</option>
                 {getMoveInOptions().map(o => <option key={o}>{o}</option>)}
@@ -537,7 +537,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
                     <div className="stepper-val">{form.group_size}</div>
                     <button className="stepper-btn" onClick={() => set('group_size', Math.min(10, Number(form.group_size) + 1))}>+</button>
                   </div>
-                  <span style={{ fontSize: '13px', color: '#6b6b6b' }}>{form.group_size} people</span>
+                  <span style={{ fontSize: '13px', color: '#6E5B59' }}>{form.group_size} people</span>
                 </div>
               </div>
             )}
@@ -574,8 +574,8 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
         {step === 3 && (
           <div className="ps-card">
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#8C1D40', marginBottom: '6px' }}>Step 3 of 3 — Almost done!</div>
-            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1a1a1a', marginBottom: '4px' }}>Budget & lifestyle</h1>
-            <p style={{ fontSize: '13px', color: '#9b9b9b', marginBottom: '24px', lineHeight: 1.5 }}>
+            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1F1517', marginBottom: '4px' }}>Budget & lifestyle</h1>
+            <p style={{ fontSize: '13px', color: '#8E7B79', marginBottom: '24px', lineHeight: 1.5 }}>
               Last step — this helps the landlord confirm you&apos;re a great fit.
             </p>
 
@@ -583,7 +583,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
             <div style={{ marginBottom: '20px' }}>
               <label className="ps-label">Monthly budget *</label>
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', fontWeight: 600, color: '#3a3a3a', pointerEvents: 'none' }}>$</div>
+                <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', fontWeight: 600, color: '#40302F', pointerEvents: 'none' }}>$</div>
                 <input
                   className="ps-input"
                   type="number"
@@ -605,7 +605,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
                 className="ps-input ps-select"
                 value={form.lease_length}
                 onChange={e => set('lease_length', e.target.value)}
-                style={{ color: form.lease_length ? '#1a1a1a' : '#b0a898' }}
+                style={{ color: form.lease_length ? '#1F1517' : '#A8938F' }}
               >
                 <option value="">Select preference</option>
                 <option value="Month-to-month">Month-to-month</option>
@@ -631,7 +631,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
                     style={{
                       display: 'flex', alignItems: 'center', gap: '12px',
                       padding: '12px 14px',
-                      border: `1.5px solid ${form.lifestyle === opt.value ? '#8C1D40' : '#e8e5de'}`,
+                      border: `1.5px solid ${form.lifestyle === opt.value ? '#8C1D40' : '#E6DCD7'}`,
                       borderRadius: '10px',
                       background: form.lifestyle === opt.value ? '#fdf2f5' : '#fff',
                       cursor: 'pointer',
@@ -640,8 +640,8 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
                   >
                     <div style={{ fontSize: '20px', flexShrink: 0 }}>{opt.label.split(' ')[0]}</div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a' }}>{opt.label.split(' ').slice(1).join(' ')}</div>
-                      <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '1px' }}>{opt.sub}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F1517' }}>{opt.label.split(' ').slice(1).join(' ')}</div>
+                      <div style={{ fontSize: '11px', color: '#8E7B79', marginTop: '1px' }}>{opt.sub}</div>
                     </div>
                     {form.lifestyle === opt.value && (
                       <div style={{ marginLeft: 'auto', width: '20px', height: '20px', borderRadius: '50%', background: '#8C1D40', color: '#fff', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</div>
@@ -679,7 +679,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
 
             {/* Notes — optional */}
             <div style={{ marginBottom: '28px' }}>
-              <label className="ps-label">Anything else you&apos;d like us to know? <span style={{ fontWeight: 400, color: '#9b9b9b' }}>(optional)</span></label>
+              <label className="ps-label">Anything else you&apos;d like us to know? <span style={{ fontWeight: 400, color: '#8E7B79' }}>(optional)</span></label>
               <textarea
                 className="ps-input ps-textarea"
                 placeholder="Parking needs, specific questions about the unit, special circumstances..."
@@ -698,7 +698,7 @@ export default function PreScreenPage({ params }: { params: Promise<{ leadId: st
 
             <button className="ps-btn-back" onClick={() => setStep(2)}>← Back</button>
 
-            <p style={{ textAlign: 'center', fontSize: '11px', color: '#b0a898', marginTop: '14px', lineHeight: 1.5 }}>
+            <p style={{ textAlign: 'center', fontSize: '11px', color: '#A8938F', marginTop: '14px', lineHeight: 1.5 }}>
               🔒 Free · No commitment · Your info is only shared with the team at {propName}
             </p>
           </div>

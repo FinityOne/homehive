@@ -36,7 +36,7 @@ function useInitialFilters(): Filters {
 
 // ─── LANDMARKS ───────────────────────────────────────────────────────────────
 // Brand hex values (used in injected map HTML where CSS vars don't apply)
-const BRAND = { primary: '#2F4A48', accent: '#D9A14A', bg: '#FAF8F3', bgAlt: '#F4F1EA', text: '#222810', textMuted: '#6b6b5a', border: '#dddad0' }
+const BRAND = { primary: '#8C1D40', accent: '#FFC627', bg: '#FFF7F2', bgAlt: '#FBEFE7', text: '#1F1517', textMuted: '#6E5B59', border: '#E3D9D5' }
 
 const LANDMARKS = [
   { coords: [33.4242, -111.9281] as [number, number], label: '⚡ ASU', color: BRAND.primary, textColor: BRAND.accent, border: BRAND.accent, description: 'Arizona State University' },
@@ -55,9 +55,9 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
   const markersRef = useRef<any[]>([])
 
   function makePinHtml(slug: string, price: number, active = false) {
-    const bg     = active ? BRAND.primary : '#1c2420'
+    const bg     = active ? BRAND.primary : '#4A0F22'
     const scale  = active ? 'scale(1.14)' : 'scale(1)'
-    const shadow = active ? `0 4px 18px rgba(47,74,72,0.5)` : '0 2px 8px rgba(0,0,0,0.2)'
+    const shadow = active ? `0 4px 18px rgba(140,29,64,0.5)` : '0 2px 8px rgba(0,0,0,0.2)'
     const accent = active ? BRAND.accent : 'rgba(255,255,255,0.75)'
     return `
       <div class="map-pin" data-id="${slug}" style="
@@ -157,7 +157,7 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
             <div style="font-size:11px;color:${BRAND.textMuted};margin-bottom:9px;">📍 ${home.address}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;">
               <span style="font-size:18px;font-weight:700;color:${BRAND.primary};letter-spacing:-0.3px;">$${home.price.toLocaleString()}<span style="font-size:11px;font-weight:400;color:${BRAND.textMuted};">/mo</span></span>
-              <span style="font-size:11px;background:rgba(47,74,72,0.08);color:${BRAND.primary};padding:3px 9px;border-radius:20px;font-weight:600;">${home.available} open</span>
+              <span style="font-size:11px;background:rgba(140,29,64,0.08);color:${BRAND.primary};padding:3px 9px;border-radius:20px;font-weight:600;">${home.available} open</span>
             </div>
             <a href="/homes/${home.slug}" style="display:block;background:${BRAND.primary};color:#fff;padding:10px 12px;border-radius:100px;text-decoration:none;text-align:center;font-size:13px;font-weight:600;letter-spacing:-0.1px;">View home →</a>
           </div>
@@ -197,15 +197,15 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
     <>
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <style>{`
-        .leaflet-popup-content-wrapper { border-radius: 14px !important; box-shadow: 0 12px 40px rgba(34,40,16,0.14) !important; border: 1px solid var(--hh-border-faint, #dddad0) !important; padding: 0 !important; overflow: hidden; background: var(--hh-bg, #FAF8F3) !important; }
+        .leaflet-popup-content-wrapper { border-radius: 14px !important; box-shadow: 0 12px 40px rgba(31,21,23,0.14) !important; border: 1px solid var(--hh-border-faint, #E3D9D5) !important; padding: 0 !important; overflow: hidden; background: var(--hh-bg, #FFF7F2) !important; }
         .leaflet-popup-content { margin: 13px 15px !important; }
         .leaflet-popup-tip-container { display: none; }
-        .lm-tooltip { background: #1c2420; color: #fff; border: none; border-radius: 6px; font-family: system-ui,-apple-system,sans-serif; font-size: 12px; padding: 4px 9px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .lm-tooltip { background: #4A0F22; color: #fff; border: none; border-radius: 6px; font-family: system-ui,-apple-system,sans-serif; font-size: 12px; padding: 4px 9px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .lm-tooltip::before { display: none; }
-        .leaflet-control-zoom { border: 1px solid var(--hh-border-faint, #dddad0) !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 10px rgba(34,40,16,0.08) !important; }
-        .leaflet-control-zoom a { color: var(--hh-text, #222810) !important; font-size: 16px !important; background: var(--hh-bg, #FAF8F3) !important; }
-        .leaflet-control-zoom a:hover { background: var(--hh-bg-alt, #F4F1EA) !important; }
-        .leaflet-control-attribution { font-size: 9px !important; background: rgba(250,248,243,0.85) !important; backdrop-filter: blur(6px); border-radius: 8px !important; padding: 3px 8px !important; color: var(--hh-text-muted, #6b6b5a) !important; }
+        .leaflet-control-zoom { border: 1px solid var(--hh-border-faint, #E3D9D5) !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 10px rgba(31,21,23,0.08) !important; }
+        .leaflet-control-zoom a { color: var(--hh-text, #1F1517) !important; font-size: 16px !important; background: var(--hh-bg, #FFF7F2) !important; }
+        .leaflet-control-zoom a:hover { background: var(--hh-bg-alt, #FBEFE7) !important; }
+        .leaflet-control-attribution { font-size: 9px !important; background: rgba(250,248,243,0.85) !important; backdrop-filter: blur(6px); border-radius: 8px !important; padding: 3px 8px !important; color: var(--hh-text-muted, #6E5B59) !important; }
       `}</style>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
     </>
@@ -214,8 +214,8 @@ function HomesMap({ homes, hoveredId }: { homes: Property[]; hoveredId: string |
 
 // ─── LISTING TYPE CONFIG ─────────────────────────────────────────────────────
 const TYPE_CONFIG = {
-  standard_rental: { label: 'For Rent',       bg: 'rgba(250,248,243,0.95)', color: '#2F4A48', border: 'rgba(47,74,72,0.25)' },
-  sublease:        { label: 'Sublease',        bg: 'rgba(217,161,74,0.12)',  color: '#9a6a1e', border: 'rgba(217,161,74,0.4)' },
+  standard_rental: { label: 'For Rent',       bg: 'rgba(250,248,243,0.95)', color: '#8C1D40', border: 'rgba(140,29,64,0.25)' },
+  sublease:        { label: 'Sublease',        bg: 'rgba(255,198,39,0.12)',  color: '#9a6a1e', border: 'rgba(255,198,39,0.4)' },
   lease_transfer:  { label: 'Lease Transfer',  bg: 'rgba(239,246,255,0.95)', color: '#1d4ed8', border: 'rgba(191,219,254,0.9)' },
 } as const
 
@@ -326,7 +326,23 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'price' | 'score' | 'distance'>('price')
+  const activeFilterCount =
+    (filters.maxPrice < 2000 ? 1 : 0) +
+    (filters.minBeds > 1 ? 1 : 0) +
+    (filters.maxDistance < 5 ? 1 : 0)
   const [mapVisible, setMapVisible] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  // Phones open with the list, not the map: the map costs 300px of the first
+  // screen and a student came here to see homes. Because <HomesMap> is gated
+  // on mapVisible, this also keeps Leaflet off the phone bundle entirely.
+  // Set after mount so the server HTML still hydrates cleanly.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const sync = () => { if (mq.matches) setMapVisible(false) }
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -421,7 +437,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
           font-family: var(--hh-font-ui); transition: border-color 0.15s, background 0.15s;
         }
         .filter-pill:hover { border-color: var(--hh-primary); }
-        .filter-pill.active { border-color: var(--hh-primary); background: rgba(47,74,72,0.06); color: var(--hh-primary); }
+        .filter-pill.active { border-color: var(--hh-primary); background: rgba(140,29,64,0.06); color: var(--hh-primary); }
         .filter-pill select { border: none; background: none; outline: none; font-size: 13px; color: inherit; font-family: var(--hh-font-ui); cursor: pointer; }
         .filter-pill label { font-size: 11px; color: var(--hh-text-muted); font-weight: 500; }
         .filter-pill input[type=range] { width: 86px; accent-color: var(--hh-primary); cursor: pointer; }
@@ -477,11 +493,11 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
           background: #fff; border-radius: 18px; overflow: hidden;
           cursor: pointer; border: 1px solid var(--hh-border-faint);
           transition: transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s, border-color 0.22s;
-          box-shadow: 0 1px 3px rgba(34,40,16,0.05);
+          box-shadow: 0 1px 3px rgba(31,21,23,0.05);
         }
         .hc2-card:hover {
           transform: translateY(-4px);
-          box-shadow: 0 16px 44px rgba(34,40,16,0.12), 0 4px 12px rgba(34,40,16,0.06);
+          box-shadow: 0 16px 44px rgba(31,21,23,0.12), 0 4px 12px rgba(31,21,23,0.06);
           border-color: var(--hh-border);
         }
 
@@ -526,7 +542,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
         }
         .hc2-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .hc2-bed-pill { font-size: 11px; font-weight: 500; color: var(--hh-text-2); background: var(--hh-bg-alt); padding: 3px 9px; border-radius: 100px; border: 1px solid var(--hh-border-faint); }
-        .hc2-date-pill { font-size: 11px; font-weight: 600; color: var(--hh-primary); background: rgba(47,74,72,0.07); border: 1px solid rgba(47,74,72,0.18); padding: 3px 9px; border-radius: 100px; }
+        .hc2-date-pill { font-size: 11px; font-weight: 600; color: var(--hh-primary); background: rgba(140,29,64,0.07); border: 1px solid rgba(140,29,64,0.18); padding: 3px 9px; border-radius: 100px; }
         .hc2-avail-pill { font-size: 11px; font-weight: 600; color: #059669; background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.22); padding: 3px 9px; border-radius: 100px; }
 
         /* ── MAP ── */
@@ -546,6 +562,10 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
 
         @keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
 
+        /* The filters button is phone-only; on desktop the pills are already
+           visible and a disclosure would just be a second click. */
+        .filters-toggle { display: none; }
+
         /* ── RESPONSIVE ── */
         @media (max-width: 768px) {
           .homes-page { height: auto; overflow: visible; }
@@ -556,9 +576,55 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
           .hc2-img-wrap { height: 230px; }
           .hc2-img-wrap--featured { height: 230px !important; }
           .homes-map { width: 100%; height: 300px; position: relative; }
-          .search-box { max-width: 100%; }
-          .toolbar-right { margin-left: 0; width: 100%; justify-content: space-between; }
           .hc2-arrow { opacity: 1; transform: scale(1); }
+
+          /* One row of controls, then homes. The toolbar used to wrap into
+             five rows before the first listing appeared. */
+          .homes-toolbar {
+            padding: 10px 12px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+          }
+          .search-box { max-width: none; min-width: 0; height: 44px; grid-column: 1 / -1; }
+          /* 16px or iOS Safari zooms the whole page on focus. */
+          .search-box input, .filter-pill select, .sort-select { font-size: 16px; }
+
+          .filters-toggle {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            height: 44px; padding: 0 16px; border-radius: 100px;
+            background: #fff; border: 1.5px solid var(--hh-border-faint);
+            font-family: var(--hh-font-ui); font-size: 14px; font-weight: 600;
+            color: var(--hh-text); cursor: pointer; white-space: nowrap;
+          }
+          .filters-toggle.active {
+            border-color: var(--hh-primary); color: var(--hh-primary);
+            background: rgba(140,29,64,0.06);
+          }
+
+          /* Collapsed by default — opened by the button above. */
+          .filter-group { display: none; }
+          .filter-group.open {
+            display: flex; flex-direction: column; align-items: stretch;
+            gap: 10px; grid-column: 1 / -1; padding-top: 4px;
+          }
+          .filter-group.open .filter-pill {
+            height: 44px; justify-content: space-between; width: 100%;
+          }
+          /* A thumb needs the whole row, not 86px. */
+          .filter-group.open .filter-pill input[type=range] { flex: 1; width: auto; min-width: 0; }
+          .filter-group.open .filter-pill select { flex: 1; text-align: right; }
+
+          .toolbar-right {
+            margin-left: 0; grid-column: 1 / -1;
+            display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+          }
+          .toolbar-right .result-count { grid-row: 1; justify-self: start; }
+          /* Sort is a refinement — it rides along with the filter sheet. */
+          .toolbar-right .sort-select { display: none; height: 44px; }
+          .toolbar-right.open .sort-select { display: block; grid-column: 1 / -1; width: 100%; }
+          .map-toggle { height: 44px; }
         }
       `}</style>
 
@@ -566,6 +632,17 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
 
         {/* TOOLBAR */}
         <div className="homes-toolbar">
+
+          {/* Phone-only: one row that opens the filters rather than
+              spilling every pill down the screen. */}
+          <button
+            className={`filters-toggle${activeFilterCount > 0 ? ' active' : ''}`}
+            onClick={() => setFiltersOpen(o => !o)}
+            aria-expanded={filtersOpen}
+          >
+            <span>Filters{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}</span>
+            <span aria-hidden="true">{filtersOpen ? '▴' : '▾'}</span>
+          </button>
 
           {/* Search */}
           <div className="search-box">
@@ -584,7 +661,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
             />
           </div>
 
-          <div className="filter-group">
+          <div className={`filter-group${filtersOpen ? ' open' : ''}`}>
 
             {/* Max price */}
             <div className={`filter-pill ${filters.maxPrice < 2000 ? 'active' : ''}`}>
@@ -642,7 +719,7 @@ function HomesPageInner({ initialProperties }: { initialProperties?: Property[] 
             </button>
           </div>
 
-          <div className="toolbar-right">
+          <div className={`toolbar-right${filtersOpen ? ' open' : ''}`}>
             <span className="result-count">{loading ? 'Loading…' : `${filtered.length} home${filtered.length !== 1 ? 's' : ''}`}</span>
             <select className="sort-select" value={sortBy} onChange={e => {
               const v = e.target.value as 'price' | 'score' | 'distance'

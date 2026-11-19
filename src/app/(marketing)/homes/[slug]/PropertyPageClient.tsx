@@ -434,7 +434,7 @@ export default function PropertyPageClient({
   // ── Lead status config ───────────────────────────────────────────────────
   const LEAD_STATUS_LABEL: Record<string, { label: string; desc: string; color: string; bg: string }> = {
     new:            { label: 'Pending Review',    desc: 'Your inquiry is in the queue — we\'ll be in touch within a few hours.',                  color: '#1d4ed8', bg: '#eff6ff' },
-    contacted:      { label: 'We Reached Out',    desc: 'Check your email or phone — a team member has already been in contact.',                  color: '#c9973a', bg: '#fefce8' },
+    contacted:      { label: 'We Reached Out',    desc: 'Check your email or phone — a team member has already been in contact.',                  color: '#8A5A00', bg: '#fefce8' },
     engaged:        { label: 'In Conversation',   desc: 'You\'re in active conversation with us. Keep an eye on your messages.',                   color: '#7c3aed', bg: '#f5f3ff' },
     qualified:      { label: 'Pre-Qualified',     desc: 'You\'ve been pre-qualified! A team member will schedule your tour soon.',                 color: '#166534', bg: '#f0fdf4' },
     tour_scheduled: { label: 'Tour Scheduled',    desc: 'Your tour is booked — check your email for confirmation details.',                        color: 'var(--hh-primary)', bg: '#fdf2f5' },
@@ -485,15 +485,15 @@ export default function PropertyPageClient({
 
     // Offer banner (shown above form if offer exists)
     const OfferBanner = home.offer_amount ? (
-      <div style={{ background: 'linear-gradient(135deg, #1c2420 0%, var(--hh-hive-800) 100%)', border: '1px solid rgba(217,161,74,0.5)', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(217,161,74,0.2) 0%,transparent 70%)', pointerEvents: 'none' }} />
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(217,161,74,0.15)', border: '1px solid rgba(217,161,74,0.4)', borderRadius: '20px', padding: '3px 10px', marginBottom: '8px' }}>
+      <div style={{ background: 'linear-gradient(135deg, #4A0F22 0%, var(--hh-hive-800) 100%)', border: '1px solid rgba(255,198,39,0.5)', borderRadius: '12px', padding: '16px 18px', marginBottom: '14px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,198,39,0.2) 0%,transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255,198,39,0.15)', border: '1px solid rgba(255,198,39,0.4)', borderRadius: '20px', padding: '3px 10px', marginBottom: '8px' }}>
           <span style={{ fontSize: '9px', color: 'var(--hh-accent)', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase' }}>🎁 Limited offer</span>
         </div>
         <div style={{ fontFamily: "var(--hh-font-display)", fontSize: '20px', color: 'var(--hh-accent)', lineHeight: 1.2, marginBottom: '4px' }}>
           ${home.offer_amount.toLocaleString()} lease credit
         </div>
-        <div style={{ fontSize: '12px', color: '#c5c1b8', lineHeight: 1.5, marginBottom: home.offer_deadline ? '8px' : '0' }}>
+        <div style={{ fontSize: '12px', color: '#C9BDBA', lineHeight: 1.5, marginBottom: home.offer_deadline ? '8px' : '0' }}>
           {home.offer_description || 'Cash credit applied when you sign your lease.'}
         </div>
         {home.offer_deadline && (
@@ -523,7 +523,7 @@ export default function PropertyPageClient({
           {needsPrescreen && (
             <a
               href={`/pre-screen/${existingLead.id}`}
-              style={{ display: 'block', width: '100%', padding: '14px', background: 'var(--hh-accent)', color: 'var(--hh-ink-900)', border: 'none', borderRadius: '9px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "var(--hh-font-ui)", letterSpacing: '0.1px', textAlign: 'center', textDecoration: 'none', boxShadow: '0 4px 18px rgba(217,161,74,0.45)', animation: 'goldPulse 2.8s ease-in-out infinite' }}
+              style={{ display: 'block', width: '100%', padding: '14px', background: 'var(--hh-accent)', color: 'var(--hh-ink-900)', border: 'none', borderRadius: '9px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', fontFamily: "var(--hh-font-ui)", letterSpacing: '0.1px', textAlign: 'center', textDecoration: 'none', boxShadow: '0 4px 18px rgba(255,198,39,0.45)', animation: 'goldPulse 2.8s ease-in-out infinite' }}
             >
               Complete your pre-screen →
             </a>
@@ -564,7 +564,7 @@ export default function PropertyPageClient({
           </p>
 
           {/* What's in it */}
-          <div style={{ background: 'var(--hh-bg)', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
+          <div style={{ background: 'var(--hh-bg)', border: '1px solid #E6DCD7', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
             {[
               'A little about you (30 sec)',
               'Your move-in plan & group size',
@@ -581,17 +581,17 @@ export default function PropertyPageClient({
           {submittedLeadId && (
             <a
               href={`/pre-screen/${submittedLeadId}`}
-              style={{ display: 'block', padding: '14px', background: 'var(--hh-accent)', color: 'var(--hh-ink-900)', borderRadius: '9px', fontSize: '15px', fontWeight: 800, textDecoration: 'none', textAlign: 'center', boxShadow: '0 4px 18px rgba(217,161,74,0.45)', marginBottom: '10px' }}
+              style={{ display: 'block', padding: '14px', background: 'var(--hh-accent)', color: 'var(--hh-ink-900)', borderRadius: '9px', fontSize: '15px', fontWeight: 800, textDecoration: 'none', textAlign: 'center', boxShadow: '0 4px 18px rgba(255,198,39,0.45)', marginBottom: '10px' }}
             >
               Complete my pre-screen →
             </a>
           )}
 
           {loggedInUser && (
-            <p style={{ fontSize: '11px', color: '#b0a898', textAlign: 'center', margin: 0 }}>Taking you there automatically…</p>
+            <p style={{ fontSize: '11px', color: '#A8938F', textAlign: 'center', margin: 0 }}>Taking you there automatically…</p>
           )}
           {!loggedInUser && (
-            <p style={{ fontSize: '11px', color: '#b0a898', textAlign: 'center', margin: 0 }}>No account needed · Takes 2 minutes · No commitment</p>
+            <p style={{ fontSize: '11px', color: '#A8938F', textAlign: 'center', margin: 0 }}>No account needed · Takes 2 minutes · No commitment</p>
           )}
         </div>
       )
@@ -613,7 +613,7 @@ export default function PropertyPageClient({
           </span>
         </div>
         {!home.utilities_included && (
-          <div style={{ fontSize: '12px', color: 'var(--hh-text-muted)' }}>Est. all-in: <strong style={{ color: 'var(--hh-text)' }}>${home.price + 65}–${home.price + 140}/mo</strong> <span style={{ color: '#c5c1b8' }}>incl. utilities</span></div>
+          <div style={{ fontSize: '12px', color: 'var(--hh-text-muted)' }}>Est. all-in: <strong style={{ color: 'var(--hh-text)' }}>${home.price + 65}–${home.price + 140}/mo</strong> <span style={{ color: '#C9BDBA' }}>incl. utilities</span></div>
         )}
         {home.utilities_included && (
           <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 500 }}>✓ Utilities included</div>
@@ -637,14 +637,14 @@ export default function PropertyPageClient({
         </div>
       </div>
 
-      <div style={{ height: '1px', background: '#f0ede6', marginBottom: '18px' }} />
+      <div style={{ height: '1px', background: '#F6EBE4', marginBottom: '18px' }} />
 
       {/* Form fields */}
       {loggedInUser ? (
         /* ── Logged-in: compact pre-filled form ── */
         <div style={{ marginBottom: '14px' }}>
           {/* Identity row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--hh-bg-alt)', border: '1px solid #e8e5de', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--hh-bg-alt)', border: '1px solid #E6DCD7', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px' }}>
             {loggedInUser.avatarUrl ? (
               <img src={loggedInUser.avatarUrl} alt={loggedInUser.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
             ) : (
@@ -684,9 +684,9 @@ export default function PropertyPageClient({
                 value={formData.move_in_date}
                 onChange={handleChange}
                 min={minMoveIn}
-                style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1F1517' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1F1517' : '#8E7B79', background: '#fff', boxSizing: 'border-box' }}
                 onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
-                onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}
+                onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1F1517' : 'var(--hh-border-faint)'}
               />
               {availFromLabel && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#059669', marginTop: '6px', paddingLeft: '2px' }}>
@@ -706,9 +706,9 @@ export default function PropertyPageClient({
             value={formData.first_name}
             onChange={handleChange}
             autoFocus={!isPersonalized}
-            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.first_name ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.first_name ? '#1F1517' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
             onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
-            onBlur={e => e.target.style.borderColor = formData.first_name ? '#1a1a1a' : 'var(--hh-border-faint)'}
+            onBlur={e => e.target.style.borderColor = formData.first_name ? '#1F1517' : 'var(--hh-border-faint)'}
           />
           <input
             name="email"
@@ -716,9 +716,9 @@ export default function PropertyPageClient({
             placeholder="Email address *"
             value={formData.email}
             onChange={handleChange}
-            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.email ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.email ? '#1F1517' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box' }}
             onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
-            onBlur={e => e.target.style.borderColor = formData.email ? '#1a1a1a' : 'var(--hh-border-faint)'}
+            onBlur={e => e.target.style.borderColor = formData.email ? '#1F1517' : 'var(--hh-border-faint)'}
           />
           <PhoneInput
             value={formData.phone}
@@ -734,9 +734,9 @@ export default function PropertyPageClient({
               value={formData.move_in_date}
               onChange={handleChange}
               min={minMoveIn}
-              style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1a1a1a' : '#a0a0a0', background: '#fff', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${formData.move_in_date ? '#1F1517' : 'var(--hh-border-faint)'}`, borderRadius: '9px', fontSize: '14px', fontFamily: "var(--hh-font-ui)", outline: 'none', color: formData.move_in_date ? '#1F1517' : '#8E7B79', background: '#fff', boxSizing: 'border-box' }}
               onFocus={e => e.target.style.borderColor = 'var(--hh-primary)'}
-              onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1a1a1a' : 'var(--hh-border-faint)'}
+              onBlur={e => e.target.style.borderColor = formData.move_in_date ? '#1F1517' : 'var(--hh-border-faint)'}
             />
             {availFromLabel ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#059669', marginTop: '6px', paddingLeft: '2px' }}>
@@ -744,7 +744,7 @@ export default function PropertyPageClient({
                 <span>Available from <strong>{availFromLabel}</strong> — earlier dates are locked</span>
               </div>
             ) : !formData.move_in_date && (
-              <div style={{ fontSize: '10px', color: '#b0a898', marginTop: '4px', paddingLeft: '2px' }}>When do you want to move in? *</div>
+              <div style={{ fontSize: '10px', color: '#A8938F', marginTop: '4px', paddingLeft: '2px' }}>When do you want to move in? *</div>
             )}
           </div>
         </div>
@@ -763,11 +763,11 @@ export default function PropertyPageClient({
           transition: 'transform 0.1s, box-shadow 0.2s, opacity 0.2s',
           letterSpacing: '0.1px',
           opacity: canSubmit ? 1 : 0.72,
-          boxShadow: canSubmit ? '0 4px 20px rgba(217,161,74,0.45)' : 'none',
+          boxShadow: canSubmit ? '0 4px 20px rgba(255,198,39,0.45)' : 'none',
           animation: canSubmit && !submitting ? 'goldPulse 2.8s ease-in-out infinite' : 'none',
         }}
-        onMouseEnter={e => { if (!submitting) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 28px rgba(217,161,74,0.55)' } }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = canSubmit ? '0 4px 20px rgba(217,161,74,0.45)' : 'none' }}
+        onMouseEnter={e => { if (!submitting) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 28px rgba(255,198,39,0.55)' } }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = canSubmit ? '0 4px 20px rgba(255,198,39,0.45)' : 'none' }}
         onMouseDown={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(1px)' }}
         onMouseUp={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
       >
@@ -808,9 +808,9 @@ export default function PropertyPageClient({
         .gallery-hero { position: relative; border-radius: 20px; overflow: hidden; height: 520px; cursor: pointer; background: var(--hh-bg-alt); margin-bottom: 10px; }
         .gallery-hero img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s cubic-bezier(0.25,0.46,0.45,0.94); }
         .gallery-hero:hover img { transform: scale(1.02); }
-        .gallery-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 55%, rgba(22,24,16,0.42)); pointer-events: none; }
-        .gallery-count { position: absolute; bottom: 16px; right: 16px; background: rgba(22,24,16,0.7); color: #fff; font-family: var(--hh-font-ui); font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 100px; backdrop-filter: blur(8px); cursor: pointer; border: 1px solid rgba(255,255,255,0.15); transition: background 0.15s; letter-spacing: 0.01em; }
-        .gallery-count:hover { background: rgba(22,24,16,0.9); }
+        .gallery-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 55%, rgba(36,10,19,0.42)); pointer-events: none; }
+        .gallery-count { position: absolute; bottom: 16px; right: 16px; background: rgba(36,10,19,0.7); color: #fff; font-family: var(--hh-font-ui); font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 100px; backdrop-filter: blur(8px); cursor: pointer; border: 1px solid rgba(255,255,255,0.15); transition: background 0.15s; letter-spacing: 0.01em; }
+        .gallery-count:hover { background: rgba(36,10,19,0.9); }
 
         .gallery-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; margin-top: 0; }
         .gallery-strip::-webkit-scrollbar { height: 3px; }
@@ -822,7 +822,7 @@ export default function PropertyPageClient({
 
         /* ── CONTENT SECTIONS ───────────────────────────── */
         .section      { background: #fff; border-radius: 18px; padding: 28px; margin-top: 16px; border: 1px solid var(--hh-border-faint); }
-        .section-label{ font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-accent); margin-bottom: 16px; }
+        .section-label{ font-size: var(--hh-sz-eyebrow); font-weight: var(--hh-wt-eyebrow); letter-spacing: var(--hh-ls-eyebrow); text-transform: uppercase; color: var(--hh-accent-strong); margin-bottom: 16px; }
 
         .stats-row    { display: flex; border: 1px solid var(--hh-border-faint); border-radius: 14px; overflow: hidden; margin-bottom: 20px; }
         .stat-item    { flex: 1; padding: 18px 10px; text-align: center; border-right: 1px solid var(--hh-border-faint); }
@@ -850,7 +850,7 @@ export default function PropertyPageClient({
         .nearby-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .nearby-item  { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; background: var(--hh-bg-alt); border-radius: 10px; border: 1px solid var(--hh-border-faint); }
         .nearby-place { font-size: 13px; color: var(--hh-text-2); }
-        .nearby-time  { font-size: 12px; color: var(--hh-accent); font-weight: 600; }
+        .nearby-time  { font-size: 12px; color: var(--hh-accent-strong); font-weight: 600; }
 
         .faq-inline   { border: 1px solid var(--hh-border-faint); border-radius: 12px; overflow: hidden; background: #fff; }
         .faq-inline summary { list-style: none; cursor: pointer; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--hh-text); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -863,7 +863,7 @@ export default function PropertyPageClient({
 
         .rec-grid    { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
         .rec-card    { border: 1px solid var(--hh-border-faint); border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: box-shadow 0.2s, transform 0.2s; background: #fff; }
-        .rec-card:hover { box-shadow: 0 12px 40px rgba(34,40,16,0.11); transform: translateY(-3px); }
+        .rec-card:hover { box-shadow: 0 12px 40px rgba(31,21,23,0.11); transform: translateY(-3px); }
         .rec-img     { width: 100%; height: 148px; object-fit: cover; background: var(--hh-bg-alt); display: block; transition: transform 0.4s; }
         .rec-card:hover .rec-img { transform: scale(1.04); }
         .rec-body    { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
@@ -875,7 +875,7 @@ export default function PropertyPageClient({
         .rec-cta     { font-size: 12px; font-weight: 600; color: var(--hh-primary); margin-top: auto; padding-top: 10px; }
 
         /* ── FORM CARD (right column) ───────────────────── */
-        .form-card    { background: #fff; border-radius: 20px; padding: 24px; border: 1px solid var(--hh-border-faint); box-shadow: 0 4px 32px rgba(34,40,16,0.09), 0 1px 4px rgba(34,40,16,0.05); }
+        .form-card    { background: #fff; border-radius: 20px; padding: 24px; border: 1px solid var(--hh-border-faint); box-shadow: 0 4px 32px rgba(31,21,23,0.09), 0 1px 4px rgba(31,21,23,0.05); }
 
         /* ── MOBILE STICKY BAR ──────────────────────────── */
         .mobile-sticky-bar {
@@ -883,14 +883,14 @@ export default function PropertyPageClient({
           position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
           background: #fff; border-top: 1px solid var(--hh-border-faint);
           padding: 12px 20px 20px;
-          box-shadow: 0 -8px 32px rgba(34,40,16,0.1);
+          box-shadow: 0 -8px 32px rgba(31,21,23,0.1);
         }
         .mobile-bar-inner { display: flex; align-items: center; gap: 12px; }
         .mobile-bar-price { flex-shrink: 0; }
-        .mobile-bar-cta { flex: 1; padding: 14px; background: var(--hh-accent); color: var(--hh-ink-900); border: none; border-radius: 100px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--hh-font-ui); letter-spacing: -0.01em; box-shadow: 0 4px 16px rgba(217,161,74,0.4); }
+        .mobile-bar-cta { flex: 1; padding: 14px; background: var(--hh-accent); color: var(--hh-ink-900); border: none; border-radius: 100px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--hh-font-ui); letter-spacing: -0.01em; box-shadow: 0 4px 16px rgba(255,198,39,0.4); }
 
         /* ── MOBILE FORM DRAWER ─────────────────────────── */
-        .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(34,40,16,0.5); z-index: 200; backdrop-filter: blur(4px); }
+        .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(31,21,23,0.5); z-index: 200; backdrop-filter: blur(4px); }
         .drawer-backdrop.open { display: block; }
         .drawer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 201; background: #fff; border-radius: 24px 24px 0 0; padding: 24px 20px 40px; max-height: 90vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); }
         .drawer.open { transform: translateY(0); }
@@ -899,7 +899,7 @@ export default function PropertyPageClient({
         /* ── ANIMATIONS ─────────────────────────────────── */
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.5} }
-        @keyframes goldPulse { 0%,100%{box-shadow:0 4px 20px rgba(217,161,74,0.45)} 50%{box-shadow:0 4px 32px rgba(217,161,74,0.75)} }
+        @keyframes goldPulse { 0%,100%{box-shadow:0 4px 20px rgba(255,198,39,0.45)} 50%{box-shadow:0 4px 32px rgba(255,198,39,0.75)} }
 
         /* ── RESPONSIVE ─────────────────────────────────── */
         @media (max-width: 900px) {
@@ -921,15 +921,15 @@ export default function PropertyPageClient({
 
         {/* PERSONALIZED BANNER */}
         {isPersonalized && (
-          <div style={{ background: 'linear-gradient(135deg,#1c2420 0%,#243530 100%)', borderRadius: '14px', padding: '24px 28px', marginBottom: '24px', border: '1px solid rgba(217,161,74,0.4)', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(217,161,74,0.15) 0%,transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(217,161,74,0.15)', border: '1px solid rgba(217,161,74,0.4)', borderRadius: '20px', padding: '4px 12px', marginBottom: '12px' }}>
+          <div style={{ background: 'linear-gradient(135deg,#4A0F22 0%,#243530 100%)', borderRadius: '14px', padding: '24px 28px', marginBottom: '24px', border: '1px solid rgba(255,198,39,0.4)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '180px', height: '180px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(255,198,39,0.15) 0%,transparent 70%)', pointerEvents: 'none' }} />
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,198,39,0.15)', border: '1px solid rgba(255,198,39,0.4)', borderRadius: '20px', padding: '4px 12px', marginBottom: '12px' }}>
               <span style={{ fontSize: '10px', color: 'var(--hh-accent)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>✦ Picked for you</span>
             </div>
             <div style={{ fontFamily: 'var(--hh-font-display)', fontSize: '24px', color: '#fff', lineHeight: 1.2, marginBottom: '8px' }}>
               {guestName}, this one's yours.<br /><span style={{ color: 'var(--hh-accent)' }}>{customMsg || 'Spots fill up fast — we saved it for you.'}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid rgba(217,161,74,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid rgba(255,198,39,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--hh-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 600, color: 'var(--hh-text)', flexShrink: 0 }}>{fromName[0].toUpperCase()}</div>
                 <div>
@@ -948,9 +948,9 @@ export default function PropertyPageClient({
         {/* BACK LINK — subtle, won't compete with the form */}
         <a
           href="/homes"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#b0a898', textDecoration: 'none', marginBottom: '10px', transition: 'color 0.15s' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#A8938F', textDecoration: 'none', marginBottom: '10px', transition: 'color 0.15s' }}
           onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = 'var(--hh-text-muted)'}
-          onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#b0a898'}
+          onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = '#A8938F'}
         >
           <span style={{ fontSize: '15px', lineHeight: 1 }}>←</span> All homes
         </a>
@@ -974,11 +974,11 @@ export default function PropertyPageClient({
               onMouseEnter={() => setBadgeHover(true)}
               onMouseLeave={() => setBadgeHover(false)}
             >
-              <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 11px', borderRadius: '20px', background: 'var(--hh-primary)', color: '#fff', border: '1px solid rgba(47,74,72,0.5)', cursor: 'default', letterSpacing: '0.2px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 11px', borderRadius: '20px', background: 'var(--hh-primary)', color: '#fff', border: '1px solid rgba(140,29,64,0.5)', cursor: 'default', letterSpacing: '0.2px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                 ✓ HomeHive Verified
               </span>
               {badgeHover && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #e8e5de', borderRadius: '10px', padding: '12px 14px', boxShadow: '0 8px 28px rgba(0,0,0,0.12)', zIndex: 50, minWidth: '220px', pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #E6DCD7', borderRadius: '10px', padding: '12px 14px', boxShadow: '0 8px 28px rgba(0,0,0,0.12)', zIndex: 50, minWidth: '220px', pointerEvents: 'none' }}>
                   <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--hh-primary)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>What this means</div>
                   {[
                     'Zero-tolerance scam policy',
@@ -1158,7 +1158,7 @@ export default function PropertyPageClient({
                   {home.rooms.filter(r => r.images.length > 0).map(room => {
                     const imgs = room.images
                     return (
-                      <div key={room.id} style={{ border: '1px solid #e8e5de', borderRadius: 12, overflow: 'hidden', background: 'var(--hh-bg)' }}>
+                      <div key={room.id} style={{ border: '1px solid #E6DCD7', borderRadius: 12, overflow: 'hidden', background: 'var(--hh-bg)' }}>
                         {/* Airbnb-style grid: 1 photo = full; 2 = split; 3+ = hero + 2 side */}
                         {imgs.length === 1 && (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -1216,7 +1216,7 @@ export default function PropertyPageClient({
                             {imgs.length > 1 && (
                               <button
                                 onClick={() => openRoomLightbox(imgs, 0, room.name)}
-                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--hh-primary)', background: 'rgba(47,74,72,0.06)', border: '1px solid rgba(47,74,72,0.2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'var(--hh-font-ui)', whiteSpace: 'nowrap' }}
+                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--hh-primary)', background: 'rgba(140,29,64,0.06)', border: '1px solid rgba(140,29,64,0.2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'var(--hh-font-ui)', whiteSpace: 'nowrap' }}
                               >
                                 🖼 {imgs.length} photos
                               </button>
@@ -1251,7 +1251,7 @@ export default function PropertyPageClient({
                         </span>
                       </div>
                     ))}
-                    <div className="pricing-row" style={{ borderTop: '2px solid #1a1a1a', paddingTop: '10px', fontWeight: 600, fontSize: '15px' }}>
+                    <div className="pricing-row" style={{ borderTop: '2px solid #1F1517', paddingTop: '10px', fontWeight: 600, fontSize: '15px' }}>
                       <span>Total potential rent</span>
                       <span style={{ color: 'var(--hh-text)' }}>
                         ${home.rooms.reduce((s, r) => s + r.price, 0).toLocaleString()}/mo
@@ -1404,7 +1404,7 @@ export default function PropertyPageClient({
                 </div>
                 <div style={{ marginTop: 14, textAlign: 'center' }}>
                   <a href="/homes" style={{ fontSize: 13, color: 'var(--hh-text-muted)', textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#1a1a1a'}
+                    onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.color = '#1F1517'}
                     onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.color = 'var(--hh-text-muted)'}
                   >
                     Browse all homes →
@@ -1443,11 +1443,11 @@ export default function PropertyPageClient({
                   {(commentText.trim() || submittingComment) && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
                       {commentError && <span style={{ fontSize: 12, color: '#dc2626', marginRight: 'auto' }}>{commentError}</span>}
-                      <button onClick={() => setCommentText('')} style={{ background: 'none', color: '#6b6b6b', border: 'none', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <button onClick={() => setCommentText('')} style={{ background: 'none', color: '#6E5B59', border: 'none', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                         Cancel
                       </button>
                       <button onClick={submitComment} disabled={submittingComment || !commentText.trim()}
-                        style={{ background: submittingComment || !commentText.trim() ? '#e0e0e0' : '#8C1D40', color: submittingComment || !commentText.trim() ? '#909090' : '#fff', border: 'none', borderRadius: 20, padding: '6px 16px', fontSize: 12, fontWeight: 700, cursor: submittingComment || !commentText.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'background 0.15s' }}>
+                        style={{ background: submittingComment || !commentText.trim() ? '#E3D9D5' : '#8C1D40', color: submittingComment || !commentText.trim() ? '#909090' : '#fff', border: 'none', borderRadius: 20, padding: '6px 16px', fontSize: 12, fontWeight: 700, cursor: submittingComment || !commentText.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'background 0.15s' }}>
                         {submittingComment ? 'Posting…' : 'Post'}
                       </button>
                     </div>
@@ -1456,7 +1456,7 @@ export default function PropertyPageClient({
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '12px 16px', background: 'var(--hh-bg-alt)', borderRadius: 10, border: '1px solid var(--hh-border-faint)' }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#E3D9D5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
                 <div style={{ fontSize: 13, color: 'var(--hh-text-muted)' }}>
                   <a href="/login" style={{ color: '#8C1D40', fontWeight: 600, textDecoration: 'none' }}>Sign in</a> to ask a question or leave a comment
                 </div>
@@ -1502,9 +1502,9 @@ export default function PropertyPageClient({
 
             {/* Posted by landlord */}
             {landlordProfile && (
-              <div style={{ background: '#fff', border: '1px solid #e8e5de', borderRadius: '12px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ background: '#fff', border: '1px solid #E6DCD7', borderRadius: '12px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {landlordProfile.avatar_url ? (
-                  <img src={landlordProfile.avatar_url} alt={landlordProfile.first_name ?? ''} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid #e8e5de' }} />
+                  <img src={landlordProfile.avatar_url} alt={landlordProfile.first_name ?? ''} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid #E6DCD7' }} />
                 ) : (
                   <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--hh-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                     {(landlordProfile.first_name ?? '?')[0].toUpperCase()}

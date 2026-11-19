@@ -39,9 +39,9 @@ function Pill({ label, selected, onClick }: { label: string; selected: boolean; 
       style={{
         padding: '9px 18px',
         borderRadius: 100,
-        border: `1.5px solid ${selected ? 'var(--hh-ink-900, #1a1a1a)' : 'var(--hh-border, #e8e5de)'}`,
-        background: selected ? 'var(--hh-ink-900, #1a1a1a)' : 'transparent',
-        color: selected ? '#fff' : 'var(--hh-ink-600, #6b6b6b)',
+        border: `1.5px solid ${selected ? 'var(--hh-ink-900, #1F1517)' : 'var(--hh-border, #E6DCD7)'}`,
+        background: selected ? 'var(--hh-ink-900, #1F1517)' : 'transparent',
+        color: selected ? '#fff' : 'var(--hh-ink-600, #6E5B59)',
         fontSize: 13,
         fontWeight: 500,
         cursor: 'pointer',
@@ -109,11 +109,11 @@ export default function RoommatesPage() {
   const inputStyle: React.CSSProperties = {
     width: '100%',
     padding: '12px 14px',
-    border: '1.5px solid var(--hh-border, #e8e5de)',
+    border: '1.5px solid var(--hh-border, #E6DCD7)',
     borderRadius: 10,
     fontSize: 15,
     fontFamily: 'var(--hh-font-ui, Geist, sans-serif)',
-    color: 'var(--hh-ink-900, #1a1a1a)',
+    color: 'var(--hh-ink-900, #1F1517)',
     background: '#fff',
     outline: 'none',
     boxSizing: 'border-box',
@@ -123,7 +123,7 @@ export default function RoommatesPage() {
     display: 'block',
     fontSize: 12,
     fontWeight: 600,
-    color: 'var(--hh-ink-500, #9b9b9b)',
+    color: 'var(--hh-ink-500, #8E7B79)',
     marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: '0.5px',
@@ -132,7 +132,7 @@ export default function RoommatesPage() {
   const qStyle: React.CSSProperties = {
     fontSize: 14,
     fontWeight: 600,
-    color: 'var(--hh-ink-900, #1a1a1a)',
+    color: 'var(--hh-ink-900, #1F1517)',
     marginBottom: 10,
   }
 
@@ -169,23 +169,23 @@ export default function RoommatesPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;1,300;1,400&family=Geist:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--hh-bg, #FAF8F3); }
+        body { background: var(--hh-bg, #FFF7F2); }
         .rmp-page { max-width: 640px; margin: 0 auto; padding: 48px 24px 96px; }
-        .rmp-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--hh-accent, #D9A14A); margin-bottom: 10px; }
-        .rmp-headline { font-family: 'Newsreader', Georgia, serif; font-size: 32px; font-weight: 400; color: var(--hh-ink-900, #1a1a1a); line-height: 1.2; margin-bottom: 32px; }
-        .rmp-progress { width: 100%; height: 3px; background: var(--hh-border, #e8e5de); border-radius: 3px; margin-bottom: 40px; }
-        .rmp-progress-fill { height: 3px; border-radius: 3px; background: var(--hh-accent, #D9A14A); transition: width 0.35s ease; }
+        .rmp-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--hh-accent-strong, #8A5A00); margin-bottom: 10px; }
+        .rmp-headline { font-family: 'Newsreader', Georgia, serif; font-size: 32px; font-weight: 400; color: var(--hh-ink-900, #1F1517); line-height: 1.2; margin-bottom: 32px; }
+        .rmp-progress { width: 100%; height: 3px; background: var(--hh-border, #E6DCD7); border-radius: 3px; margin-bottom: 40px; }
+        .rmp-progress-fill { height: 3px; border-radius: 3px; background: var(--hh-accent, #FFC627); transition: width 0.35s ease; }
         .rmp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
         .rmp-field { margin-bottom: 20px; }
         .rmp-q { margin-bottom: 20px; }
-        .rmp-continue { width: 100%; padding: 13px 32px; background: var(--hh-ink-900, #1a1a1a); color: #fff; border: none; border-radius: 100px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: 'Geist', sans-serif; transition: opacity 0.15s; margin-top: 8px; }
+        .rmp-continue { width: 100%; padding: 13px 32px; background: var(--hh-ink-900, #1F1517); color: #fff; border: none; border-radius: 100px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: 'Geist', sans-serif; transition: opacity 0.15s; margin-top: 8px; }
         .rmp-continue:disabled { opacity: 0.35; cursor: not-allowed; }
-        .rmp-trust { font-size: 12px; color: var(--hh-ink-400, #b0a898); text-align: center; margin-top: 12px; }
-        .rmp-back { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--hh-ink-500, #9b9b9b); font-family: 'Geist', sans-serif; padding: 0; margin-bottom: 28px; display: flex; align-items: center; gap: 5px; }
-        .rmp-back:hover { color: var(--hh-ink-900, #1a1a1a); }
-        .rmp-step-label { font-size: 12px; color: var(--hh-ink-400, #b0a898); margin-bottom: 16px; font-weight: 500; }
-        .rmp-textarea { width: 100%; padding: 12px 14px; border: 1.5px solid var(--hh-border, #e8e5de); border-radius: 10px; font-size: 15px; font-family: 'Geist', sans-serif; color: var(--hh-ink-900, #1a1a1a); resize: none; outline: none; height: 110px; background: #fff; }
-        .rmp-char-count { font-size: 11px; color: var(--hh-ink-400, #b0a898); text-align: right; margin-top: 4px; }
+        .rmp-trust { font-size: 12px; color: var(--hh-ink-400, #A8938F); text-align: center; margin-top: 12px; }
+        .rmp-back { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--hh-ink-500, #8E7B79); font-family: 'Geist', sans-serif; padding: 0; margin-bottom: 28px; display: flex; align-items: center; gap: 5px; }
+        .rmp-back:hover { color: var(--hh-ink-900, #1F1517); }
+        .rmp-step-label { font-size: 12px; color: var(--hh-ink-400, #A8938F); margin-bottom: 16px; font-weight: 500; }
+        .rmp-textarea { width: 100%; padding: 12px 14px; border: 1.5px solid var(--hh-border, #E6DCD7); border-radius: 10px; font-size: 15px; font-family: 'Geist', sans-serif; color: var(--hh-ink-900, #1F1517); resize: none; outline: none; height: 110px; background: #fff; }
+        .rmp-char-count { font-size: 11px; color: var(--hh-ink-400, #A8938F); text-align: right; margin-top: 4px; }
         .rmp-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #dc2626; margin-bottom: 16px; }
         @media (max-width: 520px) {
           .rmp-grid-2 { grid-template-columns: 1fr; }
@@ -193,29 +193,29 @@ export default function RoommatesPage() {
         }
       `}</style>
 
-      <div style={{ background: 'var(--hh-bg, #FAF8F3)', minHeight: '100vh', fontFamily: "'Geist', sans-serif" }}>
+      <div style={{ background: 'var(--hh-bg, #FFF7F2)', minHeight: '100vh', fontFamily: "'Geist', sans-serif" }}>
         {/* Top progress bar */}
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, height: 3, background: 'var(--hh-border, #e8e5de)' }}>
-          <div style={{ height: 3, background: 'var(--hh-accent, #D9A14A)', width: submitted ? '100%' : `${(step / 4) * 100}%`, transition: 'width 0.35s ease' }} />
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, height: 3, background: 'var(--hh-border, #E6DCD7)' }}>
+          <div style={{ height: 3, background: 'var(--hh-accent, #FFC627)', width: submitted ? '100%' : `${(step / 4) * 100}%`, transition: 'width 0.35s ease' }} />
         </div>
 
         <div className="rmp-page">
           {submitted ? (
             /* ── Confirmation ── */
             <div style={{ textAlign: 'center', paddingTop: 40 }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(217,161,74,0.12)', border: '2px solid rgba(217,161,74,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: 28 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(255,198,39,0.12)', border: '2px solid rgba(255,198,39,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: 28 }}>
                 ✓
               </div>
               <div className="rmp-eyebrow">You're in</div>
-              <h1 style={{ fontFamily: 'Newsreader, Georgia, serif', fontSize: 34, fontWeight: 400, color: 'var(--hh-ink-900, #1a1a1a)', lineHeight: 1.2, marginBottom: 16 }}>
+              <h1 style={{ fontFamily: 'Newsreader, Georgia, serif', fontSize: 34, fontWeight: 400, color: 'var(--hh-ink-900, #1F1517)', lineHeight: 1.2, marginBottom: 16 }}>
                 Profile submitted.
               </h1>
-              <p style={{ fontSize: 16, color: 'var(--hh-ink-500, #9b9b9b)', lineHeight: 1.7, maxWidth: 440, margin: '0 auto 32px' }}>
+              <p style={{ fontSize: 16, color: 'var(--hh-ink-500, #8E7B79)', lineHeight: 1.7, maxWidth: 440, margin: '0 auto 32px' }}>
                 We've got your details, {form.first_name}. We'll reach out within 24 hours to discuss options and potential matches.
               </p>
               <a
                 href="/homes"
-                style={{ display: 'inline-block', background: 'var(--hh-ink-900, #1a1a1a)', color: '#fff', padding: '13px 32px', borderRadius: 100, fontSize: 14, fontWeight: 600, textDecoration: 'none', fontFamily: 'Geist, sans-serif' }}
+                style={{ display: 'inline-block', background: 'var(--hh-ink-900, #1F1517)', color: '#fff', padding: '13px 32px', borderRadius: 100, fontSize: 14, fontWeight: 600, textDecoration: 'none', fontFamily: 'Geist, sans-serif' }}
               >
                 Browse available homes →
               </a>

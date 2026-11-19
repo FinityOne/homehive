@@ -93,17 +93,17 @@ function FAQ({ items }: { items: { q: string; a: string }[] }) {
       {items.map((item, i) => (
         <div
           key={i}
-          style={{ background: '#fff', border: '1px solid #e8e4db', borderRadius: '10px', overflow: 'hidden', transition: 'border-color 0.15s', ...(open === i ? { borderColor: '#d4c9b0' } : {}) }}
+          style={{ background: '#fff', border: '1px solid #E6DCD7', borderRadius: '10px', overflow: 'hidden', transition: 'border-color 0.15s', ...(open === i ? { borderColor: '#E3D9D5' } : {}) }}
         >
           <button
             onClick={() => setOpen(open === i ? null : i)}
             style={{ width: '100%', background: 'none', border: 'none', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", gap: '12px' }}
           >
-            <span style={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a', textAlign: 'left' }}>{item.q}</span>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#1F1517', textAlign: 'left' }}>{item.q}</span>
             <span style={{ color: '#8C1D40', fontSize: '18px', flexShrink: 0, transition: 'transform 0.2s', transform: open === i ? 'rotate(45deg)' : 'rotate(0)' }}>+</span>
           </button>
           {open === i && (
-            <div style={{ padding: '0 20px 16px', fontSize: '14px', color: '#6b6b6b', lineHeight: 1.7 }}>
+            <div style={{ padding: '0 20px 16px', fontSize: '14px', color: '#6E5B59', lineHeight: 1.7 }}>
               {item.a}
             </div>
           )}
@@ -121,25 +121,25 @@ export default function PricingPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;1,300;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #faf9f6; color: #1a1a1a; }
+        body { font-family: 'DM Sans', sans-serif; background: #FFF7F2; color: #1F1517; }
         .page { max-width: 860px; margin: 0 auto; padding: 0 24px 100px; }
 
-        .hero { text-align: center; padding: 64px 0 48px; border-bottom: 1px solid #e8e4db; margin-bottom: 48px; }
+        .hero { text-align: center; padding: 64px 0 48px; border-bottom: 1px solid #E6DCD7; margin-bottom: 48px; }
         .hero-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: #f0e6cc; color: #92620a; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 20px; }
-        .hero-title { font-family: 'Fraunces', serif; font-size: 48px; font-weight: 300; color: #1a1a1a; letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 14px; }
+        .hero-title { font-family: 'Fraunces', serif; font-size: 48px; font-weight: 300; color: #1F1517; letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 14px; }
         .hero-title em { font-style: italic; color: #8C1D40; }
-        .hero-sub { font-size: 16px; color: #6b6b6b; line-height: 1.7; max-width: 480px; margin: 0 auto; }
+        .hero-sub { font-size: 16px; color: #6E5B59; line-height: 1.7; max-width: 480px; margin: 0 auto; }
 
         .tab-wrap { display: flex; justify-content: center; margin-bottom: 48px; }
-        .tab-toggle { display: flex; background: #fff; border: 1.5px solid #e8e4db; border-radius: 10px; padding: 4px; gap: 4px; }
-        .tab-btn { padding: 10px 28px; border-radius: 7px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; font-family: 'DM Sans', sans-serif; color: #6b6b6b; background: transparent; transition: all 0.2s; white-space: nowrap; }
+        .tab-toggle { display: flex; background: #fff; border: 1.5px solid #E6DCD7; border-radius: 10px; padding: 4px; gap: 4px; }
+        .tab-btn { padding: 10px 28px; border-radius: 7px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; font-family: 'DM Sans', sans-serif; color: #6E5B59; background: transparent; transition: all 0.2s; white-space: nowrap; }
         .tab-btn.active { background: #8C1D40; color: #fff; }
-        .tab-btn:not(.active):hover { background: #f5f4f0; color: #1a1a1a; }
+        .tab-btn:not(.active):hover { background: #FBEFE7; color: #1F1517; }
 
         /* PRICE CARD */
         .price-card { border-radius: 20px; padding: 40px; margin-bottom: 32px; position: relative; overflow: hidden; }
-        .price-card.free-student { background: #1a1a1a; }
-        .price-card.free-landlord { background: linear-gradient(135deg, #1a1a1a 0%, #2d1a0a 100%); border: 1px solid rgba(201,151,58,0.3); }
+        .price-card.free-student { background: #1F1517; }
+        .price-card.free-landlord { background: linear-gradient(135deg, #1F1517 0%, #3A0A1A 100%); border: 1px solid rgba(201,151,58,0.3); }
         .price-glow { position: absolute; top: -60px; right: -60px; width: 240px; height: 240px; border-radius: 50%; background: radial-gradient(circle, rgba(140,29,64,0.18) 0%, transparent 70%); pointer-events: none; }
         .price-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,198,39,0.15); border: 1px solid rgba(255,198,39,0.35); border-radius: 20px; padding: 4px 12px; margin-bottom: 20px; }
         .price-badge-text { font-size: 11px; color: #FFC627; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -155,63 +155,63 @@ export default function PricingPage() {
         .feature-icon { font-size: 15px; flex-shrink: 0; }
         .feature-label { font-size: 13px; color: rgba(255,255,255,0.75); }
 
-        .price-cta { display: inline-flex; align-items: center; gap: 8px; background: #FFC627; color: #1a1a1a; padding: 13px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: background 0.2s; }
-        .price-cta:hover { background: #e6b320; }
+        .price-cta { display: inline-flex; align-items: center; gap: 8px; background: #FFC627; color: #1F1517; padding: 13px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: background 0.2s; }
+        .price-cta:hover { background: #E8B014; }
         .price-cta-ghost { display: inline-flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); padding: 13px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; border: 1px solid rgba(255,255,255,0.2); transition: all 0.2s; margin-left: 10px; }
         .price-cta-ghost:hover { border-color: rgba(255,255,255,0.5); color: #fff; }
 
         /* FREE TO START */
-        .free-start { background: #fff; border: 1.5px solid #e8e4db; border-left: 4px solid #0f7a43;
+        .free-start { background: #fff; border: 1.5px solid #E6DCD7; border-left: 4px solid #0f7a43;
           border-radius: 14px; padding: 24px 26px; margin-bottom: 18px;
           display: grid; grid-template-columns: 1fr auto; gap: 26px; align-items: center; }
         .free-start-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #0f7a43; margin-bottom: 7px; }
-        .free-start-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1a1a1a; line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.3px; }
+        .free-start-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1F1517; line-height: 1.25; margin-bottom: 8px; letter-spacing: -0.3px; }
         .free-start-title em { font-style: italic; color: #0f7a43; }
-        .free-start-body { font-size: 13.5px; color: #6b6b6b; line-height: 1.7; max-width: 520px; }
-        .free-start-price { text-align: center; padding-left: 26px; border-left: 1px solid #f0ede6; min-width: 130px; }
-        .free-start-price-label { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #9b9b9b; }
-        .free-start-price-num { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 300; color: #1a1a1a; letter-spacing: -1.6px; line-height: 1.1; }
-        .free-start-price-sub { font-size: 11.5px; color: #9b9b9b; }
+        .free-start-body { font-size: 13.5px; color: #6E5B59; line-height: 1.7; max-width: 520px; }
+        .free-start-price { text-align: center; padding-left: 26px; border-left: 1px solid #F6EBE4; min-width: 130px; }
+        .free-start-price-label { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #8E7B79; }
+        .free-start-price-num { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 300; color: #1F1517; letter-spacing: -1.6px; line-height: 1.1; }
+        .free-start-price-sub { font-size: 11.5px; color: #8E7B79; }
 
         /* TIER GRID */
         .tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
-        .tier { background: #fff; border: 1.5px solid #e8e4db; border-radius: 14px; padding: 26px 22px; position: relative; display: flex; flex-direction: column; transition: border-color 0.15s, box-shadow 0.15s; }
-        .tier:hover { border-color: #d4c9b0; box-shadow: 0 6px 24px rgba(0,0,0,0.05); }
-        .tier-featured { border-color: #1a1a1a; border-width: 2px; }
-        .tier-flag { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #FFC627; color: #1a1a1a; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 11px; border-radius: 20px; white-space: nowrap; }
-        .tier-name { font-family: 'Fraunces', serif; font-size: 21px; font-weight: 300; color: #1a1a1a; }
-        .tier-limit { font-size: 12px; color: #9b9b9b; margin-top: 2px; }
-        .tier-price { font-family: 'Fraunces', serif; font-size: 38px; font-weight: 300; color: #1a1a1a; letter-spacing: -1.6px; margin: 16px 0 0; }
-        .tier-price em { font-style: normal; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #9b9b9b; letter-spacing: 0; }
-        .tier-audience { font-size: 13px; color: #6b6b6b; line-height: 1.6; margin: 12px 0 20px; flex: 1; }
-        .tier-cta { display: block; text-align: center; border: 1.5px solid #e8e4db; border-radius: 8px; padding: 11px; font-size: 13.5px; font-weight: 700; color: #1a1a1a; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+        .tier { background: #fff; border: 1.5px solid #E6DCD7; border-radius: 14px; padding: 26px 22px; position: relative; display: flex; flex-direction: column; transition: border-color 0.15s, box-shadow 0.15s; }
+        .tier:hover { border-color: #E3D9D5; box-shadow: 0 6px 24px rgba(0,0,0,0.05); }
+        .tier-featured { border-color: #1F1517; border-width: 2px; }
+        .tier-flag { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #FFC627; color: #1F1517; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 11px; border-radius: 20px; white-space: nowrap; }
+        .tier-name { font-family: 'Fraunces', serif; font-size: 21px; font-weight: 300; color: #1F1517; }
+        .tier-limit { font-size: 12px; color: #8E7B79; margin-top: 2px; }
+        .tier-price { font-family: 'Fraunces', serif; font-size: 38px; font-weight: 300; color: #1F1517; letter-spacing: -1.6px; margin: 16px 0 0; }
+        .tier-price em { font-style: normal; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #8E7B79; letter-spacing: 0; }
+        .tier-audience { font-size: 13px; color: #6E5B59; line-height: 1.6; margin: 12px 0 20px; flex: 1; }
+        .tier-cta { display: block; text-align: center; border: 1.5px solid #E6DCD7; border-radius: 8px; padding: 11px; font-size: 13.5px; font-weight: 700; color: #1F1517; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
         .tier-cta:hover { border-color: #8C1D40; color: #8C1D40; }
-        .tier-cta-dark { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
+        .tier-cta-dark { background: #1F1517; border-color: #1F1517; color: #fff; }
         .tier-cta-dark:hover { background: #8C1D40; border-color: #8C1D40; color: #fff; }
-        .tier-foot { text-align: center; font-size: 12.5px; color: #9b9b9b; line-height: 1.6; margin-bottom: 32px; }
+        .tier-foot { text-align: center; font-size: 12.5px; color: #8E7B79; line-height: 1.6; margin-bottom: 32px; }
 
         /* PROMISE STRIP */
         .promise-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 56px; }
-        .promise-item { background: #fff; border: 1px solid #e8e4db; border-radius: 12px; padding: 20px; text-align: center; }
+        .promise-item { background: #fff; border: 1px solid #E6DCD7; border-radius: 12px; padding: 20px; text-align: center; }
         .promise-icon { font-size: 24px; margin-bottom: 8px; }
-        .promise-title { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
-        .promise-body { font-size: 12px; color: #6b6b6b; line-height: 1.6; }
+        .promise-title { font-size: 14px; font-weight: 600; color: #1F1517; margin-bottom: 5px; }
+        .promise-body { font-size: 12px; color: #6E5B59; line-height: 1.6; }
 
         /* FUTURE PRICING */
-        .future-box { background: #fff; border: 1px solid #e8e4db; border-radius: 14px; padding: 32px 36px; margin-bottom: 56px; display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: center; }
-        .future-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #c9973a; margin-bottom: 8px; }
-        .future-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1a1a1a; margin-bottom: 8px; line-height: 1.25; }
+        .future-box { background: #fff; border: 1px solid #E6DCD7; border-radius: 14px; padding: 32px 36px; margin-bottom: 56px; display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: center; }
+        .future-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #8A5A00; margin-bottom: 8px; }
+        .future-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 300; color: #1F1517; margin-bottom: 8px; line-height: 1.25; }
         .future-title em { font-style: italic; }
-        .future-body { font-size: 13px; color: #6b6b6b; line-height: 1.65; }
-        .future-locked { background: #faf9f6; border: 1.5px dashed #e8e4db; border-radius: 12px; padding: 20px 24px; text-align: center; min-width: 160px; }
-        .future-locked-label { font-size: 11px; color: #9b9b9b; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
-        .future-locked-price { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 300; color: #1a1a1a; letter-spacing: -1px; }
-        .future-locked-sub { font-size: 11px; color: #9b9b9b; margin-top: 4px; line-height: 1.4; }
+        .future-body { font-size: 13px; color: #6E5B59; line-height: 1.65; }
+        .future-locked { background: #FFF7F2; border: 1.5px dashed #E6DCD7; border-radius: 12px; padding: 20px 24px; text-align: center; min-width: 160px; }
+        .future-locked-label { font-size: 11px; color: #8E7B79; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+        .future-locked-price { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 300; color: #1F1517; letter-spacing: -1px; }
+        .future-locked-sub { font-size: 11px; color: #8E7B79; margin-top: 4px; line-height: 1.4; }
 
         /* FAQ */
         .faq-section { margin-bottom: 56px; }
-        .section-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #c9973a; margin-bottom: 10px; }
-        .section-title { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 300; color: #1a1a1a; letter-spacing: -0.5px; margin-bottom: 24px; line-height: 1.2; }
+        .section-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #8A5A00; margin-bottom: 10px; }
+        .section-title { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 300; color: #1F1517; letter-spacing: -0.5px; margin-bottom: 24px; line-height: 1.2; }
         .section-title em { font-style: italic; }
 
         /* BOTTOM CTA */
@@ -221,7 +221,7 @@ export default function PricingPage() {
         .bottom-cta-sub { font-size: 15px; color: rgba(255,255,255,0.7); line-height: 1.7; max-width: 420px; margin: 0 auto 28px; }
         .bottom-cta-btns { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
         .btn-gold { background: #FFC627; color: #8C1D40; padding: 13px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; font-family: 'DM Sans', sans-serif; }
-        .btn-gold:hover { background: #e6b320; }
+        .btn-gold:hover { background: #E8B014; }
         .btn-outline { color: rgba(255,255,255,0.85); padding: 13px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; border: 1px solid rgba(255,255,255,0.25); }
         .btn-outline:hover { border-color: rgba(255,255,255,0.6); color: #fff; }
 
@@ -233,7 +233,7 @@ export default function PricingPage() {
           .promise-strip { grid-template-columns: 1fr; }
           .tier-grid { grid-template-columns: 1fr; }
           .free-start { grid-template-columns: 1fr; padding: 20px 22px; }
-          .free-start-price { text-align: left; padding-left: 0; border-left: none; border-top: 1px solid #f0ede6; padding-top: 14px; min-width: auto; }
+          .free-start-price { text-align: left; padding-left: 0; border-left: none; border-top: 1px solid #F6EBE4; padding-top: 14px; min-width: auto; }
           .future-box { grid-template-columns: 1fr; }
           .future-locked { min-width: auto; }
           .bottom-cta { padding: 36px 24px; }

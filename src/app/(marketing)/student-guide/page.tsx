@@ -58,7 +58,7 @@ export default function StudentGuidePage() {
         /* HERO */
         .guide-hero { padding: 56px 0 48px; border-bottom: 1px solid var(--hh-border-faint); margin-bottom: 48px; }
         .guide-hero-inner { max-width: 720px; }
-        .guide-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: rgba(217,161,74,0.12); color: var(--hh-accent); font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 20px; }
+        .guide-eyebrow { display: inline-flex; align-items: center; gap: 7px; background: rgba(255,198,39,0.12); color: var(--hh-accent-strong); font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; margin-bottom: 20px; }
         .guide-title { font-family: var(--hh-font-display); font-size: 48px; font-weight: 300; color: var(--hh-text); letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 16px; }
         .guide-title em { font-style: italic; color: var(--hh-primary); }
         .guide-sub { font-size: 17px; color: var(--hh-text-muted); line-height: 1.75; max-width: 600px; margin-bottom: 24px; }
@@ -68,10 +68,10 @@ export default function StudentGuidePage() {
 
         /* STICKY SUBNAV */
         .subnav { position: sticky; top: 68px; display: flex; flex-direction: column; gap: 2px; }
-        .subnav-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--hh-accent); margin-bottom: 10px; padding: 0 10px; }
+        .subnav-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--hh-accent-strong); margin-bottom: 10px; padding: 0 10px; }
         .subnav-link { font-size: 13px; color: var(--hh-text-muted); text-decoration: none; padding: 7px 10px; border-radius: 6px; transition: color 0.15s, background 0.15s; border-left: 2px solid transparent; line-height: 1.3; }
         .subnav-link:hover { color: var(--hh-text); background: var(--hh-bg-alt); }
-        .subnav-link.active { color: var(--hh-primary); font-weight: 500; border-left-color: var(--hh-primary); background: rgba(47,74,72,0.06); }
+        .subnav-link.active { color: var(--hh-primary); font-weight: 500; border-left-color: var(--hh-primary); background: rgba(140,29,64,0.06); }
 
         /* CONTENT */
         .guide-content { min-width: 0; }
@@ -79,7 +79,7 @@ export default function StudentGuidePage() {
         .guide-section:last-child { border-bottom: none; }
 
         /* TYPOGRAPHY */
-        .s-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--hh-accent); margin-bottom: 10px; }
+        .s-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--hh-accent-strong); margin-bottom: 10px; }
         .s-title { font-family: var(--hh-font-display); font-size: 34px; font-weight: 300; color: var(--hh-text); letter-spacing: -0.5px; line-height: 1.15; margin-bottom: 16px; }
         .s-title em { font-style: italic; }
         .s-lead { font-size: 16px; color: var(--hh-text-2); line-height: 1.8; margin-bottom: 24px; }
@@ -95,7 +95,7 @@ export default function StudentGuidePage() {
         .info-card-body { font-size: 13px; color: var(--hh-text-muted); line-height: 1.65; }
         .info-card-stat { font-family: var(--hh-font-display); font-size: 28px; font-weight: 300; color: var(--hh-primary); letter-spacing: -0.5px; margin-bottom: 4px; }
 
-        .callout { background: rgba(47,74,72,0.06); border-left: 3px solid var(--hh-primary); border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 24px 0; }
+        .callout { background: rgba(140,29,64,0.06); border-left: 3px solid var(--hh-primary); border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 24px 0; }
         .callout-title { font-size: 13px; font-weight: 700; color: var(--hh-primary); margin-bottom: 6px; letter-spacing: 0.2px; }
         .callout-body { font-size: 13px; color: var(--hh-text-2); line-height: 1.65; }
 
@@ -118,11 +118,11 @@ export default function StudentGuidePage() {
         /* NEIGHBORHOOD CARDS */
         .hood-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; }
         .hood-card { background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 14px; padding: 22px; transition: border-color 0.2s; }
-        .hood-card:hover { border-color: #d4c9b0; }
+        .hood-card:hover { border-color: #E3D9D5; }
         .hood-name { font-family: var(--hh-font-display); font-size: 18px; font-weight: 400; color: var(--hh-text); margin-bottom: 6px; }
         .hood-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; margin-bottom: 10px; }
         .hood-tag.best-value { background: #dcfce7; color: #166534; }
-        .hood-tag.most-popular { background: rgba(47,74,72,0.08); color: var(--hh-primary); }
+        .hood-tag.most-popular { background: rgba(140,29,64,0.08); color: var(--hh-primary); }
         .hood-tag.quieter { background: #e0f2fe; color: #0369a1; }
         .hood-tag.walkable { background: #fef9c3; color: #854d0e; }
         .hood-body { font-size: 13px; color: var(--hh-text-muted); line-height: 1.65; margin-bottom: 12px; }
@@ -133,7 +133,7 @@ export default function StudentGuidePage() {
         /* CHECKLIST */
         .checklist { display: flex; flex-direction: column; gap: 6px; margin: 20px 0; }
         .check-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; background: #fff; border: 1px solid var(--hh-border-faint); border-radius: 8px; font-size: 13px; color: var(--hh-text-2); line-height: 1.5; }
-        .check-box { width: 18px; height: 18px; border: 1.5px solid #d4c9b0; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
+        .check-box { width: 18px; height: 18px; border: 1.5px solid #E3D9D5; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
 
         /* PLACES LIST */
         .places-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--hh-border-faint); border-radius: 12px; overflow: hidden; margin: 20px 0; }

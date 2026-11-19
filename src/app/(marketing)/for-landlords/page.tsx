@@ -98,7 +98,7 @@ export default async function ForLandlordsPage() {
         .hive-card-title { font-family: var(--hh-font-display); font-size: 20px; font-weight: 300; margin-bottom: 12px; letter-spacing: -0.3px; }
         .hive-points { display: flex; flex-direction: column; gap: 8px; }
         .hive-pt { font-size: 14px; display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
-        .hive-check { color: var(--hh-accent); flex-shrink: 0; font-weight: 700; margin-top: 1px; }
+        .hive-check { color: var(--hh-accent-strong); flex-shrink: 0; font-weight: 700; margin-top: 1px; }
 
         /* HOW IT WORKS */
         .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--hh-text-muted); margin-bottom: 10px; }
@@ -116,7 +116,7 @@ export default async function ForLandlordsPage() {
         .type-icon { font-size: 28px; margin-bottom: 12px; }
         .type-title { font-size: 15px; font-weight: 700; color: var(--hh-text); margin-bottom: 6px; }
         .type-desc { font-size: 13px; color: var(--hh-text-muted); line-height: 1.6; margin-bottom: 12px; }
-        .type-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: rgba(47,74,72,0.08); color: var(--hh-primary); border: 1px solid rgba(47,74,72,0.15); }
+        .type-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: rgba(140,29,64,0.08); color: var(--hh-primary); border: 1px solid rgba(140,29,64,0.15); }
 
         /* PRICING */
         .tier-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 820px; margin: 0 auto 24px; }

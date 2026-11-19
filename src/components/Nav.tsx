@@ -90,8 +90,8 @@ export default function Nav() {
 
   const roleMeta = (role: string) =>
     role === 'admin'    ? { bg: '#f3f0ff', color: '#6d28d9', label: '◈ Admin'    } :
-    role === 'landlord' ? { bg: 'rgba(47,74,72,0.08)', color: 'var(--hh-hive-800)', label: '⊞ Host' } :
-                          { bg: 'rgba(217,161,74,0.1)', color: 'var(--hh-honey-600)', label: '🎓 Student' }
+    role === 'landlord' ? { bg: 'rgba(140,29,64,0.08)', color: 'var(--hh-hive-800)', label: '⊞ Host' } :
+                          { bg: 'rgba(255,198,39,0.1)', color: 'var(--hh-honey-600)', label: '🎓 Student' }
 
   return (
     <>
@@ -116,7 +116,7 @@ export default function Nav() {
         }
         .nav.scrolled {
           border-color: var(--hh-border);
-          box-shadow: 0 1px 24px rgba(34,40,16,0.07);
+          box-shadow: 0 1px 24px rgba(31,21,23,0.07);
         }
 
         /* ─── LOGO ───────────────────────────────────────────────── */
@@ -188,7 +188,7 @@ export default function Nav() {
           width: 100%;
           letter-spacing: -0.01em;
         }
-        .nav-search input::placeholder { color: var(--hh-text-placeholder, #9b9b9b); }
+        .nav-search input::placeholder { color: var(--hh-text-placeholder, #8E7B79); }
 
         .nav-sep {
           width: 1px;
@@ -313,7 +313,7 @@ export default function Nav() {
           background: #fff;
           border: 1px solid var(--hh-border);
           border-radius: 14px;
-          box-shadow: 0 16px 48px rgba(34,40,16,0.12), 0 2px 8px rgba(34,40,16,0.06);
+          box-shadow: 0 16px 48px rgba(31,21,23,0.12), 0 2px 8px rgba(31,21,23,0.06);
           min-width: 246px;
           overflow: hidden;
           animation: dropIn 0.15s ease;
@@ -668,7 +668,7 @@ export default function Nav() {
                   </a>
                   {(user.role === 'landlord' || user.role === 'admin') && (
                     <a href="/landlord/dashboard" className="dropdown-item" target="_blank" rel="noopener noreferrer">
-                      <span className="di-icon" style={{ background: 'rgba(47,74,72,0.08)' }}>⊞</span>
+                      <span className="di-icon" style={{ background: 'rgba(140,29,64,0.08)' }}>⊞</span>
                       Host Portal
                     </a>
                   )}
