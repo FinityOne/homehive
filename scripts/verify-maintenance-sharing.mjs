@@ -17,6 +17,9 @@
  *   • the last day of a tenancy judged in UTC, which in Phoenix ends it at 5pm
  *     and locks a resident out while they still live there
  *   • `cancelled` reaching a tenant as a half-event
+ *   • a cost or a vendor's phone number reaching a resident's *inbox* — the
+ *     API response is shaped, but an email template that reads the landlord
+ *     row instead leaks the same data and cannot be un-sent
  *
  * Run: npm run verify:maintenance
  */
@@ -28,6 +31,7 @@ const {
 const { computeTotals } = await import('../src/lib/maintenance.ts')
 const { updateReach, isEmptyUpdate, photoCount, sharedCount } =
   await import('../src/lib/workItemUpdates.ts')
+const { buildWorkItemCompletedEmail } = await import('../src/lib/maintenanceEmails.ts')
 
 const pass = []
 const fail = []
@@ -340,6 +344,73 @@ check('shared counts open shared items',
     work({ tenant_visible: false }),
   ], NOW).shared, 2)
 check('nothing shared counts zero', computeTotals([work(), work()], NOW).shared, 0)
+
+// ── 6. The "it's done" email to residents ────────────────────────────────────
+
+// The same privacy question as section 1, asked of the thing that leaves the
+// building. `shapeForTenant` keeping a cost out of the API response is no
+// comfort if the email template reaches for the landlord row instead, and an
+// email cannot be un-sent — so the rendered subject, html and text are searched
+// for every private value on the fixture.
+const doneRow = row({
+  status: 'completed',
+  completed_at: '2026-11-20T19:45:05Z',
+  title: 'Haul away old fridge and garage junk',
+  area: 'Garage',
+  tenant_note: 'The removal company comes Friday at 11:30 — please be home to let them in.',
+})
+
+const built = buildWorkItemCompletedEmail({
+  item: shapeForTenant(doneRow),
+  propertyName: 'University Dr Palace',
+  portalUrl: 'https://homehive.live/dashboard/lease?tab=maintenance',
+  note: 'All gone — the fridge and the boxes went this morning.',
+  tenantName: 'Aleeya Cruz',
+})
+
+const whole = `${built.subject}\n${built.html}\n${built.text}`
+const PRIVATE = [
+  ['the estimate', '1200'],
+  ['the actual spend', '980'],
+  ['the vendor', 'Tempe Flooring Co.'],
+  ["the vendor's number", '480-555-0134'],
+  ['the private description', 'cheapest LVP'],
+  ['the landlord notes', 'cheap stuff'],
+  ['who it was assigned to', 'Marco'],
+  ['who reported it', 'housemate complained'],
+]
+for (const [label, needle] of PRIVATE) {
+  check(`completion email never mentions ${label}`, whole.includes(needle), false)
+}
+
+check('completion email says completed in the subject',
+  built.subject, 'Completed: Haul away old fridge and garage junk (University Dr Palace)')
+check('completion email greets by first name only', built.text.includes('Hi Aleeya,'), true)
+check('completion email carries the shared note',
+  built.text.includes('All gone — the fridge and the boxes went this morning.'), true)
+check('completion email links the portal',
+  built.text.includes('https://homehive.live/dashboard/lease?tab=maintenance'), true)
+check('completion email names the day it finished',
+  built.text.includes('November 20, 2026'), true)
+
+// `tenant_note` is written *before* the work and is routinely an instruction.
+// Quoting it in a completion email tells a resident to be home for something
+// that already happened, so the template takes the progress note instead.
+check('completion email does not quote the pre-work instruction',
+  whole.includes('please be home'), false)
+
+// No reply-to is set by the route, and the body must not hand out an address
+// either — the portal is the channel.
+check('completion email prints no email address', built.text.includes('@'), false)
+
+// A job with no shared progress note still reads as a finished sentence.
+const bare = buildWorkItemCompletedEmail({
+  item: shapeForTenant(doneRow),
+  propertyName: 'University Dr Palace',
+  portalUrl: 'https://homehive.live/dashboard/lease?tab=maintenance',
+})
+check('completion email works with no note and no name',
+  bare.text.includes('This repair at your home is now finished'), true)
 
 // ── Report ───────────────────────────────────────────────────────────────────
 
