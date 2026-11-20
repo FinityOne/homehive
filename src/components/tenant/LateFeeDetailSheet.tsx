@@ -30,6 +30,7 @@
  * charges — so the sheet cannot justify one number and bill another.
  */
 import { fmtMoney, type LateFeeExplanation } from '@/lib/rentPayments'
+import TenantSheet from '@/components/tenant/TenantSheet'
 
 const fmtDay = (d: string | null) =>
   d
@@ -76,24 +77,24 @@ export default function LateFeeDetailSheet({
     : `${x.frequencyDays}-day ${plural(x.periods, 'period')}`
 
   return (
-    <div className="lfd-back" onClick={onClose} role="presentation">
+    <TenantSheet
+      kicker="Late fee"
+      title={`${month} rent`}
+      subtitle="Every figure below is the one the payment page charges."
+      onClose={onClose}
+      footer={
+        <>
+          <button className="tp-btn tp-btn-secondary" onClick={onClose}>Close</button>
+          {onPay && x.outstanding > 0 && (
+            <button className="tp-btn tp-btn-primary" onClick={onPay}>
+              Pay this fee · {fmtMoney(x.outstanding)}
+            </button>
+          )}
+        </>
+      }
+    >
       <style>{CSS}</style>
-      <div
-        className="lfd"
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Late fee for ${month} rent`}
-      >
-        <div className="lfd-hd">
-          <div>
-            <div className="lfd-kicker">Late fee</div>
-            <div className="lfd-title">{month} rent</div>
-          </div>
-          <button className="lfd-x" onClick={onClose} aria-label="Close">×</button>
-        </div>
-
-        <div className="lfd-body">
+      <div>
           <div className="lfd-amount">
             <div className="lfd-amount-v">{fmtMoney(x.outstanding)}</div>
             <div className="lfd-amount-l">
@@ -237,99 +238,74 @@ export default function LateFeeDetailSheet({
             </div>
           </div>
 
-          <div className="lfd-foot">
-            Think this fee is wrong, or want it waived? Contact your landlord — they can remove it,
-            and it will disappear from here.
-          </div>
-        </div>
-
-        <div className="lfd-actions">
-          {onPay && x.outstanding > 0 && (
-            <button className="lfd-btn" onClick={onPay}>
-              Pay this fee · {fmtMoney(x.outstanding)}
-            </button>
-          )}
-          <button className="lfd-btn ghost" onClick={onClose}>Close</button>
+        <div className="tp-hint" style={{ marginTop: 16 }}>
+          Think this fee is wrong, or want it waived? Contact your landlord — they can remove it,
+          and it will disappear from here.
         </div>
       </div>
-    </div>
+    </TenantSheet>
   )
 }
 
 const CSS = `
-  .lfd-back { position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 600;
-    display: flex; align-items: center; justify-content: center; padding: 20px;
-    font-family: 'DM Sans', sans-serif; }
-  .lfd { background: #fff; border-radius: 16px; width: 100%; max-width: 440px; max-height: 92vh;
-    display: flex; flex-direction: column; overflow: hidden; }
+  .lfd-amount { text-align: center; padding: 2px 0 18px; }
+  .lfd-amount-v { font-family: var(--display); font-size: 38px; font-weight: 600;
+    color: var(--ink); letter-spacing: -1.2px; line-height: 1;
+    font-variant-numeric: tabular-nums; }
+  .lfd-amount-l { font-size: 12px; color: var(--ink-4); margin-top: 5px; }
 
-  .lfd-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-    padding: 18px 20px 14px; border-bottom: 1px solid #f1f5f9; }
-  .lfd-kicker { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px;
-    color: #b45309; margin-bottom: 3px; }
-  .lfd-title { font-size: 18px; font-weight: 700; color: #0f172a; letter-spacing: -0.3px; }
-  .lfd-x { background: none; border: none; font-size: 26px; line-height: 1; color: #94a3b8;
-    cursor: pointer; padding: 0 2px; }
-
-  .lfd-body { padding: 18px 20px 20px; overflow: auto; }
-
-  .lfd-amount { text-align: center; padding: 6px 0 18px; }
-  .lfd-amount-v { font-size: 34px; font-weight: 800; color: #0f172a; letter-spacing: -1px; }
-  .lfd-amount-l { font-size: 12px; color: #94a3b8; margin-top: 2px; }
-
-  .lfd-note { border-radius: 9px; padding: 11px 14px; font-size: 12.5px; line-height: 1.6;
-    margin-bottom: 18px; }
-  .lfd-note.good { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
-  .lfd-note.warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .lfd-note { border-radius: var(--r-sm); padding: 12px 14px; font-size: 12.5px;
+    line-height: 1.6; margin-bottom: 18px; }
+  .lfd-note.good { background: var(--paid-wash); border: 1px solid var(--paid-line);
+    color: var(--paid); }
+  .lfd-note.warn { background: var(--fee-wash); border: 1px solid var(--fee-line);
+    color: var(--fee); }
   .lfd-note strong { display: block; }
 
   .lfd-section { font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.7px; color: #94a3b8; margin-bottom: 10px; }
+    letter-spacing: .8px; color: var(--ink-4); margin-bottom: 10px; }
 
-  .lfd-time { list-style: none; margin: 0 0 20px; padding: 0 0 0 4px; }
-  .lfd-time li { display: flex; gap: 12px; padding-bottom: 14px; position: relative; }
-  .lfd-time li:not(:last-child)::before { content: ''; position: absolute; left: 5px; top: 14px;
-    bottom: 0; width: 2px; background: #e8e4db; }
-  .lfd-dot { width: 12px; height: 12px; border-radius: 50%; background: #cbd5e1; flex: 0 0 12px;
-    margin-top: 3px; z-index: 1; }
-  .lfd-dot.done { background: #16a34a; }
-  .lfd-dot.open { background: #f59e0b; }
-  .lfd-t-l { font-size: 12px; color: #64748b; }
-  .lfd-t-v { font-size: 13.5px; font-weight: 600; color: #0f172a; margin-top: 1px; }
-  .lfd-late { display: inline-block; font-style: normal; font-size: 11px; font-weight: 700;
-    color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 20px;
-    padding: 1px 8px; margin-left: 7px; vertical-align: 1px; }
+  /* ── The timeline. A rule joins the dots, so the steps read as one
+     sequence rather than four separate facts. ── */
+  .lfd-time { list-style: none; margin: 0 0 22px; padding: 0 0 0 2px; }
+  .lfd-time li { display: flex; gap: 13px; padding-bottom: 15px; position: relative; }
+  .lfd-time li:last-child { padding-bottom: 0; }
+  .lfd-time li:not(:last-child)::before { content: ''; position: absolute; left: 5px;
+    top: 15px; bottom: 0; width: 2px; background: var(--line); }
+  .lfd-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--line);
+    border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line);
+    flex: 0 0 12px; margin-top: 3px; z-index: 1; }
+  .lfd-dot.done { background: var(--paid); box-shadow: 0 0 0 1px var(--paid); }
+  .lfd-dot.open { background: var(--fee); box-shadow: 0 0 0 1px var(--fee); }
+  .lfd-t-l { font-size: 12px; color: var(--ink-3); }
+  .lfd-t-v { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-top: 2px; }
 
-  /* Same badge shape as lfd-late, in the reassuring colour: this one is
-     telling the tenant they were NOT charged for something. */
-  .lfd-clear { display: inline-block; font-style: normal; font-size: 11px; font-weight: 700;
-    color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 20px;
-    padding: 1px 8px; margin-left: 7px; vertical-align: 1px; }
+  /* Two badges of the same shape, in opposite tones: one says the tenant was
+     charged, the other says they explicitly were not. */
+  .lfd-late, .lfd-clear { display: inline-block; font-style: normal; font-size: 10.5px;
+    font-weight: 700; border-radius: 20px; padding: 2px 8px; margin-left: 7px;
+    vertical-align: 1px; white-space: nowrap; }
+  .lfd-late { color: var(--fee); background: var(--fee-wash); border: 1px solid var(--fee-line); }
+  .lfd-clear { color: var(--paid); background: var(--paid-wash); border: 1px solid var(--paid-line); }
 
-  .lfd-math { border: 1px solid #eef2f7; border-radius: 10px; overflow: hidden; }
+  /* ── The arithmetic. It has to be checkable with a phone calculator, so
+     every line is one operation and the total is the last row. ── */
+  .lfd-math { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
   .lfd-m-row { display: flex; justify-content: space-between; gap: 12px; padding: 11px 13px;
-    font-size: 12.5px; color: #475569; line-height: 1.55; }
-  .lfd-m-row + .lfd-m-row { border-top: 1px solid #f8fafc; }
-  .lfd-m-amt { font-weight: 700; color: #0f172a; white-space: nowrap; }
-  .lfd-m-row.calc { background: #fafbfc; font-weight: 600; color: #0f172a; }
-  .lfd-m-row.cap { background: #fffdf8; color: #92400e; font-size: 12px; }
-  .lfd-m-row.credit { color: #166534; }
-  .lfd-m-row.credit .lfd-m-amt { color: #166534; }
-  .lfd-m-row.total { background: #0f172a; color: #fff; font-size: 14px; font-weight: 700;
-    padding: 13px; }
-  .lfd-m-row.total .lfd-m-amt { color: #34d399; font-size: 15px; }
-
-  .lfd-foot { font-size: 11.5px; color: #94a3b8; line-height: 1.6; margin-top: 16px; }
-
-  .lfd-actions { display: flex; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid #f1f5f9; }
-  .lfd-btn { flex: 1; background: #0f172a; color: #34d399; border: none; border-radius: 10px;
-    padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
-  .lfd-btn.ghost { flex: 0 0 auto; background: #fff; color: #0f172a; border: 1.5px solid #e2e8f0;
-    padding: 13px 20px; }
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .lfd-m-row + .lfd-m-row { border-top: 1px solid var(--line-2); }
+  .lfd-m-amt { font-weight: 700; color: var(--ink); white-space: nowrap;
+    font-variant-numeric: tabular-nums; }
+  .lfd-m-row.calc { background: var(--surface-2); font-weight: 600; color: var(--ink); }
+  .lfd-m-row.cap { background: var(--fee-wash); color: var(--fee); font-size: 12px; }
+  .lfd-m-row.cap .lfd-m-amt { color: var(--fee); }
+  .lfd-m-row.credit { color: var(--paid); }
+  .lfd-m-row.credit .lfd-m-amt { color: var(--paid); }
+  .lfd-m-row.total { background: var(--primary); color: #fff; font-size: 14px;
+    font-weight: 700; padding: 13px; }
+  .lfd-m-row.total .lfd-m-amt { color: #fff; font-size: 15px; }
 
   @media (max-width: 460px) {
-    .lfd-amount-v { font-size: 30px; }
-    .lfd-actions { flex-direction: column-reverse; }
-    .lfd-btn.ghost { flex: 1; }
+    .lfd-amount-v { font-size: 32px; }
   }
 `

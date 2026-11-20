@@ -16,6 +16,11 @@ export type IconName =
   | 'receipt' | 'arrowUpCircle' | 'megaphone' | 'eye' | 'bell' | 'settings'
   | 'logOut' | 'menu' | 'chevronDown' | 'chevronRight' | 'arrowRight'
   | 'arrowLeft' | 'panelLeft' | 'swap' | 'dot' | 'refresh'
+  // Added for the tenant portal, which had been drawing these as emoji —
+  // each one carrying its own colour and baseline, so a row of them never
+  // read as one family. Same 24×24 grid and 1.75 stroke as everything above.
+  | 'check' | 'checkCircle' | 'clock' | 'mapPin' | 'alert' | 'info' | 'bank'
+  | 'signature' | 'mail' | 'phone' | 'heart' | 'sun' | 'moon' | 'coffee'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   grid: <><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></>,
@@ -54,6 +59,22 @@ const PATHS: Record<IconName, React.ReactNode> = {
   dot: <><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" /></>,
   // A renewal is a loop, not an arrow: the same tenancy coming round again.
   refresh: <><path d="M20 11.5a8 8 0 1 0-2.6 6.4" /><path d="M20.5 5.5v6h-6" /></>,
+
+  check: <><path d="m4.5 12.5 5 5 10-10.5" /></>,
+  checkCircle: <><circle cx="12" cy="12" r="8.5" /><path d="m8.25 12.25 2.5 2.5 5-5.5" /></>,
+  clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.25V12l3.25 2" /></>,
+  mapPin: <><path d="M12 21s6.5-5.5 6.5-10.5a6.5 6.5 0 1 0-13 0C5.5 15.5 12 21 12 21Z" /><circle cx="12" cy="10.25" r="2.5" /></>,
+  alert: <><path d="M12 4 21 19.5H3Z" /><path d="M12 9.75v4.5" /><path d="M12 17.25h.01" /></>,
+  info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 11.25v5" /><path d="M12 8h.01" /></>,
+  // A deposit account, not a money bag: this labels paying by ACH.
+  bank: <><path d="M3.5 9.5 12 4l8.5 5.5" /><path d="M5.5 9.5v9M18.5 9.5v9M10 12v4M14 12v4" /><path d="M3.5 20.5h17" /></>,
+  signature: <><path d="M3.5 16.5c3-.5 4.5-9 6.5-9s1.5 7 3.5 7 2-3 3.5-3 1.5 2 2.5 2" /><path d="M3.5 20.5h17" /></>,
+  mail: <><rect x="3" y="5.25" width="18" height="13.5" rx="2.25" /><path d="m3.75 7 8.25 6 8.25-6" /></>,
+  phone: <><path d="M7.5 3.5h3l1.5 4-2 1.5a10.5 10.5 0 0 0 5 5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 3.5 5.7 2 2 0 0 1 5.5 3.5Z" /></>,
+  heart: <><path d="M12 20s-7.5-4.6-7.5-9.75A4.25 4.25 0 0 1 12 7.5a4.25 4.25 0 0 1 7.5 2.75C19.5 15.4 12 20 12 20Z" /></>,
+  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3 7 7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7" /></>,
+  moon: <><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" /></>,
+  coffee: <><path d="M4 7.5h12v6a4.5 4.5 0 0 1-9 0Z" transform="translate(0 1)" /><path d="M16 9.5h1.75a2.25 2.25 0 0 1 0 4.5H16" /><path d="M4.5 20.5h12" /></>,
 }
 
 export default function Icon({
