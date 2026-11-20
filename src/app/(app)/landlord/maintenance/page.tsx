@@ -718,8 +718,48 @@ function UpdateLog({
   const [shareNew, setShareNew] = useState(true)
   const [pending, setPending] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
+  const [notifying, setNotifying] = useState(false)
 
   const done = item.status === 'completed'
+
+  /**
+   * Push the close-out to the people who live there.
+   *
+   * The portal already shows a completed job as completed, but a resident who
+   * was told "the removal company comes Friday, please be home" does not go
+   * back to a portal to find out whether it happened — so finishing the job
+   * and *saying so* are two different acts, and this is the second one. The
+   * server decides the audience (active tenancies only) and what crosses; this
+   * button only asks it to.
+   *
+   * The count comes back from the send rather than being predicted here: "sent
+   * to 6 residents" is checkable, "sent!" is not.
+   */
+  async function notifyDone() {
+    if (!confirm(`Email the residents living here that "${item.title}" is done?\n\nThey get the job, its status and a link to their portal — never your costs, vendor details or notes.`)) return
+    setNotifying(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/maintenance/${item.id}/notify-completion`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) { onFlash(false, json.error || 'Could not send it.'); return }
+      const n = json.count ?? 0
+      const failed = (json.failed ?? []).length
+      onFlash(
+        n > 0,
+        failed > 0
+          ? `Told ${n} resident${n === 1 ? '' : 's'} — ${failed} address${failed === 1 ? '' : 'es'} failed.`
+          : `Told ${n} resident${n === 1 ? '' : 's'} it's done.`,
+      )
+    } catch {
+      onFlash(false, 'Could not send it.')
+    } finally {
+      setNotifying(false)
+    }
+  }
 
   async function post() {
     if (!ownerId) return onFlash(false, 'Please sign in again.')
@@ -814,6 +854,21 @@ function UpdateLog({
           This job is marked completed and your residents haven&apos;t been shown anything.
           A photo of the finished work is the difference between &quot;they say it&apos;s done&quot;
           and &quot;it&apos;s done&quot;.
+        </div>
+      )}
+
+      {/* Completed *and* shared is the only state where this makes sense: a
+          private job must not be announced, and an unfinished one must not be
+          declared done. The server enforces both — this just doesn't offer it. */}
+      {done && item.tenant_visible && (
+        <div className="log-tell">
+          <div className="log-tell-txt">
+            Your residents can see this is finished on their portal. Email them so they
+            don&apos;t have to go and look.
+          </div>
+          <button className="btn-soft" onClick={notifyDone} disabled={busy || notifying}>
+            {notifying ? 'Sending…' : "✉ Tell residents it's done"}
+          </button>
         </div>
       )}
 
@@ -1267,6 +1322,8 @@ const CSS = `
 
   .log { background: #fcfdfe; }
   .log-nudge { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 9px; padding: 10px 13px; font-size: 12px; line-height: 1.55; margin-bottom: 12px; }
+  .log-tell { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #f0fdf4; border: 1px solid #a7f3d0; border-radius: 9px; padding: 10px 13px; margin-bottom: 12px; }
+  .log-tell-txt { flex: 1; min-width: 180px; font-size: 12px; line-height: 1.55; color: #065f46; }
   .log-warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 8px 11px; font-size: 11.5px; line-height: 1.5; margin-top: 8px; }
   .log-new { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 11px; padding: 12px 13px; margin-bottom: 14px; }
   .log-new-ft { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }

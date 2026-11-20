@@ -44,6 +44,11 @@ export type EmailType =
   | 'amendment_signed_tenant'
   | 'amendment_signed_landlord'
   | 'amendment_declined_landlord'
+  // Maintenance. Transactional: it is a factual close-out of work done to the
+  // home this person lives in, caused by the landlord finishing a job they had
+  // already shared with them. Not suppressed by `email_opt_outs`, which covers
+  // marketing.
+  | 'maintenance_completed_tenant'
 
 /**
  * Record an email we sent.
