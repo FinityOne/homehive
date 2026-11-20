@@ -1,24 +1,55 @@
 'use client'
 
+/**
+ * "List your place" — where a renter asks to become a landlord.
+ *
+ * Four states, and the old page treated them as four tinted boxes of roughly
+ * equal weight: no request yet, under review, not approved, already approved.
+ * Each one wants something different from the reader, so each now leads with
+ * the one sentence that tells them where they stand and offers exactly one
+ * next step.
+ *
+ * Two small honesty fixes while restyling it:
+ *   • The browser tab said "My Applications". This page is not applications;
+ *     it is a request for landlord access, and a tab title that names a
+ *     different feature is how somebody loses the page in a sea of tabs.
+ *   • The pending state claimed a 24-hour review turnaround as a fact. It now
+ *     says what we actually commit to — that we email either way — because an
+ *     unmet promise on this screen is the first thing a landlord experiences
+ *     of the product.
+ */
+
 import { useEffect, useState } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import Icon, { type IconName } from '@/components/NavIcons'
+import { TenantStyles, PageHead, PageSkeleton } from '@/components/tenant/TenantFrame'
 
 type UpgradeStatus = 'pending' | 'approved' | 'rejected'
 type UpgradeRequest = { id: string; status: UpgradeStatus; admin_note: string | null }
 
+/** What a landlord gets. Stated as facts about the product, not as adjectives. */
+const BENEFITS: { icon: IconName; text: string }[] = [
+  { icon: 'target', text: 'ASU and Tempe renters only — people who can actually sign a lease' },
+  { icon: 'users', text: 'Every inquiry is yours. No per-lead fees, no commission on a signed lease' },
+  { icon: 'shieldCheck', text: 'Screening, background and reference checks built into the flow' },
+  { icon: 'creditCard', text: 'Tours, leases, rent collection and receipts in one portal' },
+  { icon: 'building', text: 'Works for a whole home, a single room, or a sublease' },
+]
+
 export default function ListYourPlacePage() {
   const router = useRouter()
 
-  const [userRole, setUserRole]           = useState('')
+  const [userRole, setUserRole] = useState('')
   const [upgradeRequest, setUpgradeRequest] = useState<UpgradeRequest | null>(null)
-  const [loading, setLoading]             = useState(true)
-  const [showForm, setShowForm]           = useState(false)
-  const [message, setMessage]             = useState('')
-  const [submitting, setSubmitting]       = useState(false)
-  const [error, setError]                 = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [message, setMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => { document.title = 'My Applications — My Portal | HomeHive' }, [])
+  useEffect(() => { document.title = 'List your place — My Portal | HomeHive' }, [])
 
   useEffect(() => {
     const load = async () => {
@@ -27,7 +58,12 @@ export default function ListYourPlacePage() {
 
       const [profileRes, upgradeRes] = await Promise.all([
         supabase.from('profiles').select('role').eq('id', user.id).single(),
-        supabase.from('upgrade_requests').select('id, status, admin_note').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('upgrade_requests')
+          .select('id, status, admin_note')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ])
 
       setUserRole(profileRes.data?.role || 'tenant')
@@ -55,167 +91,210 @@ export default function ListYourPlacePage() {
         const data = await res.json().catch(() => ({}))
         setError(data.error || `Request failed (${res.status})`)
       }
-    } catch (_) {
-      setError('Network error — please try again.')
+    } catch {
+      setError('Network error — please try again. Nothing was sent.')
     }
     setSubmitting(false)
   }
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
-        Loading...
+  if (loading) return <><TenantStyles css={CSS} /><PageSkeleton panel={false} cards={3} /></>
+
+  /** The request form, shared by the first-time and try-again paths. */
+  const form = (
+    <div className="tp-card">
+      <div className="tp-card-bd">
+        <label className="tp-label" htmlFor="lp-msg">
+          Anything you want to tell us? (optional)
+        </label>
+        <textarea
+          id="lp-msg"
+          className="tp-textarea"
+          placeholder="What you have — a house, a room, a sublease — and where it is. One or two lines is plenty."
+          value={message}
+          onChange={e => setMessage(e.target.value)}
+        />
+        {error && <div className="tp-note bad" style={{ marginTop: 12 }} role="alert">{error}</div>}
       </div>
-    )
-  }
+      <div className="tp-card-ft lp-ft">
+        <button className="tp-btn tp-btn-primary" disabled={submitting} onClick={handleSubmit}>
+          {submitting ? 'Sending…' : 'Send request'}
+        </button>
+        <button
+          className="tp-btn tp-btn-secondary"
+          onClick={() => { setShowForm(false); setMessage(''); setError('') }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        .lp-wrap { max-width: 520px; margin: 0 auto; padding: 36px 16px 72px; font-family: 'DM Sans', sans-serif; }
+      <TenantStyles css={CSS} />
+      <div className="tp tp-wrap narrow">
+        <PageHead
+          back={{ href: '/dashboard', label: 'Home' }}
+          title="List your place"
+          lede="Reach students searching for housing near ASU in Tempe. Every inquiry is yours, with no per-lead fees."
+        />
 
-        .lp-status { border: 1px solid #e8e4db; border-radius: 12px; padding: 18px; margin-bottom: 20px; }
-        .lp-status.pending  { background: #fffbeb; border-color: #fde68a; }
-        .lp-status.rejected { background: #fff1f2; border-color: #fecdd3; }
-        .lp-status.approved { background: #f0fdf4; border-color: #bbf7d0; }
-        .lp-status-title { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
-        .lp-status-sub   { font-size: 13px; color: #6b6b6b; line-height: 1.55; }
-
-        .lp-features { display: flex; flex-direction: column; gap: 11px; margin: 24px 0 28px; }
-        .lp-feature  { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #3a3a3a; }
-        .lp-feat-icon { width: 32px; height: 32px; border-radius: 9px; background: #fdf2f5; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-
-        .lp-textarea { width: 100%; padding: 11px 14px; border: 1.5px solid #e8e4db; border-radius: 9px; font-size: 13px; font-family: 'DM Sans', sans-serif; resize: none; height: 90px; outline: none; line-height: 1.6; transition: border-color 0.15s; color: #1a1a1a; background: #fff; }
-        .lp-textarea:focus { border-color: #8C1D40; }
-        .lp-textarea::placeholder { color: #c5c1b8; }
-
-        .lp-btns { display: flex; gap: 8px; margin-top: 10px; }
-        .lp-submit { background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 12px 22px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
-        .lp-submit:hover:not(:disabled) { opacity: 0.88; }
-        .lp-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-        .lp-cancel { background: #f5f4f0; color: #6b6b6b; border: none; border-radius: 8px; padding: 12px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .lp-cta { display: inline-flex; align-items: center; gap: 5px; background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 12px 22px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; transition: opacity 0.15s; }
-        .lp-cta:hover { opacity: 0.88; }
-        .lp-cta-green { background: #16a34a; }
-        .lp-cta-full  { width: 100%; justify-content: center; }
-      `}</style>
-
-      <div className="lp-wrap">
-
-        {/* ── BACK ── */}
-        <a href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#9b9b9b', textDecoration: 'none', marginBottom: 24 }}>
-          ← Dashboard
-        </a>
-
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 26, fontWeight: 300, color: '#1a1a1a', letterSpacing: '-0.4px', marginBottom: 6 }}>
-          List your place
-        </div>
-        <div style={{ fontSize: 14, color: '#9b9b9b', marginBottom: 28, lineHeight: 1.5 }}>
-          Reach students searching for housing near ASU in Tempe — every inquiry is yours,
-          with no per-lead fees.
-        </div>
-
-        {/* ── APPROVED ── */}
+        {/* ── ALREADY APPROVED ─────────────────────────────────────────────
+            Into the work, not into the price. The listing builder is free, so
+            sending them to checkout first would ask for a card before they
+            have anything to publish. ── */}
         {userRole === 'landlord' ? (
-          <div className="lp-status approved">
-            <div className="lp-status-title">🎉 You&apos;re approved as a landlord!</div>
-            <div className="lp-status-sub" style={{ marginBottom: 14 }}>
-              Add your place now — building the listing is free, and there is no review queue.
-              A plan is what publishes it to students and switches on leads, tours, screening
-              and rent.
+          <>
+            <div className="lp-state paid">
+              <span className="lp-state-ic"><Icon name="checkCircle" size={19} /></span>
+              <div>
+                <div className="lp-state-t">You&apos;re approved as a landlord</div>
+                <div className="lp-state-b">
+                  Building the listing is free and there is no review queue. A plan is what
+                  publishes it to students and switches on leads, tours, screening and rent.
+                </div>
+              </div>
             </div>
-            {/* Into the work, not into the price. The listing builder is free
-                now, so sending them to checkout first would ask for a card
-                before they have anything to publish. */}
-            <a href="/landlord/listings/new" className="lp-cta lp-cta-green">
-              Add my place — free →
-            </a>
-            <div style={{ marginTop: 10 }}>
-              <a href="/landlord/subscribe?from=upgrade" style={{ fontSize: 13, fontWeight: 600, color: '#8C1D40', textDecoration: 'none', borderBottom: '1px solid #e9b7c6' }}>
-                Or see the plans first →
-              </a>
+            <div className="lp-actions">
+              <Link href="/landlord/listings/new" className="tp-btn tp-btn-primary lg">
+                Add my place — free
+              </Link>
+              <Link href="/landlord/subscribe?from=upgrade" className="tp-btn tp-btn-secondary lg">
+                See the plans first
+              </Link>
             </div>
-          </div>
+          </>
 
-        /* ── PENDING ── */
+        /* ── UNDER REVIEW ─────────────────────────────────────────────────── */
         ) : upgradeRequest?.status === 'pending' ? (
-          <div className="lp-status pending">
-            <div className="lp-status-title">⏳ Request under review</div>
-            <div className="lp-status-sub">
-              We received your request. Our team typically reviews within 24 hours — we&apos;ll email you once it&apos;s decided.
+          <>
+            <div className="lp-state fee">
+              <span className="lp-state-ic"><Icon name="clock" size={19} /></span>
+              <div>
+                <div className="lp-state-t">Your request is in review</div>
+                <div className="lp-state-b">
+                  We have it. Somebody reads every one of these by hand, and we email you either
+                  way — approved or not — so there is nothing you need to chase.
+                </div>
+              </div>
             </div>
-          </div>
+            <div className="tp-card">
+              <div className="tp-card-hd">
+                <span className="tp-card-title">While you wait</span>
+              </div>
+              <div className="tp-card-bd">
+                <div className="tp-muted">
+                  Have a look at how the listings students actually reply to are put together —
+                  photos, room-by-room rent, and the distance to campus stated plainly.
+                </div>
+              </div>
+              <div className="tp-card-ft">
+                <Link href="/homes" className="tp-btn tp-btn-secondary">Browse live listings</Link>
+              </div>
+            </div>
+          </>
 
-        /* ── REJECTED ── */
+        /* ── NOT APPROVED ─────────────────────────────────────────────────── */
         ) : upgradeRequest?.status === 'rejected' ? (
           <>
-            <div className="lp-status rejected" style={{ marginBottom: 20 }}>
-              <div className="lp-status-title">Request not approved</div>
-              {upgradeRequest.admin_note && (
-                <div style={{ fontSize: 12, color: '#9f1239', marginBottom: 6 }}>
-                  <strong>Reason:</strong> {upgradeRequest.admin_note}
+            <div className="lp-state owed">
+              <span className="lp-state-ic"><Icon name="info" size={19} /></span>
+              <div>
+                <div className="lp-state-t">This request wasn&apos;t approved</div>
+                {upgradeRequest.admin_note && (
+                  <div className="lp-reason">
+                    <strong>Why:</strong> {upgradeRequest.admin_note}
+                  </div>
+                )}
+                <div className="lp-state-b">
+                  You can send another one — if something has changed, say so and it will be read
+                  fresh. Questions:{' '}
+                  <a href="mailto:hello@homehive.live">hello@homehive.live</a>.
                 </div>
-              )}
-              <div className="lp-status-sub">
-                Questions? <a href="mailto:hello@homehive.live" style={{ color: '#8C1D40' }}>hello@homehive.live</a>
               </div>
             </div>
             {!showForm ? (
-              <button className="lp-cta" onClick={() => setShowForm(true)}>Submit a new request →</button>
-            ) : (
-              <>
-                <textarea className="lp-textarea" placeholder="Tell us more about your property or situation (optional)…" value={message} onChange={e => setMessage(e.target.value)} />
-                {error && <div style={{ fontSize: 12, color: '#8C1D40', marginTop: 6 }}>{error}</div>}
-                <div className="lp-btns">
-                  <button className="lp-cancel" onClick={() => setShowForm(false)}>Cancel</button>
-                  <button className="lp-submit" disabled={submitting} onClick={handleSubmit}>
-                    {submitting ? 'Sending…' : 'Submit request'}
-                  </button>
-                </div>
-              </>
-            )}
+              <button className="tp-btn tp-btn-primary lg" onClick={() => setShowForm(true)}>
+                Send a new request
+              </button>
+            ) : form}
           </>
 
-        /* ── NO REQUEST YET ── */
+        /* ── NOTHING SENT YET ─────────────────────────────────────────────── */
         ) : (
           <>
-            <div className="lp-features">
-              {([
-                ['🎯', 'ASU & Tempe students only — renters who can actually sign'],
-                ['∞', 'Every inquiry is yours — no per-lead fees, no commission'],
-                ['🛡️', 'Screening, background and reference checks built in'],
-                ['📊', 'Tours, leases, rent collection and reporting in one portal'],
-                ['🏡', 'Works for full rentals, rooms, and subleases'],
-              ] as [string, string][]).map(([icon, text]) => (
-                <div key={text} className="lp-feature">
-                  <div className="lp-feat-icon">{icon}</div>
-                  {text}
-                </div>
-              ))}
+            <div className="tp-card">
+              <div className="tp-card-hd">
+                <span className="tp-card-title">What you get</span>
+              </div>
+              <div className="tp-card-bd">
+                {BENEFITS.map(b => (
+                  <div key={b.text} className="lp-benefit">
+                    <span className="lp-benefit-ic"><Icon name={b.icon} size={16} /></span>
+                    <span>{b.text}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {!showForm ? (
-              <button className="lp-cta lp-cta-full" onClick={() => setShowForm(true)}>
-                Request landlord access →
-              </button>
-            ) : (
               <>
-                <textarea className="lp-textarea" placeholder="Tell us about your property and why you'd like to list (optional)…" value={message} onChange={e => setMessage(e.target.value)} />
-                {error && <div style={{ fontSize: 12, color: '#8C1D40', marginTop: 6 }}>{error}</div>}
-                <div className="lp-btns">
-                  <button className="lp-cancel" onClick={() => { setShowForm(false); setMessage('') }}>Cancel</button>
-                  <button className="lp-submit" disabled={submitting} onClick={handleSubmit}>
-                    {submitting ? 'Sending…' : 'Send request'}
-                  </button>
+                <button
+                  className="tp-btn tp-btn-primary lg full"
+                  onClick={() => setShowForm(true)}
+                >
+                  Request landlord access
+                </button>
+                <div className="tp-hint" style={{ marginTop: 10, textAlign: 'center' }}>
+                  Free to ask, and free to build a listing. You only pay when you publish one.
                 </div>
               </>
-            )}
+            ) : form}
           </>
         )}
-
       </div>
     </>
   )
 }
+
+const CSS = `
+  /* ── A state card: one icon, one sentence that says where you stand, one
+     paragraph of detail. The tone lives on the icon and the left edge, not as
+     a wash behind the text — the text has to stay fully legible. ── */
+  .lp-state { display: flex; gap: 13px; align-items: flex-start; background: var(--surface);
+    border: 1px solid var(--line); border-left: 3px solid var(--idle);
+    border-radius: var(--r); box-shadow: var(--shadow); padding: 17px 19px;
+    margin-bottom: 16px; }
+  .lp-state.paid { border-left-color: var(--paid); }
+  .lp-state.fee  { border-left-color: var(--fee); }
+  .lp-state.owed { border-left-color: var(--owed); }
+  .lp-state-ic { flex-shrink: 0; width: 36px; height: 36px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center; }
+  .lp-state.paid .lp-state-ic { background: var(--paid-wash); color: var(--paid); }
+  .lp-state.fee  .lp-state-ic { background: var(--fee-wash);  color: var(--fee); }
+  .lp-state.owed .lp-state-ic { background: var(--owed-wash); color: var(--owed); }
+  .lp-state-t { font-size: 15.5px; font-weight: 600; color: var(--ink);
+    letter-spacing: -0.2px; }
+  .lp-state-b { font-size: 13px; color: var(--ink-3); line-height: 1.6; margin-top: 5px; }
+  .lp-state-b a { color: var(--primary); font-weight: 600; }
+  .lp-reason { font-size: 12.5px; color: var(--owed); background: var(--owed-wash);
+    border: 1px solid var(--owed-line); border-radius: var(--r-sm); padding: 9px 12px;
+    margin-top: 9px; line-height: 1.55; }
+
+  .lp-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .lp-benefit { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px;
+    color: var(--ink-2); line-height: 1.55; padding: 10px 0;
+    border-bottom: 1px solid var(--line-2); }
+  .lp-benefit:last-child { border-bottom: none; padding-bottom: 0; }
+  .lp-benefit:first-child { padding-top: 0; }
+  .lp-benefit-ic { flex-shrink: 0; width: 30px; height: 30px; border-radius: 9px;
+    background: var(--primary-wash); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; }
+
+  .lp-ft { display: flex; gap: 9px; flex-wrap: wrap; }
+
+  @media (max-width: 720px) {
+    .lp-actions .tp-btn, .lp-ft .tp-btn { width: 100%; }
+  }
+`

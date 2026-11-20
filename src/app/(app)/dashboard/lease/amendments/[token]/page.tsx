@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import AmendmentDocumentView from '@/components/leases/AmendmentDocument'
+import Icon from '@/components/NavIcons'
+import { TenantStyles, PageSkeleton } from '@/components/tenant/TenantFrame'
 import {
   fmtLegalDate, fmtDollars, monthName, signingToday, checkSignatureName,
   checkSignatureDeadline, chargesOf, dueOnExecution, monthlyTotal,
@@ -128,12 +130,15 @@ export default function SignAmendmentPage({
     setDeclining(false)
   }
 
-  if (loading) return <div className="sa-loading">Loading your document…</div>
+  // Holds the shape of the document rather than printing a sentence in an
+  // empty viewport — this is a page somebody opened from an email, slightly
+  // worried, and a blank screen is the wrong first impression of a contract.
+  if (loading) return <><TenantStyles css={CSS} /><PageSkeleton panel={false} cards={4} /></>
 
   if (notFound || !row) {
     return (
-      <div className="sa-wrap">
-        <style>{CSS}</style>
+      <div className="tp sa-wrap">
+        <TenantStyles css={CSS} />
         <div className="sa-empty">
           <div className="sa-empty-t">We can&apos;t find that document</div>
           <div className="sa-empty-b">
@@ -141,7 +146,7 @@ export default function SignAmendmentPage({
             the one you&apos;re signed in with. Check the email your landlord sent you, or ask them
             to send it again.
           </div>
-          <Link href="/dashboard/lease" className="sa-btn ghost">Back to my lease</Link>
+          <Link href="/dashboard/lease" className="tp-btn tp-btn-primary">Back to my lease</Link>
         </div>
       </div>
     )
@@ -156,13 +161,23 @@ export default function SignAmendmentPage({
   const lateProblem = checkSignatureDeadline(doc.respondBy)
   const canSign = agreed && !nameProblem && !lateProblem && date === today && !busy
 
-  return (
-    <div className="sa-wrap">
-      <style>{CSS}</style>
+  /**
+   * How far through signing they are.
+   *
+   * The three gates — read it, agree to it, then name and date it — were
+   * enforced by `disabled` attributes and nothing else, so a tenant looking at
+   * a greyed-out name field had no way to know what would un-grey it. Naming
+   * the steps turns a dead form into an obvious sequence.
+   */
+  const step = !reading ? 1 : !agreed ? 2 : 3
 
-      <div className="sa-crumb">
-        <Link href="/dashboard/lease">← My lease</Link>
-      </div>
+  return (
+    <div className="tp sa-wrap">
+      <TenantStyles css={CSS} />
+
+      <a className="tp-back" href="/dashboard/lease">
+        <Icon name="arrowLeft" size={15} />My lease
+      </a>
 
       {/* ── The header, which is the whole decision in four lines ──────────── */}
       <div className="sa-head">
@@ -285,17 +300,20 @@ export default function SignAmendmentPage({
       </div>
 
       <div className="sa-actions-row">
-        <button className="sa-btn ghost" onClick={() => window.print()}>
-          Print / save as PDF
+        <button className="tp-btn tp-btn-secondary" onClick={() => window.print()}>
+          <Icon name="receipt" size={16} />Print or save as PDF
         </button>
       </div>
 
       {/* ── The signature ─────────────────────────────────────────────────── */}
       {row.status === 'sent' && !lateProblem && (
         <div className="sa-sign">
-          <div className="sa-sign-t">Sign it</div>
+          <div className="sa-sign-hd">
+            <div className="sa-sign-t">Sign it</div>
+            {!declining && <div className="sa-step">Step {step} of 3</div>}
+          </div>
 
-          {err && <div className="sa-err">{err}</div>}
+          {err && <div className="tp-note bad" role="alert">{err}</div>}
 
           {!declining ? (
             <>
@@ -353,13 +371,24 @@ export default function SignAmendmentPage({
               </div>
 
               <div className="sa-btns">
-                <button className="sa-btn primary" disabled={!canSign} onClick={() => submit('sign')}>
+                <button className="tp-btn tp-btn-primary lg" disabled={!canSign} onClick={() => submit('sign')}>
                   {busy ? 'Signing…' : 'Sign this amendment'}
                 </button>
                 <button className="sa-btn link" onClick={() => { setDeclining(true); setErr('') }}>
                   I don&apos;t want to agree to this
                 </button>
               </div>
+              {/* Says what is still missing, rather than leaving a disabled
+                  button to be guessed at. */}
+              {!canSign && !busy && (
+                <div className="sa-gate">
+                  {!reading ? 'Tick the first box once you have read the document above.'
+                    : !agreed ? 'Tick the second box to agree to the terms.'
+                    : nameProblem ? nameProblem
+                    : date !== today ? 'The date has to be today.'
+                    : 'Type your full legal name to sign.'}
+                </div>
+              )}
               <div className="sa-foot">
                 Nothing is agreed until you press sign. We&apos;ll email you a copy straight away.
               </div>
@@ -372,7 +401,7 @@ export default function SignAmendmentPage({
                 nothing is added to your rent. Telling them why is optional but usually helps.
               </div>
               <textarea
-                className="sa-inp"
+                className="tp-textarea"
                 rows={3}
                 value={reason}
                 onChange={e => setReason(e.target.value)}
@@ -413,78 +442,120 @@ function shortPremises(doc: AmendmentDocument): string {
 }
 
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-
-  .sa-wrap { max-width: 800px; margin: 0 auto; padding: 24px 18px 100px; font-family: 'DM Sans', sans-serif; color: #0f172a; }
-  .sa-loading { max-width: 800px; margin: 0 auto; padding: 60px 18px; font-family: 'DM Sans', sans-serif; color: #64748b; font-size: 14px; }
-
-  .sa-crumb { font-size: 13px; margin-bottom: 16px; }
-  .sa-crumb a { color: #10b981; text-decoration: none; font-weight: 600; }
-  .sa-crumb a:hover { text-decoration: underline; }
+  /* This page is a legal document a worried person is reading on a phone, so
+     it keeps the portal's own surfaces and type rather than the slate-and-
+     emerald admin palette it used to wear. The one thing deliberately left
+     alone is the document itself — AmendmentDocument renders what gets
+     printed, and a contract should look like a contract. */
+  .sa-wrap { max-width: 820px; margin: 0 auto; padding: 24px 18px 100px; }
 
   .sa-head { margin-bottom: 18px; }
-  .sa-kicker { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.9px; color: #b45309; margin-bottom: 7px; }
-  .sa-title { font-size: 25px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.22; margin: 0; }
-  .sa-prem { font-size: 13.5px; color: #64748b; margin-top: 5px; }
+  .sa-kicker { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--fee);
+    background: var(--fee-wash); border: 1px solid var(--fee-line); border-radius: 20px;
+    padding: 4px 11px; margin-bottom: 11px; }
+  .sa-title { font-family: var(--display); font-size: 29px; font-weight: 400;
+    letter-spacing: -0.6px; line-height: 1.18; margin: 0; color: var(--ink); }
+  .sa-prem { font-size: 13.5px; color: var(--ink-3); margin-top: 6px; }
 
-  .sa-banner { border-radius: 11px; padding: 14px 17px; font-size: 13.5px; line-height: 1.6; margin-bottom: 18px; }
-  .sa-banner.good { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
-  .sa-banner.bad { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .sa-banner { border-radius: var(--r-sm); padding: 14px 17px; font-size: 13.5px;
+    line-height: 1.6; margin-bottom: 18px; }
+  .sa-banner.good { background: var(--paid-wash); border: 1px solid var(--paid-line);
+    color: var(--paid); }
+  .sa-banner.bad { background: var(--owed-wash); border: 1px solid var(--owed-line);
+    color: var(--owed); }
 
-  .sa-plain { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 13px; padding: 18px 20px; margin-bottom: 20px; }
-  .sa-plain-t { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.9px; color: #64748b; margin-bottom: 11px; }
+  /* The plain-language summary. Tinted, so it reads as explanation sitting
+     beside the contract rather than as part of it. */
+  .sa-plain { background: var(--primary-wash); border: 1px solid var(--primary-tint);
+    border-radius: var(--r); padding: 18px 20px; margin-bottom: 20px; }
+  .sa-plain-t { font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .9px; color: var(--primary); margin-bottom: 11px; }
   .sa-list { margin: 0; padding-left: 20px; }
-  .sa-list li { font-size: 14px; line-height: 1.65; margin-bottom: 9px; color: #1e293b; }
-  .sa-list li::marker { color: #10b981; }
-  .sa-plain-f { font-size: 12px; color: #94a3b8; line-height: 1.6; margin-top: 12px; padding-top: 11px; border-top: 1px solid #e2e8f0; }
+  .sa-list li { font-size: 14px; line-height: 1.68; margin-bottom: 10px; color: var(--ink-2); }
+  .sa-list li:last-child { margin-bottom: 0; }
+  .sa-list li strong { color: var(--ink); }
+  .sa-list li::marker { color: var(--primary); }
+  .sa-plain-f { font-size: 12px; color: var(--ink-3); line-height: 1.6; margin-top: 13px;
+    padding-top: 12px; border-top: 1px solid var(--primary-tint); }
 
   .sa-doc { margin-bottom: 14px; }
   .sa-actions-row { margin-bottom: 24px; }
 
-  .sa-sign { background: #fff; border: 2px solid #0f172a; border-radius: 13px; padding: 20px 22px; }
-  .sa-sign-t { font-size: 15px; font-weight: 700; margin-bottom: 15px; }
+  /* The signature card is the one thing on this page the tenant must act on,
+     and it wears the portal's "yours to act on" outline. */
+  .sa-sign { background: var(--surface); border: 1.5px solid var(--primary);
+    border-radius: var(--r); padding: 20px 22px; box-shadow: var(--shadow); }
+  .sa-sign-hd { display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 16px; }
+  .sa-sign-t { font-size: 16px; font-weight: 600; color: var(--ink); }
+  .sa-step { font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--primary); background: var(--primary-wash);
+    border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
 
-  .sa-check { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 13px; cursor: pointer; }
-  .sa-check input { margin-top: 3px; flex-shrink: 0; width: 17px; height: 17px; accent-color: #0f172a; }
-  .sa-check span { font-size: 12.5px; line-height: 1.6; color: #475569; }
-  .sa-check input:disabled + span { color: #b9c0ca; }
+  .sa-check { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 13px;
+    cursor: pointer; }
+  .sa-check input { margin-top: 2px; flex-shrink: 0; width: 18px; height: 18px;
+    accent-color: var(--primary); }
+  .sa-check span { font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+  .sa-check input:disabled + span { color: var(--ink-4); }
 
   .sa-fields { display: flex; gap: 14px; flex-wrap: wrap; margin: 18px 0 4px; }
   .sa-field { flex: 1; min-width: 220px; }
   .sa-field.narrow { flex: 0 0 170px; min-width: 150px; }
-  .sa-lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #475569; margin-bottom: 6px; }
-  .sa-inp { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 9px; padding: 11px 13px; font-size: 14px; font-family: inherit; color: #0f172a; background: #fff; outline: none; }
-  .sa-inp:focus { border-color: #0f172a; }
-  .sa-inp:disabled { background: #f8fafc; color: #94a3b8; }
-  .sa-inp.bad { border-color: #fca5a5; }
+  .sa-lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--ink-3); margin-bottom: 6px; }
+  .sa-inp { width: 100%; border: 1.5px solid var(--line); border-radius: var(--r-sm);
+    padding: 11px 13px; font-size: 14px; font-family: var(--sans); color: var(--ink);
+    background: var(--surface); outline: none; transition: border-color .14s ease; }
+  .sa-inp:focus { border-color: var(--primary); }
+  .sa-inp:disabled { background: var(--surface-2); color: var(--ink-4); }
+  .sa-inp.bad { border-color: var(--owed); }
   /* The name field is the signature, so it is set in the same script face the
      document renders it in — what you type is what will appear on the contract. */
-  .sa-inp.sig:not(:disabled) { font-family: 'Snell Roundhand', 'Brush Script MT', 'Segoe Script', cursive; font-size: 24px; color: #16324f; padding: 6px 13px; }
+  .sa-inp.sig:not(:disabled) { font-family: 'Snell Roundhand', 'Brush Script MT',
+    'Segoe Script', cursive; font-size: 25px; color: var(--primary-ink); padding: 6px 13px; }
 
-  .sa-hint { font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin-top: 5px; }
-  .sa-hint.bad { color: #dc2626; }
-  .sa-err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 9px; padding: 11px 14px; font-size: 13px; margin-bottom: 14px; line-height: 1.55; }
+  .sa-hint { font-size: 11.5px; color: var(--ink-4); line-height: 1.5; margin-top: 5px; }
+  .sa-hint.bad { color: var(--owed); }
 
   .sa-btns { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
-  .sa-btn { border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; }
-  .sa-btn.primary { background: #0f172a; color: #34d399; border: none; padding: 13px 26px; }
-  .sa-btn.primary:disabled { opacity: .45; cursor: not-allowed; }
-  .sa-btn.ghost { background: #fff; color: #475569; border: 1.5px solid #e2e8f0; padding: 9px 16px; font-size: 13px; }
-  .sa-btn.ghost:hover { border-color: #94a3b8; }
-  .sa-btn.danger { background: #fff; color: #dc2626; border: 1.5px solid #fca5a5; padding: 11px 22px; }
-  .sa-btn.danger:hover { background: #fef2f2; }
-  .sa-btn.link { background: none; border: none; color: #64748b; font-size: 13px; font-weight: 500; text-decoration: underline; padding: 4px 0; }
-  .sa-btn.link:hover { color: #0f172a; }
+  .sa-btn { border-radius: var(--r-sm); font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: var(--sans); text-decoration: none; display: inline-block; }
+  .sa-btn.danger { background: var(--surface); color: var(--owed);
+    border: 1.5px solid var(--owed-line); padding: 12px 22px; }
+  .sa-btn.danger:hover { background: var(--owed-wash); }
+  .sa-btn.link { background: none; border: none; color: var(--ink-3); font-size: 13px;
+    font-weight: 500; text-decoration: underline; padding: 4px 0; }
+  .sa-btn.link:hover { color: var(--primary); }
 
-  .sa-foot { font-size: 11.5px; color: #94a3b8; margin-top: 13px; line-height: 1.55; }
-  .sa-decline-t { font-size: 14px; font-weight: 700; margin-bottom: 7px; }
+  /* What is still missing. Quiet, and directly under the button it explains. */
+  .sa-gate { font-size: 12px; color: var(--fee); background: var(--fee-wash);
+    border: 1px solid var(--fee-line); border-radius: var(--r-sm); padding: 9px 12px;
+    margin-top: 12px; line-height: 1.55; }
 
-  .sa-empty { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 13px; padding: 34px 28px; text-align: center; }
-  .sa-empty-t { font-size: 17px; font-weight: 700; margin-bottom: 9px; }
-  .sa-empty-b { font-size: 13.5px; color: #64748b; line-height: 1.65; max-width: 460px; margin: 0 auto 20px; }
+  .sa-foot { font-size: 11.5px; color: var(--ink-4); margin-top: 13px; line-height: 1.55; }
+  .sa-decline-t { font-size: 14.5px; font-weight: 600; color: var(--ink); margin-bottom: 7px; }
 
+  .sa-empty { background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-lg); padding: 44px 28px; text-align: center;
+    box-shadow: var(--shadow); }
+  .sa-empty-t { font-family: var(--display); font-size: 20px; font-weight: 400;
+    color: var(--ink); margin-bottom: 9px; }
+  .sa-empty-b { font-size: 13.5px; color: var(--ink-3); line-height: 1.65; max-width: 460px;
+    margin: 0 auto 20px; }
+
+  @media (max-width: 720px) {
+    .sa-title { font-size: 24px; }
+    .sa-field.narrow { flex: 1 1 100%; }
+    .sa-btns { flex-direction: column; align-items: stretch; }
+    .sa-btns .tp-btn, .sa-btn.danger { width: 100%; text-align: center; }
+  }
+
+  /* Printing gives the tenant their copy: the contract alone, with the
+     reading aids and the form stripped out. */
   @media print {
-    .sa-crumb, .sa-plain, .sa-sign, .sa-actions-row, .sa-banner, .sa-kicker { display: none !important; }
+    .tp-back, .sa-plain, .sa-sign, .sa-actions-row, .sa-banner, .sa-kicker { display: none !important; }
     .sa-wrap { padding: 0; max-width: none; }
     .sa-head { display: none; }
   }

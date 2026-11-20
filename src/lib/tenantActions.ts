@@ -58,7 +58,15 @@ export type TenantActionInput = {
   /** Amendments addressed to this tenant and still unsigned. */
   pendingAmendments: { id: string; title: string; token: string; respondBy: string | null }[]
   /** A confirmed, upcoming tour, if there is one. */
-  tour: { date: string; propertySlug: string | null; propertyName: string | null } | null
+  tour: {
+    date: string
+    propertySlug: string | null
+    propertyName: string | null
+    /** `HH:MM`, as the booking stores it. */
+    timeSlot?: string | null
+    /** Whatever the host asked them to know — a gate code, where to park. */
+    note?: string | null
+  } | null
   /** Maintenance the landlord has shared that is still open on their home. */
   openMaintenance: number
   /** The end of the lease, for the renewal nudge. */
@@ -70,6 +78,14 @@ export type TenantActionInput = {
 }
 
 const ORDER: Record<ActionUrgency, number> = { now: 0, soon: 1, info: 2 }
+
+/** "2:30 PM" from the `HH:MM` a tour slot is stored as. */
+function clockTime(slot: string): string | null {
+  const [h, m] = slot.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`
+}
 
 /** "Nov 24" — the short form used on every date in the portal. */
 function shortDate(d: string): string {
@@ -168,6 +184,11 @@ export function tenantActions(input: TenantActionInput, now = new Date()): Tenan
   if (input.tour) {
     const d = daysUntil(input.tour.date, now)
     if (d >= 0) {
+      // The time and the host's instructions are the two things that decide
+      // whether somebody actually turns up at the right place, so they travel
+      // with the date rather than living on a card of their own.
+      const at = input.tour.timeSlot ? clockTime(input.tour.timeSlot) : null
+      const when = `${shortDate(input.tour.date)}${at ? ` at ${at}` : ''}`
       out.push({
         id: 'tour',
         urgency: d <= 1 ? 'now' : 'soon',
@@ -175,7 +196,8 @@ export function tenantActions(input: TenantActionInput, now = new Date()): Tenan
         title: d === 0
           ? `Your tour is today`
           : d === 1 ? 'Your tour is tomorrow' : `Tour in ${d} days`,
-        body: `${input.tour.propertyName ?? 'Your tour'} · ${shortDate(input.tour.date)}. The landlord confirmed it — they are expecting you.`,
+        body: `${input.tour.propertyName ?? 'Your tour'} · ${when}. The landlord confirmed it — they are expecting you.`
+          + (input.tour.note ? ` They said: “${input.tour.note}”` : ''),
         cta: input.tour.propertySlug
           ? { label: 'See the home', href: `/homes/${input.tour.propertySlug}` }
           : { label: 'See your inquiries', href: '/dashboard' },

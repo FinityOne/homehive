@@ -148,31 +148,45 @@ const NAV_GROUPS: Record<'tenant' | 'landlord' | 'admin', NavGroup[]> = {
 
 // ─── THEMES ───────────────────────────────────────────────────────────────────
 const THEMES = {
+  /**
+   * The tenant portal chrome.
+   *
+   * These are the same values as the tokens in `src/lib/tenantTheme.ts`, which
+   * is the stylesheet every tenant *page* now runs on. They were close but not
+   * equal — the workspace behind the content was a cool grey `#f5f4f0` against
+   * the pages' cream, the hairlines were a different warmth from the cards
+   * sitting on them, and the ink was a neutral `#1a1a1a` where the pages use
+   * the logo's warm `#1F1517`. Small gaps, but they are the ones that make a
+   * sidebar look stuck onto a page rather than part of it, so the shell and
+   * the content now read from one palette.
+   */
   tenant: {
     '--sb-bg':            '#ffffff',
-    '--sb-border':        '#e8e4db',
+    '--sb-border':        '#E3D9D5',
     '--tb-bg':            '#ffffff',
-    '--tb-border':        '#e8e4db',
-    '--logo-color':       '#1a1a1a',
+    '--tb-border':        '#E3D9D5',
+    '--logo-color':       '#1F1517',
     '--logo-em':          '#FFC627',
-    '--nav-color':        '#6b6b6b',
-    '--nav-hover-bg':     '#faf9f6',
-    '--nav-hover-color':  '#1a1a1a',
-    '--nav-active-bg':    '#fdf2f5',
+    '--nav-color':        '#6E5B59',
+    '--nav-hover-bg':     '#FBF8F5',
+    '--nav-hover-color':  '#1F1517',
+    '--nav-active-bg':    '#FBEEF2',
     '--nav-active-color': '#8C1D40',
     '--avatar-bg':        '#8C1D40',
     '--avatar-color':     '#FFC627',
-    '--user-text':        '#1a1a1a',
-    '--user-sub':         '#9b9b9b',
-    '--divider':          '#e8e4db',
-    '--so-color':         '#9b9b9b',
-    '--so-hover-bg':      '#fdf2f5',
+    '--user-text':        '#1F1517',
+    '--user-sub':         '#8E7B79',
+    '--divider':          '#E3D9D5',
+    '--so-color':         '#8E7B79',
+    '--so-hover-bg':      '#FBEEF2',
     '--so-hover-color':   '#8C1D40',
-    '--ham-color':        '#6b6b6b',
-    '--main-bg':          '#f5f4f0',
-    '--psw-hover-bg':     'rgba(0,0,0,0.04)',
+    '--ham-color':        '#6E5B59',
+    // The page field, from the logo's cream. Every tenant card is white and
+    // sits on this, so it has to be the cream the pages assume.
+    '--main-bg':          '#FFF7F2',
+    '--psw-hover-bg':     'rgba(74,15,34,0.04)',
     '--dd-bg':            '#ffffff',
-    '--dd-shadow':        '0 4px 20px rgba(0,0,0,0.10)',
+    '--dd-shadow':        '0 4px 20px rgba(74,15,34,0.12)',
   },
   /**
    * The landlord portal: a light admin shell with a green accent.

@@ -10,7 +10,8 @@
  * shared pieces; the theme in `src/lib/tenantTheme.ts` is their stylesheet.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
+import Link from 'next/link'
 import Icon, { type IconName } from '@/components/NavIcons'
 import { TENANT_THEME, type TenantTone } from '@/lib/tenantTheme'
 
@@ -38,9 +39,9 @@ export function PageHead({
   return (
     <>
       {back && (
-        <a className="tp-back" href={back.href}>
+        <Link className="tp-back" href={back.href}>
           <Icon name="arrowLeft" size={15} />{back.label}
-        </a>
+        </Link>
       )}
       <div className="tp-head">
         <div className="tp-head-main">
@@ -65,7 +66,7 @@ export function Section({
     <>
       <div className="tp-sec">
         <h2 className="tp-h2">{title}</h2>
-        {link && <a className="tp-sec-link" href={link.href}>{link.label} →</a>}
+        {link && <Link className="tp-sec-link" href={link.href}>{link.label} →</Link>}
       </div>
       {children}
     </>
@@ -153,34 +154,49 @@ export function PageSkeleton({ panel = true, cards = 3 }: { panel?: boolean; car
  * browser moves instead.
  */
 export function useUrlTab<T extends string>(key: string, tabs: readonly T[], fallback: T) {
-  const read = useCallback((): T => {
-    if (typeof window === 'undefined') return fallback
-    const v = new URLSearchParams(window.location.search).get(key)
-    return tabs.includes(v as T) ? (v as T) : fallback
-  }, [key, tabs, fallback])
-
-  // Starts at the fallback so the server-rendered markup and the first client
-  // render agree, then syncs from the URL on mount.
-  const [tab, setTabState] = useState<T>(fallback)
-
-  useEffect(() => {
-    setTabState(read())
-    const onPop = () => setTabState(read())
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [read])
+  /**
+   * The query string is external state, so it is subscribed to rather than
+   * copied into an effect. `replaceState` fires no event of its own, so our
+   * own writes notify the same subscribers the browser's `popstate` does —
+   * which is what keeps a tab press, a back press and a pasted link all
+   * arriving at the component by one path.
+   */
+  const raw = useSyncExternalStore(
+    subscribeToUrl,
+    () => new URLSearchParams(window.location.search).get(key),
+    // On the server there is no URL to read, so the first client render must
+    // agree with the markup and correct itself on hydration.
+    () => null,
+  )
+  const tab: T = tabs.includes(raw as T) ? (raw as T) : fallback
 
   const setTab = useCallback((next: T) => {
-    setTabState(next)
     const url = new URL(window.location.href)
     if (next === fallback) url.searchParams.delete(key)
     else url.searchParams.set(key, next)
     // Payment query params are consumed on arrival and must not be re-shared.
     url.searchParams.delete('pay')
     window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash)
+    notifyUrlChanged()
   }, [key, fallback])
 
   return [tab, setTab] as const
+}
+
+/** Everything currently watching the query string. */
+const urlWatchers = new Set<() => void>()
+
+function subscribeToUrl(onChange: () => void) {
+  urlWatchers.add(onChange)
+  window.addEventListener('popstate', onChange)
+  return () => {
+    urlWatchers.delete(onChange)
+    window.removeEventListener('popstate', onChange)
+  }
+}
+
+function notifyUrlChanged() {
+  for (const w of urlWatchers) w()
 }
 
 /** The tab strip itself. Real buttons in a tablist, so arrow keys work. */

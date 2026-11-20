@@ -120,7 +120,6 @@ export default function TenantDashboard() {
   const [userRole, setUserRole] = useState('tenant')
   const [leads, setLeads] = useState<Lead[]>([])
   const [properties, setProperties] = useState<Property[]>([])
-  const [tour, setTour] = useState<TourRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [tenancy, setTenancy] = useState<Tenancy | null>(null)
   const [actions, setActions] = useState<TenantAction[]>([])
@@ -154,7 +153,10 @@ export default function TenantDashboard() {
           .eq('lead_id', tourLead.id)
           .eq('status', 'confirmed')
           .maybeSingle()
-        if (data) { tourRow = data as TourRecord; setTour(tourRow) }
+        // Only ever read through the action stack below, which is the one
+        // place a tour is shown now — it used to also have a card of its own
+        // on this page, repeating the same date twice.
+        if (data) tourRow = data as TourRecord
       }
 
       // The page is usable from here. The tenancy, the amendments and the
@@ -245,6 +247,8 @@ export default function TenantDashboard() {
               date: tourRow.scheduled_date,
               propertySlug: tourRow.property_slug,
               propertyName: tourLead?.property ?? null,
+              timeSlot: tourRow.time_slot,
+              note: tourRow.custom_note,
             }
           : null,
         openMaintenance: openWork,
@@ -388,7 +392,7 @@ export default function TenantDashboard() {
               <div className="db-act-t">You&apos;re approved as a landlord</div>
               <div className="db-act-b">List properties and manage leads from your own portal.</div>
             </div>
-            <a href="/landlord/dashboard" className="tp-btn tp-btn-primary sm">Go to portal</a>
+            <Link href="/landlord/dashboard" className="tp-btn tp-btn-primary sm">Go to portal</Link>
           </div>
         )}
 
@@ -401,7 +405,7 @@ export default function TenantDashboard() {
             <Empty
               icon="search"
               title="No inquiries yet"
-              action={<a href="/homes" className="tp-btn tp-btn-primary">Browse homes near ASU</a>}
+              action={<Link href="/homes" className="tp-btn tp-btn-primary">Browse homes near ASU</Link>}
             >
               Ask about a listing and it appears here, with the landlord&apos;s replies and your
               tour dates as they happen.
@@ -466,13 +470,13 @@ export default function TenantDashboard() {
 
         {/* ── LIST YOUR PLACE ─────────────────────────────────────────────── */}
         {userRole !== 'landlord' && (
-          <a href="/dashboard/list" className="db-list">
+          <Link href="/dashboard/list" className="db-list">
             <span className="db-list-bd">
               <span className="db-list-t">Have a place to list?</span>
               <span className="db-list-s">Free to build · no broker fees · pre-screened ASU renters</span>
             </span>
             <span className="tp-btn tp-btn-accent sm">Get started</span>
-          </a>
+          </Link>
         )}
       </div>
     </>

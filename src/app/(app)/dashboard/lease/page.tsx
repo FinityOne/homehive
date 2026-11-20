@@ -39,7 +39,7 @@ import StripeModeBanner from '@/components/StripeModeBanner'
 import Link from 'next/link'
 import Icon from '@/components/NavIcons'
 import {
-  TenantStyles, Tabs, useUrlTab, Badge, Empty, PageSkeleton,
+  TenantStyles, Tabs, useUrlTab, Badge, Empty, PageSkeleton, Stat,
 } from '@/components/tenant/TenantFrame'
 import {
   fmtShortDate as fmtAmendDate, fmtDollars as fmtAmendDollars, amendmentPath,
@@ -463,7 +463,7 @@ export default function MyLeasePage() {
           <Empty
             icon="fileText"
             title="No active lease yet"
-            action={<a href="/homes" className="tp-btn tp-btn-primary">Browse homes near ASU</a>}
+            action={<Link href="/homes" className="tp-btn tp-btn-primary">Browse homes near ASU</Link>}
           >
             Once your landlord adds you to a lease it appears here, with your rent, your payment
             history, your receipts and the option to pay online.
@@ -861,9 +861,12 @@ export default function MyLeasePage() {
         {tab === 'payments' && (
           <>
             <div className="tp-stats">
-              <Stat2 label="Due now" value={fmtMoney(totalOwed)} tone={totalOwed > 0 ? 'owed' : 'paid'} />
-              <Stat2 label="Paid to date" value={fmtMoney(paidToDate)} />
-              <Stat2 label="Scheduled ahead" value={fmtMoney(totalUpcoming)} />
+              <Stat label="Due now" tone={totalOwed > 0 ? 'owed' : 'paid'}
+                value={<span className="tp-money">{fmtMoney(totalOwed)}</span>} />
+              <Stat label="Paid to date"
+                value={<span className="tp-money">{fmtMoney(paidToDate)}</span>} />
+              <Stat label="Scheduled ahead"
+                value={<span className="tp-money">{fmtMoney(totalUpcoming)}</span>} />
             </div>
 
             <div className="tp-card">
@@ -1214,16 +1217,6 @@ export default function MyLeasePage() {
         />
       )}
     </>
-  )
-}
-
-/** A stat tile. Local to this page because it carries the tenant's tones. */
-function Stat2({ label, value, tone }: { label: string; value: string; tone?: 'owed' | 'paid' }) {
-  return (
-    <div className="tp-stat">
-      <div className="tp-stat-l">{label}</div>
-      <div className={`tp-stat-v tp-money${tone ? ` ${tone}` : ''}`}>{value}</div>
-    </div>
   )
 }
 
