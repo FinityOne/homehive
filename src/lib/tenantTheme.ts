@@ -32,11 +32,13 @@
  *   3. **One colour, one meaning, and never the only signal.** `--owed` red is
  *      money behind, `--paid` green is money received, `--clearing` teal is a
  *      bank transfer in flight, `--fee` amber is a late fee or something
- *      needing attention, `--idle` grey is nothing to do. The teal for
- *      in-flight money is deliberately the same teal the landlord's money area
- *      uses, because the two sides of a payment should not describe its state
- *      in different colours. Every state also carries a *word*, so the portal
- *      survives colour-blindness and a screenshot in a text message.
+ *      needing attention, `--idle` grey is nothing to do. The in-flight teal
+ *      is deliberately the landlord money area's `--flight` hue (one step
+ *      darker, for contrast inside its own badge), because the two sides of a
+ *      payment should not describe its state in different colours. Every state
+ *      also carries a *word*, so the portal survives colour-blindness and a
+ *      screenshot in a text message — and `npm run verify:tenant-contrast`
+ *      computes every pairing below rather than trusting these comments.
  *
  *   4. **One figure leads.** A tenant opens this portal to answer one question
  *      — "do I owe anything, and by when" — so the balance is a display-size
@@ -105,7 +107,14 @@ export const TENANT_THEME = `
     --paid:       #0F7A43;   /* money received, fee waived, job done */
     --paid-wash:  #E8F4ED;
     --paid-line:  #BFE3CE;
-    --clearing:   #0D7F82;   /* ACH in flight — matches the landlord side */
+    /* ACH in flight. The landlord money area's --flight is #0D7F82, and this
+       is the same teal one step darker: at #0D7F82 the word "Clearing" inside
+       its own badge wash came to 4.22:1, which npm run verify:tenant-contrast
+       fails. The hue is what carries the shared meaning across the two sides
+       of a payment; the step keeps the badge readable, which is the whole
+       point of having the word in it. (No backticks in here — this comment
+       lives inside a template literal.) */
+    --clearing:   #0C7275;
     --clearing-wash: #E6F3F3;
     --clearing-line: #B8DEDF;
     --fee:        #8A5A00;   /* late fee / needs attention */
