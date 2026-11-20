@@ -560,28 +560,39 @@ function BrowsingNow() {
   )
 }
 
-/** The big photo — one listing, at hero scale. */
-function HeroFeature({ home }: { home: Property }) {
+/**
+ * The hero's photo, as the backdrop for the whole band.
+ *
+ * It used to be a card *below* the headline: copy on cream, then a 21:9 shot.
+ * That gave the page two focal points competing at the same size, and the one
+ * thing a student actually came for — the home — was the one you had to scroll
+ * to reach. So the photo is now the surface everything else sits on.
+ *
+ * Three things this has to get right, and they pull against each other:
+ *
+ *   1. **Legibility beats the photograph.** Hero shots here are bright skies
+ *      and pale stucco, so white text straight onto one is a coin flip. The
+ *      scrim is load-bearing, not decorative: a flat wash to hold the headline
+ *      plus a heavier foot so the listing bar survives a sunlit pool. Both are
+ *      tinted with the brand maroon rather than neutral black, which stops a
+ *      cream page from suddenly reading grey.
+ *   2. **It must not become a second button.** The band still has exactly ONE
+ *      honey element, `.lead-cta`. The photo is loud but inert, and the only
+ *      other interactive thing over it is the listing bar's own link — white
+ *      glass, never gold.
+ *   3. **It is still the LCP element.** Eager, `fetchPriority="high"`, and a
+ *      raw `<img>` because these photos are served from an R2 bucket that is
+ *      not in next.config's `remotePatterns` — next/image would reject it.
+ */
+function HeroShotBackdrop({ home }: { home: Property }) {
   const img = home.images?.[0]
   const perRoom = home.rental_mode === 'by_room'
-  const distance = Number(home.asu_distance)
-  const dist = Number.isFinite(distance) && distance > 0
-    ? (distance <= 0.4 ? 'Walk to campus' : `${distance.toFixed(1)} mi to campus`)
-    : null
   // Only meaningful when the home is let by the room — a whole-home listing is
   // one unit, and "1 room open" on it reads like a bug.
   const openRooms = perRoom ? Number(home.available) || 0 : 0
-  const meta = [
-    home.beds > 0 ? `${home.beds} bd` : null,
-    home.baths > 0 ? `${home.baths} ba` : null,
-    home.sqft ? `${home.sqft} sqft` : null,
-  ].filter(Boolean).join(' · ')
 
   return (
-    <Link href={`/homes/${home.slug}`} className="hh-feat" aria-label={`See ${home.name}`}>
-      {/* The hero image is this page's LCP element: eager, high priority, and a
-          raw <img> because these photos are served from an R2 bucket that is
-          not in next.config's remotePatterns — next/image would reject it. */}
+    <div className="hh-shot-bg">
       {img ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -591,12 +602,18 @@ function HeroFeature({ home }: { home: Property }) {
           decoding="async"
         />
       ) : (
-        <div className="hh-feat-ph" aria-hidden="true">🏠</div>
+        <div className="hh-shot-ph" aria-hidden="true">🏠</div>
       )}
+
+      {/* Rule 1. Two stops in one layer: one gradient cannot both hold a
+          centred headline and a bottom bar without crushing the photo's
+          midriff, so the wash is flat through the middle and deepens at the
+          foot. */}
+      <div className="hh-shot-scrim" aria-hidden="true" />
 
       {/* One row, not two anchored corners: on a phone the left pills and the
           live count were wide enough to sit on top of each other. */}
-      <div className="hh-feat-chips">
+      <div className="hh-shot-chips">
         <span className="hh-glass">
           <span className="hh-glass-dot" aria-hidden="true" />
           Verified host
@@ -604,22 +621,46 @@ function HeroFeature({ home }: { home: Property }) {
         {openRooms > 0 && <span className="hh-glass">{openRooms} rooms open</span>}
         <BrowsingNow />
       </div>
+    </div>
+  )
+}
 
-      <div className="hh-feat-overlay">
-        <div className="hh-feat-eyebrow">Tempe{dist ? ` · ${dist}` : ''}</div>
-        <div className="hh-feat-name">{home.name}</div>
-        <div className="hh-feat-row">
-          <span className="hh-feat-price">
+/**
+ * The featured listing's facts, along the foot of the hero.
+ *
+ * A link in its own right rather than making the whole hero clickable: the
+ * block above it holds the page's primary CTA, and nesting a button inside an
+ * anchor is invalid markup that swallows the tap on a phone.
+ */
+function HeroShotListing({ home }: { home: Property }) {
+  const perRoom = home.rental_mode === 'by_room'
+  const distance = Number(home.asu_distance)
+  const dist = Number.isFinite(distance) && distance > 0
+    ? (distance <= 0.4 ? 'Walk to campus' : `${distance.toFixed(1)} mi to campus`)
+    : null
+  const meta = [
+    home.beds > 0 ? `${home.beds} bd` : null,
+    home.baths > 0 ? `${home.baths} ba` : null,
+    home.sqft ? `${home.sqft} sqft` : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <Link href={`/homes/${home.slug}`} className="hh-shot-listing" aria-label={`See ${home.name}`}>
+      <span className="hh-shot-listing-text">
+        <span className="hh-shot-eyebrow">Featured now · Tempe{dist ? ` · ${dist}` : ''}</span>
+        <span className="hh-shot-name">{home.name}</span>
+        <span className="hh-shot-row">
+          <span className="hh-shot-price">
             <strong>${home.price?.toLocaleString()}</strong>
             <span>/mo{perRoom ? ' per room' : ''}</span>
           </span>
-          {meta && <span className="hh-feat-meta">{meta}</span>}
-          <span className="hh-feat-btn">
-            See this home
-            <span className="lead-cta-arrow" aria-hidden="true">→</span>
-          </span>
-        </div>
-      </div>
+          {meta && <span className="hh-shot-meta">{meta}</span>}
+        </span>
+      </span>
+      <span className="hh-shot-btn">
+        See this home
+        <span className="lead-cta-arrow" aria-hidden="true">→</span>
+      </span>
     </Link>
   )
 }
@@ -803,23 +844,20 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
         /* ── DIVIDER ── */
         .section-divider { border: none; border-top: 1px solid var(--hh-border-faint); margin: 40px 0; }
 
-        /* ── LEAD BAND (compact, listings-first) ──────────────────────────
+        /* ── LEAD BAND (what sits under the hero photo) ───────────────────
            Hierarchy here is deliberate and load-bearing: exactly ONE honey
-           element in this band (.lead-cta). Everything else — live pill,
-           proof row, popular searches — is deliberately quiet so the eye
-           lands on the CTA first. Don't give the chips a fill. */
-        .lead-band { position: relative; padding: 48px 0 30px; }
+           element across the hero and this band (.lead-cta, up on the photo).
+           Everything here — popular searches, the activity strip — is
+           deliberately quiet. Don't give the chips a fill.
 
-        /* Warm wash behind the headline so cream-on-cream isn't flat. */
-        /* Kept inside the band on purpose: the wash used to bleed 10% past each
-           edge, which on a phone (where the band is the full viewport width)
+           The warm radial wash that used to live here is gone: it existed so
+           cream-on-cream wouldn't read flat behind the headline, and the
+           headline now sits on a photograph. Its cautionary tale is worth
+           keeping though — it bled 10% past each edge, which on a phone
            pushed the document wider than the screen and let the whole page
-           scroll sideways. Radial stops are relative to this box, so pulling
-           the bleed in costs nothing visually. */
-        .lead-glow { position: absolute; inset: -40px 0 auto 0; height: 340px; pointer-events: none; z-index: 0;
-          background:
-            radial-gradient(52% 72% at 14% 18%, rgba(255,198,39,0.16) 0%, rgba(255,198,39,0) 68%),
-            radial-gradient(46% 62% at 86% 6%, rgba(140,29,64,0.10) 0%, rgba(140,29,64,0) 70%); }
+           scroll sideways. That is why .hh-shot reaches full width by
+           sitting outside .wrap rather than by any 100vw arithmetic. */
+        .lead-band { position: relative; padding: 40px 0 30px; }
         .lead-inner { position: relative; z-index: 1; }
 
         /* Live inventory — social proof, reads as a status not a button. */
@@ -860,33 +898,44 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
         .lead-chip { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--hh-text-2); background: transparent; border: 1px solid var(--hh-border-faint); border-radius: 100px; padding: 7px 14px; text-decoration: none; transition: color 0.15s, border-color 0.15s, background 0.15s; white-space: nowrap; }
         .lead-chip:hover { background: var(--hh-hive-50); border-color: var(--hh-primary); color: var(--hh-primary); }
 
-        /* ── HERO FEATURE (the big photo) ─────────────────────────────────
-           Two columns: the pitch, and one home at a size a student can judge
-           from. Everything drawn over the photo is dark glass or white — the
-           band's single honey element is still .lead-cta, so the photo can be
-           loud without competing for "what do I click". */
-        /* Stacked, not two columns: a 50%-wide photo is a card, and the photo
-           is meant to be the loudest thing on the page. The copy above it is
-           deliberately short enough to leave the photo mostly above the fold
-           on a laptop. */
-        .hh-lead { display: flex; flex-direction: column; gap: 30px; }
-        .hh-lead-head { max-width: 680px; margin: 0 auto; text-align: center; }
-        .hh-lead-head .lead-h1 { font-size: clamp(34px, 4.6vw, 58px); text-wrap: balance; margin-bottom: 26px; }
-        .hh-lead-head .lead-cta-row { justify-content: center; }
-        .hh-lead-head .lead-cta-note { width: 100%; }
+        /* ── HERO SHOT (the photograph the pitch is written on) ───────────
+           The photo is the hero's surface, not an item inside it. It runs the
+           full width of the viewport, the copy sits on top, and the featured
+           listing names itself along the foot.
 
-        .hh-feat { position: relative; display: block; border-radius: 24px; overflow: hidden; background: var(--hh-bg-alt);
-          aspect-ratio: 21 / 9; box-shadow: var(--hh-shadow-lg); text-decoration: none; color: #fff;
-          transition: transform 0.22s ease, box-shadow 0.22s ease; }
-        .hh-feat:hover { transform: translateY(-3px); box-shadow: 0 26px 60px -18px rgba(74,15,34,0.38); }
-        .hh-feat:focus-visible { outline: none; box-shadow: var(--hh-ring-accent), var(--hh-shadow-lg); }
-        .hh-feat img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
-        .hh-feat:hover img { transform: scale(1.035); }
-        .hh-feat-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 52px;
+           Everything drawn over it is white, glass, or the one honey CTA —
+           nothing else in the band gets a fill, so "what do I click" has a
+           single answer even with a loud photograph underneath. */
+        .hh-shot { position: relative; isolation: isolate; overflow: hidden;
+          /* Tall enough to dominate the first screen, capped so a short laptop
+             viewport does not push the listings grid entirely out of sight. */
+          min-height: min(78vh, 680px); display: flex; align-items: stretch;
+          background: var(--hh-hive-900); }
+
+        /* The photo layer. inset:0 rather than an aspect-ratio box: the
+           section's height is set by its content plus the min-height above,
+           and the image's job is to fill whatever that comes to. */
+        .hh-shot-bg { position: absolute; inset: 0; z-index: 0; }
+        .hh-shot-bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .hh-shot-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 52px;
           background: linear-gradient(135deg, #F6EBE4 0%, #E3D9D5 100%); }
 
-        /* Glass pills, top corners */
-        .hh-feat-chips { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 7px; flex-wrap: wrap; z-index: 2; }
+        /* Load-bearing, not decoration — see HeroShotBackdrop. Maroon-tinted
+           so a cream page never reads grey, flat through the middle so the
+           photograph survives, heavier at the foot for the listing bar. */
+        .hh-shot-scrim { position: absolute; inset: 0;
+          background:
+            linear-gradient(to top, rgba(28,8,16,0.88) 0%, rgba(28,8,16,0.44) 42%, rgba(28,8,16,0.30) 68%, rgba(28,8,16,0.52) 100%),
+            linear-gradient(to right, rgba(28,8,16,0.42) 0%, rgba(28,8,16,0.10) 60%, rgba(28,8,16,0) 100%); }
+
+        /* The 1200px column, re-established inside a full-bleed section. */
+        .hh-shot-inner { position: relative; z-index: 2; width: 100%; max-width: 1200px; margin: 0 auto;
+          padding: 92px 24px 26px; display: flex; flex-direction: column; justify-content: flex-end; gap: 34px; }
+        .hh-shot-head { max-width: 680px; }
+
+        /* Glass pills, top of the photo */
+        .hh-shot-chips { position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+          width: 100%; max-width: 1200px; padding: 0 24px; display: flex; gap: 7px; flex-wrap: wrap; z-index: 3; }
         /* Pushed to the far end, and onto its own line once the row wraps. */
         .hh-now { margin-left: auto; }
         .hh-glass, .hh-now { display: inline-flex; align-items: center; gap: 6px; background: rgba(22,32,30,0.72);
@@ -898,22 +947,44 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
           animation: livePulse 2.4s ease-out infinite; }
         @media (prefers-reduced-motion: reduce) { .hh-now-dot::after { animation: none; opacity: 0.35 } }
 
-        /* Bottom overlay — the listing's facts, legible over any photo */
-        .hh-feat-overlay { position: absolute; inset: auto 0 0 0; padding: 72px 28px 24px; z-index: 2;
-          background: linear-gradient(to top, rgba(14,22,21,0.90) 0%, rgba(14,22,21,0.62) 48%, rgba(14,22,21,0) 100%); }
-        .hh-feat-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+        /* ── Copy ON the photograph ───────────────────────────────────────
+           The cream-page defaults are dark-on-light and unreadable here, so
+           each one gets an --onshot variant rather than being overridden
+           globally — .lead-h1 and .lead-live are still used on cream bands
+           further down the page. */
+        .lead-live--onshot { background: rgba(255,255,255,0.94); border-color: rgba(255,255,255,0.55);
+          color: var(--hh-ink-900); backdrop-filter: blur(8px); }
+        .lead-h1--onshot { color: #fff; font-size: clamp(36px, 5vw, 64px); text-wrap: balance;
+          margin-bottom: 26px; text-shadow: 0 2px 20px rgba(28,8,16,0.4); }
+        /* Gold, not maroon. Maroon italic on a dark scrim is near-invisible;
+           gold on this depth of scrim clears AA comfortably. The brand rule it
+           must not break is the other direction — gold text never goes on a
+           LIGHT band, where it is 1.6:1. */
+        .lead-h1--onshot em { color: var(--hh-accent); }
+        .lead-cta-note--onshot { color: rgba(255,255,255,0.86); }
+
+        /* ── The featured listing, along the foot ─────────────────────────
+           White glass, never gold: the honey CTA above it has to stay the
+           only filled action in the band. */
+        .hh-shot-listing { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px 24px;
+          flex-wrap: wrap; text-decoration: none; color: #fff; padding-top: 20px;
+          border-top: 1px solid rgba(255,255,255,0.22); transition: border-color 0.18s; }
+        .hh-shot-listing:hover { border-top-color: rgba(255,255,255,0.45); }
+        .hh-shot-listing:focus-visible { outline: none; box-shadow: var(--hh-ring-accent); border-radius: 10px; }
+        .hh-shot-listing-text { display: flex; flex-direction: column; min-width: 0; }
+        .hh-shot-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
           color: rgba(255,255,255,0.78); margin-bottom: 7px; }
-        .hh-feat-name { font-family: var(--hh-font-display); font-size: clamp(24px, 2.9vw, 36px); font-weight: 400;
+        .hh-shot-name { font-family: var(--hh-font-display); font-size: clamp(22px, 2.5vw, 32px); font-weight: 400;
           line-height: 1.12; letter-spacing: -0.02em; color: #fff; }
-        .hh-feat-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
-        .hh-feat-price { font-size: 14px; color: rgba(255,255,255,0.82); }
-        .hh-feat-price strong { font-size: 21px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
-        .hh-feat-meta { font-size: 13px; color: rgba(255,255,255,0.78); }
-        .hh-feat-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,0.95);
-          color: var(--hh-ink-900); font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 100px;
+        .hh-shot-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+        .hh-shot-price { font-size: 14px; color: rgba(255,255,255,0.82); }
+        .hh-shot-price strong { font-size: 21px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+        .hh-shot-meta { font-size: 13px; color: rgba(255,255,255,0.78); }
+        .hh-shot-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,0.95);
+          color: var(--hh-ink-900); font-size: 13px; font-weight: 700; padding: 11px 19px; border-radius: 100px;
           transition: background 0.16s; }
-        .hh-feat:hover .hh-feat-btn { background: #fff; }
-        .hh-feat:hover .hh-feat-btn .lead-cta-arrow { transform: translateX(3px); }
+        .hh-shot-listing:hover .hh-shot-btn { background: #fff; }
+        .hh-shot-listing:hover .hh-shot-btn .lead-cta-arrow { transform: translateX(3px); }
 
         /* ── ACTIVITY STRIP — the "this place is busy" bar ── */
         .hh-live { display: flex; align-items: center; justify-content: space-between; gap: 20px 32px; flex-wrap: wrap;
@@ -1142,10 +1213,8 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
 
         /* ── RESPONSIVE ── */
         @media (max-width: 1000px) {
-          /* 21:9 is a letterbox on a narrow screen — the photo keeps its
-             height by getting taller as it gets narrower. */
-          .hh-feat { aspect-ratio: 16 / 10; }
-          .hh-lead { gap: 24px; }
+          .hh-shot { min-height: min(72vh, 600px); }
+          .hh-shot-inner { gap: 26px; padding-top: 84px; }
           .hh-live-figures { gap: 26px; }
         }
 
@@ -1166,15 +1235,28 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
           .wrap { padding: 0 16px; }
           /* One CTA, full width — the easiest thing on the screen to hit. */
           .lead-band { padding: 30px 0 22px; }
-          .lead-glow { inset: -24px 0 auto 0; height: 260px; }
           .lead-cta-row { gap: 12px; }
           .lead-cta { width: 100%; justify-content: center; font-size: 15px; padding: 15px 22px; }
           .lead-cta-note { width: 100%; text-align: center; }
-          .hh-lead-head .lead-h1 { font-size: 32px; margin-bottom: 20px; }
-          .hh-feat { aspect-ratio: 4 / 3; border-radius: 16px; }
-          .hh-feat-overlay { padding: 56px 16px 16px; }
-          .hh-feat-btn { margin-left: 0; }
-          .hh-feat-row { gap: 10px; }
+
+          /* The hero keeps its full-bleed photo on a phone — it is the whole
+             point of it — but the gutters come in to match .wrap and the
+             scrim gets heavier: the copy covers proportionally more of a
+             portrait crop, so there is less photograph left to protect. */
+          .hh-shot { min-height: min(84vh, 620px); }
+          .hh-shot-inner { padding: 72px 16px 22px; gap: 22px; }
+          .hh-shot-chips { padding: 0 16px; top: 14px; }
+          .hh-shot-scrim {
+            background:
+              linear-gradient(to top, rgba(28,8,16,0.90) 0%, rgba(28,8,16,0.60) 46%, rgba(28,8,16,0.46) 72%, rgba(28,8,16,0.60) 100%); }
+          .lead-h1--onshot { font-size: 34px; margin-bottom: 20px; }
+          .lead-cta-note--onshot { text-align: center; }
+
+          /* Button under the facts, full width — a 13px pill pushed to the
+             far end of a wrapped row is a thumb-sized miss on a phone. */
+          .hh-shot-listing { align-items: stretch; gap: 16px; }
+          .hh-shot-btn { width: 100%; justify-content: center; padding: 13px 19px; font-size: 14px; }
+          .hh-shot-row { gap: 10px; }
           .hh-live { margin-top: 28px; gap: 16px 22px; }
           .hh-live-figures { gap: 18px; width: 100%; }
           .hh-live-num { font-size: 22px; }
@@ -1229,46 +1311,54 @@ function HomePageInner({ initialProperties, visitCount = 0, inquiryCount = 0, re
         </div>
       )}
 
-      <div className="wrap">
+      {/* ── HERO — one photograph, with the pitch written on it ──
+           Deliberately OUTSIDE `.wrap`, so the photo runs edge to edge
+           instead of stopping at a 1200px column with cream either side. Its
+           own content re-establishes that column inside (`.hh-shot-inner`),
+           which is why this is a sibling of `.wrap` rather than a child
+           escaping it with negative margins or `100vw` — that trick measures
+           the viewport *including* the scrollbar and is exactly what once let
+           this page scroll sideways on a phone. See `.lead-band`. */}
+      <section className="hh-shot">
+        {heroHome
+          ? <HeroShotBackdrop home={heroHome} />
+          /* No listing to show: the band keeps its shape and its gradient
+             rather than collapsing the headline onto bare cream. */
+          : <div className="hh-shot-bg"><div className="hh-shot-ph" aria-hidden="true">🏠</div><div className="hh-shot-scrim" aria-hidden="true" /></div>}
 
-        {/* ── HERO — three things, and the biggest of them is a photo ──
-             Rule of three, in reading order: (1) one short headline, (2) the
-             one honey CTA, (3) a home shot full-width. Nothing else in the
-             band is allowed to become a fourth stop — the shortcuts and the
-             activity strip sit below the photo, quiet and small, and
-             everything over the photo is glass or white. */}
-        <div className="lead-band">
-          <div className="lead-glow" aria-hidden="true" />
-          <div className="lead-inner hh-lead">
-            {/* 1 + 2 — headline and the single action, centred over the photo
-                 so the two of them read as one short block, not a column of
-                 copy beside it. */}
-            <div className="hh-lead-head">
-              <div className="lead-live">
-                <span className="lead-live-dot" aria-hidden="true" />
-                {loading
-                  ? 'Verified homes for ASU students · Tempe'
-                  : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live for ASU students`}
-              </div>
-              <h1 className="lead-h1">
-                Housing near ASU,<br />
-                <em>found in minutes.</em>
-              </h1>
-
-              <div className="lead-cta-row">
-                <Link href="/homes" className="lead-cta">
-                  <span>{loading || properties.length === 0 ? 'Browse verified homes' : `Browse ${properties.length} verified homes`}</span>
-                  <span className="lead-cta-arrow" aria-hidden="true">→</span>
-                </Link>
-                <span className="lead-cta-note">ID-verified hosts · no broker fees · free for students</span>
-              </div>
+        <div className="hh-shot-inner">
+          {/* The pitch and the single action, as one short block. Short on
+              purpose: every line here is a line of photograph it covers. */}
+          <div className="hh-shot-head">
+            <div className="lead-live lead-live--onshot">
+              <span className="lead-live-dot" aria-hidden="true" />
+              {loading
+                ? 'Verified homes for ASU students · Tempe'
+                : `${properties.length} verified ${properties.length === 1 ? 'home' : 'homes'} live for ASU students`}
             </div>
+            <h1 className="lead-h1 lead-h1--onshot">
+              Housing near ASU,<br />
+              <em>found in minutes.</em>
+            </h1>
 
-            {/* 3 — the home itself */}
-            {heroHome && <HeroFeature home={heroHome} />}
+            <div className="lead-cta-row">
+              <Link href="/homes" className="lead-cta">
+                <span>{loading || properties.length === 0 ? 'Browse verified homes' : `Browse ${properties.length} verified homes`}</span>
+                <span className="lead-cta-arrow" aria-hidden="true">→</span>
+              </Link>
+              <span className="lead-cta-note lead-cta-note--onshot">ID-verified hosts · no broker fees · free for students</span>
+            </div>
           </div>
 
-          {/* Below the fold of the three: navigation, then the busy bar. */}
+          {/* The home this photograph actually is, named at its foot. */}
+          {heroHome && <HeroShotListing home={heroHome} />}
+        </div>
+      </section>
+
+      <div className="wrap">
+
+        <div className="lead-band">
+          {/* Below the photo: navigation, then the busy bar. */}
           <div className="lead-inner">
             <div className="lead-jump">
               <span className="lead-jump-label">Popular right now</span>
