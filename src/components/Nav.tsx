@@ -669,7 +669,7 @@ export default function Nav() {
                   {(user.role === 'landlord' || user.role === 'admin') && (
                     <a href="/landlord/dashboard" className="dropdown-item" target="_blank" rel="noopener noreferrer">
                       <span className="di-icon" style={{ background: 'rgba(140,29,64,0.08)' }}>⊞</span>
-                      Host Portal
+                      Landlord portal
                     </a>
                   )}
                   {user.role === 'admin' && (
@@ -785,7 +785,7 @@ export default function Nav() {
 
               <a href="/dashboard" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>🏠 My Dashboard →</a>
               {(user.role === 'landlord' || user.role === 'admin') && (
-                <a href="/landlord/dashboard" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>⊞ Host Portal →</a>
+                <a href="/landlord/dashboard" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>⊞ Landlord portal →</a>
               )}
               {user.role === 'admin' && (
                 <a href="/admin" className="mob-portal-link" target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>◈ Admin Portal →</a>
