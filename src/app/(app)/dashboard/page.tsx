@@ -1,14 +1,40 @@
 'use client'
 
+/**
+ * The tenant's home screen.
+ *
+ * It answers, in this order: is anything waiting on me, where do I live and
+ * what do I owe, what happened to the places I asked about, and what else is
+ * out there. That order is the whole redesign. The page used to open with a
+ * greeting and "2 active inquiries", then a lease card, then a tour card, then
+ * inquiries — a feed of things that exist rather than a list of things that
+ * need doing. An unsigned lease amendment, the single most time-sensitive item
+ * in the product, did not appear on this page at all; neither did open
+ * maintenance. A tenant four days past due, with a document waiting for their
+ * signature, landed on a page whose loudest element was a list of homes to
+ * browse.
+ *
+ * So the top of the page is now `tenantActions()` — a ranked list of what is
+ * actually waiting, each item naming its own next step — and everything below
+ * it is context and browsing. See `src/lib/tenantActions.ts` for what may
+ * appear there and the rule that nothing in it is ever estimated.
+ */
+
 import { useEffect, useState } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { getProperties, type Property } from '@/lib/properties'
 import {
   tenantCharges, type TenantScheduledRow, type TenantSpecialRow,
 } from '@/lib/tenantCharges'
-
-type LeadStatus = 'new' | 'contacted' | 'engaged' | 'qualified' | 'tour_scheduled' | 'closed'
+import { fmtMoney } from '@/lib/rentPayments'
+import { tenantActions, type TenantAction } from '@/lib/tenantActions'
+import { inquiryView } from '@/lib/tenantInquiry'
+import Icon from '@/components/NavIcons'
+import {
+  TenantStyles, PageHead, Section, Badge, Empty, PageSkeleton,
+} from '@/components/tenant/TenantFrame'
 
 type Lead = {
   id: string
@@ -17,7 +43,7 @@ type Lead = {
   phone: string | null
   move_in_date: string | null
   property: string | null
-  status: LeadStatus
+  status: string
   closed_reason: 'leased' | 'lost' | null
   created_at: string
 }
@@ -32,11 +58,32 @@ type TourRecord = {
   status: string
 }
 
-function getGreeting(name: string) {
+/** The tenancy summary this page shows, resolved server-side. */
+type Tenancy = {
+  property: string
+  slug: string | null
+  unit: string | null
+  endDate: string
+  rent: number
+  owed: number
+  lateFees: number
+  nextDue: string | null
+  nextDueAmount: number | null
+  oldestDue: string | null
+  isDemo: boolean
+  unmatchedPlan: boolean
+  leaseId: string | null
+}
+
+function greeting(name: string) {
   const h = new Date().getHours()
-  if (h < 12) return `Good morning, ${name}`
-  if (h < 17) return `Good afternoon, ${name}`
-  return `Good evening, ${name}`
+  const part = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+  return name ? `${part}, ${name}` : part
+}
+
+function greetingIcon() {
+  const h = new Date().getHours()
+  return h < 12 ? 'coffee' as const : h < 17 ? 'sun' as const : 'moon' as const
 }
 
 function matchProperty(lead: Lead, properties: Property[]): Property | undefined {
@@ -60,40 +107,24 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function formatTourTime(slot: string): string {
-  const [h, m] = slot.split(':').map(Number)
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  const hour = h % 12 || 12
-  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
-}
+const fmtDay = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
-function getTourCountdown(dateStr: string): { label: string; urgent: boolean } {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const tour = new Date(dateStr + 'T00:00:00')
-  const diff = Math.round((tour.getTime() - today.getTime()) / 86400000)
-  if (diff === 0) return { label: 'Today!', urgent: true }
-  if (diff === 1) return { label: 'Tomorrow', urgent: true }
-  if (diff < 0) return { label: 'Recently passed', urgent: false }
-  return { label: `In ${diff} days`, urgent: diff <= 3 }
-}
+const fmtMonthYear = (d: string) =>
+  new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 
-function DashboardInner() {
+export default function TenantDashboard() {
   const router = useRouter()
 
-  const [userName, setUserName]     = useState('')
-  const [userRole, setUserRole]     = useState('tenant')
-  const [leads, setLeads]           = useState<Lead[]>([])
+  const [userName, setUserName] = useState('')
+  const [userRole, setUserRole] = useState('tenant')
+  const [leads, setLeads] = useState<Lead[]>([])
   const [properties, setProperties] = useState<Property[]>([])
-  const [upcomingTourData, setUpcomingTourData] = useState<TourRecord | null>(null)
-  const [loading, setLoading]       = useState(true)
-  // Active tenancy summary — a housed tenant's dashboard leads with their home.
-  const [tenancy, setTenancy] = useState<{
-    property: string; unit: string | null; end: string
-    rent: number; owed: number; nextDue: string | null
-  } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [tenancy, setTenancy] = useState<Tenancy | null>(null)
+  const [actions, setActions] = useState<TenantAction[]>([])
 
-  useEffect(() => { document.title = 'Dashboard — My Portal | HomeHive' }, [])
+  useEffect(() => { document.title = 'Home — My Portal | HomeHive' }, [])
 
   useEffect(() => {
     const load = async () => {
@@ -107,413 +138,451 @@ function DashboardInner() {
       ])
 
       const fullName = profileRes.data?.full_name || user.user_metadata?.full_name || ''
-      setUserName(fullName.split(' ')[0] || 'there')
+      setUserName(fullName.split(' ')[0] || '')
       setUserRole(profileRes.data?.role || 'tenant')
       const fetchedLeads = (leadsRes.data as Lead[]) || []
       setLeads(fetchedLeads)
       setProperties(propsRes)
 
-      // Fetch confirmed tour for any tour_scheduled lead
       const tourLead = fetchedLeads.find(l => l.status === 'tour_scheduled')
+      let tourRow: TourRecord | null = null
       if (tourLead) {
-        const { data: tourRow } = await supabase
+        const { data } = await supabase
           .from('tours')
           .select('*')
           .eq('lead_id', tourLead.id)
           .eq('status', 'confirmed')
           .maybeSingle()
-        if (tourRow) setUpcomingTourData(tourRow as TourRecord)
+        // Only ever read through the action stack below, which is the one
+        // place a tour is shown now — it used to also have a card of its own
+        // on this page, repeating the same date twice.
+        if (data) tourRow = data as TourRecord
       }
 
+      // The page is usable from here. The tenancy, the amendments and the
+      // maintenance count all load behind it — a renter with no lease must
+      // never wait on three fetches that will return nothing.
       setLoading(false)
 
-      // Lease + rent summary, resolved server-side so nothing about a
-      // housemate's balance ever reaches this page.
       const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        try {
-          const res = await fetch('/api/tenant/lease', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          })
-          const json = await res.json()
-          const t = (json.tenancies ?? [])[0]
-          if (t?.lease) {
-            // What they owe, by the one calculation every tenant surface
-            // shares — including the late fees, which sit on rent that is
-            // already settled and so are invisible to any `status` filter.
-            // See src/lib/tenantCharges.ts.
-            const rows = (t.scheduled ?? []) as TenantScheduledRow[]
-            const charges = tenantCharges(
-              rows, (t.specials ?? []) as TenantSpecialRow[], t.lateFeeRule,
-            )
-            const owed = charges.totalOwed
-            // The next rent still to come. Cancelled and settled months are
-            // already out of both lists, so this cannot land on one.
-            const upNext = charges.owed.find(r => r.kind === 'scheduled')
-              ?? charges.upcoming.find(r => r.kind === 'scheduled')
-            const next = upNext ? rows.find(s => s.id === upNext.id) : undefined
+      if (!session?.access_token) return
+      const auth = { Authorization: `Bearer ${session.access_token}` }
 
-            setTenancy({
-              property: t.lease.property?.name ?? 'Your home',
-              unit: t.lease.unit_number,
-              end: new Date(t.lease.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-              rent: t.me?.monthly_total ?? t.lease.rent_amount ?? 0,
-              owed: Math.round(owed * 100) / 100,
-              nextDue: next ? new Date(next.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null,
-            })
-          }
-        } catch { /* dashboard still works without it */ }
+      /**
+       * Everything the action stack needs, fetched together.
+       *
+       * Each one is allowed to fail on its own: an action stack missing its
+       * maintenance line is a smaller problem than a home page that shows
+       * nothing because one of three endpoints was slow.
+       */
+      const [leaseJson, amendJson, maintJson] = await Promise.all([
+        fetch('/api/tenant/lease', { headers: auth })
+          .then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/tenant/amendments', { headers: auth })
+          .then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/tenant/maintenance', { headers: auth })
+          .then(r => (r.ok ? r.json() : null)).catch(() => null),
+      ])
+
+      let next: Tenancy | null = null
+      const t = (leaseJson?.tenancies ?? [])[0]
+      if (t?.lease) {
+        // The one calculation every tenant surface shares — including the late
+        // fees, which sit on rent that is already settled and so are invisible
+        // to any `status` filter. See src/lib/tenantCharges.ts.
+        const rows = (t.scheduled ?? []) as TenantScheduledRow[]
+        const charges = tenantCharges(
+          rows, (t.specials ?? []) as TenantSpecialRow[], t.lateFeeRule,
+        )
+        const feesOwed = charges.lateFees.reduce((s, r) => s + (r.lateFee ?? 0), 0)
+        const rentOwed = charges.owed.reduce((s, r) => s + r.amount + (r.lateFee ?? 0), 0)
+        // The oldest thing actually owed, which is the date "past due" is
+        // judged against — not the next date on the schedule.
+        const oldest = [...charges.owed]
+          .map(r => rows.find(s => s.id === r.id)?.due_date)
+          .filter((d): d is string => !!d)
+          .sort()[0] ?? null
+        const upNext = charges.upcoming.find(r => r.kind === 'scheduled')
+        const upNextRow = upNext ? rows.find(s => s.id === upNext.id) : undefined
+
+        next = {
+          property: t.lease.property?.name ?? 'Your home',
+          slug: t.lease.property?.slug ?? null,
+          unit: t.lease.unit_number,
+          endDate: t.lease.end_date,
+          rent: t.me?.monthly_total ?? t.lease.rent_amount ?? 0,
+          owed: Math.round(rentOwed * 100) / 100,
+          lateFees: Math.round(feesOwed * 100) / 100,
+          nextDue: upNextRow?.due_date ?? null,
+          nextDueAmount: upNext?.amount ?? null,
+          oldestDue: oldest,
+          isDemo: t.lease.is_demo === true,
+          unmatchedPlan: t.unmatchedPlan === true,
+          leaseId: t.lease.id ?? null,
+        }
+        setTenancy(next)
       }
+
+      const pending = ((amendJson?.amendments ?? []) as {
+        id: string; title: string; token: string; respond_by: string | null; status: string
+        lease_id: string
+      }[])
+        .filter(a => a.status === 'sent')
+        .filter(a => !next?.leaseId || a.lease_id === next.leaseId)
+
+      const openWork = ((maintJson?.homes ?? []) as { pending: unknown[] }[])
+        .reduce((n, h) => n + (h.pending?.length ?? 0), 0)
+
+      setActions(tenantActions({
+        owed: next ? next.owed : 0,
+        lateFeesOwed: next ? next.lateFees : 0,
+        oldestDueDate: next?.oldestDue ?? null,
+        nextDueDate: next?.nextDue ?? null,
+        nextDueAmount: next?.nextDueAmount ?? null,
+        pendingAmendments: pending.map(a => ({
+          id: a.id, title: a.title, token: a.token, respondBy: a.respond_by,
+        })),
+        tour: tourRow
+          ? {
+              date: tourRow.scheduled_date,
+              propertySlug: tourRow.property_slug,
+              propertyName: tourLead?.property ?? null,
+              timeSlot: tourRow.time_slot,
+              note: tourRow.custom_note,
+            }
+          : null,
+        openMaintenance: openWork,
+        leaseEnd: next?.endDate ?? null,
+        unmatchedPlan: next?.unmatchedPlan,
+        isDemo: next?.isDemo,
+      }))
     }
     load()
   }, [router])
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', color: '#9b9b9b' }}>
-        Loading...
-      </div>
-    )
-  }
+  if (loading) return <><TenantStyles css={CSS} /><PageSkeleton cards={2} /></>
 
   const inquiredSlugs = new Set(leads.map(l => l.property?.toLowerCase()).filter(Boolean))
   const recommendations = properties.filter(p =>
     p.is_active && p.available > 0 &&
     !inquiredSlugs.has(p.name.toLowerCase()) &&
     !inquiredSlugs.has(p.slug.toLowerCase())
-  ).slice(0, 2)
+  ).slice(0, 3)
 
-  const upcomingTourLead = leads.find(l => l.status === 'tour_scheduled')
+  const live = leads.filter(l => l.status !== 'closed')
+  const totalOwed = tenancy ? Math.round((tenancy.owed + tenancy.lateFees) * 100) / 100 : 0
+
+  /**
+   * The line under the greeting. It describes the tenant's actual situation
+   * rather than counting inquiries at a housed tenant — "2 active inquiries"
+   * was shown to someone who had already moved in and was looking at their own
+   * rent balance.
+   */
+  const lede = tenancy
+    ? totalOwed > 0
+      ? <>You owe <strong>{fmtMoney(totalOwed)}</strong> at {tenancy.property}.</>
+      : <>You&apos;re all paid up at {tenancy.property}.</>
+    : live.length > 0
+      ? `${live.length} ${live.length === 1 ? 'inquiry' : 'inquiries'} in progress`
+      : 'Find your next place near ASU'
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      <TenantStyles css={CSS} />
+      <div className="tp tp-wrap">
+        <PageHead
+          title={
+            <span className="db-greet">
+              <Icon name={greetingIcon()} size={20} />
+              {greeting(userName)}
+            </span>
+          }
+          lede={lede}
+        />
 
-        .db { max-width: 600px; margin: 0 auto; padding: 28px 16px 72px; font-family: 'DM Sans', sans-serif; }
+        {/* ── WHAT NEEDS YOU ───────────────────────────────────────────────
+            The ranked stack. Nothing in it is decorative: if it is here, it
+            has a deadline or somebody is waiting. An empty stack is itself
+            information, so it says so rather than rendering nothing. ── */}
+        {actions.length > 0 ? (
+          <div className="db-actions">
+            <div className="tp-eyebrow" style={{ marginBottom: 10 }}>Needs you</div>
+            {actions.map(a => (
+              <Link key={a.id} href={a.cta.href} className={`db-act ${a.urgency}`}>
+                <span className="db-act-ic"><Icon name={a.icon} size={18} /></span>
+                <span className="db-act-body">
+                  <span className="db-act-t">{a.title}</span>
+                  <span className="db-act-b">{a.body}</span>
+                  <span className="db-act-cta">{a.cta.label} →</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        ) : tenancy && (
+          <div className="tp-note good" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <Icon name="checkCircle" size={17} style={{ marginTop: 1 }} />
+            <span>
+              <strong>Nothing needs you right now.</strong> Your rent is up to date and there is
+              no document waiting on your signature.
+            </span>
+          </div>
+        )}
 
-        .db-greeting { font-family: 'Fraunces', serif; font-size: 27px; font-weight: 300; color: #1a1a1a; letter-spacing: -0.4px; line-height: 1.2; margin-bottom: 3px; }
-        .db-sub { font-size: 13px; color: #9b9b9b; margin-bottom: 24px; }
-
-        /* ── TOUR CARD ── */
-        .tour-card {
-          background: linear-gradient(135deg, #1a1a1a 0%, #2d1520 100%);
-          border-radius: 16px; padding: 20px; margin-bottom: 24px;
-          position: relative; overflow: hidden;
-        }
-        .tour-card::before {
-          content: ''; position: absolute; top: -30px; right: -30px;
-          width: 120px; height: 120px; border-radius: 50%;
-          background: rgba(255,198,39,0.08);
-        }
-        .tour-card-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #FFC627; margin-bottom: 10px; }
-        .tour-card-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.3px; margin-bottom: 4px; line-height: 1.2; }
-        .tour-card-sub { font-size: 13px; color: rgba(255,255,255,0.55); margin-bottom: 16px; }
-        .tour-card-details { background: rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
-        .tour-card-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(255,255,255,0.85); margin-bottom: 6px; }
-        .tour-card-row:last-child { margin-bottom: 0; }
-        .tour-card-row strong { color: #fff; }
-        .tour-card-countdown {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
-          margin-bottom: 16px;
-        }
-        .tour-card-cta {
-          display: inline-block; background: #FFC627; color: #1a1a1a;
-          text-decoration: none; font-size: 13px; font-weight: 700;
-          padding: 10px 20px; border-radius: 10px;
-        }
-        .tour-card-note {
-          margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);
-          font-size: 12px; color: rgba(255,255,255,0.5); font-style: italic; line-height: 1.5;
-        }
-
-        /* ── SECTION LABEL ── */
-        .sec-label { font-size: 10px; font-weight: 700; color: #b0a898; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
-        .sec-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-        .sec-link { font-size: 12px; color: #8C1D40; font-weight: 500; text-decoration: none; }
-        .sec-link:hover { text-decoration: underline; }
-
-        /* ── INQUIRY CARD ── */
-        .icard {
-          display: flex; align-items: stretch;
-          background: #fff; border: 1px solid #e8e4db; border-radius: 12px;
-          overflow: hidden; margin-bottom: 8px; text-decoration: none;
-          transition: border-color 0.12s, box-shadow 0.12s;
-        }
-        .icard:hover { border-color: #d0ccc4; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
-        .icard-thumb {
-          width: 88px; flex-shrink: 0; object-fit: cover; display: block;
-        }
-        .icard-thumb-ph {
-          width: 88px; flex-shrink: 0;
-          background: linear-gradient(135deg, #fdf2f5, #f5f0eb);
-          display: flex; align-items: center; justify-content: center; font-size: 20px;
-        }
-        .icard-body { flex: 1; min-width: 0; padding: 11px 13px; }
-        .icard-name { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .icard-addr { font-size: 11px; color: #9b9b9b; margin-bottom: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .icard-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #6b6b6b; }
-        .icard-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-        .icard-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; padding: 11px 13px 11px 0; gap: 5px; }
-        .icard-price { font-size: 13px; font-weight: 700; color: #8C1D40; }
-        .icard-price span { font-size: 10px; font-weight: 400; color: #9b9b9b; }
-        .icard-date { font-size: 10px; color: #b0a898; }
-        .icard-arrow { font-size: 15px; color: #d0ccc4; }
-
-        /* ── EMPTY STATE ── */
-        .empty { background: #fff; border: 1px dashed #e8e4db; border-radius: 12px; padding: 32px 20px; text-align: center; margin-bottom: 28px; }
-        .empty-icon  { font-size: 26px; margin-bottom: 8px; }
-        .empty-title { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
-        .empty-sub   { font-size: 13px; color: #9b9b9b; line-height: 1.5; margin-bottom: 16px; }
-        .btn-p { display: inline-flex; align-items: center; background: #8C1D40; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: none; }
-
-        /* ── RECOMMENDED ── */
-        .rec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 28px; }
-        .rec-card { background: #fff; border: 1px solid #e8e4db; border-radius: 10px; overflow: hidden; text-decoration: none; display: block; transition: border-color 0.12s, box-shadow 0.12s; }
-        .rec-card:hover { border-color: #d0ccc4; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-        .rec-img { width: 100%; height: 88px; object-fit: cover; display: block; }
-        .rec-img-ph { width: 100%; height: 88px; background: linear-gradient(135deg,#fdf2f5,#f5f0eb); display: flex; align-items: center; justify-content: center; font-size: 22px; }
-        .rec-body { padding: 10px 11px 11px; }
-        .rec-name { font-size: 12px; font-weight: 600; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
-        .rec-addr { font-size: 10px; color: #b0a898; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
-        .rec-price { font-size: 13px; font-weight: 700; color: #8C1D40; }
-        .rec-price span { font-size: 10px; font-weight: 400; color: #9b9b9b; }
-        .rec-stats { font-size: 10px; color: #9b9b9b; margin-top: 2px; }
-
-        /* ── LIST BANNER ── */
-        .list-banner {
-          display: flex; align-items: center; gap: 12px;
-          background: linear-gradient(135deg, #1a1a1a 0%, #2d1a0e 100%);
-          border-radius: 12px; padding: 14px 16px;
-        }
-        .list-banner-body { flex: 1; min-width: 0; }
-        .list-banner-title { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
-        .list-banner-sub   { font-size: 11px; color: rgba(255,255,255,0.5); }
-        .list-banner-cta   { flex-shrink: 0; background: #FFC627; color: #1a1a1a; border: none; border-radius: 7px; padding: 7px 13px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; text-decoration: none; }
-
-        /* ── ACTIVE LEASE CARD ── */
-        .lease-card { display: block; background: #0f172a; border-radius: 14px; padding: 20px 22px; margin-bottom: 24px; text-decoration: none; color: #fff; }
-        .lease-card:hover { background: #1e293b; }
-        .lease-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-        .lease-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #34d399; }
-        .lease-card-title { font-size: 19px; font-weight: 700; margin-top: 4px; letter-spacing: -0.3px; }
-        .lease-card-sub { font-size: 12.5px; color: rgba(255,255,255,0.55); margin-top: 2px; }
-        .lease-card-arrow { color: rgba(255,255,255,0.4); font-size: 18px; }
-        .lease-card-figs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); }
-        .lcf-l { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.4); }
-        .lcf-v { font-size: 15px; font-weight: 700; margin-top: 3px; }
-        .lease-card-cta { margin-top: 16px; background: #34d399; color: #0f172a; border-radius: 9px; padding: 10px; text-align: center; font-size: 13.5px; font-weight: 700; }
-
-        /* ── LANDLORD CONGRATS ── */
-        .congrats-strip { display: flex; align-items: center; gap: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 14px; margin-bottom: 24px; }
-        .congrats-link { flex-shrink: 0; background: #16a34a; color: #fff; border: none; border-radius: 7px; padding: 7px 13px; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
-
-        @media (max-width: 400px) {
-          .rec-grid { grid-template-columns: 1fr; }
-          .icard-thumb, .icard-thumb-ph { width: 72px; }
-        }
-      `}</style>
-
-      <div className="db">
-
-        {/* ── GREETING ── */}
-        <div className="db-greeting">{getGreeting(userName)}</div>
-        <div className="db-sub">
-          {leads.length > 0
-            ? `${leads.length} active ${leads.length === 1 ? 'inquiry' : 'inquiries'}`
-            : 'Find your next place near ASU'}
-        </div>
-
-        {/* ── ACTIVE LEASE — the first thing a housed tenant needs ── */}
+        {/* ── YOUR HOME ────────────────────────────────────────────────────
+            The dark panel: the one place on this page a figure gets display
+            size, because the balance is the question people open the portal
+            to answer. ── */}
         {tenancy && (
-          <a href="/dashboard/lease" className="lease-card">
-            <div className="lease-card-top">
-              <div>
-                <div className="lease-card-label">Your home</div>
-                <div className="lease-card-title">{tenancy.property}</div>
-                <div className="lease-card-sub">
-                  {tenancy.unit ? `${tenancy.unit} · ` : ''}Lease to {tenancy.end}
+          <div className="tp-panel">
+            <div className="tp-panel-eyebrow">Your home</div>
+            <div className="db-panel-head">
+              <div style={{ minWidth: 0 }}>
+                <div className="db-panel-name">{tenancy.property}</div>
+                <div className="tp-panel-sub">
+                  {tenancy.unit ? `${tenancy.unit} · ` : ''}
+                  Lease to {fmtMonthYear(tenancy.endDate)}
+                  {tenancy.isDemo && ' · demo lease, nothing is charged'}
                 </div>
               </div>
-              <span className="lease-card-arrow">→</span>
             </div>
-            <div className="lease-card-figs">
+            <div className="tp-panel-fig tp-money">
+              {totalOwed > 0 ? fmtMoney(totalOwed) : 'Paid up'}
+            </div>
+            <div className="tp-panel-sub">
+              {totalOwed > 0
+                ? tenancy.lateFees > 0
+                  ? <>Balance due, including <strong>{fmtMoney(tenancy.lateFees)}</strong> in late fees.</>
+                  : 'Balance due now.'
+                : tenancy.nextDue
+                  ? <>Next rent of <strong>{fmtMoney(tenancy.nextDueAmount ?? tenancy.rent)}</strong> is due {fmtDay(tenancy.nextDue)}.</>
+                  : 'Nothing is outstanding.'}
+            </div>
+            <div className="tp-panel-actions">
+              {totalOwed > 0 && !tenancy.isDemo && (
+                <Link href="/dashboard/lease?tab=payments&pay=1" className="tp-btn tp-btn-accent">
+                  Pay {fmtMoney(totalOwed)}
+                </Link>
+              )}
+              <Link href="/dashboard/lease" className="tp-btn tp-btn-outline">
+                My lease &amp; rent
+              </Link>
+            </div>
+            <div className="tp-panel-grid">
               <div>
-                <div className="lcf-l">Balance due</div>
-                <div className="lcf-v" style={{ color: tenancy.owed > 0 ? '#fca5a5' : '#6ee7b7' }}>
-                  {tenancy.owed > 0 ? `$${tenancy.owed.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'Paid up'}
-                </div>
+                <div className="tp-panel-l">Your rent</div>
+                <div className="tp-panel-v">{fmtMoney(tenancy.rent)}/mo</div>
               </div>
               <div>
-                <div className="lcf-l">Your rent</div>
-                <div className="lcf-v">${tenancy.rent.toLocaleString()}/mo</div>
+                <div className="tp-panel-l">Next due</div>
+                <div className="tp-panel-v">{tenancy.nextDue ? fmtDay(tenancy.nextDue) : '—'}</div>
               </div>
               <div>
-                <div className="lcf-l">Next due</div>
-                <div className="lcf-v">{tenancy.nextDue ?? '—'}</div>
+                <div className="tp-panel-l">Lease ends</div>
+                <div className="tp-panel-v">{fmtMonthYear(tenancy.endDate)}</div>
               </div>
             </div>
-            {tenancy.owed > 0 && <div className="lease-card-cta">Pay rent →</div>}
-          </a>
+          </div>
         )}
 
-        {/* ── TOUR CARD ── */}
-        {upcomingTourLead && upcomingTourData && (() => {
-          const prop = matchProperty(upcomingTourLead, properties)
-          const countdown = getTourCountdown(upcomingTourData.scheduled_date)
-          const tourDate = new Date(upcomingTourData.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', {
-            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
-          })
-          return (
-            <div className="tour-card">
-              <div className="tour-card-label">📅 Upcoming Tour</div>
-              <div className="tour-card-title">{prop?.name || upcomingTourLead.property}</div>
-              {prop?.address && <div className="tour-card-sub">📍 {prop.address}</div>}
-
-              <div className="tour-card-countdown" style={{
-                background: countdown.urgent ? 'rgba(255,198,39,0.2)' : 'rgba(255,255,255,0.1)',
-                color: countdown.urgent ? '#FFC627' : 'rgba(255,255,255,0.7)',
-                border: countdown.urgent ? '1px solid rgba(255,198,39,0.4)' : '1px solid rgba(255,255,255,0.15)',
-              }}>
-                {countdown.urgent ? '🔥' : '🗓'} {countdown.label}
-              </div>
-
-              <div className="tour-card-details">
-                <div className="tour-card-row">
-                  <span style={{ fontSize: 14 }}>📆</span>
-                  <span><strong>{tourDate}</strong></span>
-                </div>
-                <div className="tour-card-row">
-                  <span style={{ fontSize: 14 }}>⏰</span>
-                  <span><strong>{formatTourTime(upcomingTourData.time_slot)}</strong> · 30 minutes</span>
-                </div>
-                {prop?.address && (
-                  <div className="tour-card-row">
-                    <span style={{ fontSize: 14 }}>📍</span>
-                    <span>{prop.address}</span>
-                  </div>
-                )}
-              </div>
-
-              {prop && (
-                <a href={`/homes/${prop.slug}`} className="tour-card-cta">
-                  View Property →
-                </a>
-              )}
-
-              {upcomingTourData.custom_note && (
-                <div className="tour-card-note">
-                  Note from host: "{upcomingTourData.custom_note}"
-                </div>
-              )}
-            </div>
-          )
-        })()}
-
-        {/* ── LANDLORD CONGRATS (if already approved) ── */}
+        {/* ── LANDLORD ────────────────────────────────────────────────────── */}
         {userRole === 'landlord' && (
-          <div className="congrats-strip">
-            <span style={{ fontSize: 16, flexShrink: 0 }}>🎉</span>
-            <div style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#166534' }}>
-              You&apos;re approved as a landlord
-              <div style={{ fontSize: 11, color: '#4ade80', marginTop: 1 }}>List properties and manage leads from your portal</div>
+          <div className="db-landlord">
+            <span className="db-act-ic"><Icon name="building" size={18} /></span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="db-act-t">You&apos;re approved as a landlord</div>
+              <div className="db-act-b">List properties and manage leads from your own portal.</div>
             </div>
-            <a href="/landlord/dashboard" className="congrats-link">Go to portal →</a>
+            <Link href="/landlord/dashboard" className="tp-btn tp-btn-primary sm">Go to portal</Link>
           </div>
         )}
 
-        {/* ── INQUIRIES ── */}
-        <div className="sec-row">
-          <div className="sec-label" style={{ margin: 0 }}>Your inquiries</div>
-          <a href="/homes" className="sec-link">Browse more →</a>
-        </div>
+        {/* ── INQUIRIES ───────────────────────────────────────────────────── */}
+        <Section
+          title={tenancy ? 'Other places you asked about' : 'Your inquiries'}
+          link={{ href: '/homes', label: 'Browse more' }}
+        >
+          {leads.length === 0 ? (
+            <Empty
+              icon="search"
+              title="No inquiries yet"
+              action={<Link href="/homes" className="tp-btn tp-btn-primary">Browse homes near ASU</Link>}
+            >
+              Ask about a listing and it appears here, with the landlord&apos;s replies and your
+              tour dates as they happen.
+            </Empty>
+          ) : (
+            <div className="tp-card" style={{ overflow: 'hidden' }}>
+              {leads.map(lead => {
+                const prop = matchProperty(lead, properties)
+                const view = inquiryView(lead.status, lead.closed_reason)
+                const href = prop ? `/homes/${prop.slug}` : '/homes'
+                const thumb = prop?.images?.[0] ?? null
+                return (
+                  <a key={lead.id} href={href} className="db-inq">
+                    {thumb
+                      ? <img src={thumb} alt="" className="db-inq-img" loading="lazy" />
+                      : <span className="db-inq-img ph"><Icon name="home" size={18} /></span>}
+                    <span className="db-inq-body">
+                      <span className="db-inq-name">
+                        {prop?.name || lead.property || 'Property inquiry'}
+                      </span>
+                      <span className="db-inq-addr">
+                        {prop?.address || lead.property || ''}
+                      </span>
+                      <span className="db-inq-state">
+                        <Badge tone={view.tone}>{view.label}</Badge>
+                        {view.detail && <em className="db-inq-detail">{view.detail}</em>}
+                      </span>
+                    </span>
+                    <span className="db-inq-right">
+                      {prop && <span className="db-inq-price tp-money">${prop.price}<em>/mo</em></span>}
+                      <span className="db-inq-when">{timeAgo(lead.created_at)}</span>
+                    </span>
+                  </a>
+                )
+              })}
+            </div>
+          )}
+        </Section>
 
-        {leads.length === 0 ? (
-          <div className="empty">
-            <div className="empty-icon">🏠</div>
-            <div className="empty-title">No inquiries yet</div>
-            <div className="empty-sub">Browse listings and submit an interest form — it&apos;ll show up here with live status updates.</div>
-            <a href="/homes" className="btn-p">Browse homes</a>
-          </div>
-        ) : (
-          <div style={{ marginBottom: 28 }}>
-            {leads.map(lead => {
-              const isClosed = lead.status === 'closed'
-              const prop     = matchProperty(lead, properties)
-              const href     = prop ? `/homes/${prop.slug}` : '/homes'
-              const thumb    = prop?.images?.[0] ?? null
-              const address  = prop?.address || lead.property || ''
-
-              return (
-                <a key={lead.id} href={href} className="icard">
-                  {thumb
-                    ? <img src={thumb} alt={prop?.name || ''} className="icard-thumb" />
-                    : <div className="icard-thumb-ph">🏠</div>
-                  }
-                  <div className="icard-body">
-                    <div className="icard-name">{prop?.name || lead.property || 'Property Inquiry'}</div>
-                    <div className="icard-addr">{address}</div>
-                    <div className="icard-status">
-                      <span className="icard-dot" style={{ background: isClosed ? '#d1d5db' : '#FFC627' }} />
-                      {isClosed ? 'Closed' : 'Pending Review'}
-                    </div>
-                  </div>
-                  <div className="icard-right">
-                    {prop && <div className="icard-price">${prop.price}<span>/mo</span></div>}
-                    <div className="icard-date">{timeAgo(lead.created_at)}</div>
-                    <div className="icard-arrow">›</div>
-                  </div>
-                </a>
-              )
-            })}
-          </div>
-        )}
-
-        {/* ── RECOMMENDED ── */}
+        {/* ── RECOMMENDED ─────────────────────────────────────────────────── */}
         {recommendations.length > 0 && (
-          <>
-            <div className="sec-row">
-              <div className="sec-label" style={{ margin: 0 }}>Recommended for you</div>
-              <a href="/homes" className="sec-link">See all →</a>
-            </div>
-            <div className="rec-grid">
+          <Section title="Still available near campus" link={{ href: '/homes', label: 'See all' }}>
+            <div className="db-recs">
               {recommendations.map(home => (
-                <a key={home.slug} href={`/homes/${home.slug}`} className="rec-card">
+                <a key={home.slug} href={`/homes/${home.slug}`} className="db-rec">
                   {home.images?.[0]
-                    ? <img src={home.images[0]} alt={home.name} className="rec-img" />
-                    : <div className="rec-img-ph">🏠</div>
-                  }
-                  <div className="rec-body">
-                    <div className="rec-name">{home.name}</div>
-                    <div className="rec-addr">{home.address}</div>
-                    <div className="rec-price">${home.price}<span>/mo</span></div>
-                    <div className="rec-stats">{home.beds}bd · {home.baths}ba{home.asu_distance > 0 ? ` · ${home.asu_distance}mi` : ''}</div>
-                  </div>
+                    ? <img src={home.images[0]} alt="" className="db-rec-img" loading="lazy" />
+                    : <span className="db-rec-img ph"><Icon name="home" size={20} /></span>}
+                  <span className="db-rec-bd">
+                    <span className="db-rec-name">{home.name}</span>
+                    <span className="db-rec-meta">
+                      {home.beds}bd · {home.baths}ba
+                      {home.asu_distance > 0 ? ` · ${home.asu_distance}mi to ASU` : ''}
+                    </span>
+                    <span className="db-rec-price tp-money">${home.price}<em>/mo</em></span>
+                  </span>
                 </a>
               ))}
             </div>
-          </>
+          </Section>
         )}
 
-        {/* ── LIST YOUR PLACE BANNER ── */}
+        {/* ── LIST YOUR PLACE ─────────────────────────────────────────────── */}
         {userRole !== 'landlord' && (
-          <a href="/dashboard/list" className="list-banner" style={{ textDecoration: 'none' }}>
-            <span style={{ fontSize: 20, flexShrink: 0 }}>🏠</span>
-            <div className="list-banner-body">
-              <div className="list-banner-title">Have a place to list?</div>
-              <div className="list-banner-sub">Free · No broker fees · Pre-screened leads</div>
-            </div>
-            <span className="list-banner-cta">Get started</span>
-          </a>
+          <Link href="/dashboard/list" className="db-list">
+            <span className="db-list-bd">
+              <span className="db-list-t">Have a place to list?</span>
+              <span className="db-list-s">Free to build · no broker fees · pre-screened ASU renters</span>
+            </span>
+            <span className="tp-btn tp-btn-accent sm">Get started</span>
+          </Link>
         )}
-
       </div>
     </>
   )
 }
 
-export default function TenantDashboard() {
-  return <DashboardInner />
-}
+const CSS = `
+  .db-greet { display: inline-flex; align-items: center; gap: 10px; }
+  .db-greet svg { color: var(--accent-text); flex-shrink: 0; }
+
+  /* ── The action stack ─────────────────────────────────────────────────────
+     Urgency is carried by the left edge and the icon tint, not by a wash
+     across the whole card: three red cards in a row stop meaning urgent, and
+     the text has to stay at full contrast because it holds the figures. ── */
+  .db-actions { margin-bottom: 20px; }
+  .db-act { display: flex; gap: 13px; align-items: flex-start; text-decoration: none;
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--idle); border-radius: var(--r);
+    box-shadow: var(--shadow); padding: 15px 17px; margin-bottom: 9px;
+    transition: border-color .14s ease, transform .1s ease; }
+  .db-act:hover { transform: translateY(-1px); }
+  .db-act.now  { border-left-color: var(--owed); }
+  .db-act.soon { border-left-color: var(--fee); }
+  .db-act.info { border-left-color: var(--primary); }
+  .db-act-ic { flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; }
+  .db-act.now  .db-act-ic { background: var(--owed-wash); color: var(--owed); }
+  .db-act.soon .db-act-ic { background: var(--fee-wash); color: var(--fee); }
+  .db-act.info .db-act-ic { background: var(--primary-wash); color: var(--primary); }
+  .db-act-body { min-width: 0; }
+  .db-act-t { display: block; font-size: 14.5px; font-weight: 600; color: var(--ink);
+    letter-spacing: -0.15px; }
+  .db-act-b { display: block; font-size: 12.5px; color: var(--ink-3); line-height: 1.55;
+    margin-top: 3px; }
+  .db-act-cta { display: inline-block; font-size: 12.5px; font-weight: 600;
+    color: var(--primary); margin-top: 8px; }
+
+  .db-landlord { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 13px 16px; margin-bottom: 18px; box-shadow: var(--shadow); }
+  .db-landlord .db-act-ic { background: var(--primary-wash); color: var(--primary); }
+
+  .db-panel-head { display: flex; justify-content: space-between; gap: 14px;
+    margin-top: 7px; }
+  .db-panel-name { font-family: var(--display); font-size: 21px; font-weight: 400;
+    color: #fff; letter-spacing: -0.3px; }
+
+  /* ── Inquiry rows ──────────────────────────────────────────────────────── */
+  .db-inq { display: flex; gap: 13px; align-items: center; padding: 13px 16px;
+    text-decoration: none; border-bottom: 1px solid var(--line-2); }
+  .db-inq:last-child { border-bottom: none; }
+  .db-inq:hover { background: var(--surface-2); }
+  .db-inq-img { width: 58px; height: 58px; flex-shrink: 0; border-radius: 10px;
+    object-fit: cover; display: block; }
+  .db-inq-img.ph { background: var(--primary-wash); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; }
+  .db-inq-body { flex: 1; min-width: 0; }
+  .db-inq-name { display: block; font-size: 14px; font-weight: 600; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .db-inq-addr { display: block; font-size: 11.5px; color: var(--ink-4); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .db-inq-state { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 6px; }
+  .db-inq-detail { font-style: normal; font-size: 11.5px; color: var(--ink-3);
+    line-height: 1.4; }
+  .db-inq-right { flex-shrink: 0; text-align: right; }
+  .db-inq-price { display: block; font-size: 13.5px; font-weight: 700; color: var(--ink); }
+  .db-inq-price em { font-style: normal; font-size: 10.5px; font-weight: 500;
+    color: var(--ink-4); }
+  .db-inq-when { display: block; font-size: 10.5px; color: var(--ink-4); margin-top: 3px; }
+
+  /* ── Recommendations ───────────────────────────────────────────────────── */
+  .db-recs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
+  .db-rec { display: block; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); overflow: hidden; text-decoration: none;
+    box-shadow: var(--shadow); transition: transform .12s ease; }
+  .db-rec:hover { transform: translateY(-2px); }
+  .db-rec-img { display: block; width: 100%; height: 96px; object-fit: cover; }
+  .db-rec-img.ph { background: var(--primary-wash); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; }
+  .db-rec-bd { display: block; padding: 11px 12px 13px; }
+  .db-rec-name { display: block; font-size: 13px; font-weight: 600; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .db-rec-meta { display: block; font-size: 11px; color: var(--ink-4); margin-top: 2px; }
+  .db-rec-price { display: block; font-size: 14px; font-weight: 700; color: var(--ink);
+    margin-top: 5px; }
+  .db-rec-price em { font-style: normal; font-size: 10.5px; font-weight: 500;
+    color: var(--ink-4); }
+
+  /* ── List your place. The one gold fill on this page sits on the dark
+     band, which is the only place gold is legible. ── */
+  .db-list { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    text-decoration: none; margin-top: 26px; padding: 16px 18px;
+    border-radius: var(--r-lg);
+    background: linear-gradient(145deg, var(--dark) 0%, var(--dark-2) 100%); }
+  .db-list-bd { flex: 1; min-width: 180px; }
+  .db-list-t { display: block; font-size: 14.5px; font-weight: 600; color: #fff; }
+  .db-list-s { display: block; font-size: 12px; color: var(--on-dark-2); margin-top: 2px; }
+
+  @media (max-width: 720px) {
+    .db-recs { grid-template-columns: repeat(2, 1fr); }
+    .db-inq-img { width: 50px; height: 50px; }
+    .db-list .tp-btn { width: auto; }
+  }
+  @media (max-width: 420px) {
+    .db-recs { grid-template-columns: 1fr; }
+    .db-rec-img { height: 140px; }
+  }
+`

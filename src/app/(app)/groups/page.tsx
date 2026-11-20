@@ -1,7 +1,32 @@
 'use client'
 
+/**
+ * My groups — the roommate groups this renter has joined.
+ *
+ * Restyled onto the portal's own design system, and four things about it
+ * changed beyond colour:
+ *
+ *   • **Opening a group no longer opens a tab.** It was `window.open(…,
+ *     '_blank')`, so moving between a group and the portal spawned a tab each
+ *     time and the back button never came home. It is a link now, which also
+ *     means middle-click and cmd-click do what the person expects.
+ *   • **It stops greeting them.** The dashboard greets by name; a second
+ *     "Good evening, Sam" one level in reads as though they have arrived
+ *     somewhere new. This page says what it is and how many groups are on it.
+ *   • **Decorative emoji are gone**, replaced by the portal's icon family. The
+ *     group's own emoji stays — that one is the group's chosen face, chosen by
+ *     a member, and it is content rather than furniture.
+ *   • **One action per card, in the portal's primary colour.** Every card used
+ *     to carry a gold gradient button, so a list of four groups had four
+ *     competing calls to action in the one colour reserved for "the thing we
+ *     want pressed".
+ */
+
 import { useEffect, useState } from 'react'
 import { supabase, getCurrentUser } from '@/lib/supabase'
+import Link from 'next/link'
+import Icon from '@/components/NavIcons'
+import { TenantStyles, PageHead, Empty } from '@/components/tenant/TenantFrame'
 
 type LastMessage = {
   content: string
@@ -26,10 +51,17 @@ type GroupCard = {
   last_message: LastMessage | null
 }
 
-function genderBadge(pref: string) {
-  if (pref === 'girls_only') return { label: '♀ Girls Only', bg: 'rgba(236,72,153,0.1)', color: '#db2777', border: 'rgba(236,72,153,0.25)' }
-  if (pref === 'boys_only') return { label: '♂ Boys Only', bg: 'rgba(59,130,246,0.1)', color: '#2563eb', border: 'rgba(59,130,246,0.25)' }
-  return { label: '⚤ Open to All', bg: 'rgba(140,29,64,0.07)', color: '#8C1D40', border: 'rgba(140,29,64,0.18)' }
+/**
+ * The group's own rule about who may join, as a badge.
+ *
+ * Kept on the portal's state tones rather than pink/blue: a group restricted
+ * to women is not a *warning* and a mixed group is not a *success*, so the
+ * three read as three neutral facts, distinguished by their words.
+ */
+function genderBadge(pref: string): { label: string; tone: string } {
+  if (pref === 'girls_only') return { label: 'Women only', tone: 'accent' }
+  if (pref === 'boys_only') return { label: 'Men only', tone: 'accent' }
+  return { label: 'Open to all', tone: 'idle' }
 }
 
 function timeAgo(ts: string) {
@@ -48,46 +80,36 @@ function daysAgo(ts: string) {
   const diff = Date.now() - new Date(ts).getTime()
   const days = Math.floor(diff / 86400000)
   if (days === 0) return 'today'
-  if (days === 1) return '1 day ago'
+  if (days === 1) return 'yesterday'
   return `${days} days ago`
-}
-
-function getGreeting(name: string) {
-  const h = new Date().getHours()
-  const first = name.split(' ')[0]
-  if (h < 12) return `Good morning, ${first}`
-  if (h < 17) return `Good afternoon, ${first}`
-  return `Good evening, ${first}`
 }
 
 export default function MyGroupsPage() {
   const [groups, setGroups] = useState<GroupCard[]>([])
   const [loading, setLoading] = useState(true)
-  const [userName, setUserName] = useState('')
+  /** A failed fetch is not the same fact as "you have no groups". */
+  const [failed, setFailed] = useState(false)
 
-  useEffect(() => { document.title = 'My Groups — My Portal | HomeHive' }, [])
+  useEffect(() => { document.title = 'My groups — My Portal | HomeHive' }, [])
 
   useEffect(() => {
     const load = async () => {
       const user = await getCurrentUser()
-      if (!user) return
-
-      const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'there'
-      setUserName(name)
+      if (!user) { setLoading(false); return }
 
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) { setLoading(false); return }
 
       try {
         const res = await fetch('/api/user/groups', {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
-        if (res.ok) {
-          const d = await res.json()
-          setGroups(d.groups || [])
-        }
-      } catch { /* ignore */ }
-
+        if (!res.ok) throw new Error(String(res.status))
+        const d = await res.json()
+        setGroups(d.groups || [])
+      } catch {
+        setFailed(true)
+      }
       setLoading(false)
     }
     load()
@@ -95,166 +117,166 @@ export default function MyGroupsPage() {
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        .mg-page { max-width: 860px; margin: 0 auto; padding: 32px 24px 60px; font-family: 'DM Sans', sans-serif; }
-        .mg-greeting { font-size: 22px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.4px; margin-bottom: 4px; }
-        .mg-sub { font-size: 14px; color: #9b9b9b; margin-bottom: 32px; }
-        .mg-section-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9b9b9b; margin-bottom: 16px; }
-        .mg-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
-        @media (min-width: 640px) { .mg-grid { grid-template-columns: 1fr 1fr; } }
-        .mg-card {
-          background: #fff; border: 1px solid #ede9e0; border-radius: 18px;
-          padding: 22px; display: flex; flex-direction: column; gap: 14px;
-          box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-          transition: box-shadow 0.2s, transform 0.2s;
-          cursor: default;
-        }
-        .mg-card:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.09); transform: translateY(-2px); }
-        .mg-card-header { display: flex; align-items: flex-start; gap: 12px; }
-        .mg-emoji { font-size: 34px; line-height: 1; flex-shrink: 0; }
-        .mg-title { font-size: 17px; font-weight: 700; color: #1a1a1a; line-height: 1.25; letter-spacing: -0.3px; margin-bottom: 3px; }
-        .mg-prop-link { font-size: 12px; color: #8C1D40; font-weight: 600; text-decoration: none; }
-        .mg-prop-link:hover { text-decoration: underline; }
-        .mg-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; }
-        .mg-meta-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .mg-meta-pill { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #6b6b6b; }
-        .mg-room-pill { font-size: 11px; font-weight: 600; color: #8C1D40; background: rgba(140,29,64,0.07); border: 1px solid rgba(140,29,64,0.18); border-radius: 20px; padding: 3px 10px; }
-        .mg-last-msg { background: #faf9f6; border: 1px solid #ede9e0; border-radius: 10px; padding: 10px 13px; }
-        .mg-last-msg-header { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #b0a898; margin-bottom: 5px; }
-        .mg-last-msg-text { font-size: 13px; color: #4b5563; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .mg-last-msg-meta { font-size: 11px; color: #9b9b9b; margin-top: 3px; }
-        .mg-open-btn {
-          width: 100%; padding: 12px; border-radius: 12px;
-          font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif;
-          cursor: pointer; border: none;
-          background: linear-gradient(135deg, #FFC627, #f5a623);
-          color: #1a1a1a; letter-spacing: -0.2px;
-          transition: opacity 0.15s, box-shadow 0.15s;
-        }
-        .mg-open-btn:hover { opacity: 0.9; box-shadow: 0 4px 14px rgba(255,198,39,0.45); }
-        .mg-empty { text-align: center; padding: 60px 20px; }
-        .mg-empty-icon { font-size: 52px; margin-bottom: 16px; }
-        .mg-empty-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px; letter-spacing: -0.3px; }
-        .mg-empty-sub { font-size: 14px; color: #9b9b9b; margin-bottom: 24px; line-height: 1.6; max-width: 340px; margin-left: auto; margin-right: auto; }
-        .mg-browse-btn { display: inline-flex; align-items: center; gap: 6px; padding: 13px 24px; background: #1a1a1a; color: #fff; border-radius: 12px; font-size: 14px; font-weight: 700; text-decoration: none; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s; }
-        .mg-browse-btn:hover { opacity: 0.85; }
-        .mg-skeleton { background: linear-gradient(90deg, #f5f4f0 25%, #ede9e0 50%, #f5f4f0 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 10px; }
-        @keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
-      `}</style>
-
-      <div className="mg-page">
-        <div className="mg-greeting">{loading ? 'Your Roommate Groups' : getGreeting(userName)}</div>
-        <div className="mg-sub">
-          {loading ? 'Loading your groups…' : groups.length > 0 ? `You're in ${groups.length} roommate group${groups.length !== 1 ? 's' : ''}` : 'Manage your roommate groups here'}
-        </div>
+      <TenantStyles css={CSS} />
+      <div className="tp tp-wrap wide">
+        <PageHead
+          title="My groups"
+          lede={
+            loading ? 'Loading your roommate groups…'
+              : failed ? 'We couldn’t load your groups just now.'
+              : groups.length > 0
+                ? `You're in ${groups.length} roommate group${groups.length !== 1 ? 's' : ''}.`
+                : 'Join a group to plan a move with other renters.'
+          }
+        />
 
         {loading ? (
           <div className="mg-grid">
             {[0, 1].map(i => (
-              <div key={i} className="mg-card" style={{ gap: 12 }}>
-                <div className="mg-skeleton" style={{ height: 24, width: '60%' }} />
-                <div className="mg-skeleton" style={{ height: 16, width: '40%' }} />
-                <div className="mg-skeleton" style={{ height: 60, width: '100%' }} />
-                <div className="mg-skeleton" style={{ height: 44, width: '100%' }} />
+              <div key={i} className="tp-card" style={{ padding: 20 }}>
+                <div className="tp-sk tp-sk-line" style={{ height: 22, width: '58%' }} />
+                <div className="tp-sk tp-sk-line" style={{ width: '38%' }} />
+                <div className="tp-sk tp-sk-line" style={{ height: 58, marginTop: 8 }} />
+                <div className="tp-sk tp-sk-line" style={{ height: 40, marginTop: 10, marginBottom: 0 }} />
               </div>
             ))}
           </div>
-        ) : groups.length === 0 ? (
-          <div className="mg-empty">
-            <div className="mg-empty-icon">🐝</div>
-            <div className="mg-empty-title">No groups yet</div>
-            <div className="mg-empty-sub">
-              Browse available homes and join a roommate group to find your perfect hive.
-            </div>
-            <a href="/homes" className="mg-browse-btn">Browse Homes →</a>
+        ) : failed ? (
+          <div className="tp-note warn">
+            <strong>We couldn&apos;t load your groups.</strong> Refresh the page to try again —
+            nothing has changed about the groups you are in.
           </div>
+        ) : groups.length === 0 ? (
+          <Empty
+            icon="users"
+            title="No groups yet"
+            action={<Link href="/homes" className="tp-btn tp-btn-primary">Browse homes near ASU</Link>}
+          >
+            A roommate group is how renters looking at the same home talk to each other, split the
+            rent and tell the landlord who is taking which room. Join one from any listing.
+          </Empty>
         ) : (
-          <>
-            <div className="mg-section-label">Your Groups</div>
-            <div className="mg-grid">
-              {groups.map(g => {
-                const badge = genderBadge(g.gender_preference)
-                return (
-                  <div key={g.id} className="mg-card">
-                    {/* Header */}
-                    <div className="mg-card-header">
-                      <div className="mg-emoji">{g.emoji}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="mg-title">{g.name}</div>
-                        {g.property_name && g.property_slug ? (
-                          <a
-                            href={`/homes/${g.property_slug}`}
-                            className="mg-prop-link"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            🏠 {g.property_name} ↗
-                          </a>
-                        ) : g.property_name ? (
-                          <span style={{ fontSize: 12, color: '#9b9b9b' }}>🏠 {g.property_name}</span>
-                        ) : null}
+          <div className="mg-grid">
+            {groups.map(g => {
+              const badge = genderBadge(g.gender_preference)
+              return (
+                <div key={g.id} className="tp-card mg-card">
+                  <div className="tp-card-bd">
+                    <div className="mg-hd">
+                      {/* The group's own emoji: content, picked by a member. */}
+                      <span className="mg-emoji" aria-hidden="true">{g.emoji}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <h2 className="mg-name">{g.name}</h2>
+                        {g.property_name && (
+                          g.property_slug ? (
+                            <a href={`/homes/${g.property_slug}`} className="mg-prop">
+                              <Icon name="home" size={13} />{g.property_name}
+                            </a>
+                          ) : (
+                            <span className="mg-prop plain">
+                              <Icon name="home" size={13} />{g.property_name}
+                            </span>
+                          )
+                        )}
                       </div>
                     </div>
 
-                    {/* Meta row */}
-                    <div className="mg-meta-row">
-                      <span className="mg-badge" style={{ background: badge.bg, color: badge.color, borderColor: badge.border }}>
-                        {badge.label}
-                      </span>
-                      <span className="mg-meta-pill">
-                        👥 {g.member_count} member{g.member_count !== 1 ? 's' : ''}
+                    <div className="mg-meta">
+                      <span className={`tp-badge ${badge.tone}`}>{badge.label}</span>
+                      <span className="mg-fact">
+                        <Icon name="users" size={13} />
+                        {g.member_count} member{g.member_count !== 1 ? 's' : ''}
                       </span>
                       {g.joined_at && (
-                        <span className="mg-meta-pill">
-                          · Joined {daysAgo(g.joined_at)}
-                        </span>
+                        <span className="mg-fact">You joined {daysAgo(g.joined_at)}</span>
                       )}
                     </div>
 
-                    {/* Room assignment */}
-                    {g.room_name ? (
-                      <div>
-                        <span className="mg-room-pill">🛏 {g.room_name}</span>
-                      </div>
-                    ) : (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#9b9b9b', fontStyle: 'italic' }}>Room TBD by landlord</span>
-                      </div>
-                    )}
+                    {/* Which room is theirs — the one fact in a group that
+                        turns into money, so it is stated either way rather
+                        than left out when it is unknown. */}
+                    <div className="mg-room">
+                      {g.room_name ? (
+                        <>
+                          <Icon name="home" size={14} />
+                          <span><strong>{g.room_name}</strong> is yours in this group</span>
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="clock" size={14} />
+                          <span>Your room hasn&apos;t been assigned yet — the landlord does that</span>
+                        </>
+                      )}
+                    </div>
 
-                    {/* Last message */}
-                    {g.last_message ? (
-                      <div className="mg-last-msg">
-                        <div className="mg-last-msg-header">Last message</div>
-                        <div className="mg-last-msg-text">
-                          {g.last_message.is_bot ? '🐝 ' : ''}{g.last_message.content}
-                        </div>
-                        <div className="mg-last-msg-meta">
-                          {g.last_message.is_bot ? 'Honeybee' : g.last_message.sender_name} · {timeAgo(g.last_message.created_at)}
-                        </div>
+                    <div className={`mg-msg${g.last_message ? '' : ' quiet'}`}>
+                      <div className="mg-msg-k">
+                        {g.last_message ? 'Last message' : 'Group chat'}
                       </div>
-                    ) : (
-                      <div className="mg-last-msg" style={{ opacity: 0.5 }}>
-                        <div className="mg-last-msg-header">Group Chat</div>
-                        <div className="mg-last-msg-text" style={{ color: '#9b9b9b' }}>No messages yet — say hello!</div>
-                      </div>
-                    )}
-
-                    {/* CTA */}
-                    <button
-                      className="mg-open-btn"
-                      onClick={() => window.open(`/groups/${g.share_token}`, '_blank')}
-                    >
-                      Open Group 🐝 →
-                    </button>
+                      {g.last_message ? (
+                        <>
+                          <div className="mg-msg-t">{g.last_message.content}</div>
+                          <div className="mg-msg-m">
+                            {g.last_message.is_bot ? 'Honeybee' : g.last_message.sender_name}
+                            {' · '}{timeAgo(g.last_message.created_at)}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mg-msg-t quiet">
+                          Nothing yet — being the one who says hello first tends to decide who
+                          gets organised.
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )
-              })}
-            </div>
-          </>
+
+                  <div className="tp-card-ft">
+                    <Link href={`/groups/${g.share_token}`} className="tp-btn tp-btn-primary full">
+                      Open group
+                    </Link>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
     </>
   )
 }
+
+const CSS = `
+  .mg-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 680px) { .mg-grid { grid-template-columns: 1fr 1fr; } }
+
+  .mg-card { display: flex; flex-direction: column; margin-bottom: 0; }
+  .mg-card .tp-card-bd { flex: 1; }
+  .mg-card:hover { border-color: var(--ink-4); }
+
+  .mg-hd { display: flex; align-items: flex-start; gap: 13px; }
+  .mg-emoji { font-size: 30px; line-height: 1.1; flex-shrink: 0; }
+  .mg-name { font-family: var(--display); font-size: 19px; font-weight: 400; color: var(--ink);
+    line-height: 1.2; letter-spacing: -0.3px; }
+  .mg-prop { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    font-weight: 600; color: var(--primary); text-decoration: none; margin-top: 4px; }
+  .mg-prop:hover { text-decoration: underline; }
+  .mg-prop.plain { color: var(--ink-4); font-weight: 500; }
+
+  .mg-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .mg-fact { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    color: var(--ink-3); }
+
+  .mg-room { display: flex; align-items: center; gap: 8px; margin-top: 13px;
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+  .mg-room svg { color: var(--primary); flex-shrink: 0; }
+  .mg-room strong { color: var(--ink); }
+
+  .mg-msg { background: var(--surface-2); border: 1px solid var(--line-2);
+    border-radius: var(--r-sm); padding: 11px 13px; margin-top: 14px; }
+  .mg-msg-k { font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .7px; color: var(--ink-4); margin-bottom: 5px; }
+  .mg-msg-t { font-size: 13px; color: var(--ink-2); line-height: 1.5;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mg-msg-t.quiet { white-space: normal; color: var(--ink-4); }
+  .mg-msg-m { font-size: 11px; color: var(--ink-4); margin-top: 4px; }
+`
